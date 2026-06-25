@@ -1,0 +1,165 @@
+# Auto Service Catalog and Offerings
+## Oil Change (Full Synthetic)
+Description: Full synthetic motor oil replacement, premium filter replacement, fluid top-offs, tire pressure check, and a complimentary courtesy inspection.
+Price Range: $79 - $119
+Duration: 45 minutes
+
+## Brake Repair & Pad Replacement
+Description: Full braking system diagnostic check, premium ceramic/semi-metallic brake pad replacement, rotor resurfacing or replacement, and caliper checks.
+Price Range: $199 - $399 per axle
+Duration: 90 minutes
+
+## A/C Service & System Diagnostic
+Description: A/C system performance test, pressure testing, visual inspection of lines and components, leak detection using UV dye, and full refrigerant recharge.
+Price Range: $99 - $249
+Duration: 60 minutes
+
+## Wheel Alignment (4-Wheel)
+Description: Precision computerized alignment adjusting front and rear caster, camber, and toe angles to original manufacturer specifications.
+Price Range: $119 - $149
+Duration: 60 minutes
+
+## Manufacturer Scheduled Maintenance (30k/60k/90k)
+Description: Comprehensive mileage-specific maintenance conforming to manufacturer warranty standards, including fluids flush, cabin/air filters, spark plugs check, and multi-point safety inspections.
+Price Range: $249 - $599
+Duration: 120 minutes
+
+## Check Engine Light Diagnostic
+Description: Full scanning and diagnostics of the vehicle OBD-II system, sensor testing, freeze-frame data analysis, and visual checks of affected components.
+Price Range: $99 - $149
+Duration: 60 minutes
+
+## Transmission Fluid Exchange
+Description: Complete exchange of old transmission fluid with high-quality OEM spec fluid, cleaning of transmission pan, and replacement of transmission filter (if applicable).
+Price Range: $189 - $299
+Duration: 60 minutes
+
+## Suspension Repair (Shocks & Struts)
+Description: Inspection and replacement of worn front and rear struts, shock absorbers, sway bar links, and bushings to restore ride control and safety.
+Price Range: $299 - $899
+Duration: 120 minutes
+
+## Battery Replacement & System Test
+Description: Automotive battery voltage and cold-cranking amps diagnostic check, cleaning of battery terminals, and professional installation of a new premium battery.
+Price Range: $149 - $249
+Duration: 30 minutes
+
+## Cooling System Flush & Diagnostic
+Description: Radiator performance inspection, pressure testing for leaks, full drainage of old coolant, flush of heater core/radiator, and refill with fresh OEM coolant.
+Price Range: $129 - $199
+Duration: 60 minutes
+
+## Air Filtration (Engine & Cabin)
+Description: Inspection and replacement of engine intake air filters and passenger cabin air filters to maintain engine performance and interior air quality.
+Price Range: $49 - $99
+Duration: 30 minutes
+
+## Alternator & Starter Service
+Description: Testing and replacement of starter motors, alternators, battery cables, and related ignition/charging system electronics.
+Price Range: $249 - $599
+Duration: 90 minutes
+
+## Auto Repair Estimates
+Description: Comprehensive visual and system inspections to draft transparent, detailed repair estimates for collision, wear-and-tear, or custom parts repair.
+Price Range: Free / TBD
+Duration: 30 minutes
+
+## Computer Diagnostic
+Description: Advanced modular diagnostic scan interfacing with onboard vehicle controllers to pinpoint issues in engine, body control, transmission, and comfort modules.
+Price Range: $119 - $189
+Duration: 60 minutes
+
+## Courtesy Inspection
+Description: Complimentary multi-point visual inspection of brakes, tires, fluids, filters, belts, and safety components, complete with a digital health report.
+Price Range: $0
+Duration: 20 minutes
+
+## Drivetrain Repair & Service
+Description: Service and replacement of constant velocity (CV) axles, driveshafts, differentials, transfer cases, and universal joints.
+Price Range: $199 - $699
+Duration: 90 minutes
+
+## Electrical System Repair
+Description: Diagnosing and fixing automotive electrical issues including wiring harnesses, fuses, power windows, locks, lighting, and dashboard controls.
+Price Range: $119 - $499
+Duration: 90 minutes
+
+## Engine Services (Spark Plugs, Belts, Gaskets)
+Description: Minor and major engine repairs, spark plug replacements, timing belts, cylinder head gasket work, and manifold service.
+Price Range: $149 - $1200+
+Duration: 120 minutes
+
+## European Vehicle Services
+Description: Specialized diagnostics, parts, and service catering to European brands such as BMW, Mercedes-Benz, Audi, Volkswagen, Volvo, and Jaguar.
+Price Range: Varies
+Duration: 90 minutes
+
+## Exhaust System & Muffler Repair
+Description: Inspection and replacement of exhaust pipes, mufflers, oxygen sensors, exhaust manifolds, and catalytic converters to ensure clean emissions.
+Price Range: $149 - $599
+Duration: 60 minutes
+
+## Extended Warranty Service Claim Repairs
+Description: Assistance in coordinating diagnosis, estimates, and covered repair work directly with all major extended warranty providers.
+Price Range: Varies
+Duration: 60 minutes
+
+## Fleet Services (Commercial Accounts)
+Description: Custom scheduled preventative maintenance, repairs, and inspections for business, commercial, and municipality fleet vehicles.
+Price Range: Varies
+Duration: 60 minutes
+
+## Fuel System Service (Injectors & Cleaning)
+Description: Fuel injection cleaning, fuel filter replacement, and diagnostic tests on fuel pumps and lines to restore MPG and throttle response.
+Price Range: $129 - $249
+Duration: 60 minutes
+
+## Power Steering Fluid Exchange & Repair
+Description: Power steering system flush, pump replacement, and steering gear rack-and-pinion diagnostics and repairs.
+Price Range: $119 - $599
+Duration: 60 minutes
+
+## Pre-Purchase Inspection
+Description: Thorough bumper-to-bumper pre-purchase inspection of safety, mechanical, and aesthetic elements before purchasing a pre-owned vehicle.
+Price Range: $119 - $179
+Duration: 60 minutes
+
+## Tire Rotation & Balancing
+Description: Rotating tires, performing precision computer wheel balancing, and adjusting pressure to prolong tread life and restore smooth riding.
+Price Range: $39 - $89
+Duration: 30 minutes
+
+## Tune-Ups & Spark Plug Service
+Description: Replacement of spark plugs, inspection of ignition coils and wires, and throttle body cleaning to ensure smooth idling and peak combustion efficiency.
+Price Range: $149 - $299
+Duration: 60 minutes
+
+## Tire Replacement & Installation
+Description: Professional mounting, computer balancing, and installation of brand new tires tailored to your vehicle specifications.
+Price Range: $150 - $300 per tire
+Duration: 60 minutes
+
+## Windshield Wiper Blade Replacement
+Description: Replacement of worn front or rear windshield wiper blades with premium, high-durability blades to ensure clear visibility.
+Price Range: $29 - $59
+Duration: 15 minutes
+
+## Serpentine Belt Replacement
+Description: Inspection and replacement of the serpentine accessory drive belt to prevent engine accessory failures and breakdowns.
+Price Range: $99 - $159
+Duration: 30 minutes
+
+## Headlight & Bulb Replacement
+Description: Replacement of burned-out exterior bulbs including headlights, high beams, fog lights, brake lights, and turn signals.
+Price Range: $29 - $79
+Duration: 20 minutes
+
+## Spark Plug Replacement
+Description: Complete set of new premium spark plugs installed to restore clean combustion, improve fuel economy, and resolve engine misfires.
+Price Range: $99 - $249
+Duration: 45 minutes
+
+## Radiator & Cooling System Repair
+Description: Diagnosis and repair of cooling system leaks, radiator replacement, thermostat replacement, and cooling fan repairs.
+Price Range: $299 - $699
+Duration: 120 minutes

@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<!-- VoiceAI Configuration Portal -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>serviceBot Portal</title>
+  
+  <!-- Web Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Stylesheets -->
+  <link rel="stylesheet" href="style.css?v=13">
+</head>
+<body>
+
+  <!-- App Wrapper -->
+  <div class="app-container">
+    
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-logo"></div>
+        <h1>serviceBot</h1>
+      </div>
+      
+      <nav class="sidebar-nav">
+        <a href="#dashboard" class="nav-item active" data-tab="dashboard">
+          <svg class="nav-icon" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-9 14H5v-2h5v2zm0-4H5v-2h5v2zm0-4H5V7h5v2zm9 8h-7v-2h7v2zm0-4h-7v-2h7v2zm0-4h-7V7h7v2z"/></svg>
+          Dashboard
+        </a>
+        <a href="#intents" class="nav-item" data-tab="intents">
+          <svg class="nav-icon" viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/></svg>
+          Agent Config
+        </a>
+        <a href="#services" class="nav-item" data-tab="services">
+          <svg class="nav-icon" viewBox="0 0 24 24"><path d="M22.7 19l-9.1-9.1c.9-2.3.4-5-1.5-6.9-2-2-5-2.4-7.4-1.3L9 6 6 9 1.6 4.3C.5 6.7.9 9.8 2.9 11.8c1.9 1.9 4.6 2.4 6.9 1.5l9.1 9.1c.4.4 1 .4 1.4 0l2.3-2.3c.5-.4.5-1.1.1-1.1z"/></svg>
+          Services Catalog
+        </a>
+        <a href="#staff" class="nav-item" data-tab="staff">
+          <svg class="nav-icon" viewBox="0 0 24 24"><path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2z"/></svg>
+          Staff Calendars
+        </a>
+        <a href="#knowledge" class="nav-item" data-tab="knowledge">
+          <svg class="nav-icon" viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+          Knowledge Base
+        </a>
+        <a href="#keys" class="nav-item" data-tab="keys">
+          <svg class="nav-icon" viewBox="0 0 24 24"><path d="M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>
+          API Keys & Voice
+        </a>
+        <a href="#gmail" class="nav-item" data-tab="gmail">
+          <svg class="nav-icon" viewBox="0 0 24 24"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg>
+          Gmail Settings
+        </a>
+      </nav>
+      
+      <div class="sidebar-footer">
+        <p class="status-indicator connected">System Active</p>
+      </div>
+    </aside>
+    
+    <!-- Main Content Area -->
+    <main class="main-viewport">
+      
+      <!-- HEADER -->
+      <header class="app-header">
+        <div class="header-info">
+          <h2 id="current-view-title">Dashboard Overview</h2>
+          <p class="text-muted">Real-time summaries and configuration dashboard.</p>
+        </div>
+        
+        <div class="header-actions">
+          <button class="btn btn-secondary" id="refresh-data-btn">
+            <svg class="btn-icon" viewBox="0 0 24 24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+            Refresh
+          </button>
+        </div>
+      </header>
+
+      <!-- VIEWS PANEL -->
+      <div class="views-panel">
+        
+        <!-- VIEW 1: DASHBOARD -->
+        <section id="dashboard-view" class="view-section active">
+          <!-- Metric Row -->
+          <div class="metrics-grid">
+            <div class="metric-card">
+              <span class="metric-label">Total Calls</span>
+              <h3 class="metric-value" id="stat-total-calls">--</h3>
+              <div class="metric-badge success">100% answer rate</div>
+            </div>
+            
+            <div class="metric-card">
+              <span class="metric-label">Callbacks Requested</span>
+              <h3 class="metric-value" id="stat-callbacks">--</h3>
+              <div class="metric-badge info">As soon as possible</div>
+            </div>
+            
+            <div class="metric-card">
+              <span class="metric-label">Booked Appointments</span>
+              <h3 class="metric-value" id="stat-appointments">--</h3>
+              <div class="metric-badge success" id="stat-calendar-free">-- slots open</div>
+            </div>
+            
+            <div class="metric-card">
+              <span class="metric-label">Captured Service Requests</span>
+              <h3 class="metric-value" id="stat-requests">--</h3>
+              <div class="metric-badge warning">Pending triage</div>
+            </div>
+          </div>
+          
+          <!-- Service Requests Table -->
+          <div class="content-card mt-6">
+            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; margin-bottom: 16px;">
+              <div>
+                <h3>Service Requests</h3>
+                <p class="text-muted">Captured customer issues, service requirements, and scheduling preferences.</p>
+              </div>
+              <div class="table-filters" style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <input type="text" id="filter-sr-search" class="form-input" placeholder="Search requests..." style="width: 180px; padding: 6px 12px; font-size: 12.5px; background-color: var(--bg-input); border: 1px solid var(--border-card);">
+                <select id="filter-sr-type" class="form-input" style="width: 130px; padding: 6px 12px; font-size: 12.5px; background-color: var(--bg-input); border: 1px solid var(--border-card);">
+                  <option value="all">All Types</option>
+                  <option value="appointment">Appointments</option>
+                  <option value="callback">Callbacks</option>
+                </select>
+                <select id="filter-sr-status" class="form-input" style="width: 130px; padding: 6px 12px; font-size: 12.5px; background-color: var(--bg-input); border: 1px solid var(--border-card);">
+                  <option value="all">All Statuses</option>
+                  <option value="pending">Pending</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="completed">Completed</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </div>
+            </div>
+            <div class="table-container">
+              <table class="data-table" id="service-requests-table">
+                <thead>
+                  <tr>
+                    <th>
+                      <div class="tooltip-container">
+                        <div class="th-text-clipped">Submitted At</div>
+                        <div class="tooltip-popup">Submitted At</div>
+                      </div>
+                    </th>
+                    <th>
+                      <div class="tooltip-container">
+                        <div class="th-text-clipped">Customer Name</div>
+                        <div class="tooltip-popup">Customer Name</div>
+                      </div>
+                    </th>
+                    <th>
+                      <div class="tooltip-container">
+                        <div class="th-text-clipped">Phone</div>
+                        <div class="tooltip-popup">Phone Number</div>
+                      </div>
+                    </th>
+                    <th>
+                      <div class="tooltip-container">
+                        <div class="th-text-clipped">Vehicle</div>
+                        <div class="tooltip-popup">Vehicle Details</div>
+                      </div>
+                    </th>
+                    <th>
+                      <div class="tooltip-container">
+                        <div class="th-text-clipped">Service Type</div>
+                        <div class="tooltip-popup">Service Type</div>
+                      </div>
+                    </th>
+                    <th>
+                      <div class="tooltip-container">
+                        <div class="th-text-clipped">Request Type</div>
+                        <div class="tooltip-popup">Request Type (Appointment / Callback)</div>
+                      </div>
+                    </th>
+                    <th>
+                      <div class="tooltip-container">
+                        <div class="th-text-clipped">Booking / Preferred Time</div>
+                        <div class="tooltip-popup">Booking or Preferred Callback Time</div>
+                      </div>
+                    </th>
+                    <th>
+                      <div class="tooltip-container">
+                        <div class="th-text-clipped">Issue Description</div>
+                        <div class="tooltip-popup">Customer Issue Description</div>
+                      </div>
+                    </th>
+                    <th>
+                      <div class="tooltip-container">
+                        <div class="th-text-clipped">Status</div>
+                        <div class="tooltip-popup">Request Status</div>
+                      </div>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody id="service-requests-list">
+                  <tr>
+                    <td colspan="9" class="text-center py-6 text-muted">Loading service requests...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- 4. Call History Table -->
+          <div class="content-card mt-6">
+            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; margin-bottom: 16px;">
+              <div>
+                <h3>Recent Call History</h3>
+                <p class="text-muted">Logs, transcripts, and AI-generated summaries of recent calls.</p>
+              </div>
+              <div class="table-filters">
+                <input type="text" id="filter-calls-search" class="form-input" placeholder="Search calls..." style="width: 200px; padding: 6px 12px; font-size: 12.5px; background-color: var(--bg-input); border: 1px solid var(--border-card);">
+              </div>
+            </div>
+            <div class="table-container">
+              <table class="data-table" id="call-logs-table">
+                <thead>
+                  <tr>
+                    <th>
+                      <div class="tooltip-container">
+                        <div class="th-text-clipped">Timestamp</div>
+                        <div class="tooltip-popup">Call Timestamp</div>
+                      </div>
+                    </th>
+                    <th>
+                      <div class="tooltip-container">
+                        <div class="th-text-clipped">Customer Name</div>
+                        <div class="tooltip-popup">Customer Name</div>
+                      </div>
+                    </th>
+                    <th>
+                      <div class="tooltip-container">
+                        <div class="th-text-clipped">Phone</div>
+                        <div class="tooltip-popup">Phone Number</div>
+                      </div>
+                    </th>
+                    <th>
+                      <div class="tooltip-container">
+                        <div class="th-text-clipped">Vehicle</div>
+                        <div class="tooltip-popup">Customer Vehicle</div>
+                      </div>
+                    </th>
+                    <th>
+                      <div class="tooltip-container">
+                        <div class="th-text-clipped">Brief Summary</div>
+                        <div class="tooltip-popup">AI-Generated Call Summary</div>
+                      </div>
+                    </th>
+                    <th>
+                      <div class="tooltip-container">
+                        <div class="th-text-clipped">Action</div>
+                        <div class="tooltip-popup">Available Actions</div>
+                      </div>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody id="call-logs-list">
+                  <tr>
+                    <td colspan="6" class="text-center py-6 text-muted">Loading recent call logs...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+        
+        <!-- VIEW 2: INTENT MANAGER -->
+        <section id="intents-view" class="view-section">
+          <div class="content-card">
+            <div class="card-header">
+              <h3>Agent Configurations</h3>
+              <p class="text-muted">Configure prompt behaviors and required slots for specialized sub-agents.</p>
+            </div>
+            
+            <form id="intent-config-form" class="form-grid">
+              <div class="form-group full-width">
+                <label for="prompt-first-message">Agent Greeting (First Message / Intro spoken to caller)</label>
+                <textarea id="prompt-first-message" rows="2" class="form-input" placeholder="e.g. Hello! Thank you for calling Test..."></textarea>
+              </div>
+
+              <div class="form-group full-width">
+                <label for="prompt-router">Core Router (Classifier) System Prompt</label>
+                <textarea id="prompt-router" rows="4" class="form-input"></textarea>
+              </div>
+
+              <div class="form-group full-width">
+                <label for="prompt-service-request">Service Request Agent Prompt</label>
+                <textarea id="prompt-service-request" rows="4" class="form-input"></textarea>
+              </div>
+
+              <div class="form-group full-width">
+                <label for="prompt-appointment">Appointment Booking Agent Prompt</label>
+                <textarea id="prompt-appointment" rows="4" class="form-input"></textarea>
+              </div>
+
+              <div class="form-group full-width">
+                <label for="prompt-faq">FAQ RAG Agent Prompt</label>
+                <textarea id="prompt-faq" rows="4" class="form-input"></textarea>
+              </div>
+
+              <div class="form-group full-width">
+                <label for="prompt-handoff">Human Handoff Agent Prompt</label>
+                <textarea id="prompt-handoff" rows="4" class="form-input"></textarea>
+              </div>
+              <!-- Required fields removed here to be specific to each service -->
+              
+              <div class="form-actions full-width">
+                <button type="submit" class="btn btn-primary" id="save-intents-btn">Save Configurations</button>
+              </div>
+            </form>
+          </div>
+        </section>
+        
+        <!-- VIEW 3: SERVICES MANAGER -->
+        <section id="services-view" class="view-section">
+          <div class="layout-split">
+            
+            <!-- Service List -->
+            <div class="content-card flex-2">
+              <div class="card-header">
+                <h3>Services Catalog</h3>
+                <p class="text-muted">Current services and standard pricing database.</p>
+              </div>
+              
+              <div class="table-container">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Service Name</th>
+                      <th>Description</th>
+                      <th>Price Range</th>
+                      <th>Duration</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="services-list-body">
+                    <tr>
+                      <td colspan="5" class="text-center py-6 text-muted">Loading services...</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            
+            <!-- Add Service Form -->
+            <div class="content-card flex-1">
+              <div class="card-header">
+                <h3>Add New Service</h3>
+                <p class="text-muted">Create service offerings instantly live in RAG context.</p>
+              </div>
+              
+              <form id="add-service-form">
+                <div class="form-group">
+                  <label for="new-service-name">Service Name</label>
+                  <input type="text" id="new-service-name" class="form-input" placeholder="e.g. Brake Pads Replacement" required>
+                </div>
+                
+                <div class="form-group">
+                  <label for="new-service-desc">Description</label>
+                  <textarea id="new-service-desc" rows="3" class="form-input" placeholder="e.g. Replacement of front rotors and pad calipers." required></textarea>
+                </div>
+                
+                <div class="form-group">
+                  <label for="new-service-price">Price Range</label>
+                  <input type="text" id="new-service-price" class="form-input" placeholder="e.g. $150-250" required>
+                </div>
+                
+                <div class="form-group">
+                  <label for="new-service-duration">Duration (Minutes)</label>
+                  <input type="number" id="new-service-duration" class="form-input" placeholder="e.g. 60" required>
+                </div>
+                
+                <div class="form-group">
+                  <label>Required Intake Fields</label>
+                  <div class="checkbox-group" style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
+                    <label class="checkbox-item">
+                      <input type="checkbox" id="new-service-req-customer-name" checked>
+                      <span>Customer Name</span>
+                    </label>
+                    <label class="checkbox-item">
+                      <input type="checkbox" id="new-service-req-phone-number" checked>
+                      <span>Phone Number</span>
+                    </label>
+                    <label class="checkbox-item">
+                      <input type="checkbox" id="new-service-req-vehicle-details" checked>
+                      <span>Vehicle Details</span>
+                    </label>
+                    <label class="checkbox-item">
+                      <input type="checkbox" id="new-service-req-issue-description" checked>
+                      <span>Issue Description</span>
+                    </label>
+                    <label class="checkbox-item">
+                      <input type="checkbox" id="new-service-req-location" checked>
+                      <span>Location</span>
+                    </label>
+                  </div>
+                </div>
+                
+                <button type="submit" class="btn btn-primary full-width mt-4">Create Service</button>
+              </form>
+            </div>
+          </div>
+        </section>
+        
+        <!-- VIEW 6: STAFF CALENDARS -->
+        <section id="staff-view" class="view-section">
+          <div class="layout-split">
+            
+            <!-- Agent Selection & Slots Table -->
+            <div class="content-card flex-2">
+              <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+                <div>
+                  <h3>Staff Member Schedules</h3>
+                  <p class="text-muted">Live calendar slots auto-synced from Google Calendar every hour.</p>
+                </div>
+                
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <button type="button" class="btn btn-secondary btn-sm" id="sync-calendar-btn" title="Refresh all connected agents' slots from Google Calendar now" style="display: flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: 12px; border-color: #10b981; color: #10b981;">
+                    <svg viewBox="0 0 24 24" style="width: 13px; height: 13px; fill: currentColor; flex-shrink: 0;"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+                    Sync Calendar
+                  </button>
+                  <div class="form-group" style="min-width: 240px; margin: 0;">
+                    <select id="staff-agent-selector" class="form-input">
+                      <!-- Loaded dynamically -->
+                    </select>
+                  </div>
+                </div>
+              </div>
+              
+              <div id="agent-calendar-connection-status" style="margin-bottom: 16px; display: flex; flex-direction: column; gap: 8px; font-size: 12px; border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 10px 14px; background: rgba(255,255,255,0.02);">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+                  <span style="color: var(--text-muted);">Google Calendar:</span>
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <span id="agent-calendar-status-badge" class="badge danger" style="font-size: 10px; padding: 2px 6px;">Disconnected</span>
+                    <button type="button" class="btn btn-secondary btn-sm" id="connect-agent-calendar-btn" style="padding: 2px 8px; font-size: 10px; border-color: var(--color-primary); color: #fff;">
+                      Connect
+                    </button>
+                  </div>
+                </div>
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+                  <span style="color: var(--text-muted);">Gmail Send:</span>
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <span id="agent-gmail-status-badge" class="badge danger" style="font-size: 10px; padding: 2px 6px;">Disconnected</span>
+                    <button type="button" class="btn btn-secondary btn-sm" id="connect-agent-gmail-btn" style="padding: 2px 8px; font-size: 10px; border-color: var(--color-primary); color: #fff;">
+                      Connect
+                    </button>
+                  </div>
+                </div>
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 8px; margin-top: 4px;">
+                  <span style="color: var(--text-muted);">Profile Action:</span>
+                  <button type="button" class="btn btn-secondary btn-sm" id="delete-agent-profile-btn" style="padding: 2px 8px; font-size: 10px; border-color: var(--color-danger); color: var(--color-danger);">
+                    Delete Profile
+                  </button>
+                </div>
+              </div>
+
+              
+              <div class="table-container">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Time Window</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="staff-slots-list-body">
+                    <tr>
+                      <td colspan="3" class="text-center py-6 text-muted">Select an agent to load calendar slots.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            
+            <!-- Right Column forms -->
+            <div class="flex-1" style="display: flex; flex-direction: column; gap: 24px;">
+              <!-- Add Slot Form -->
+              <div class="content-card" style="width: 100%;">
+                <div class="card-header">
+                  <h3>Add Availability Slot</h3>
+                  <p class="text-muted">Insert a new booking slot for the selected agent.</p>
+                </div>
+                
+                <form id="add-slot-form">
+                  <div class="form-group">
+                    <label for="new-slot-datetime">Date & Time</label>
+                    <input type="datetime-local" id="new-slot-datetime" class="form-input" required>
+                  </div>
+                  
+                  <button type="submit" class="btn btn-primary full-width mt-4">Add Time Slot</button>
+                </form>
+              </div>
+
+              <!-- Add Staff Agent Form -->
+              <div class="content-card" style="width: 100%;">
+                <div class="card-header">
+                  <h3>Add Staff Member</h3>
+                  <p class="text-muted">Create a new staff member profile.</p>
+                </div>
+                
+                <form id="add-agent-form">
+                  <div class="form-group">
+                    <label for="new-agent-name">Name</label>
+                    <input type="text" id="new-agent-name" class="form-input" placeholder="e.g. Alice Williams" required>
+                  </div>
+                  <div class="form-group mt-4">
+                    <label for="new-agent-role">Role</label>
+                    <input type="text" id="new-agent-role" class="form-input" placeholder="e.g. Service Advisor" value="Service Advisor">
+                  </div>
+                  <div class="form-group mt-4">
+                    <label for="new-agent-email">Email (Optional)</label>
+                    <input type="email" id="new-agent-email" class="form-input" placeholder="e.g. alice@example.com">
+                  </div>
+                  
+                  <button type="submit" class="btn btn-primary full-width mt-4">Add Staff Member</button>
+                </form>
+              </div>
+            </div>
+          </div>
+        </section>
+        
+        <!-- VIEW 4: KNOWLEDGE BASE -->
+        <section id="knowledge-view" class="view-section">
+          <div class="layout-split">
+            
+            <!-- Vector Index Info -->
+            <div class="content-card flex-2">
+              <div class="card-header">
+                <h3>Indexed KB Documents</h3>
+                <p class="text-muted">PDFs and text files parsed and stored in local ChromaDB.</p>
+              </div>
+              
+              <div class="kb-files-list" id="kb-files-list">
+                <!-- Loaded dynamically -->
+              </div>
+            </div>
+            
+            <!-- File Drag and Drop -->
+            <div class="content-card flex-1">
+              <div class="card-header">
+                <h3>Upload Knowledge Source</h3>
+                <p class="text-muted">Upload text or markdown assets to ingest to RAG.</p>
+              </div>
+              
+              <div class="drop-zone" id="kb-drop-zone">
+                <svg class="upload-icon" viewBox="0 0 24 24"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+                <p>Drag & Drop file here or <span class="browse-link">click to browse</span></p>
+                <input type="file" id="kb-file-input" class="hidden-file-input" accept=".txt,.md">
+              </div>
+              
+              <div class="progress-bar-container hidden" id="upload-progress-container">
+                <div class="progress-bar-label">
+                  <span id="upload-status-text">Uploading...</span>
+                  <span id="upload-percent">0%</span>
+                </div>
+                <div class="progress-track">
+                  <div class="progress-fill" id="upload-progress-fill" style="width: 0%"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+        
+        <!-- VIEW 5: CREDENTIALS & VOICE SETTINGS -->
+        <section id="keys-view" class="view-section">
+          <div class="layout-split">
+            
+            <!-- Voice selection and models -->
+            <div class="content-card flex-1">
+              <div class="card-header">
+                <h3>Voice Agent Routing</h3>
+                <p class="text-muted">Configure default LLM brains and speech turn voices.</p>
+              </div>
+              
+              <form id="voice-routing-form">
+                <div class="form-group">
+                  <label for="agent-llm-model">Language Model (LLM)</label>
+                  <select id="agent-llm-model" class="form-input">
+                    <option value="claude-3-5-sonnet">Anthropic Claude 3.5 Sonnet</option>
+                    <option value="gpt-4o" selected>OpenAI GPT-4o</option>
+                    <option value="gpt-4o-mini">OpenAI GPT-4o-mini</option>
+                  </select>
+                </div>
+                
+                <div class="form-group">
+                  <label for="agent-voice-selection">ElevenLabs Custom Voice</label>
+                  <select id="agent-voice-selection" class="form-input">
+                    <option value="default">Loading voices...</option>
+                  </select>
+                </div>
+
+                <div class="form-group mt-4">
+                  <label for="agent-handoff-phone">Live Handoff Phone Number</label>
+                  <input type="text" id="agent-handoff-phone" class="form-input" placeholder="+14242704893">
+                </div>
+                
+                <button type="submit" class="btn btn-primary mt-4">Save Routing Config</button>
+              </form>
+            </div>
+            
+            <!-- Secrets Key configuration -->
+            <div class="content-card flex-2">
+              <div class="card-header">
+                <h3>Encrypted System Secrets</h3>
+                <p class="text-muted">API credentials stored encrypted at rest using local keys.</p>
+              </div>
+              
+              <form id="save-api-keys-form" class="form-grid">
+                <div class="form-group">
+                  <label for="key-openai">OpenAI API Key</label>
+                  <input type="password" id="key-openai" class="form-input" placeholder="••••••••••••••••••••••••">
+                </div>
+                
+                <div class="form-group">
+                  <label for="key-anthropic">Anthropic API Key</label>
+                  <input type="password" id="key-anthropic" class="form-input" placeholder="••••••••••••••••••••••••">
+                </div>
+                
+                <div class="form-group">
+                  <label for="key-elevenlabs">ElevenLabs API Key</label>
+                  <input type="password" id="key-elevenlabs" class="form-input" placeholder="••••••••••••••••••••••••">
+                </div>
+                
+                <div class="form-group">
+                  <label for="key-elevenlabs-agent">ElevenLabs Agent ID</label>
+                  <input type="text" id="key-elevenlabs-agent" class="form-input" placeholder="e.g. agent_abc123">
+                </div>
+                
+                <div class="form-group full-width">
+                  <label for="key-twilio">Twilio Auth Token</label>
+                  <input type="password" id="key-twilio" class="form-input" placeholder="••••••••••••••••••••••••">
+                </div>
+                
+                <div class="form-actions full-width">
+                  <button type="submit" class="btn btn-primary" id="save-secrets-btn">Encrypt & Store Keys</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </section>
+
+        <!-- VIEW 7: GMAIL NOTIFICATION SETTINGS -->
+        <section id="gmail-view" class="view-section">
+          <div class="layout-split">
+            
+            <!-- Gmail Configuration Card -->
+            <div class="content-card flex-2">
+              <div class="card-header">
+                <h3>Gmail Notification Integration</h3>
+                <p class="text-muted">Receive instant email alerts whenever customer bookings, reschedules, or callbacks occur.</p>
+              </div>
+              
+              <form id="gmail-config-form" class="form-grid">
+                <div class="form-group full-width">
+                  <label class="checkbox-item" style="margin-bottom: 8px;">
+                    <input type="checkbox" id="gmail-enabled">
+                    <span>Enable Email Notifications</span>
+                  </label>
+                </div>
+
+                <div class="form-group full-width">
+                  <label for="gmail-auth-type">Authentication Method</label>
+                  <select id="gmail-auth-type" class="form-input">
+                    <option value="app_password" selected>SMTP App Password (Legacy)</option>
+                    <option value="oauth2">Google OAuth2 Connection (New Age)</option>
+                  </select>
+                </div>
+
+                <div class="form-group" id="gmail-sender-group">
+                  <label for="gmail-sender">Sender Gmail Address</label>
+                  <input type="email" id="gmail-sender" class="form-input" placeholder="e.g. your-bot@gmail.com" required>
+                </div>
+                
+                <div class="form-group" id="gmail-smtp-pass-group">
+                  <label for="gmail-password">Gmail App Password</label>
+                  <input type="password" id="gmail-password" class="form-input" placeholder="••••••••••••••••">
+                </div>
+                
+                <div class="form-group" id="gmail-smtp-server-group">
+                  <label for="gmail-smtp-server">SMTP Server Host</label>
+                  <input type="text" id="gmail-smtp-server" class="form-input" value="smtp.gmail.com" placeholder="smtp.gmail.com">
+                </div>
+                
+                <div class="form-group" id="gmail-smtp-port-group">
+                  <label for="gmail-smtp-port">SMTP Server Port</label>
+                  <input type="number" id="gmail-smtp-port" class="form-input" value="587" placeholder="587">
+                </div>
+
+                <div class="form-group" id="gmail-oauth-id-group" style="display: none;">
+                  <label for="gmail-client-id">Google Client ID</label>
+                  <input type="text" id="gmail-client-id" class="form-input" placeholder="Enter Google Client ID">
+                </div>
+                
+                <div class="form-group" id="gmail-oauth-secret-group" style="display: none;">
+                  <label for="gmail-client-secret">Google Client Secret</label>
+                  <input type="password" id="gmail-client-secret" class="form-input" placeholder="Enter Google Client Secret">
+                </div>
+
+                <div class="form-group full-width" id="gmail-oauth-status-group" style="display: none;">
+                  <label>OAuth Authorization Status</label>
+                  <div style="display: flex; align-items: center; gap: 12px; margin-top: 4px;">
+                    <span id="gmail-oauth-status-badge" class="badge danger">Disconnected</span>
+                    <button type="button" class="btn btn-secondary" id="connect-gmail-btn" style="border-color: var(--color-primary); color: #fff;">
+                      Connect Gmail Account
+                    </button>
+                  </div>
+                  <div style="margin-top: 8px; font-size: 11.5px; color: var(--text-muted);">
+                    Google Redirect URI: <code id="gmail-redirect-uri-display" style="color: #fff; background: var(--bg-sidebar); padding: 2px 6px; border-radius: 4px; border: 1px solid var(--border-card);">Loading...</code>
+                  </div>
+                </div>
+                
+                <div class="form-group full-width">
+                  <label for="gmail-recipient">Predefined Recipient Email Address</label>
+                  <input type="text" id="gmail-recipient" class="form-input" placeholder="e.g. notifications@yourcompany.com, info@yourcompany.com" required>
+                </div>
+                
+                <div class="form-actions full-width" style="display: flex; gap: 12px; justify-content: flex-end; align-items: center; margin-top: 16px;">
+                  <button type="button" class="btn btn-secondary" id="test-gmail-btn">
+                    <svg class="btn-icon" viewBox="0 0 24 24" style="transform: rotate(45deg); margin-right: 4px;"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+                    Send Test Email
+                  </button>
+                  <button type="submit" class="btn btn-primary" id="save-gmail-btn">
+                    Save Notification Config
+                  </button>
+                </div>
+              </form>
+            </div>
+            
+            <!-- Instructions/Help Card -->
+            <div class="content-card flex-1" style="background: linear-gradient(135deg, rgba(94, 106, 210, 0.03) 0%, rgba(0, 0, 0, 0) 100%);">
+              <div class="card-header">
+                <h3>Connection Help</h3>
+                <p class="text-muted">How to configure email notifications.</p>
+              </div>
+              
+              <div id="smtp-help-text" style="font-size: 13px; line-height: 1.6; color: var(--text-muted); display: flex; flex-direction: column; gap: 12px;">
+                <p><strong>App Password Setup:</strong></p>
+                <ol style="margin-left: 18px; display: flex; flex-direction: column; gap: 6px;">
+                  <li>Go to your <strong>Google Account</strong> settings.</li>
+                  <li>Select <strong>Security</strong>, turn on <strong>2-Step Verification</strong>.</li>
+                  <li>Click on <strong>App Passwords</strong>.</li>
+                  <li>Select <strong>Mail</strong> and generate a password.</li>
+                  <li>Copy the 16-character code and paste it here.</li>
+                </ol>
+              </div>
+
+              <div id="oauth-help-text" style="font-size: 13px; line-height: 1.6; color: var(--text-muted); display: none; flex-direction: column; gap: 12px;">
+                <p><strong>Google OAuth2 Setup:</strong></p>
+                <ol style="margin-left: 18px; display: flex; flex-direction: column; gap: 6px;">
+                  <li>Go to <strong>Google Cloud Console</strong>.</li>
+                  <li>Create a project and enable the <strong>Gmail API</strong>.</li>
+                  <li>Configure the OAuth Consent Screen (External/Internal) and add scope: <code>https://www.googleapis.com/auth/gmail.send</code>.</li>
+                  <li>Go to Credentials, click <strong>Create Credentials</strong> -> <strong>OAuth client ID</strong> (Web Application).</li>
+                  <li>Add the <strong>Google Redirect URI</strong> shown on the left to your Authorized Redirect URIs.</li>
+                  <li>Click <strong>Connect Gmail Account</strong> to securely authorize and link your Google Account.</li>
+                </ol>
+              </div>
+            </div>
+            
+          </div>
+        </section>
+        
+      </div>
+    </main>
+  </div>
+
+  <!-- Edit Service Drawer -->
+  <div class="drawer-overlay" id="edit-service-drawer-overlay"></div>
+  <div class="drawer" id="edit-service-drawer">
+    <div class="drawer-header">
+      <div>
+        <h3>Edit Service Offering</h3>
+        <p class="text-muted">Modify service details live in the database and RAG context.</p>
+      </div>
+      <button class="btn-close" id="close-edit-drawer-btn">
+        <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+      </button>
+    </div>
+    <div class="drawer-content">
+      <form id="edit-service-form">
+        <input type="hidden" id="edit-service-id">
+        <div class="form-group">
+          <label for="edit-service-name">Service Name</label>
+          <input type="text" id="edit-service-name" class="form-input" required>
+        </div>
+        
+        <div class="form-group mt-4">
+          <label for="edit-service-desc">Description</label>
+          <textarea id="edit-service-desc" rows="4" class="form-input" required></textarea>
+        </div>
+        
+        <div class="form-group mt-4">
+          <label for="edit-service-price">Price Range</label>
+          <input type="text" id="edit-service-price" class="form-input" placeholder="e.g. $49-69" required>
+        </div>
+        
+        <div class="form-group mt-4">
+          <label for="edit-service-duration">Duration (Minutes)</label>
+          <input type="number" id="edit-service-duration" class="form-input" placeholder="e.g. 30" required>
+        </div>
+
+        <div class="form-group mt-4">
+          <label>Required Intake Fields</label>
+          <div class="checkbox-group" style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
+            <label class="checkbox-item">
+              <input type="checkbox" id="edit-service-req-customer-name">
+              <span>Customer Name</span>
+            </label>
+            <label class="checkbox-item">
+              <input type="checkbox" id="edit-service-req-phone-number">
+              <span>Phone Number</span>
+            </label>
+            <label class="checkbox-item">
+              <input type="checkbox" id="edit-service-req-vehicle-details">
+              <span>Vehicle Details</span>
+            </label>
+            <label class="checkbox-item">
+              <input type="checkbox" id="edit-service-req-issue-description">
+              <span>Issue Description</span>
+            </label>
+            <label class="checkbox-item">
+              <input type="checkbox" id="edit-service-req-location">
+              <span>Location</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-actions mt-6" style="gap: 12px; display: flex; justify-content: flex-end;">
+          <button type="button" class="btn btn-secondary" id="cancel-edit-btn">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Detailed Transcript Drawer / Modal -->
+  <div class="drawer-overlay" id="transcript-drawer-overlay"></div>
+  <div class="drawer" id="transcript-drawer">
+    <div class="drawer-header">
+      <div>
+        <h3 id="drawer-customer-name">Customer Call Details</h3>
+        <p class="text-muted" id="drawer-call-meta">Call ID: CA12345 • Phone: --</p>
+      </div>
+      <button class="btn-close" id="close-drawer-btn">
+        <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+      </button>
+    </div>
+    <div class="drawer-content">
+      <div class="drawer-section">
+        <h4>AI Transcript Summary</h4>
+        <div class="summary-box" id="drawer-summary-box">
+          Loading summary...
+        </div>
+      </div>
+      
+      <div class="drawer-section mt-6">
+        <h4>Call Transcript</h4>
+        <div class="transcript-timeline" id="drawer-transcript-timeline">
+          <!-- Transcripts are added dynamically -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- View Document Drawer -->
+  <div class="drawer-overlay" id="document-drawer-overlay"></div>
+  <div class="drawer" id="document-drawer">
+    <div class="drawer-header">
+      <div>
+        <h3 id="document-drawer-title">Document Content</h3>
+        <p class="text-muted" id="document-drawer-meta">Filename: --</p>
+      </div>
+      <button class="btn-close" id="close-document-drawer-btn">
+        <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+      </button>
+    </div>
+    <div class="drawer-content">
+      <pre id="document-drawer-body" style="white-space: pre-wrap; font-family: monospace; background: var(--bg-sidebar); padding: 16px; border-radius: 8px; border: 1px solid var(--border-card); overflow-y: auto; max-height: calc(100vh - 200px); color: var(--text-main); font-size: 14px; line-height: 1.5;"></pre>
+    </div>
+  </div>
+  <!-- Toast Notification -->
+  <div class="toast" id="app-toast">Action completed successfully</div>
+
+  <!-- Javascript Logic -->
+  <script src="app.js?v=13"></script>
+</body>
+</html>

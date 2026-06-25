@@ -1,0 +1,10 @@
+t=2026-06-09T10:18:29-0400 lvl=info msg="no configuration paths supplied"
+t=2026-06-09T10:18:29-0400 lvl=info msg="using configuration at default config path" path="/Users/rohanroy/Library/Application Support/ngrok/ngrok.yml"
+t=2026-06-09T10:18:29-0400 lvl=info msg="open config file" path="/Users/rohanroy/Library/Application Support/ngrok/ngrok.yml" err=nil
+t=2026-06-09T10:18:29-0400 lvl=info msg="starting web service" obj=web addr=127.0.0.1:4040 allow_hosts=[]
+t=2026-06-09T10:18:29-0400 lvl=eror msg="failed to reconnect session" obj=tunnels.session err="failed to dial ngrok server with address \"connect.ngrok-agent.com:443\": Non-200 response from proxy server: 403 Forbidden"
+t=2026-06-09T10:18:29-0400 lvl=warn msg="failed to check for update" obj=updater err="Post \"https://update.equinox.io/check\": Non-200 response from proxy server: 403 Forbidden"
+t=2026-06-09T10:18:29-0400 lvl=eror msg="failed to reconnect session" obj=tunnels.session err="failed to dial ngrok server with address \"connect.ngrok-agent.com:443\": Non-200 response from proxy server: 403 Forbidden"
+t=2026-06-09T10:18:30-0400 lvl=eror msg="failed to reconnect session" obj=tunnels.session err="failed to dial ngrok server with address \"connect.ngrok-agent.com:443\": Non-200 response from proxy server: 403 Forbidden"
+t=2026-06-09T10:18:32-0400 lvl=eror msg="failed to reconnect session" obj=tunnels.session err="failed to dial ngrok server with address \"connect.ngrok-agent.com:443\": Non-200 response from proxy server: 403 Forbidden"
+t=2026-06-09T10:18:36-0400 lvl=eror msg="failed to reconnect session" obj=tunnels.session err="failed to dial ngrok server with address \"connect.ngrok-agent.com:443\": Non-200 response from proxy server: 403 Forbidden"
