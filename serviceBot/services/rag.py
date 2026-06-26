@@ -46,14 +46,15 @@ class FAQService:
             from serviceBot.db.connection import get_db_connection
             with get_db_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT name, description, price_range FROM services")
+                cursor.execute("SELECT name, description, price_range, duration_minutes FROM services")
                 rows = cursor.fetchall()
                 if rows:
                     db_services = []
                     for row in rows:
                         desc = f" ({row['description']})" if row['description'] else ""
                         price = f" - Price: {row['price_range']}" if row['price_range'] else ""
-                        db_services.append(f"- {row['name']}{desc}{price}")
+                        duration = f" - Duration: {row['duration_minutes']} minutes" if row['duration_minutes'] else ""
+                        db_services.append(f"- {row['name']}{desc}{price}{duration}")
                     services_context = "Actual Available Services (from the live service catalog):\n" + "\n".join(db_services)
                     context_snippets.insert(0, services_context)
         except Exception:

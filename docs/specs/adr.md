@@ -72,15 +72,17 @@ We will use **Option A1** (Voice-first menu selection) to handle selection flows
 
 ---
 
-## ADR 6: Google Calendar Integration (MVP)
+## ADR 6: Google Calendar & OAuth Integration
 
 ### Context
-The appointment agent needs to check availability and book calendar slots.
+The appointment agent needs to check availability and book calendar slots against real-time staff schedules. Staff members may also manage their own calendars independently.
 
 ### Decision
-For the MVP, we will use **Mock Calendar data stored in SQLite** that can be read, written, and edited via the Configuration Portal. 
-*   This removes the Google OAuth credential setup barrier for initial local deployment.
-*   Real Google Calendar integration (via Service Account JSON key) will be deferred to post-MVP.
+We will support **Agent-level OAuth 2.0 Google Calendar integration**:
+* Individual staff members can connect their Google Calendar accounts via OAuth.
+* The system queries live free/busy schedules directly from the Google Calendar API when callers check availability, falling back to SQLite mock calendar slots.
+* Newly booked appointments automatically insert events into the agent's Google Calendar with write scope.
+* A background thread loops periodically to refresh agent slots and keep the local DB database in sync.
 
 ---
 
@@ -93,3 +95,16 @@ The configuration portal allows the business to choose between OpenAI (GPT-4) an
 We will use **Option C1: Configured ElevenLabs Agent IDs**.
 *   We will set up separate ElevenLabs Agent IDs (pre-configured in the ElevenLabs dashboard with the target model and voice).
 *   FastAPI will select and return the appropriate `Agent ID` in the Twilio `<Connect>` TwiML response based on the portal's active configuration.
+
+---
+
+## ADR 8: Email & Gmail Notification Integration
+
+### Context
+Businesses need automatic email confirmations sent to both customers and team members when appointments are booked, rescheduled, or callbacks are requested.
+
+### Decision
+We will implement a hybrid **Gmail Integration system**:
+* **App Passwords / SMTP**: Standard SMTP connection with STARTTLS for quick setup using a generic/shared account.
+* **OAuth 2.0 Gmail REST API**: Secure OAuth flow allowing the system (or individual connected agents) to send highly formatted HTML notifications directly through Google's Gmail API.
+* All configuration details are stored in the configuration portal with password fields encrypted using AES-256.

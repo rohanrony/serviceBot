@@ -13,6 +13,9 @@ erDiagram
     CUSTOMERS ||--o{ CRM_NOTES : has
     VEHICLES ||--o{ SERVICE_REQUESTS : service_history
     STAFF_AGENTS ||--o{ MOCK_CALENDAR_SLOTS : schedules
+    STAFF_AGENTS ||--o| USER_GOOGLE_ACCOUNTS : authenticates
+    STAFF_AGENTS ||--o{ OAUTH_STATES : initiates
+    STAFF_AGENTS ||--o{ SERVICE_REQUESTS : handles
 
     CUSTOMERS {
         INTEGER id PK
@@ -42,6 +45,7 @@ erDiagram
         VARCHAR time_slot
         VARCHAR booking_type "appointment | callback | NULL"
         VARCHAR booking_time "datetime | ASAP | NULL"
+        INTEGER staff_agent_id FK "nullable"
         TIMESTAMP created_at
         TIMESTAMP updated_at
     }
@@ -59,6 +63,10 @@ erDiagram
         INTEGER id PK
         VARCHAR name
         VARCHAR role
+        VARCHAR email
+        TEXT google_access_token
+        TEXT google_refresh_token
+        REAL google_token_expires_at
     }
 
     MOCK_CALENDAR_SLOTS {
@@ -80,6 +88,25 @@ erDiagram
         BOOLEAN req_vehicle_details
         BOOLEAN req_issue_description
         BOOLEAN req_location
+    }
+
+    USER_GOOGLE_ACCOUNTS {
+        INTEGER agent_id PK
+        VARCHAR provider
+        VARCHAR google_account_id
+        VARCHAR email
+        TEXT access_token
+        TEXT refresh_token
+        REAL expires_at
+        TEXT granted_scopes
+        REAL last_refresh_time
+    }
+
+    OAUTH_STATES {
+        VARCHAR state PK
+        INTEGER agent_id FK
+        VARCHAR action_type
+        TIMESTAMP created_at
     }
 ```
 
@@ -131,6 +158,7 @@ CREATE TABLE IF NOT EXISTS service_requests (
     time_slot VARCHAR(100) DEFAULT NULL,
     booking_type VARCHAR(50) DEFAULT NULL CHECK (booking_type IN ('appointment', 'callback')),
     booking_time VARCHAR(100) DEFAULT NULL,
+    staff_agent_id INTEGER DEFAULT NULL REFERENCES staff_agents(id) ON DELETE SET NULL,
     FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE RESTRICT,
     FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE RESTRICT
 );
@@ -156,7 +184,11 @@ CREATE INDEX IF NOT EXISTS idx_crm_notes_customer ON crm_notes(customer_id);
 CREATE TABLE IF NOT EXISTS staff_agents (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name VARCHAR(255) NOT NULL,
-    role VARCHAR(100) DEFAULT NULL
+    role VARCHAR(100) DEFAULT NULL,
+    email VARCHAR(255) DEFAULT NULL,
+    google_access_token TEXT DEFAULT NULL,
+    google_refresh_token TEXT DEFAULT NULL,
+    google_token_expires_at REAL DEFAULT NULL
 );
 
 -- 6. Mock Calendar Slots Table (Associated with Staff Agents)
@@ -185,6 +217,29 @@ CREATE TABLE IF NOT EXISTS services (
     req_vehicle_details BOOLEAN DEFAULT 1,
     req_issue_description BOOLEAN DEFAULT 1,
     req_location BOOLEAN DEFAULT 1
+);
+
+-- 8. User Google Accounts Table (Agent Calendar & Email Auth)
+CREATE TABLE IF NOT EXISTS user_google_accounts (
+    agent_id INTEGER PRIMARY KEY,
+    provider VARCHAR(50) NOT NULL DEFAULT 'google',
+    google_account_id VARCHAR(255) DEFAULT NULL,
+    email VARCHAR(255) DEFAULT NULL,
+    access_token TEXT DEFAULT NULL,
+    refresh_token TEXT DEFAULT NULL,
+    expires_at REAL DEFAULT NULL,
+    granted_scopes TEXT DEFAULT NULL,
+    last_refresh_time REAL DEFAULT NULL,
+    FOREIGN KEY (agent_id) REFERENCES staff_agents(id) ON DELETE CASCADE
+);
+
+-- 9. OAuth States Table (CSRF Protection for OAuth callbacks)
+CREATE TABLE IF NOT EXISTS oauth_states (
+    state VARCHAR(255) PRIMARY KEY,
+    agent_id INTEGER NOT NULL,
+    action_type VARCHAR(50) NOT NULL, -- 'calendar' or 'gmail'
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (agent_id) REFERENCES staff_agents(id) ON DELETE CASCADE
 );
 ```
 

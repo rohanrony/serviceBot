@@ -190,6 +190,26 @@ Triggers immediate handoff to a human representative, generating a brief transcr
   }
   ```
 
+##### 6. `request_callback`
+Registers a callback request when the customer prefers a phone callback over scheduling a live appointment.
+* **Arguments:**
+  - `customer_name` / `name` (string)
+  - `phone` (string)
+  - `service_type` (string)
+  - `make` (string)
+  - `model` (string)
+  - `year` (integer)
+  - `issue_description` (string)
+  - `preferred_time` (string)
+* **Response Result:**
+  ```json
+  {
+    "success": true,
+    "callback_id": 15,
+    "message": "Callback request registered successfully."
+  }
+  ```
+
 ---
 
 ## 2. Portal REST APIs (Business Configuration)
@@ -358,9 +378,9 @@ Triggers immediate handoff to a human representative, generating a brief transcr
 
 ---
 
-### 2.4 Staff Calendars & Booking Slots
+### 2.4 Staff Agents & Calendars
 
-#### List Available Staff Agents
+#### List Available Staff Agents (including Google Calendar connection status)
 * **Endpoint:** `GET /api/v1/portal/agents`
 * **Response (200 OK):**
   ```json
@@ -368,12 +388,80 @@ Triggers immediate handoff to a human representative, generating a brief transcr
     {
       "id": 1,
       "name": "John Doe",
-      "role": "Master Mechanic"
+      "role": "Master Mechanic",
+      "email": "john@example.com",
+      "is_connected": true
     }
   ]
   ```
 
-#### Fetch Calendar for Specific Staff
+#### Create a Staff Agent
+* **Endpoint:** `POST /api/v1/portal/agents`
+* **Request Payload:**
+  ```json
+  {
+    "name": "Alice Williams",
+    "role": "Technician",
+    "email": "alice.w@example.com"
+  }
+  ```
+* **Response (201 Created):**
+  ```json
+  {
+    "id": 4,
+    "name": "Alice Williams",
+    "success": true
+  }
+  ```
+
+#### Delete a Staff Agent
+* **Endpoint:** `DELETE /api/v1/portal/agents/{agent_id}`
+* **Response (200 OK):**
+  ```json
+  {
+    "success": true
+  }
+  ```
+
+#### Get Agent Google OAuth URL
+Generates the Google OAuth consent URL to authorize calendar and/or email scopes for a specific agent.
+* **Endpoint:** `GET /api/v1/portal/agents/{agent_id}/google/auth-url`
+* **Query Parameters:**
+  - `action` (optional, `"calendar"` or `"gmail"`, default `"calendar"`)
+* **Response (200 OK):**
+  ```json
+  {
+    "auth_url": "https://accounts.google.com/o/oauth2/v2/auth?...",
+    "redirect_uri": "http://localhost:8000/api/v1/portal/gmail/oauth/callback"
+  }
+  ```
+
+#### Get Agent Google Connection Status
+* **Endpoint:** `GET /api/v1/portal/agents/{agent_id}/google/status`
+* **Response (200 OK):**
+  ```json
+  {
+    "is_connected": true,
+    "email": "john@example.com",
+    "scopes": [
+      "openid",
+      "email",
+      "profile",
+      "https://www.googleapis.com/auth/calendar.events"
+    ]
+  }
+  ```
+
+#### Disconnect Agent Google Account
+* **Endpoint:** `POST /api/v1/portal/agents/{agent_id}/google/disconnect`
+* **Response (200 OK):**
+  ```json
+  {
+    "success": true
+  }
+  ```
+
+#### Fetch Calendar Slots for Specific Staff
 * **Endpoint:** `GET /api/v1/portal/agents/{agent_id}/calendar`
 * **Response (200 OK):**
   ```json
@@ -433,13 +521,110 @@ Triggers immediate handoff to a human representative, generating a brief transcr
   }
   ```
 
+#### Populate Agent Availability Slots
+Generates weekday (Mon-Fri) business hours slots. If the agent has Google Calendar connected, slots are auto-checked against the Google Calendar free/busy API, and busy slots are marked as booked.
+* **Endpoint:** `POST /api/v1/portal/agents/{agent_id}/calendar/populate`
+* **Request Payload:**
+  ```json
+  {
+    "days": 30,
+    "hours": [9, 11, 14, 16]
+  }
+  ```
+* **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "agent_id": 1,
+    "slots_created": 20,
+    "slots_blocked_by_calendar": 3,
+    "total_candidates": 24,
+    "free_estimate": 17,
+    "message": "Created 20 new slots. 3 marked busy from live Google Calendar..."
+  }
+  ```
+
+#### Trigger Full Connected Agent Calendar Sync
+Refreshes and syncs all connected Google Calendar schedules into SQLite calendar slots.
+* **Endpoint:** `POST /api/v1/portal/calendar/sync-all`
+* **Query Parameters:** `days` (optional, default 30)
+* **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "agents_synced": ["John Doe"],
+    "total_new_slots": 2,
+    "details": {
+      "John Doe": {
+        "created": 2,
+        "blocked": 1,
+        "total": 4,
+        "free_estimate": 3
+      }
+    }
+  }
+  ```
+
 ---
 
-### 2.5 ElevenLabs Platform Integration
+### 2.5 Gmail & SMTP Email Configuration
+
+#### Fetch Gmail Settings Config
+* **Endpoint:** `GET /api/v1/portal/gmail-config`
+* **Response (200 OK):**
+  ```json
+  {
+    "gmail_enabled": true,
+    "gmail_auth_type": "oauth2",
+    "gmail_sender": "business@gmail.com",
+    "gmail_recipient": "alerts@business.com",
+    "gmail_smtp_server": "smtp.gmail.com",
+    "gmail_smtp_port": 587,
+    "has_password": true,
+    "gmail_client_id": "google-client-id-here",
+    "has_client_secret": true,
+    "is_connected": true
+  }
+  ```
+
+#### Save Gmail Settings Config
+* **Endpoint:** `POST /api/v1/portal/gmail-config`
+* **Request Payload:** Same structure as configuration output (sensitive parameters like password/secret are stored encrypted with AES-256).
+* **Response (200 OK):**
+  ```json
+  {
+    "success": true
+  }
+  ```
+
+#### Get System Gmail OAuth URL
+* **Endpoint:** `GET /api/v1/portal/gmail/oauth/auth-url`
+* **Response (200 OK):**
+  ```json
+  {
+    "auth_url": "https://accounts.google.com/o/oauth2/v2/auth?...",
+    "redirect_uri": "http://localhost:8000/api/v1/portal/gmail/oauth/callback"
+  }
+  ```
+
+#### Test Email Configuration
+Attempts to send a premium HTML test email using the active configuration.
+* **Endpoint:** `POST /api/v1/portal/gmail-config/test`
+* **Request Payload:** Same as GmailConfigPayload
+* **Response (200 OK):**
+  ```json
+  {
+    "success": true
+  }
+  ```
+
+---
+
+### 2.6 ElevenLabs Platform Integration
 
 #### Fetch Voices List
 * **Endpoint:** `GET /api/v1/portal/elevenlabs/voices`
-* **Headers:** XI-API-Key (read from server settings)
+* **Headers:** `xi-api-key` (read from server settings)
 * **Response:** Pass-through JSON payload from ElevenLabs `/v1/voices` endpoint.
 
 #### Update ElevenLabs Agent Configuration
@@ -448,7 +633,8 @@ Triggers immediate handoff to a human representative, generating a brief transcr
   ```json
   {
     "voice_id": "21m00Tcm4TlvDq8ikWAM",
-    "model": "gemini-1.5-flash"
+    "model": "gemini-1.5-flash",
+    "prompt": "Custom combined prompt text..."
   }
   ```
 * **Response (200 OK):**
@@ -464,7 +650,7 @@ Triggers immediate handoff to a human representative, generating a brief transcr
 
 ---
 
-### 2.6 Call Summary Logs
+### 2.7 Business Log Collections & Dashboard Stats
 
 #### Fetch Call Logs (Joined with Customer profile)
 * **Endpoint:** `GET /api/v1/portal/calls`
@@ -483,6 +669,93 @@ Triggers immediate handoff to a human representative, generating a brief transcr
   ]
   ```
 
+#### Fetch Active Appointments
+* **Endpoint:** `GET /api/v1/portal/appointments`
+* **Response (200 OK):**
+  ```json
+  [
+    {
+      "id": 12,
+      "appointment_datetime": "2026-06-12 15:00:00",
+      "service_type": "Oil Change",
+      "status": "pending",
+      "created_at": "2026-06-11T12:00:00Z",
+      "customer_name": "Sarah Johnson",
+      "phone": "5551234567",
+      "make": "Honda",
+      "model": "Civic",
+      "year": 2020
+    }
+  ]
+  ```
+
+#### Fetch All Service Requests
+* **Endpoint:** `GET /api/v1/portal/service-requests`
+* **Response (200 OK):**
+  ```json
+  [
+    {
+      "id": 12,
+      "service_type": "Oil Change",
+      "issue_description": "Car due for 5k oil service",
+      "status": "pending",
+      "time_slot": null,
+      "booking_type": "appointment",
+      "booking_time": "2026-06-12 15:00:00",
+      "created_at": "...",
+      "customer_name": "Sarah Johnson",
+      "phone": "5551234567",
+      "make": "Honda",
+      "model": "Civic",
+      "year": 2020
+    }
+  ]
+  ```
+
+#### Fetch Callback Requests
+* **Endpoint:** `GET /api/v1/portal/callbacks`
+* **Response (200 OK):**
+  ```json
+  [
+    {
+      "id": 15,
+      "status": "pending",
+      "created_at": "...",
+      "preferred_time": "Today at 4 PM",
+      "customer_name": "Sarah Johnson",
+      "phone": "5551234567",
+      "service_type": "Brake repair",
+      "issue_description": "Grinding noise",
+      "make": "Honda",
+      "model": "Civic",
+      "year": 2020
+    }
+  ]
+  ```
+
+#### Fetch Portal Dashboard Stats
+* **Endpoint:** `GET /api/v1/portal/stats`
+* **Response (200 OK):**
+  ```json
+  {
+    "total_calls": 24,
+    "total_appointments": 14,
+    "total_requests": 19,
+    "open_slots": 8,
+    "total_callbacks": 5
+  }
+  ```
+
+#### Trigger Manual Database Re-Seeding
+* **Endpoint:** `POST /api/v1/portal/seed`
+* **Response (200 OK):**
+  ```json
+  {
+    "success": true,
+    "message": "Database seeded successfully via API"
+  }
+  ```
+
 ---
 
 ## 3. Frontend Static Routing
@@ -496,3 +769,4 @@ To serve the Business Configuration Portal, the FastAPI application mounts a sta
     - `/portal` or `/portal/index.html` -> Serves HTML Dashboard
     - `/portal/style.css` -> Serves stylesheet
     - `/portal/app.js` -> Serves frontend Javascript logics
+
