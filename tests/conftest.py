@@ -1,6 +1,9 @@
 import os
 import pytest
 import shutil
+import sys
+
+sys.dont_write_bytecode = True
 
 # Force DATABASE_URL to use a separate database for tests
 os.environ["DATABASE_URL"] = "/Users/rohanroy/.gemini/antigravity-ide/scratch/test_voice_service.db"

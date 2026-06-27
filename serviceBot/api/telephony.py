@@ -615,28 +615,14 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                             conn.commit()
                             customer_id = cursor.lastrowid
 
-                    # Ensure vehicle is registered in the database for this customer if it wasn't already
-                    from serviceBot.db.connection import get_db_connection
-                    with get_db_connection() as conn:
-                        cursor = conn.cursor()
-                        cursor.execute(
-                            "SELECT id FROM vehicles WHERE customer_id = ? AND make = ? AND model = ? AND year = ?;",
-                            (customer_id, make, model, year)
-                        )
-                        v_row = cursor.fetchone()
-                        if not v_row:
-                            cursor.execute(
-                                "INSERT INTO vehicles (customer_id, make, model, year) VALUES (?, ?, ?, ?);",
-                                (customer_id, make, model, year)
-                            )
-                            conn.commit()
-
                     try:
+                        vehicle_details = {"make": make, "model": model, "year": year}
                         appt_id = book_appointment(
                             customer_id=customer_id,
                             service_request_id=sr_id,
                             appointment_datetime=appointment_datetime,
-                            service_type=service_type
+                            service_type=service_type,
+                            vehicle_details=vehicle_details
                         )
                         fields = get_service_required_fields(service_type)
                         price_range = fields["price_range"] if fields else "Varies"
@@ -737,22 +723,6 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                             conn.commit()
                             customer_id = cursor.lastrowid
                     
-                    # Ensure vehicle is registered in the database for this customer if it wasn't already
-                    from serviceBot.db.connection import get_db_connection
-                    with get_db_connection() as conn:
-                        cursor = conn.cursor()
-                        cursor.execute(
-                            "SELECT id FROM vehicles WHERE customer_id = ? AND make = ? AND model = ? AND year = ?;",
-                            (customer_id, make, model, year)
-                        )
-                        v_row = cursor.fetchone()
-                        if not v_row:
-                            cursor.execute(
-                                "INSERT INTO vehicles (customer_id, make, model, year) VALUES (?, ?, ?, ?);",
-                                (customer_id, make, model, year)
-                            )
-                            conn.commit()
-                    
                     if not sr_id and any(k in args for k in ["service_type", "issue_description", "make"]):
                         issue_description = args.get("issue_description") or args.get("issue") or "Not specified"
                         service_type = args.get("service_type") or args.get("serviceType") or "Repair"
@@ -766,10 +736,12 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                     
                     try:
                         preferred_time = args.get("preferred_time") or args.get("time_slot") or args.get("time")
+                        vehicle_details = {"make": make, "model": model, "year": year}
                         cb_id = create_callback_request(
                             customer_id=customer_id,
                             service_request_id=sr_id,
-                            preferred_time=preferred_time
+                            preferred_time=preferred_time,
+                            vehicle_details=vehicle_details
                         )
                         result = {
                             "success": True,
@@ -908,6 +880,7 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                     "service_name": fields_data["name"],
                     "description": fields_data["description"],
                     "price_range": fields_data["price_range"],
+                    "duration_minutes": fields_data["duration_minutes"],
                     "required_fields": {
                         "customer_name": bool(fields_data["req_customer_name"]),
                         "phone_number": bool(fields_data["req_phone_number"]),

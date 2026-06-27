@@ -85,18 +85,24 @@ Responsible for capturing caller information, vehicle metadata, and issue descri
 * **System Prompt:** Loaded from `prompts.service_request` key in `config.json`.
 * **Dynamic Validation Behavior:** 
   - On invocation, the node scans the conversation history to check if the caller mentions any service name matching a catalog entry in the `services` database table.
-  - If a service name match is detected, the node retrieves that specific service's requirement flags (`req_customer_name`, `req_phone_number`, `req_vehicle_details`, `req_issue_description`, `req_location`) from the database. These override the default system configurations.
+  - The service name is resolved using a alphanumeric token Jaccard similarity matcher (`find_best_service_match`). If a match has a similarity score >= 0.25, the node retrieves that specific service's required flags (`req_customer_name`, `req_phone_number`, `req_vehicle_details`, `req_issue_description`, `req_location`) and its `duration_minutes`. These override the default system configurations.
   - If no service matches, it falls back to the default required fields configured in the portal configurations.
   - Required fields are gathered sequentially. If any required fields (e.g. customer name, vehicle details, or location) are missing, the node triggers the LLM to ask follow-up questions for the missing values.
 * **Function Calls/DB Queries:**
-  - Invokes `create_service_request(customer_id, vehicle_details, issue)` to save new request ticket when all required fields are present.
+  - Invokes `create_service_request(customer_id, vehicle_details, issue, service_type, time_slot)` where `vehicle_details` is a dictionary (`{"make": make, "model": model, "year": year}`) to register the auto ticket. The database layer automatically handles registering or matching the customer's vehicle details.
 
 ### 3.3 Appointment Booking Node (`appointment`)
 Manages availability lookups and schedules calendar slots.
 * **System Prompt:** Loaded from `prompts.appointment` key in `config.json`.
 * **Exposed Tools (Bound to LLM):**
-  - `check_availability_tool(preferred_date)`: Queries unbooked calendar slots on or after preferred date from SQLite table `mock_calendar_slots`.
-  - `book_appointment_tool(appointment_datetime)`: Books appointment in the database and updates slot state to `is_booked = 1`.
+  - `check_availability_tool(preferred_date)`: Checks slot availability in one of two modes:
+    1. **Mock-slot mode**: If `mock_calendar_slots` rows exist in the DB, it uses them as candidate slots, and queries the Google Calendar API concurrently (using a ThreadPoolExecutor) for all connected agents to filter out overlapping events.
+    2. **Live/dynamic mode**: If mock slots are empty, it dynamically generates candidate business-hour slots for the next 14 business days (Mon-Fri, 9AM/11AM/2PM/4PM) and checks them against the real-time Google Calendar of each connected agent.
+    - Returns up to 3 available datetime strings (YYYY-MM-DD HH:MM:SS).
+  - `book_appointment_tool(appointment_datetime, phone, customer_name, make, model, year, service_type)`: Books an appointment and links it to the active service request. It resolves or inserts the vehicle metadata and assigns the slot in the database and agent's Google Calendar. It supports two modes:
+    1. **Mock-slot mode**: Marks a slot in `mock_calendar_slots` as booked, and creates a Google Calendar event for the assigned agent.
+    2. **Live/dynamic mode**: Picks any connected agent who is free, creates the Google Calendar event directly, and records the booking in `service_requests` (no mock slot row updated).
+    - Automatically triggers a Gmail notification (SMTP or OAuth 2.0) with details.
 
 ### 3.4 FAQ Node (`faq`)
 Performs RAG search to answer caller questions.

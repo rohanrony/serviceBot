@@ -102,8 +102,9 @@ def test_appointment_booking_triggers_email(mock_send_email):
             VALUES (30, 15, 5, 'Brakes', 'Grinding noise', 'pending')
         """)
         # Seed staff agent
-        cursor.execute("DELETE FROM staff_agents WHERE id = 1")
-        cursor.execute("INSERT INTO staff_agents (id, name, role, email) VALUES (1, 'John Doe', 'Advisor', 'john@example.com')")
+        cursor.execute("UPDATE staff_agents SET email = 'john@example.com' WHERE id = 1;")
+        cursor.execute("INSERT OR IGNORE INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES ('2026-06-25 14:00:00', 0, 1);")
+        cursor.execute("INSERT OR IGNORE INTO services (id, name, description, price_range, duration_minutes) VALUES (2, 'Brake Service & Repair', 'Brake inspection and repair', '$199-450 per axle', 90);")
         conn.commit()
 
     payload = {
@@ -130,6 +131,12 @@ def test_appointment_booking_triggers_email(mock_send_email):
     assert details["vehicle"] == "2018 Honda Civic"
     assert details["service_type"] == "Brake Service & Repair"
     assert details["time"] == "2026-06-25 14:00:00"
+
+    # Clean up the inserted service to avoid side effects
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM services WHERE name = 'Brake Service & Repair';")
+        conn.commit()
 
 @patch("serviceBot.services.encryption.decrypt_key")
 def test_get_gmail_oauth_url_endpoint(mock_decrypt):

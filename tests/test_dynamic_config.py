@@ -240,7 +240,7 @@ def test_service_specific_required_location():
         assert "location" in final_state["messages"][-1].content
 
 def test_view_kb_file_endpoint():
-    KB_DIR = "kb_documents"
+    from serviceBot.api.portal import KB_DIR
     os.makedirs(KB_DIR, exist_ok=True)
     filename = "test_view_doc.txt"
     file_path = os.path.join(KB_DIR, filename)

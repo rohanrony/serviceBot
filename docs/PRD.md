@@ -4,11 +4,11 @@
 
 ### **1.1 Executive Summary**
 
-VoiceAI is an AI-powered inbound call handling platform for small-to-medium service businesses (SMBs) designed to solve the problem of lost revenue from missed calls and high front-desk operational overhead. By replacing rigid traditional IVR menus with a sub-second latency, multi-agent conversational assistant, VoiceAI automates call triage, intake, and calendar bookings, resulting in 100% call coverage, a 40-60% reduction in support costs, and seamless human handoff with full conversation context.
+VoiceAI is an AI-powered inbound call handling platform for small-to-medium service businesses (SMBs) designed to solve the problem of lost revenue from missed calls and high front-desk operational overhead. By replacing rigid traditional IVR menus with a sub-second latency, multi-agent conversational assistant, VoiceAI automates call triage, intake, calendar bookings, and email notifications. The platform features agent-level Google Calendar OAuth integrations for live schedule checking and Gmail integrations (OAuth/SMTP) for automatic customer and staff alerts, resulting in 100% call coverage, a 40-60% reduction in support costs, and seamless human handoff with full context.
 
 ### **1.2 What We're Building**
 
-An AI-powered inbound call handling platform (like Retell AI) that enables businesses to automate customer service and appointment booking for phone calls. The system uses conversational AI to understand intent, capture information, perform actions (CRM updates, calendar bookings), and handoff to humans when needed.
+An AI-powered inbound call handling platform (like Retell AI) that enables businesses to automate customer service, fuzzy catalog matching, appointment booking, and email alerts for phone calls. The system uses conversational AI to understand intent, capture customer/vehicle information, perform actions (database/CRM updates, live Google Calendar bookings, automated Gmail notifications), and handoff to humans when needed.
 
 ### **1.3 Problem Statement**
 
@@ -157,16 +157,14 @@ An AI-powered inbound call handling platform (like Retell AI) that enables busin
 4. AI: (Pre-call CRM lookup → customer not found) "Thanks, Sarah. Let me capture your info."
    - "What's your full name?" → "Sarah Johnson"
    - "Phone number?" → "555-123-4567"
-   - "Vehicle make?" → "Honda"
-   - "Model?" → "Civic"
-   - "Year?" → "2020"
-   - "Service type?" → "Brake repair"
+   - "Vehicle details (Year, Make, Model)?" → "2020 Honda Civic"
+   - "Service type?" → "Brake repair" (Fuzzy matched to 'Brake Repair' catalog entry)
    - "Describe issue?" → "Grinding noise when I stop, started 3 days ago"
-5. AI: (Creates SR → ID: 12345) "Service request created (ID: 12345). Would you like to book an appointment?"
+5. AI: (Creates SR & registers/resolves vehicle in DB → ID: 12345) "Service request created (ID: 12345). Would you like to book an appointment?"
 6. Customer: "Yes, next Tuesday afternoon"
-7. AI: (Checks calendar → offers slots) "Available: Tuesday 2PM, 4PM, or Wednesday 10AM. Which works?"
+7. AI: (Checks calendar availability via live Google Calendar/mock slots → offers slots) "Available: Tuesday 2PM, 4PM, or Wednesday 10AM. Which works?"
 8. Customer: "Tuesday 4PM"
-9. AI: (Books appointment → ID: 6789) "Appointment booked for Tuesday, June 10 at 4PM. Confirmation sent to your phone."
+9. AI: (Books appointment → ID: 6789. Blocks slot in mock DB + creates event on assigned agent's Google Calendar. Triggers automated Gmail notification to staff and customer) "Appointment booked for Tuesday, June 10 at 4PM. Confirmation sent to your email."
 10. AI: "Anything else I can help with?"
 11. Customer: "No, thanks"
 12. AI: (Post-call summary → CRM) "Call complete. Thanks for calling!"
@@ -176,7 +174,7 @@ An AI-powered inbound call handling platform (like Retell AI) that enables busin
 
 - Complete SR captured in <3 minutes
 - Appointment booked with 2 slot options offered
-- SMS confirmation sent automatically
+- SMS/Email confirmation sent automatically
 - No human needed
 
 
@@ -239,12 +237,15 @@ An AI-powered inbound call handling platform (like Retell AI) that enables busin
 | **FR-2.4** | Update existing SR with additional notes | P0 |
 | **FR-2.5** | Lookup SR status by phone number or SR ID | P0 |
 | **FR-2.6** | Ask if user wants to book appointment after SR creation | P0 |
+| **FR-2.7** | Automatically resolve and register vehicle make, model, and year in the database, with fallbacks to default values if not provided. | P0 |
+| **FR-2.8** | Match user-mentioned service names to the catalog using fuzzy similarity metrics (Jaccard token matching). | P0 |
 
 **Acceptance Criteria:**
 
 - All required fields captured in natural conversation flow
 - SR created in <2 seconds
 - Business can configure which fields are required per intent
+- Fuzzy service catalog lookup resolves synonyms and partial queries accurately (Jaccard similarity >= 0.25)
 
 
 #### **FR-3: Appointment Scheduling**
@@ -253,17 +254,19 @@ An AI-powered inbound call handling platform (like Retell AI) that enables busin
 | :-- | :-- | :-- |
 | **FR-3.1** | Check calendar availability for service type + date | P0 |
 | **FR-3.2** | Offer 2-3 specific time slots (not open-ended "what works") | P0 |
-| **FR-3.3** | Book appointment in calendar (Google Calendar API for MVP) | P0 |
+| **FR-3.3** | Book appointment in calendar (Google Calendar API for MVP, with mock DB fallback) | P0 |
 | **FR-3.4** | Reschedule existing appointment | P0 |
 | **FR-3.5** | Cancel appointment | P0 |
-| **FR-3.6** | Send SMS/email confirmation via Twilio | P0 |
+| **FR-3.6** | Send SMS/email confirmation alerts (using Gmail SMTP or OAuth 2.0 REST API) | P0 |
 | **FR-3.7** | Link appointment to service request (optional) | P0 |
+| **FR-3.8** | Perform live checks against multiple connected staff Google Calendars concurrently using ThreadPoolExecutor. | P0 |
 
 **Acceptance Criteria:**
 
 - Availability check returns in <1 second
 - At least 2 slots offered when available
-- Confirmation sent within 5 seconds of booking
+- Confirmation sent via Gmail (SMTP or OAuth) within 5 seconds of booking
+- Concurrent calendar lookups do not block the request loop
 
 
 #### **FR-4: FAQ \& Business Knowledge (RAG)**
@@ -344,20 +347,22 @@ An AI-powered inbound call handling platform (like Retell AI) that enables busin
 | Requirement | Description | Priority |
 | :-- | :-- | :-- |
 | **FR-8.1** | Login/authentication (email + password) | P0 |
-| **FR-8.2** | Dashboard: call stats, recent transcripts, CRM updates | P0 |
+| **FR-8.2** | Dashboard: call stats, recent transcripts, CRM updates, active appointments with vehicle data, callback requests | P0 |
 | **FR-8.3** | Intent Management: add/edit/triggers, required fields | P0 |
-| **FR-8.4** | Service Management: add services (name, description, price, duration) | P0 |
+| **FR-8.4** | Service Management: add services (name, description, price range, duration) | P0 |
 | **FR-8.5** | Knowledge Base: upload PDFs, text files | P0 |
-| **FR-8.6** | API Key Management: OpenAI, Claude, ElevenLabs, Twilio | P0 |
+| **FR-8.6** | API Key Management: encrypted (AES-256) storage for OpenAI, Claude, ElevenLabs, Twilio | P0 |
 | **FR-8.7** | Voice Selection: choose from ElevenLabs voices | P0 |
 | **FR-8.8** | CRM Integration: mock DB (MVP), HubSpot/Salesforce (post-MVP) | P0 |
-| **FR-8.9** | Calendar Integration: Google Calendar (MVP), Outlook (post-MVP) | P0 |
+| **FR-8.9** | Calendar Integration: Google Calendar OAuth 2.0 connection per agent with slot pre-population | P0 |
+| **FR-8.10** | Email Config: Gmail system alerts setup with dual support for SMTP and Google OAuth 2.0 flow | P0 |
 
 **Acceptance Criteria:**
 
 - All configurations saved in <2 seconds
 - Changes live immediately (no deployment)
 - No coding required for any feature
+- Dashboard updates automatically to show incoming call summaries, callback requests, and detailed appointment info
 
 
 ### **5.3 Non-Functional Requirements (P0)**
@@ -664,8 +669,8 @@ AFTER TRANSFER: If human unavailable, offer callback:
 
 ✅ Multi-agent architecture with intent routing (LangGraph)
 ✅ 7 intents: new SR, existing SR, appointment booking/reschedule/cancel, FAQ, human handoff
-✅ Service request creation/update in mock CRM (SQLite)
-✅ Appointment booking/reschedule/cancel via Google Calendar API
+✅ Service request creation/update in mock CRM (SQLite) with auto-resolution of vehicle details (make, model, year)
+✅ Appointment booking/reschedule/cancel via Google Calendar API (live OAuth 2.0 checks + mock slot fallback)
 ✅ RAG-powered FAQ with streaming KB
 ✅ Human handoff with full context (transcript + CRM data)
 ✅ LLM selection: OpenAI GPT-4 vs. Claude 3.5 (user chooses)
@@ -674,6 +679,9 @@ AFTER TRANSFER: If human unavailable, offer callback:
 ✅ Business configuration portal (intents, services, KB, API keys)
 ✅ Twilio + ElevenLabs native integration (10-15 min setup)
 ✅ Post-call summary generation to CRM
+✅ Gmail alerting system with support for SMTP and Google OAuth 2.0
+✅ Fuzzy catalog matching via Jaccard token similarity for service classification
+✅ Dashboard reporting views for call transcripts, active appointments, and callback lists
 
 ### **7.2 MVP Out-of-Scope (P2 - Post-MVP)**
 

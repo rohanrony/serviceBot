@@ -151,15 +151,19 @@ Gathers vehicle details and auto issue to register a service ticket.
 ##### 3. `book_appointment`
 Locks a calendar slot and links it to the active service request.
 * **Arguments:**
-  - `phone` (string)
+  - `phone` (string, validated to be 10 digits)
   - `appointment_datetime` / `appointmentDatetime` / `datetime` (string, format: `YYYY-MM-DD HH:MM:SS`)
   - `service_type` / `serviceType` (string, optional)
+  - `customer_name` / `name` (string, optional, fallback to CRM lookup)
+  - `make` (string, optional, fallback to CRM lookup)
+  - `model` (string, optional, fallback to CRM lookup)
+  - `year` (integer, optional, fallback to CRM lookup)
 * **Response Result:**
   ```json
   {
     "success": true,
     "appointment_id": 42,
-    "message": "Appointment booked successfully."
+    "message": "Appointment booked successfully. The estimated rate for this service is $150-400. Please inform the customer of this rate."
   }
   ```
 
@@ -195,18 +199,79 @@ Registers a callback request when the customer prefers a phone callback over sch
 * **Arguments:**
   - `customer_name` / `name` (string)
   - `phone` (string)
-  - `service_type` (string)
-  - `make` (string)
-  - `model` (string)
-  - `year` (integer)
-  - `issue_description` (string)
-  - `preferred_time` (string)
+  - `service_type` (string, optional)
+  - `make` (string, optional)
+  - `model` (string, optional)
+  - `year` (integer, optional)
+  - `issue_description` (string, optional)
+  - `preferred_time` / `time_slot` / `time` (string, optional)
 * **Response Result:**
   ```json
   {
     "success": true,
     "callback_id": 15,
     "message": "Callback request registered successfully."
+  }
+  ```
+
+##### 7. `get_customer_appointments`
+Looks up active scheduled/rescheduled appointments for a customer by phone number, returning appointment info and vehicle make/model/year.
+* **Arguments:**
+  - `phone` (string)
+* **Response Result:**
+  ```json
+  {
+    "success": true,
+    "appointments": [
+      {
+        "id": 12,
+        "appointment_datetime": "2026-06-12 15:00:00",
+        "service_type": "Oil Change",
+        "status": "pending",
+        "year": 2020,
+        "make": "Honda",
+        "model": "Civic"
+      }
+    ],
+    "message": "Found 1 appointments for phone number 5551234567."
+  }
+  ```
+
+##### 8. `reschedule_appointment`
+Reschedules an existing appointment: frees the old calendar slot, books the new slot, checks live calendar availability, and updates the database record.
+* **Arguments:**
+  - `phone` (string)
+  - `new_appointment_datetime` / `newAppointmentDatetime` / `appointment_datetime` (string)
+  - `appointment_id` (integer, optional, defaults to first active appointment if omitted)
+* **Response Result:**
+  ```json
+  {
+    "success": true,
+    "appointment_id": 12,
+    "message": "Appointment rescheduled to 2026-06-13 10:00:00 successfully."
+  }
+  ```
+
+##### 9. `get_service_fields` / `get_required_fields`
+Looks up a service in the catalog (fuzzy matching supported) and returns its details and required customer intake flags.
+* **Arguments:**
+  - `service_name` / `serviceName` / `service` (string)
+* **Response Result:**
+  ```json
+  {
+    "success": true,
+    "service_found": true,
+    "service_name": "Brake Repair",
+    "description": "Front/Rear brake pad replacement",
+    "price_range": "$150-400",
+    "duration_minutes": 90,
+    "required_fields": {
+      "customer_name": true,
+      "phone_number": true,
+      "vehicle_details": true,
+      "issue_description": true,
+      "location": false
+    }
   }
   ```
 

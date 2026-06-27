@@ -25,7 +25,7 @@ def lookup_customer_by_phone(phone: str) -> dict:
         sr.status AS open_sr_status
     FROM customers c
     LEFT JOIN vehicles v ON c.id = v.customer_id
-    LEFT JOIN service_requests sr ON c.id = sr.customer_id AND sr.status = 'pending'
+    LEFT JOIN service_requests sr ON c.id = sr.customer_id AND sr.status = 'pending' AND sr.booking_type IS NULL
     WHERE c.phone = ? 
        OR c.phone = ? 
        OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(c.phone, '-', ''), ' ', ''), '(', ''), ')', ''), '+1', '') = ?;
@@ -42,6 +42,10 @@ def create_service_request(customer_id: int, vehicle_details: dict, issue: str, 
     """
     Creates a vehicle if it does not exist, and inserts a service request for the customer and vehicle.
     """
+    # Try fuzzy catalog matching for service type
+    fields = get_service_required_fields(service_type)
+    matched_service_name = fields["name"] if fields else service_type
+
     with get_db_connection() as conn:
         cursor = conn.cursor()
         
@@ -63,7 +67,7 @@ def create_service_request(customer_id: int, vehicle_details: dict, issue: str, 
         # Insert service request
         cursor.execute(
             "INSERT INTO service_requests (customer_id, vehicle_id, service_type, issue_description, status, time_slot) VALUES (?, ?, ?, ?, ?, ?);",
-            (customer_id, vehicle_id, service_type, issue, "pending", time_slot)
+            (customer_id, vehicle_id, matched_service_name, issue, "pending", time_slot)
         )
         sr_id = cursor.lastrowid
         return sr_id
@@ -346,7 +350,7 @@ def validate_booking_time(booking_time: str) -> bool:
     return True
 
 
-def book_appointment(customer_id: int, service_request_id: int, appointment_datetime: str, service_type: str) -> int:
+def book_appointment(customer_id: int, service_request_id: int, appointment_datetime: str, service_type: str, vehicle_details: dict = None) -> int:
     """
     Books an appointment and sets staff_agent_id.
 
@@ -363,6 +367,7 @@ def book_appointment(customer_id: int, service_request_id: int, appointment_date
     fields = get_service_required_fields(service_type)
     if not fields:
         raise ValueError(f"Service '{service_type}' is not found in our catalog. Please choose a valid service from the catalog.")
+    matched_service_name = fields["name"]
     
     # 2. Enforce customer and vehicle mandatory checks
     with get_db_connection() as conn:
@@ -378,11 +383,45 @@ def book_appointment(customer_id: int, service_request_id: int, appointment_date
         if not cust["phone"] or cust["phone"] == "Unknown" or len(cust["phone"].strip()) < 10:
             raise ValueError("Customer phone number is required and must be a valid 10-digit number.")
             
-        # Check vehicle details
-        cursor.execute("SELECT make, model, year FROM vehicles WHERE customer_id = ? ORDER BY id DESC LIMIT 1;", (customer_id,))
+        # Resolve vehicle details
+        vehicle_id = None
+        if vehicle_details and vehicle_details.get("make") and vehicle_details.get("make") != "Unknown":
+            cursor.execute(
+                "SELECT id, make, model FROM vehicles WHERE customer_id = ? AND make = ? AND model = ? AND year = ?;",
+                (customer_id, vehicle_details.get("make"), vehicle_details.get("model"), vehicle_details.get("year"))
+            )
+            v_row = cursor.fetchone()
+            if v_row:
+                vehicle_id = v_row["id"]
+            else:
+                cursor.execute(
+                    "INSERT INTO vehicles (customer_id, make, model, year) VALUES (?, ?, ?, ?);",
+                    (customer_id, vehicle_details.get("make"), vehicle_details.get("model"), vehicle_details.get("year"))
+                )
+                vehicle_id = cursor.lastrowid
+        
+        if not vehicle_id:
+            cursor.execute("SELECT id, make, model FROM vehicles WHERE customer_id = ? ORDER BY id DESC LIMIT 1;", (customer_id,))
+            v_row = cursor.fetchone()
+            vehicle_id = v_row["id"] if v_row else None
+            if not vehicle_id:
+                cursor.execute("INSERT INTO vehicles (customer_id, make, model, year) VALUES (?, 'Unknown', 'Unknown', 2000);", (customer_id,))
+                vehicle_id = cursor.lastrowid
+                
+        # Fetch the resolved vehicle details for validation
+        cursor.execute("SELECT make, model FROM vehicles WHERE id = ?;", (vehicle_id,))
         vehicle = cursor.fetchone()
         if not vehicle or not vehicle["make"] or vehicle["make"] == "Unknown" or vehicle["make"].strip() == "" or not vehicle["model"] or vehicle["model"] == "Unknown" or vehicle["model"].strip() == "":
             raise ValueError("Vehicle year, make, and model are required. Please collect the vehicle details before booking.")
+
+        # Sanity check: check if the customer already has an appointment booked for the same vehicle at this slot
+        cursor.execute(
+            "SELECT id FROM service_requests WHERE customer_id = ? AND vehicle_id = ? AND booking_type = 'appointment' AND booking_time = ? AND status IN ('pending', 'in_progress');",
+            (customer_id, vehicle_id, appointment_datetime)
+        )
+        existing_appt = cursor.fetchone()
+        if existing_appt:
+            raise ValueError(f"You already have an appointment booked for this vehicle at {appointment_datetime}.")
 
     if not validate_booking_time(appointment_datetime):
         raise ValueError(f"Booking time {appointment_datetime} is outside company workhours (Monday to Friday, 7:00 AM to 6:00 PM).")
@@ -444,31 +483,34 @@ def book_appointment(customer_id: int, service_request_id: int, appointment_date
             print(f"[book_appointment] Live mode: booking with agent {chosen_agent_id} at {appointment_datetime} (no mock slot row).")
 
         # --- Resolve / create service_request ---
+        # If service_request_id is provided, verify it is not already booked
+        if service_request_id:
+            cursor.execute(
+                "SELECT id, booking_type FROM service_requests WHERE id = ? AND customer_id = ?;",
+                (service_request_id, customer_id)
+            )
+            sr_row = cursor.fetchone()
+            if not sr_row or sr_row["booking_type"] is not None:
+                service_request_id = None
+
         if not service_request_id:
             cursor.execute(
-                "SELECT id FROM service_requests WHERE customer_id = ? AND status = 'pending' AND booking_type IS NULL ORDER BY id DESC LIMIT 1;",
-                (customer_id,)
+                "SELECT id FROM service_requests WHERE customer_id = ? AND vehicle_id = ? AND status = 'pending' AND booking_type IS NULL ORDER BY id DESC LIMIT 1;",
+                (customer_id, vehicle_id)
             )
             sr_row = cursor.fetchone()
             if sr_row:
                 service_request_id = sr_row["id"]
             else:
-                cursor.execute("SELECT id FROM vehicles WHERE customer_id = ? ORDER BY id DESC LIMIT 1;", (customer_id,))
-                v_row = cursor.fetchone()
-                vehicle_id = v_row["id"] if v_row else None
-                if not vehicle_id:
-                    cursor.execute("INSERT INTO vehicles (customer_id, make, model, year) VALUES (?, 'Unknown', 'Unknown', 2000);", (customer_id,))
-                    vehicle_id = cursor.lastrowid
-
                 cursor.execute(
                     "INSERT INTO service_requests (customer_id, vehicle_id, service_type, issue_description, status) VALUES (?, ?, ?, 'Appointment booking.', 'pending');",
-                    (customer_id, vehicle_id, service_type)
+                    (customer_id, vehicle_id, matched_service_name)
                 )
                 service_request_id = cursor.lastrowid
 
         cursor.execute(
             "UPDATE service_requests SET booking_type = 'appointment', booking_time = ?, service_type = ?, staff_agent_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;",
-            (appointment_datetime, service_type, chosen_agent_id, service_request_id)
+            (appointment_datetime, matched_service_name, chosen_agent_id, service_request_id)
         )
 
         # Get customer info and issue details for Google Calendar event
@@ -484,7 +526,7 @@ def book_appointment(customer_id: int, service_request_id: int, appointment_date
         create_agent_calendar_event(
             agent_id=chosen_agent_id,
             customer_name=customer_name,
-            service_type=service_type,
+            service_type=matched_service_name,
             issue_description=issue_desc,
             slot_datetime_str=appointment_datetime,
             duration_minutes=duration_minutes
@@ -493,24 +535,69 @@ def book_appointment(customer_id: int, service_request_id: int, appointment_date
         return service_request_id
 
 
+def find_best_service_match(query_name: str, services_list: list) -> dict:
+    """
+    Finds the best matching service from a list of services.
+    Cleans strings, tokenizes, checks exact match, checks substrings,
+    and calculates Jaccard similarity.
+    """
+    import re
+    def clean_str(s: str) -> str:
+        return re.sub(r'[^a-z0-9\s]', '', s.lower()).strip()
+
+    cleaned_query = clean_str(query_name)
+    if not cleaned_query:
+        return None
+
+    query_tokens = set(cleaned_query.split())
+
+    best_match = None
+    best_score = 0.0
+
+    for s in services_list:
+        db_name = s["name"]
+        cleaned_db = clean_str(db_name)
+        db_tokens = set(cleaned_db.split())
+
+        # 1. Exact match
+        if cleaned_query == cleaned_db:
+            return s
+
+        # 2. Substring match
+        if cleaned_query in cleaned_db or cleaned_db in cleaned_query:
+            score = 0.8 + (min(len(cleaned_query), len(cleaned_db)) / max(len(cleaned_query), len(cleaned_db))) * 0.19
+        else:
+            # 3. Token overlap (Jaccard similarity)
+            intersection = query_tokens.intersection(db_tokens)
+            union = query_tokens.union(db_tokens)
+            score = len(intersection) / len(union) if union else 0.0
+
+        if score > best_score and score >= 0.25:
+            best_score = score
+            best_match = s
+
+    return best_match
+
+
 def get_service_required_fields(service_name: str) -> dict:
     """
-    Looks up a service by name (case-insensitive) in the services table
+    Looks up a service by name (fuzzy matching supported) in the services table
     and returns its details along with the required fields mapping.
     """
+    if not service_name:
+        return None
+        
     query = """
     SELECT name, description, price_range, duration_minutes,
            req_customer_name, req_phone_number, req_vehicle_details, req_issue_description, req_location
-    FROM services
-    WHERE LOWER(name) = ?;
+    FROM services;
     """
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute(query, (service_name.lower().strip(),))
-        row = cursor.fetchone()
-        if not row:
-            return None
-        return dict(row)
+        cursor.execute(query)
+        rows = [dict(row) for row in cursor.fetchall()]
+        
+    return find_best_service_match(service_name, rows)
 
 def create_crm_note(call_id: str, customer_id: int, summary: str, transcript: str) -> int:
     """
@@ -527,7 +614,7 @@ def create_crm_note(call_id: str, customer_id: int, summary: str, transcript: st
         return cursor.lastrowid
 
 
-def create_callback_request(customer_id: int, service_request_id: int = None, preferred_time: str = None) -> int:
+def create_callback_request(customer_id: int, service_request_id: int = None, preferred_time: str = None, vehicle_details: dict = None) -> int:
     """
     Inserts a callback request by updating the service_requests table.
     """
@@ -545,11 +632,30 @@ def create_callback_request(customer_id: int, service_request_id: int = None, pr
         if not cust["phone"] or cust["phone"] == "Unknown" or len(cust["phone"].strip()) < 10:
             raise ValueError("Customer phone number is required and must be a valid 10-digit number.")
             
-        # Check vehicle details
-        cursor.execute("SELECT make, model, year FROM vehicles WHERE customer_id = ? ORDER BY id DESC LIMIT 1;", (customer_id,))
-        vehicle = cursor.fetchone()
-        if not vehicle or not vehicle["make"] or vehicle["make"] == "Unknown" or vehicle["make"].strip() == "" or not vehicle["model"] or vehicle["model"] == "Unknown" or vehicle["model"].strip() == "":
-            raise ValueError("Vehicle year, make, and model are required. Please collect the vehicle details before arranging a callback.")
+        # Resolve vehicle details
+        vehicle_id = None
+        if vehicle_details and vehicle_details.get("make") and vehicle_details.get("make") != "Unknown":
+            cursor.execute(
+                "SELECT id FROM vehicles WHERE customer_id = ? AND make = ? AND model = ? AND year = ?;",
+                (customer_id, vehicle_details.get("make"), vehicle_details.get("model"), vehicle_details.get("year"))
+            )
+            v_row = cursor.fetchone()
+            if v_row:
+                vehicle_id = v_row["id"]
+            else:
+                cursor.execute(
+                    "INSERT INTO vehicles (customer_id, make, model, year) VALUES (?, ?, ?, ?);",
+                    (customer_id, vehicle_details.get("make"), vehicle_details.get("model"), vehicle_details.get("year"))
+                )
+                vehicle_id = cursor.lastrowid
+
+        if not vehicle_id:
+            cursor.execute("SELECT id FROM vehicles WHERE customer_id = ? ORDER BY id DESC LIMIT 1;", (customer_id,))
+            v_row = cursor.fetchone()
+            vehicle_id = v_row["id"] if v_row else None
+            if not vehicle_id:
+                cursor.execute("INSERT INTO vehicles (customer_id, make, model, year) VALUES (?, 'Unknown', 'Unknown', 2000);", (customer_id,))
+                vehicle_id = cursor.lastrowid
 
     if preferred_time and not validate_booking_time(preferred_time):
         raise ValueError(f"Callback preferred time {preferred_time} is outside company workhours (Monday to Friday, 7:00 AM to 6:00 PM).")
@@ -563,23 +669,26 @@ def create_callback_request(customer_id: int, service_request_id: int = None, pr
     with get_db_connection() as conn:
         cursor = conn.cursor()
         
+        # If service_request_id is provided, verify it is not already booked
+        if service_request_id:
+            cursor.execute(
+                "SELECT id, booking_type FROM service_requests WHERE id = ? AND customer_id = ?;",
+                (service_request_id, customer_id)
+            )
+            sr_row = cursor.fetchone()
+            if not sr_row or sr_row["booking_type"] is not None:
+                service_request_id = None
+        
         # If no service_request_id, find the last open raw intake one or create a new one
         if not service_request_id:
             cursor.execute(
-                "SELECT id FROM service_requests WHERE customer_id = ? AND status = 'pending' AND booking_type IS NULL ORDER BY id DESC LIMIT 1;",
-                (customer_id,)
+                "SELECT id FROM service_requests WHERE customer_id = ? AND vehicle_id = ? AND status = 'pending' AND booking_type IS NULL ORDER BY id DESC LIMIT 1;",
+                (customer_id, vehicle_id)
             )
             sr_row = cursor.fetchone()
             if sr_row:
                 service_request_id = sr_row["id"]
             else:
-                cursor.execute("SELECT id FROM vehicles WHERE customer_id = ? ORDER BY id DESC LIMIT 1;", (customer_id,))
-                v_row = cursor.fetchone()
-                vehicle_id = v_row["id"] if v_row else None
-                if not vehicle_id:
-                    cursor.execute("INSERT INTO vehicles (customer_id, make, model, year) VALUES (?, 'Unknown', 'Unknown', 2000);", (customer_id,))
-                    vehicle_id = cursor.lastrowid
-                
                 cursor.execute(
                     "INSERT INTO service_requests (customer_id, vehicle_id, service_type, issue_description, status) VALUES (?, ?, 'Repair', 'Callback requested.', 'pending');",
                     (customer_id, vehicle_id)
@@ -601,7 +710,8 @@ def create_callback_request(customer_id: int, service_request_id: int = None, pr
 
 def get_customer_appointments(phone: str) -> list:
     """
-    Looks up all scheduled/rescheduled appointments for a customer by phone number.
+    Looks up all scheduled/rescheduled appointments for a customer by phone number,
+    including vehicle make, model, and year.
     """
     import re
     cleaned_phone = re.sub(r"\D", "", phone) if phone else ""
@@ -609,9 +719,11 @@ def get_customer_appointments(phone: str) -> list:
         cleaned_phone = cleaned_phone[1:]
 
     query = """
-    SELECT sr.id, sr.booking_time AS appointment_datetime, sr.service_type, sr.status 
+    SELECT sr.id, sr.booking_time AS appointment_datetime, sr.service_type, sr.status,
+           v.year, v.make, v.model
     FROM service_requests sr
     JOIN customers c ON sr.customer_id = c.id
+    LEFT JOIN vehicles v ON sr.vehicle_id = v.id
     WHERE (c.phone = ? OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(c.phone, '-', ''), ' ', ''), '(', ''), ')', ''), '+1', '') = ?)
       AND sr.booking_type = 'appointment'
       AND sr.status IN ('pending', 'in_progress')

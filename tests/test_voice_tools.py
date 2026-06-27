@@ -356,7 +356,8 @@ def test_voice_tools_request_callback(mock_create_cb, mock_lookup):
     mock_create_cb.assert_called_once_with(
         customer_id=42,
         service_request_id=101,
-        preferred_time="Tomorrow at 10 AM"
+        preferred_time="Tomorrow at 10 AM",
+        vehicle_details={"make": "Honda", "model": "Civic", "year": 2020}
     )
 
 

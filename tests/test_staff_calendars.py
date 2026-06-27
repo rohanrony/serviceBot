@@ -157,6 +157,9 @@ def test_reschedule_appointment_checks_google_calendar(monkeypatch):
             INSERT INTO service_requests (id, customer_id, vehicle_id, service_type, issue_description, status, booking_type, booking_time, staff_agent_id)
             VALUES (999, 999, 999, 'Oil Change', 'Needs oil change', 'pending', 'appointment', '2026-06-12 10:00:00', 1);
         """)
+        # Insert mock slots for agents for 2026-06-12 11:00:00
+        cursor.execute("INSERT OR IGNORE INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES ('2026-06-12 11:00:00', 0, 1);")
+        cursor.execute("INSERT OR IGNORE INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES ('2026-06-12 11:00:00', 0, 2);")
         conn.commit()
 
     # Mock google_calendar check: agent 1 is busy, agent 2 is free.
@@ -188,5 +191,6 @@ def test_reschedule_appointment_checks_google_calendar(monkeypatch):
         cursor = conn.cursor()
         cursor.execute("DELETE FROM service_requests WHERE id = 999;")
         cursor.execute("DELETE FROM customers WHERE id = 999;")
+        cursor.execute("DELETE FROM mock_calendar_slots WHERE slot_datetime = '2026-06-12 11:00:00';")
         conn.commit()
 

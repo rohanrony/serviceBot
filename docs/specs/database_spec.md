@@ -263,26 +263,70 @@ SELECT
     sr.status AS open_sr_status
 FROM customers c
 LEFT JOIN vehicles v ON c.id = v.customer_id
-LEFT JOIN service_requests sr ON c.id = sr.customer_id AND sr.status = 'pending'
-WHERE c.phone = ?;
+LEFT JOIN service_requests sr ON c.id = sr.customer_id AND sr.status = 'pending' AND sr.booking_type IS NULL
+WHERE c.phone = ? 
+   OR c.phone = ? 
+   OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(c.phone, '-', ''), ' ', ''), '(', ''), ')', ''), '+1', '') = ?;
 ```
 
-### 3.2 Calendar Availability Check
+### 3.2 Fuzzy Service Catalog Query
+To match user-spoken requests to service requirements, the backend selects all service offerings:
+```sql
+SELECT name, description, price_range, duration_minutes,
+       req_customer_name, req_phone_number, req_vehicle_details, req_issue_description, req_location
+FROM services;
+```
+*Note: The query results are processed programmatically by the `find_best_service_match` helper using alphanumeric cleaning, substring checks, and Jaccard token overlap similarity (returning matches scoring >= 0.25).*
+
+### 3.3 Dynamic Vehicle Intake Resolution
+When scheduling an appointment or creating a callback request, the system resolves the vehicle ID:
+1. **Match Specific Vehicle**:
+   ```sql
+   SELECT id FROM vehicles 
+   WHERE customer_id = ? AND make = ? AND model = ? AND year = ?;
+   ```
+2. **Register New Vehicle** (if not matched):
+   ```sql
+   INSERT INTO vehicles (customer_id, make, model, year) VALUES (?, ?, ?, ?);
+   ```
+3. **Fetch Last Profile** (if details not provided):
+   ```sql
+   SELECT id FROM vehicles WHERE customer_id = ? ORDER BY id DESC LIMIT 1;
+   ```
+4. **Placeholder Registration** (if customer owns no vehicles):
+   ```sql
+   INSERT INTO vehicles (customer_id, make, model, year) VALUES (?, 'Unknown', 'Unknown', 2000);
+   ```
+
+### 3.4 Calendar Availability Check
 Used by the appointment agent to check available slots from the mock calendar.
 ```sql
-SELECT slot_datetime, staff_agent_id 
+SELECT id, slot_datetime, staff_agent_id 
 FROM mock_calendar_slots 
 WHERE is_booked = 0 AND slot_datetime >= ? 
-ORDER BY slot_datetime ASC 
-LIMIT 3;
+ORDER BY slot_datetime ASC;
 ```
 
-### 3.3 Book Mock Calendar Slot
+### 3.5 Retrieve Customer Appointments with Vehicle Metadata
+Used to fetch a customer's active appointments along with the associated vehicle details:
+```sql
+SELECT sr.id, sr.booking_time AS appointment_datetime, sr.service_type, sr.status,
+       v.year, v.make, v.model
+FROM service_requests sr
+JOIN customers c ON sr.customer_id = c.id
+LEFT JOIN vehicles v ON sr.vehicle_id = v.id
+WHERE (c.phone = ? OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(c.phone, '-', ''), ' ', ''), '(', ''), ')', ''), '+1', '') = ?)
+  AND sr.booking_type = 'appointment'
+  AND sr.status IN ('pending', 'in_progress')
+ORDER BY sr.booking_time DESC;
+```
+
+### 3.6 Book Mock Calendar Slot
 Used to mark a slot as booked when scheduling an appointment.
 ```sql
 UPDATE mock_calendar_slots 
 SET is_booked = 1 
-WHERE slot_datetime = ? AND staff_agent_id = ?;
+WHERE id = ?;
 ```
 
 ---

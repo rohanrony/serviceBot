@@ -83,7 +83,8 @@ def test_service_request_agent_all_fields_present():
             "email": "sarah.j@example.com",
             "vehicle_make": "Honda",
             "vehicle_model": "Civic",
-            "vehicle_year": 2020
+            "vehicle_year": 2020,
+            "location": "Springfield"
         },
         "service_request_id": None,
         "appointment_id": None,

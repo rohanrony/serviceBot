@@ -9,6 +9,8 @@ load_dotenv(override=True)
 
 router = APIRouter(prefix="/api/v1/portal", tags=["portal"])
 
+KB_DIR = "kb_documents"
+
 class AgentUpdatePayload(BaseModel):
     voice_id: Optional[str] = None
     model: Optional[str] = None
@@ -164,7 +166,6 @@ def sync_services_to_kb():
         
     catalog_text = "\n".join(lines)
     
-    KB_DIR = "kb_documents"
     os.makedirs(KB_DIR, exist_ok=True)
     filename = "auto_services_catalog.txt"
     file_path = os.path.join(KB_DIR, filename)
@@ -805,8 +806,6 @@ async def get_stats():
             "open_slots": open_slots,
             "total_callbacks": total_callbacks
         }
-
-KB_DIR = "kb_documents"
 
 @router.post("/kb/upload")
 async def upload_kb_file(file: UploadFile = File(...)):
