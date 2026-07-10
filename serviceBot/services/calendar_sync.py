@@ -107,7 +107,7 @@ def sync_agent_slots(
 
     Returns a summary dict with counts.
     """
-    from serviceBot.db.connection import get_db_connection
+    from serviceBot.db.connection import get_db_connection, dict_cursor
 
     slot_strs = _generate_slot_strings(days, hours)
     if not slot_strs:
@@ -121,48 +121,45 @@ def sync_agent_slots(
     blocked  = 0
 
     with get_db_connection() as conn:
-        cursor = conn.cursor()
+        with dict_cursor(conn) as cursor:
+            for slot_str in slot_strs:
+                is_busy = slot_str in busy_map
 
-        for slot_str in slot_strs:
-            is_busy = slot_str in busy_map
-
-            # Try to insert (IGNORE if already exists to preserve system-booked entries)
-            cursor.execute(
-                "SELECT id, is_booked FROM mock_calendar_slots "
-                "WHERE slot_datetime = ? AND staff_agent_id = ?",
-                (slot_str, agent_id),
-            )
-            row = cursor.fetchone()
-
-            if row is None:
-                # New slot — insert with live calendar status
+                # Try to insert (ON CONFLICT DO NOTHING preserves system-booked entries)
                 cursor.execute(
-                    "INSERT OR IGNORE INTO mock_calendar_slots "
-                    "(slot_datetime, is_booked, staff_agent_id) VALUES (?, ?, ?)",
-                    (slot_str, 1 if is_busy else 0, agent_id),
+                    "SELECT id, is_booked FROM mock_calendar_slots "
+                    "WHERE slot_datetime = CAST(%s AS TIMESTAMP) AND staff_agent_id = %s",
+                    (slot_str, agent_id),
                 )
-                if cursor.rowcount:
-                    created += 1
-                    if is_busy:
-                        blocked += 1
-            else:
-                # Existing slot: only update is_booked if it was NOT booked by the system
-                # (i.e. it was free before — don't overwrite real appointments with calendar status)
-                existing_booked = bool(row["is_booked"])
-                if not existing_booked and is_busy:
-                    # Calendar says busy → mark blocked
-                    cursor.execute(
-                        "UPDATE mock_calendar_slots SET is_booked = 1 "
-                        "WHERE id = ?", (row["id"],)
-                    )
-                    blocked += 1
-                elif existing_booked and not is_busy:
-                    # Was blocked by calendar, now free → restore
-                    # Only do this for non-appointment slots
-                    # (appointment rows are managed by book_appointment, not the sync)
-                    freed += 1  # logged but we don't auto-unblock — could be a real booking
+                row = cursor.fetchone()
 
-        conn.commit()
+                if row is None:
+                    # New slot — insert with live calendar status
+                    cursor.execute(
+                        "INSERT INTO mock_calendar_slots "
+                        "(slot_datetime, is_booked, staff_agent_id) VALUES (%s, %s, %s) "
+                        "ON CONFLICT (slot_datetime, staff_agent_id) DO NOTHING",
+                        (slot_str, bool(is_busy), agent_id),
+                    )
+                    if cursor.rowcount:
+                        created += 1
+                        if is_busy:
+                            blocked += 1
+                else:
+                    # Existing slot: only update is_booked if it was NOT booked by the system
+                    existing_booked = bool(row["is_booked"])
+                    if not existing_booked and is_busy:
+                        # Calendar says busy → mark blocked
+                        cursor.execute(
+                            "UPDATE mock_calendar_slots SET is_booked = TRUE "
+                            "WHERE id = %s", (row["id"],)
+                        )
+                        blocked += 1
+                    elif existing_booked and not is_busy:
+                        # Was blocked by calendar, now free → restore
+                        freed += 1  # logged but we don't auto-unblock — could be a real booking
+
+            conn.commit()
 
     total_free = len(slot_strs) - len(busy_map)
     print(
@@ -183,14 +180,14 @@ def sync_all_connected_agents(days: int = DEFAULT_DAYS) -> dict:
     Runs sync_agent_slots for every agent that has a connected Google Calendar
     with calendar.events scope. Run in parallel for speed.
     """
-    from serviceBot.db.connection import get_db_connection
+    from serviceBot.db.connection import get_db_connection, dict_cursor
 
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT agent_id FROM user_google_accounts WHERE refresh_token IS NOT NULL;"
-        )
-        agent_ids = [r["agent_id"] for r in cursor.fetchall()]
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                "SELECT agent_id FROM user_google_accounts WHERE refresh_token IS NOT NULL;"
+            )
+            agent_ids = [r["agent_id"] for r in cursor.fetchall()]
 
     if not agent_ids:
         print("[calendar_sync] No connected agents found — skipping sync.")
@@ -214,3 +211,4 @@ def sync_all_connected_agents(days: int = DEFAULT_DAYS) -> dict:
                 results[aid] = {"error": str(exc)}
 
     return results
+

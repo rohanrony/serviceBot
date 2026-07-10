@@ -4,88 +4,92 @@ def seed_db():
     with get_db_connection() as conn:
         cursor = conn.cursor()
         
-        # Enable foreign keys
-        cursor.execute("PRAGMA foreign_keys = ON;")
-        
-        # Clear existing data to avoid conflicts on duplicate runs
-        cursor.execute("DELETE FROM crm_notes;")
-        cursor.execute("DELETE FROM service_requests;")
-        cursor.execute("DELETE FROM vehicles;")
-        cursor.execute("DELETE FROM customers;")
-        cursor.execute("DELETE FROM mock_calendar_slots;")
-        cursor.execute("DELETE FROM staff_agents;")
-        cursor.execute("DELETE FROM services;")
+        # Clear existing data using TRUNCATE CASCADE
+        cursor.execute("""
+            TRUNCATE TABLE 
+                crm_notes, 
+                service_requests, 
+                vehicles, 
+                customers, 
+                mock_calendar_slots, 
+                staff_agents, 
+                services, 
+                user_google_accounts, 
+                oauth_states 
+            CASCADE;
+        """)
+        conn.commit()
         
         # Insert Services
         cba_services = [
-            (1, "Oil Change", "Full synthetic oil change, premium filter replacement, fluid top-off, and courtesy inspection", "$79-119", 45, 1, 1, 1, 1, 1),
-            (2, "Brake Service & Repair", "Complimentary brake inspection, pad/shoe replacement, and rotor/drum resurfacing or replacement", "$199-450 per axle", 90, 1, 1, 1, 1, 1),
-            (3, "Complimentary Courtesy Inspection", "Comprehensive multi-point visual inspection of major and minor vehicle systems", "$0", 20, 1, 1, 1, 1, 1),
-            (4, "AC Service & Repair", "System performance test, leak check, refrigerant evacuation, and recharge", "$149-399", 60, 1, 1, 1, 1, 1),
-            (5, "Engine Diagnostics", "Check engine light scanning, computerized diagnostics, and troubleshooting by ASE-certified technicians", "$119-189", 60, 1, 1, 1, 1, 1)
+            (1, "Oil Change", "Full synthetic oil change, premium filter replacement, fluid top-off, and courtesy inspection", "$79-119", 45, True, True, True, True, True),
+            (2, "Brake Service & Repair", "Complimentary brake inspection, pad/shoe replacement, and rotor/drum resurfacing or replacement", "$199-450 per axle", 90, True, True, True, True, True),
+            (3, "Complimentary Courtesy Inspection", "Comprehensive multi-point visual inspection of major and minor vehicle systems", "$0", 20, True, True, True, True, True),
+            (4, "AC Service & Repair", "System performance test, leak check, refrigerant evacuation, and recharge", "$149-399", 60, True, True, True, True, True),
+            (5, "Engine Diagnostics", "Check engine light scanning, computerized diagnostics, and troubleshooting by ASE-certified technicians", "$119-189", 60, True, True, True, True, True)
         ]
         cursor.executemany(
-            "INSERT INTO services (id, name, description, price_range, duration_minutes, req_customer_name, req_phone_number, req_vehicle_details, req_issue_description, req_location) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
+            "INSERT INTO services (id, name, description, price_range, duration_minutes, req_customer_name, req_phone_number, req_vehicle_details, req_issue_description, req_location) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
             cba_services
         )
         
         # Insert Customers
         cursor.execute(
-            "INSERT INTO customers (id, name, phone, email) VALUES (?, ?, ?, ?);",
+            "INSERT INTO customers (id, name, phone, email) VALUES (%s, %s, %s, %s);",
             (1, 'Sarah Johnson', '555-123-4567', 'sarah.j@example.com')
         )
         cursor.execute(
-            "INSERT INTO customers (id, name, phone, email) VALUES (?, ?, ?, ?);",
+            "INSERT INTO customers (id, name, phone, email) VALUES (%s, %s, %s, %s);",
             (2, 'David Smith', '555-987-6543', 'dsmith@example.com')
         )
         cursor.execute(
-            "INSERT INTO customers (id, name, phone, email) VALUES (?, ?, ?, ?);",
+            "INSERT INTO customers (id, name, phone, email) VALUES (%s, %s, %s, %s);",
             (3, 'Emily Davis', '555-444-5555', 'emily.d@example.com')
         )
         cursor.execute(
-            "INSERT INTO customers (id, name, phone, email) VALUES (?, ?, ?, ?);",
+            "INSERT INTO customers (id, name, phone, email) VALUES (%s, %s, %s, %s);",
             (4, 'Michael Miller', '555-222-3333', 'mmiller@example.com')
         )
         
         # Insert Vehicles
         cursor.execute(
-            "INSERT INTO vehicles (id, customer_id, make, model, year, vin) VALUES (?, ?, ?, ?, ?, ?);",
+            "INSERT INTO vehicles (id, customer_id, make, model, year, vin) VALUES (%s, %s, %s, %s, %s, %s);",
             (1, 1, 'Honda', 'Civic', 2020, '1HGCR2F8LAA123456')
         )
         cursor.execute(
-            "INSERT INTO vehicles (id, customer_id, make, model, year, vin) VALUES (?, ?, ?, ?, ?, ?);",
+            "INSERT INTO vehicles (id, customer_id, make, model, year, vin) VALUES (%s, %s, %s, %s, %s, %s);",
             (2, 2, 'Ford', 'F-150', 2018, '1FTFW1EF5JFC98765')
         )
         cursor.execute(
-            "INSERT INTO vehicles (id, customer_id, make, model, year, vin) VALUES (?, ?, ?, ?, ?, ?);",
+            "INSERT INTO vehicles (id, customer_id, make, model, year, vin) VALUES (%s, %s, %s, %s, %s, %s);",
             (3, 3, 'Toyota', 'RAV4', 2021, '4T1BD1FK1LU098765')
         )
         cursor.execute(
-            "INSERT INTO vehicles (id, customer_id, make, model, year, vin) VALUES (?, ?, ?, ?, ?, ?);",
+            "INSERT INTO vehicles (id, customer_id, make, model, year, vin) VALUES (%s, %s, %s, %s, %s, %s);",
             (4, 4, 'Chevrolet', 'Silverado', 2015, '1GCVKREC3FZ123456')
         )
         
         # Insert Service Requests
         cursor.execute(
-            "INSERT INTO service_requests (id, customer_id, vehicle_id, service_type, issue_description, status, booking_type, booking_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?);",
+            "INSERT INTO service_requests (id, customer_id, vehicle_id, service_type, issue_description, status, booking_type, booking_time) VALUES (%s, %s, %s, %s, %s, %s, %s, %s);",
             (1, 1, 1, 'Brake Service & Repair', 'Grinding noise when stopping, brake warning light is on.', 'pending', 'appointment', '2026-06-10 14:00:00')
         )
         cursor.execute(
-            "INSERT INTO service_requests (id, customer_id, vehicle_id, service_type, issue_description, status, booking_type, booking_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?);",
+            "INSERT INTO service_requests (id, customer_id, vehicle_id, service_type, issue_description, status, booking_type, booking_time) VALUES (%s, %s, %s, %s, %s, %s, %s, %s);",
             (2, 2, 2, 'Oil Change', 'Needs full synthetic oil change and filter replacement.', 'completed', 'callback', 'ASAP')
         )
         cursor.execute(
-            "INSERT INTO service_requests (id, customer_id, vehicle_id, service_type, issue_description, status, booking_type, booking_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?);",
+            "INSERT INTO service_requests (id, customer_id, vehicle_id, service_type, issue_description, status, booking_type, booking_time) VALUES (%s, %s, %s, %s, %s, %s, %s, %s);",
             (3, 3, 3, 'AC Service & Repair', 'Air conditioner is blowing warm air on hot days.', 'in_progress', 'appointment', '2026-06-10 10:00:00')
         )
         cursor.execute(
-            "INSERT INTO service_requests (id, customer_id, vehicle_id, service_type, issue_description, status, booking_type, booking_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?);",
+            "INSERT INTO service_requests (id, customer_id, vehicle_id, service_type, issue_description, status, booking_type, booking_time) VALUES (%s, %s, %s, %s, %s, %s, %s, %s);",
             (4, 4, 4, 'Engine Diagnostics', 'Check engine light is on, engine running rough.', 'pending', 'appointment', '2026-06-11 11:00:00')
         )
 
         # Insert CRM Notes (Intake Calls & Transcripts)
         cursor.execute(
-            "INSERT INTO crm_notes (id, call_id, customer_id, summary, transcript, created_at) VALUES (?, ?, ?, ?, ?, ?);",
+            "INSERT INTO crm_notes (id, call_id, customer_id, summary, transcript, created_at) VALUES (%s, %s, %s, %s, %s, %s);",
             (
                 1, 
                 "call_sarah_101", 
@@ -96,7 +100,7 @@ def seed_db():
             )
         )
         cursor.execute(
-            "INSERT INTO crm_notes (id, call_id, customer_id, summary, transcript, created_at) VALUES (?, ?, ?, ?, ?, ?);",
+            "INSERT INTO crm_notes (id, call_id, customer_id, summary, transcript, created_at) VALUES (%s, %s, %s, %s, %s, %s);",
             (
                 2, 
                 "call_david_102", 
@@ -107,7 +111,7 @@ def seed_db():
             )
         )
         cursor.execute(
-            "INSERT INTO crm_notes (id, call_id, customer_id, summary, transcript, created_at) VALUES (?, ?, ?, ?, ?, ?);",
+            "INSERT INTO crm_notes (id, call_id, customer_id, summary, transcript, created_at) VALUES (%s, %s, %s, %s, %s, %s);",
             (
                 3, 
                 "call_emily_103", 
@@ -118,7 +122,7 @@ def seed_db():
             )
         )
         cursor.execute(
-            "INSERT INTO crm_notes (id, call_id, customer_id, summary, transcript, created_at) VALUES (?, ?, ?, ?, ?, ?);",
+            "INSERT INTO crm_notes (id, call_id, customer_id, summary, transcript, created_at) VALUES (%s, %s, %s, %s, %s, %s);",
             (
                 4, 
                 "call_michael_104", 
@@ -136,7 +140,7 @@ def seed_db():
             (3, 'Bob Johnson', 'Technician', 'bob.johnson@example.com')
         ]
         cursor.executemany(
-            "INSERT INTO staff_agents (id, name, role, email) VALUES (?, ?, ?, ?);",
+            "INSERT INTO staff_agents (id, name, role, email) VALUES (%s, %s, %s, %s);",
             agents
         )
         
@@ -144,31 +148,30 @@ def seed_db():
         import datetime
         import random
         
-        # Start slot generation from current local date
         start_date = datetime.date.today()
         slots = []
-        # Seed for 30 days
         for day_offset in range(30):
             current_day = start_date + datetime.timedelta(days=day_offset)
-            # weekday: 0-4 (Monday-Friday)
             if current_day.weekday() < 5:
                 for hour in [9, 11, 14, 16]:
                     slot_dt = datetime.datetime.combine(current_day, datetime.time(hour, 0, 0))
                     slot_str = slot_dt.strftime("%Y-%m-%d %H:%M:%S")
-                    # Mapped to staff agents
                     for agent_id in [1, 2, 3]:
-                        # Mark ~30% of slots as booked
-                        is_booked = 1 if random.random() < 0.3 else 0
+                        is_booked = random.random() < 0.3
                         slots.append((slot_str, is_booked, agent_id))
                         
         cursor.executemany(
-            "INSERT OR IGNORE INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES (?, ?, ?);",
+            "INSERT INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES (%s, %s, %s) ON CONFLICT (slot_datetime, staff_agent_id) DO NOTHING;",
             slots
         )
         
-
+        # Reset SERIAL sequences
+        for table in ["customers", "vehicles", "service_requests", "crm_notes", "staff_agents", "services"]:
+            cursor.execute(f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), COALESCE(MAX(id), 1)) FROM {table};")
         
+        conn.commit()
         print("Database seeded successfully with Test mock data!")
+
  
 if __name__ == "__main__":
     seed_db()

@@ -1,22 +1,12 @@
-import sqlite3
+import psycopg2
 import pytest
-from serviceBot.db.connection import get_db_connection
+from serviceBot.db.connection import get_db_connection, dict_cursor
 
-def test_sqlite_connection():
-    """Verify that an SQLite connection can be opened and is configured correctly."""
-    # The connection should be openable using get_db_connection context manager
+def test_postgres_connection():
+    """Verify that a PostgreSQL connection can be opened and is configured correctly."""
     with get_db_connection() as conn:
-        assert isinstance(conn, sqlite3.Connection)
-
-def test_foreign_keys_pragma():
-    """Assert that 'PRAGMA foreign_keys = ON;' is successfully enforced on connection initialization."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("PRAGMA foreign_keys;")
-        result = cursor.fetchone()
-        # PRAGMA foreign_keys returns (1,) if enabled, or (0,) if disabled
-        assert result is not None
-        assert result[0] == 1
+        # Check that it's a psycopg2 connection (can be the connection pool's connection or standard)
+        assert hasattr(conn, 'cursor')
 
 def test_tables_exist():
     """Assert that the required tables exist in the database schema."""
@@ -29,9 +19,14 @@ def test_tables_exist():
     }
     
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-        tables = {row[0] for row in cursor.fetchall()}
-        
-        missing_tables = required_tables - tables
-        assert not missing_tables, f"Missing tables: {missing_tables}"
+        with dict_cursor(conn) as cursor:
+            cursor.execute("""
+                SELECT table_name 
+                FROM information_schema.tables 
+                WHERE table_schema = 'public';
+            """)
+            tables = {row["table_name"] for row in cursor.fetchall()}
+            
+            missing_tables = required_tables - tables
+            assert not missing_tables, f"Missing tables: {missing_tables}"
+

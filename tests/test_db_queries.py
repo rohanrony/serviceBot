@@ -1,52 +1,52 @@
-import sqlite3
 import pytest
-from unittest.mock import patch
-from serviceBot.db.connection import DDL_SCHEMA
-from serviceBot.db.queries import lookup_customer_by_phone
+from serviceBot.db.connection import get_db_connection, dict_cursor
 
 @pytest.fixture
-def mock_db(tmp_path):
-    """Create a temporary SQLite database, initialize, and seed data."""
-    db_file = tmp_path / "test_voice_service.db"
-    conn = sqlite3.connect(db_file)
-    conn.execute("PRAGMA foreign_keys = ON;")
-    conn.executescript(DDL_SCHEMA)
+def mock_db():
+    """Clear database, initialize schema, and seed data in PostgreSQL."""
+    from serviceBot.db.seed import seed_db
     
-    cursor = conn.cursor()
-    # Seed data matching Sarah Johnson from spec
-    cursor.execute(
-        "INSERT INTO customers (id, name, phone, email) VALUES (?, ?, ?, ?);",
-        (1, 'Sarah Johnson', '+15551234567', 'sarah.j@example.com')
-    )
-    cursor.execute(
-        "INSERT INTO vehicles (id, customer_id, make, model, year, vin) VALUES (?, ?, ?, ?, ?, ?);",
-        (1, 1, 'Honda', 'Civic', 2020, '1HGCR2F8LAA123456')
-    )
-    cursor.execute(
-        "INSERT INTO service_requests (id, customer_id, vehicle_id, service_type, issue_description, status) VALUES (?, ?, ?, ?, ?, ?);",
-        (1, 1, 1, 'Brake repair', 'Grinding noise when stopping, brake light on.', 'pending')
-    )
-    # Seed services
-    cursor.execute(
-        "INSERT INTO services (name, description, price_range, duration_minutes) VALUES (?, ?, ?, ?);",
-        ("AC change", "A/C service", "$150-250", 60)
-    )
-    cursor.execute(
-        "INSERT INTO services (name, description, price_range, duration_minutes) VALUES (?, ?, ?, ?);",
-        ("Oil Change", "Oil change service", "$79-119", 45)
-    )
-    cursor.execute(
-        "INSERT INTO services (name, description, price_range, duration_minutes) VALUES (?, ?, ?, ?);",
-        ("Brake repair", "Brake service", "$199-450", 90)
-    )
-    conn.commit()
+    # Run seed_db first to ensure tables exist
+    seed_db()
     
-    # We patch the default DB_PATH to use our temp test db file
-    with patch("serviceBot.db.connection.DB_PATH", str(db_file)):
-        with patch("serviceBot.db.connection._db_initialized", True):
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("TRUNCATE TABLE customers, vehicles, service_requests, services CASCADE;")
+            
+            # Seed data matching Sarah Johnson from spec
+            cursor.execute(
+                "INSERT INTO customers (id, name, phone, email) VALUES (%s, %s, %s, %s);",
+                (1, 'Sarah Johnson', '+15551234567', 'sarah.j@example.com')
+            )
+            cursor.execute(
+                "INSERT INTO vehicles (id, customer_id, make, model, year, vin) VALUES (%s, %s, %s, %s, %s, %s);",
+                (1, 1, 'Honda', 'Civic', 2020, '1HGCR2F8LAA123456')
+            )
+            cursor.execute(
+                "INSERT INTO service_requests (id, customer_id, vehicle_id, service_type, issue_description, status) VALUES (%s, %s, %s, %s, %s, %s);",
+                (1, 1, 1, 'Brake repair', 'Grinding noise when stopping, brake light on.', 'pending')
+            )
+            # Seed services
+            cursor.execute(
+                "INSERT INTO services (name, description, price_range, duration_minutes) VALUES (%s, %s, %s, %s);",
+                ("AC change", "A/C service", "$150-250", 60)
+            )
+            cursor.execute(
+                "INSERT INTO services (name, description, price_range, duration_minutes) VALUES (%s, %s, %s, %s);",
+                ("Oil Change", "Oil change service", "$79-119", 45)
+            )
+            cursor.execute(
+                "INSERT INTO services (name, description, price_range, duration_minutes) VALUES (%s, %s, %s, %s);",
+                ("Brake repair", "Brake service", "$199-450", 90)
+            )
+            
+            # Reset sequences
+            for table in ["customers", "vehicles", "service_requests", "services"]:
+                cursor.execute(f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), COALESCE(MAX(id), 1)) FROM {table};")
+            
+            conn.commit()
             yield conn
-    
-    conn.close()
+
 
 def test_lookup_customer_by_phone_success(mock_db):
     """

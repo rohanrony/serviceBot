@@ -1,49 +1,73 @@
-import sqlite3
+import psycopg2
+import psycopg2.extras
+import psycopg2.pool
+import psycopg2.errors
 import os
 from contextlib import contextmanager
-
 import sys
+from dotenv import load_dotenv
 
-def get_db_path():
-    # If DB_PATH was explicitly set (e.g. patched by tests), use it
-    if "DB_PATH" in globals():
-        return globals()["DB_PATH"]
+# Load environment variables from .env
+load_dotenv()
+
+
+def get_db_url():
+    """Returns the DATABASE_URL for PostgreSQL connections."""
     is_testing = "pytest" in sys.modules or any("pytest" in arg or "unittest" in arg for arg in sys.argv)
     if is_testing:
-        default_db = "/Users/rohanroy/.gemini/antigravity-ide/scratch/test_voice_service.db"
-        env_val = os.getenv("DATABASE_URL")
-        if not env_val or env_val == "voice_service.db":
-            return default_db
-        return env_val
-    default_db = "voice_service.db"
-    return os.getenv("DATABASE_URL", default_db)
+        env_val = os.getenv("TEST_DATABASE_URL") or os.getenv("DATABASE_URL")
+        if env_val and env_val.startswith("postgresql"):
+            return env_val
+        return os.getenv("DATABASE_URL", "")
+    return os.getenv("DATABASE_URL", "")
 
 
-# Define DB_PATH dynamically to prevent early import caching issues
-def __getattr__(name):
-    if name == "DB_PATH":
-        return get_db_path()
-    raise AttributeError(f"module {__name__} has no attribute {name}")
+# Lazy connection pool (initialized on first use)
+_pool = None
 
 
+def _get_pool():
+    global _pool
+    if _pool is None:
+        db_url = get_db_url()
+        if not db_url or not db_url.startswith("postgresql"):
+            raise RuntimeError(
+                "DATABASE_URL must be a PostgreSQL connection string "
+                "(e.g. postgresql://user:pass@host/dbname). "
+                f"Current value: {db_url!r}"
+            )
+        _pool = psycopg2.pool.SimpleConnectionPool(
+            minconn=1,
+            maxconn=10,
+            dsn=db_url,
+        )
+    return _pool
 
-# DDL Schema definitions
+
+# PostgreSQL DDL Schema
 DDL_SCHEMA = """
--- 1. Customers Table
 CREATE TABLE IF NOT EXISTS customers (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     phone VARCHAR(50) NOT NULL UNIQUE,
     email VARCHAR(255) DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Index on phone for pre-call CRM lookup optimization
 CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone);
 
--- 2. Vehicles Table
+CREATE TABLE IF NOT EXISTS staff_agents (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    role VARCHAR(100) DEFAULT NULL,
+    email VARCHAR(255) DEFAULT NULL,
+    google_access_token TEXT DEFAULT NULL,
+    google_refresh_token TEXT DEFAULT NULL,
+    google_token_expires_at REAL DEFAULT NULL
+);
+
 CREATE TABLE IF NOT EXISTS vehicles (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     customer_id INTEGER NOT NULL,
     make VARCHAR(100) NOT NULL,
     model VARCHAR(100) NOT NULL,
@@ -53,12 +77,10 @@ CREATE TABLE IF NOT EXISTS vehicles (
     FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
 );
 
--- Index on customer_id for fast fetching of customer's vehicles
 CREATE INDEX IF NOT EXISTS idx_vehicles_customer_id ON vehicles(customer_id);
 
--- 3. Service Requests Table
 CREATE TABLE IF NOT EXISTS service_requests (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     customer_id INTEGER NOT NULL,
     vehicle_id INTEGER NOT NULL,
     service_type VARCHAR(100) NOT NULL,
@@ -76,9 +98,8 @@ CREATE TABLE IF NOT EXISTS service_requests (
 
 CREATE INDEX IF NOT EXISTS idx_service_requests_customer ON service_requests(customer_id);
 
--- 5. CRM Notes Table
 CREATE TABLE IF NOT EXISTS crm_notes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     call_id VARCHAR(255) NOT NULL UNIQUE,
     customer_id INTEGER NOT NULL,
     summary TEXT NOT NULL,
@@ -89,22 +110,10 @@ CREATE TABLE IF NOT EXISTS crm_notes (
 
 CREATE INDEX IF NOT EXISTS idx_crm_notes_customer ON crm_notes(customer_id);
 
--- 8. Staff Agents Table
-CREATE TABLE IF NOT EXISTS staff_agents (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name VARCHAR(255) NOT NULL,
-    role VARCHAR(100) DEFAULT NULL,
-    email VARCHAR(255) DEFAULT NULL,
-    google_access_token TEXT DEFAULT NULL,
-    google_refresh_token TEXT DEFAULT NULL,
-    google_token_expires_at REAL DEFAULT NULL
-);
-
--- 6. Mock Calendar Slots Table
 CREATE TABLE IF NOT EXISTS mock_calendar_slots (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     slot_datetime TIMESTAMP NOT NULL,
-    is_booked BOOLEAN NOT NULL DEFAULT 0,
+    is_booked BOOLEAN NOT NULL DEFAULT FALSE,
     staff_agent_id INTEGER DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (staff_agent_id) REFERENCES staff_agents(id) ON DELETE CASCADE,
@@ -113,21 +122,19 @@ CREATE TABLE IF NOT EXISTS mock_calendar_slots (
 
 CREATE INDEX IF NOT EXISTS idx_mock_calendar_slots_datetime ON mock_calendar_slots(slot_datetime);
 
--- 7. Services Table
 CREATE TABLE IF NOT EXISTS services (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     description TEXT,
     price_range VARCHAR(100),
     duration_minutes INTEGER,
-    req_customer_name BOOLEAN DEFAULT 1,
-    req_phone_number BOOLEAN DEFAULT 1,
-    req_vehicle_details BOOLEAN DEFAULT 1,
-    req_issue_description BOOLEAN DEFAULT 1,
-    req_location BOOLEAN DEFAULT 1
+    req_customer_name BOOLEAN DEFAULT TRUE,
+    req_phone_number BOOLEAN DEFAULT TRUE,
+    req_vehicle_details BOOLEAN DEFAULT TRUE,
+    req_issue_description BOOLEAN DEFAULT TRUE,
+    req_location BOOLEAN DEFAULT TRUE
 );
 
--- 9. User Google Accounts Table
 CREATE TABLE IF NOT EXISTS user_google_accounts (
     agent_id INTEGER PRIMARY KEY,
     provider VARCHAR(50) NOT NULL DEFAULT 'google',
@@ -141,11 +148,10 @@ CREATE TABLE IF NOT EXISTS user_google_accounts (
     FOREIGN KEY (agent_id) REFERENCES staff_agents(id) ON DELETE CASCADE
 );
 
--- 10. OAuth States Table
 CREATE TABLE IF NOT EXISTS oauth_states (
     state VARCHAR(255) PRIMARY KEY,
     agent_id INTEGER NOT NULL,
-    action_type VARCHAR(50) NOT NULL, -- 'calendar' or 'gmail'
+    action_type VARCHAR(50) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (agent_id) REFERENCES staff_agents(id) ON DELETE CASCADE
 );
@@ -153,70 +159,89 @@ CREATE TABLE IF NOT EXISTS oauth_states (
 
 _db_initialized = False
 
-def init_db(db_path: str = None):
+
+def _safe_alter(cursor, conn, sql):
+    """Run an ALTER TABLE statement, rolling back on DuplicateColumn."""
+    try:
+        cursor.execute(sql)
+    except psycopg2.errors.DuplicateColumn:
+        conn.rollback()
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def init_db(db_url: str = None):
     """Initializes the database by running the DDL schema."""
     global _db_initialized
-    if db_path is None:
-        db_path = get_db_path()
-    conn = sqlite3.connect(db_path)
+    if db_url is None:
+        db_url = get_db_url()
+
+    conn = psycopg2.connect(db_url)
     try:
-        conn.execute("PRAGMA foreign_keys = ON;")
-        conn.executescript(DDL_SCHEMA)
-        
-        # Auto-migration: check and add missing columns to services table if they don't exist
+        conn.autocommit = False
         cursor = conn.cursor()
-        for col in ["req_customer_name", "req_phone_number", "req_vehicle_details", "req_issue_description", "req_location"]:
-            try:
-                cursor.execute(f"ALTER TABLE services ADD COLUMN {col} BOOLEAN DEFAULT 1")
-            except sqlite3.OperationalError:
-                # Column already exists
-                pass
 
-        # Auto-migration: check and add missing columns to staff_agents table if they don't exist
-        for col, col_type in [("email", "VARCHAR(255) DEFAULT NULL"),
-                              ("google_access_token", "TEXT DEFAULT NULL"),
-                              ("google_refresh_token", "TEXT DEFAULT NULL"),
-                              ("google_token_expires_at", "REAL DEFAULT NULL")]:
-            try:
-                cursor.execute(f"ALTER TABLE staff_agents ADD COLUMN {col} {col_type}")
-            except sqlite3.OperationalError:
-                # Column already exists
-                pass
+        # Run each DDL statement individually
+        for statement in DDL_SCHEMA.split(";"):
+            stmt = statement.strip()
+            if stmt:
+                cursor.execute(stmt)
+        conn.commit()
 
-        # Auto-migration: check and add missing columns to service_requests table if they don't exist
-        for col, col_type in [("time_slot", "VARCHAR(100) DEFAULT NULL"),
-                              ("booking_type", "VARCHAR(50) DEFAULT NULL CHECK (booking_type IN ('appointment', 'callback'))"),
-                              ("booking_time", "VARCHAR(100) DEFAULT NULL"),
-                              ("staff_agent_id", "INTEGER REFERENCES staff_agents(id) ON DELETE SET NULL")]:
-            try:
-                cursor.execute(f"ALTER TABLE service_requests ADD COLUMN {col} {col_type}")
-            except sqlite3.OperationalError:
-                # Column already exists
-                pass
+        # Auto-migration: add missing columns to services table
+        for col, col_def in [
+            ("req_customer_name", "BOOLEAN DEFAULT TRUE"),
+            ("req_phone_number", "BOOLEAN DEFAULT TRUE"),
+            ("req_vehicle_details", "BOOLEAN DEFAULT TRUE"),
+            ("req_issue_description", "BOOLEAN DEFAULT TRUE"),
+            ("req_location", "BOOLEAN DEFAULT TRUE"),
+        ]:
+            _safe_alter(cursor, conn, f"ALTER TABLE services ADD COLUMN {col} {col_def}")
 
-        # Auto-migration: drop legacy tables if they exist to keep schema clean
-        for table in ["appointments", "callback_requests"]:
-            try:
-                cursor.execute(f"DROP TABLE IF EXISTS {table}")
-            except sqlite3.OperationalError:
-                pass
-                
+        # Auto-migration: add missing columns to staff_agents table
+        for col, col_type in [
+            ("email", "VARCHAR(255) DEFAULT NULL"),
+            ("google_access_token", "TEXT DEFAULT NULL"),
+            ("google_refresh_token", "TEXT DEFAULT NULL"),
+            ("google_token_expires_at", "REAL DEFAULT NULL"),
+        ]:
+            _safe_alter(cursor, conn, f"ALTER TABLE staff_agents ADD COLUMN {col} {col_type}")
+
+        # Auto-migration: add missing columns to service_requests table
+        for col, col_type in [
+            ("time_slot", "VARCHAR(100) DEFAULT NULL"),
+            ("booking_type", "VARCHAR(50) DEFAULT NULL CHECK (booking_type IN ('appointment', 'callback'))"),
+            ("booking_time", "VARCHAR(100) DEFAULT NULL"),
+            ("staff_agent_id", "INTEGER REFERENCES staff_agents(id) ON DELETE SET NULL"),
+        ]:
+            _safe_alter(cursor, conn, f"ALTER TABLE service_requests ADD COLUMN {col} {col_type}")
+
+        # Drop legacy tables
+        cursor.execute("DROP TABLE IF EXISTS appointments")
+        cursor.execute("DROP TABLE IF EXISTS callback_requests")
+
         conn.commit()
         _db_initialized = True
+    except Exception:
+        conn.rollback()
+        raise
     finally:
+        cursor.close()
         conn.close()
+
 
 @contextmanager
 def get_db_connection():
-    """Context manager yielding an SQLite connection with foreign keys enabled."""
+    """Context manager yielding a psycopg2 connection with RealDictCursor support."""
     global _db_initialized
-    db_path = get_db_path()
+    db_url = get_db_url()
     if not _db_initialized:
-        init_db(db_path)
-        
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA foreign_keys = ON;")
-    conn.row_factory = sqlite3.Row
+        init_db(db_url)
+
+    pool = _get_pool()
+    conn = pool.getconn()
+    conn.autocommit = False
     try:
         yield conn
         conn.commit()
@@ -224,4 +249,9 @@ def get_db_connection():
         conn.rollback()
         raise
     finally:
-        conn.close()
+        pool.putconn(conn)
+
+
+def dict_cursor(conn):
+    """Returns a RealDictCursor for dict-like row access (use instead of sqlite3.Row)."""
+    return conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)

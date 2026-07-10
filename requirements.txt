@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+pydantic
+psycopg2-binary
+httpx
+langchain
+langchain-community
+langchain-openai
+chromadb
+openai
+twilio
+python-multipart

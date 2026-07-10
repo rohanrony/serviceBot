@@ -291,101 +291,100 @@ Make sure the filler message sounds like a normal part of the conversation and i
 
 @router.get("/services")
 async def get_services():
-    from serviceBot.db.connection import get_db_connection
+    from serviceBot.db.connection import get_db_connection, dict_cursor
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        
-        # Deduplicate existing services by name, keeping the one with the lowest ID
-        cursor.execute("""
-            DELETE FROM services 
-            WHERE id NOT IN (
-                SELECT MIN(id) 
-                FROM services 
-                GROUP BY name
-            )
-        """)
-        conn.commit()
-        
-        cursor.execute("SELECT COUNT(*) FROM services")
-        if cursor.fetchone()[0] == 0:
+        with dict_cursor(conn) as cursor:
+            # Deduplicate existing services by name, keeping the one with the lowest ID
+            cursor.execute("""
+                DELETE FROM services 
+                WHERE id NOT IN (
+                    SELECT MIN(id) 
+                    FROM services 
+                    GROUP BY name
+                )
+            """)
+            conn.commit()
+            
+            cursor.execute("SELECT COUNT(*) AS count FROM services")
+            if cursor.fetchone()["count"] == 0:
+                cursor.execute(
+                    "INSERT INTO services (name, description, price_range, duration_minutes, req_customer_name, req_phone_number, req_vehicle_details, req_issue_description, req_location) VALUES (%s, %s, %s, %s, TRUE, TRUE, TRUE, TRUE, TRUE)",
+                    ("Oil Change", "Full synthetic oil change, premium filter replacement, fluid top-off, and courtesy inspection", "$79-119", 45)
+                )
+                conn.commit()
+                try:
+                    sync_services_to_kb()
+                except Exception:
+                    pass
+            
+            cursor.execute("SELECT id, name, description, price_range, duration_minutes, req_customer_name, req_phone_number, req_vehicle_details, req_issue_description, req_location FROM services")
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+
+@router.post("/services", status_code=201)
+async def create_service(payload: ServiceCreate):
+    from serviceBot.db.connection import get_db_connection, dict_cursor
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            # Check if service with same name already exists
+            cursor.execute("SELECT id FROM services WHERE name = %s", (payload.name,))
+            if cursor.fetchone():
+                raise HTTPException(status_code=400, detail="Service with this name already exists in the catalog")
+                
             cursor.execute(
-                "INSERT INTO services (name, description, price_range, duration_minutes, req_customer_name, req_phone_number, req_vehicle_details, req_issue_description, req_location) VALUES (?, ?, ?, ?, 1, 1, 1, 1, 1)",
-                ("Oil Change", "Full synthetic oil change, premium filter replacement, fluid top-off, and courtesy inspection", "$79-119", 45)
+                "INSERT INTO services (name, description, price_range, duration_minutes, req_customer_name, req_phone_number, req_vehicle_details, req_issue_description, req_location) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+                (payload.name, payload.description, payload.price_range, payload.duration_minutes,
+                 bool(payload.req_customer_name), bool(payload.req_phone_number),
+                 bool(payload.req_vehicle_details), bool(payload.req_issue_description),
+                 bool(payload.req_location))
+            )
+            conn.commit()
+            new_id = cursor.fetchone()["id"]
+            try:
+                sync_services_to_kb()
+            except Exception:
+                pass
+            return {"id": new_id, "name": payload.name, "success": True}
+
+@router.put("/services/{service_id}")
+async def update_service(service_id: int, payload: ServiceCreate):
+    from serviceBot.db.connection import get_db_connection, dict_cursor
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT id FROM services WHERE id = %s", (service_id,))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail="Service not found")
+            cursor.execute(
+                "UPDATE services SET name = %s, description = %s, price_range = %s, duration_minutes = %s, req_customer_name = %s, req_phone_number = %s, req_vehicle_details = %s, req_issue_description = %s, req_location = %s WHERE id = %s",
+                (payload.name, payload.description, payload.price_range, payload.duration_minutes,
+                 bool(payload.req_customer_name), bool(payload.req_phone_number),
+                 bool(payload.req_vehicle_details), bool(payload.req_issue_description),
+                 bool(payload.req_location),
+                 service_id)
             )
             conn.commit()
             try:
                 sync_services_to_kb()
             except Exception:
                 pass
-        
-        cursor.execute("SELECT id, name, description, price_range, duration_minutes, req_customer_name, req_phone_number, req_vehicle_details, req_issue_description, req_location FROM services")
-        rows = cursor.fetchall()
-        return [dict(row) for row in rows]
-
-@router.post("/services", status_code=201)
-async def create_service(payload: ServiceCreate):
-    from serviceBot.db.connection import get_db_connection
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        
-        # Check if service with same name already exists
-        cursor.execute("SELECT id FROM services WHERE name = ?", (payload.name,))
-        if cursor.fetchone():
-            raise HTTPException(status_code=400, detail="Service with this name already exists in the catalog")
-            
-        cursor.execute(
-            "INSERT INTO services (name, description, price_range, duration_minutes, req_customer_name, req_phone_number, req_vehicle_details, req_issue_description, req_location) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (payload.name, payload.description, payload.price_range, payload.duration_minutes,
-             1 if payload.req_customer_name else 0, 1 if payload.req_phone_number else 0,
-             1 if payload.req_vehicle_details else 0, 1 if payload.req_issue_description else 0,
-             1 if payload.req_location else 0)
-        )
-        conn.commit()
-        new_id = cursor.lastrowid
-        try:
-            sync_services_to_kb()
-        except Exception:
-            pass
-        return {"id": new_id, "name": payload.name, "success": True}
-
-@router.put("/services/{service_id}")
-async def update_service(service_id: int, payload: ServiceCreate):
-    from serviceBot.db.connection import get_db_connection
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT id FROM services WHERE id = ?", (service_id,))
-        if not cursor.fetchone():
-            raise HTTPException(status_code=404, detail="Service not found")
-        cursor.execute(
-            "UPDATE services SET name = ?, description = ?, price_range = ?, duration_minutes = ?, req_customer_name = ?, req_phone_number = ?, req_vehicle_details = ?, req_issue_description = ?, req_location = ? WHERE id = ?",
-            (payload.name, payload.description, payload.price_range, payload.duration_minutes,
-             1 if payload.req_customer_name else 0, 1 if payload.req_phone_number else 0,
-             1 if payload.req_vehicle_details else 0, 1 if payload.req_issue_description else 0,
-             1 if payload.req_location else 0,
-             service_id)
-        )
-        conn.commit()
-        try:
-            sync_services_to_kb()
-        except Exception:
-            pass
-        return {"id": service_id, "name": payload.name, "success": True}
+            return {"id": service_id, "name": payload.name, "success": True}
 
 @router.delete("/services/{service_id}")
 async def delete_service(service_id: int):
-    from serviceBot.db.connection import get_db_connection
+    from serviceBot.db.connection import get_db_connection, dict_cursor
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT id FROM services WHERE id = ?", (service_id,))
-        if not cursor.fetchone():
-            raise HTTPException(status_code=404, detail="Service not found")
-        cursor.execute("DELETE FROM services WHERE id = ?", (service_id,))
-        conn.commit()
-        try:
-            sync_services_to_kb()
-        except Exception:
-            pass
-        return {"id": service_id, "success": True}
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT id FROM services WHERE id = %s", (service_id,))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail="Service not found")
+            cursor.execute("DELETE FROM services WHERE id = %s", (service_id,))
+            conn.commit()
+            try:
+                sync_services_to_kb()
+            except Exception:
+                pass
+            return {"id": service_id, "success": True}
+
 
 class CalendarSlotCreate(BaseModel):
     slot_datetime: str
@@ -397,55 +396,54 @@ class CalendarSlotUpdate(BaseModel):
 
 @router.get("/agents")
 async def get_staff_agents():
-    from serviceBot.db.connection import get_db_connection
+    from serviceBot.db.connection import get_db_connection, dict_cursor
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT sa.id, sa.name, sa.role, sa.email AS db_email, uga.email AS google_email
-            FROM staff_agents sa
-            LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id;
-        """)
-        rows = cursor.fetchall()
-        agents = []
-        for row in rows:
-            d = {
-                "id": row["id"],
-                "name": row["name"],
-                "role": row["role"],
-                "email": row["google_email"] or row["db_email"],
-                "is_connected": bool(row["google_email"])
-            }
-            agents.append(d)
-        return agents
+        with dict_cursor(conn) as cursor:
+            cursor.execute("""
+                SELECT sa.id, sa.name, sa.role, sa.email AS db_email, uga.email AS google_email
+                FROM staff_agents sa
+                LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id;
+            """)
+            rows = cursor.fetchall()
+            agents = []
+            for row in rows:
+                d = {
+                    "id": row["id"],
+                    "name": row["name"],
+                    "role": row["role"],
+                    "email": row["google_email"] or row["db_email"],
+                    "is_connected": bool(row["google_email"])
+                }
+                agents.append(d)
+            return agents
 
 @router.post("/agents", status_code=201)
 async def create_staff_agent(payload: StaffAgentCreate):
-    from serviceBot.db.connection import get_db_connection
+    from serviceBot.db.connection import get_db_connection, dict_cursor
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO staff_agents (name, role, email) VALUES (?, ?, ?);",
-            (payload.name, payload.role, payload.email)
-        )
-        conn.commit()
-        new_id = cursor.lastrowid
-        return {"id": new_id, "name": payload.name, "success": True}
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                "INSERT INTO staff_agents (name, role, email) VALUES (%s, %s, %s) RETURNING id;",
+                (payload.name, payload.role, payload.email)
+            )
+            conn.commit()
+            new_id = cursor.fetchone()["id"]
+            return {"id": new_id, "name": payload.name, "success": True}
 
 @router.delete("/agents/{agent_id}")
 async def delete_staff_agent(agent_id: int):
     import traceback
-    from serviceBot.db.connection import get_db_connection
+    from serviceBot.db.connection import get_db_connection, dict_cursor
     try:
         with get_db_connection() as conn:
-            cursor = conn.cursor()
-            
-            # Verify agent exists
-            cursor.execute("SELECT id FROM staff_agents WHERE id = ?;", (agent_id,))
-            if not cursor.fetchone():
-                raise HTTPException(status_code=404, detail="Agent not found")
-                
-            cursor.execute("DELETE FROM staff_agents WHERE id = ?;", (agent_id,))
-            conn.commit()
+            with dict_cursor(conn) as cursor:
+                # Verify agent exists
+                cursor.execute("SELECT id FROM staff_agents WHERE id = %s;", (agent_id,))
+                if not cursor.fetchone():
+                    raise HTTPException(status_code=404, detail="Agent not found")
+                    
+                cursor.execute("DELETE FROM staff_agents WHERE id = %s;", (agent_id,))
+                conn.commit()
         return {"success": True}
     except Exception as e:
         print(f"Error deleting staff agent {agent_id}: {e}")
@@ -454,20 +452,21 @@ async def delete_staff_agent(agent_id: int):
             raise e
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
+
 @router.get("/agents/{agent_id}/google/auth-url")
 async def get_agent_google_auth_url(agent_id: int, request: Request, action: str = "calendar"):
     if action not in ["calendar", "gmail"]:
         raise HTTPException(status_code=400, detail="Invalid action type.")
         
     from serviceBot.services.encryption import decrypt_key
-    from serviceBot.db.connection import get_db_connection
+    from serviceBot.db.connection import get_db_connection, dict_cursor
     import secrets
     
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT id FROM staff_agents WHERE id = ?;", (agent_id,))
-        if not cursor.fetchone():
-            raise HTTPException(status_code=404, detail="Agent not found")
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT id FROM staff_agents WHERE id = %s;", (agent_id,))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail="Agent not found")
             
     config = load_config()
     client_id = decrypt_key(config.get("gmail_client_id", ""))
@@ -479,9 +478,9 @@ async def get_agent_google_auth_url(agent_id: int, request: Request, action: str
     # Determine scopes
     if action == "gmail":
         with get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT granted_scopes FROM user_google_accounts WHERE agent_id = ?;", (agent_id,))
-            row = cursor.fetchone()
+            with dict_cursor(conn) as cursor:
+                cursor.execute("SELECT granted_scopes FROM user_google_accounts WHERE agent_id = %s;", (agent_id,))
+                row = cursor.fetchone()
         existing_scopes = row["granted_scopes"] if row else ""
         scopes_set = {"openid", "email", "profile", "https://www.googleapis.com/auth/gmail.send"}
         if "https://www.googleapis.com/auth/calendar.events" in existing_scopes:
@@ -494,9 +493,9 @@ async def get_agent_google_auth_url(agent_id: int, request: Request, action: str
     
     # Save state for CSRF protection
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("INSERT INTO oauth_states (state, agent_id, action_type) VALUES (?, ?, ?);", (state, agent_id, action))
-        conn.commit()
+        with dict_cursor(conn) as cursor:
+            cursor.execute("INSERT INTO oauth_states (state, agent_id, action_type) VALUES (%s, %s, %s);", (state, agent_id, action))
+            conn.commit()
         
     redirect_uri = f"{str(request.base_url).rstrip('/')}/api/v1/portal/gmail/oauth/callback"
     
@@ -519,15 +518,15 @@ async def get_agent_oauth_url(agent_id: int, request: Request):
 
 @router.get("/agents/{agent_id}/google/status")
 async def get_agent_google_status(agent_id: int):
-    from serviceBot.db.connection import get_db_connection
+    from serviceBot.db.connection import get_db_connection, dict_cursor
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT id FROM staff_agents WHERE id = ?;", (agent_id,))
-        if not cursor.fetchone():
-            raise HTTPException(status_code=404, detail="Agent not found")
-            
-        cursor.execute("SELECT email, granted_scopes FROM user_google_accounts WHERE agent_id = ?;", (agent_id,))
-        row = cursor.fetchone()
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT id FROM staff_agents WHERE id = %s;", (agent_id,))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail="Agent not found")
+                
+            cursor.execute("SELECT email, granted_scopes FROM user_google_accounts WHERE agent_id = %s;", (agent_id,))
+            row = cursor.fetchone()
         
     if not row:
         return {"is_connected": False, "email": None, "scopes": []}
@@ -541,15 +540,15 @@ async def get_agent_google_status(agent_id: int):
 
 @router.post("/agents/{agent_id}/google/disconnect")
 async def disconnect_agent_google(agent_id: int):
-    from serviceBot.db.connection import get_db_connection
+    from serviceBot.db.connection import get_db_connection, dict_cursor
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT id FROM staff_agents WHERE id = ?;", (agent_id,))
-        if not cursor.fetchone():
-            raise HTTPException(status_code=404, detail="Agent not found")
-            
-        cursor.execute("DELETE FROM user_google_accounts WHERE agent_id = ?;", (agent_id,))
-        conn.commit()
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT id FROM staff_agents WHERE id = %s;", (agent_id,))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail="Agent not found")
+                
+            cursor.execute("DELETE FROM user_google_accounts WHERE agent_id = %s;", (agent_id,))
+            conn.commit()
     return {"success": True}
 
 @router.post("/agents/{agent_id}/disconnect")
@@ -559,83 +558,93 @@ async def disconnect_agent_calendar(agent_id: int):
 
 @router.get("/agents/{agent_id}/calendar")
 async def get_agent_calendar(agent_id: int):
-    from serviceBot.db.connection import get_db_connection
+    from serviceBot.db.connection import get_db_connection, dict_cursor
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        # Verify agent exists
-        cursor.execute("SELECT id FROM staff_agents WHERE id = ?", (agent_id,))
-        if not cursor.fetchone():
-            raise HTTPException(status_code=404, detail="Agent not found")
-        
-        cursor.execute(
-            "SELECT id, slot_datetime, is_booked, staff_agent_id FROM mock_calendar_slots "
-            "WHERE staff_agent_id = ? ORDER BY slot_datetime ASC",
-            (agent_id,)
-        )
-        rows = cursor.fetchall()
-        return [dict(row) for row in rows]
+        with dict_cursor(conn) as cursor:
+            # Verify agent exists
+            cursor.execute("SELECT id FROM staff_agents WHERE id = %s", (agent_id,))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail="Agent not found")
+            
+            cursor.execute(
+                "SELECT id, slot_datetime, is_booked, staff_agent_id FROM mock_calendar_slots "
+                "WHERE staff_agent_id = %s ORDER BY slot_datetime ASC",
+                (agent_id,)
+            )
+            rows = cursor.fetchall()
+            # PostgreSQL returns datetime objects for slot_datetime, serialize to string for JSON API
+            res = []
+            for row in rows:
+                r = dict(row)
+                if not isinstance(r["slot_datetime"], str):
+                    r["slot_datetime"] = r["slot_datetime"].strftime("%Y-%m-%d %H:%M:%S")
+                res.append(r)
+            return res
 
 @router.post("/agents/{agent_id}/calendar", status_code=201)
 async def create_agent_slot(agent_id: int, payload: CalendarSlotCreate):
-    from serviceBot.db.connection import get_db_connection
+    from serviceBot.db.connection import get_db_connection, dict_cursor
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        # Verify agent exists
-        cursor.execute("SELECT id FROM staff_agents WHERE id = ?", (agent_id,))
-        if not cursor.fetchone():
-            raise HTTPException(status_code=404, detail="Agent not found")
-        
-        # Verify slot doesn't already exist for this agent
-        cursor.execute(
-            "SELECT id FROM mock_calendar_slots WHERE slot_datetime = ? AND staff_agent_id = ?",
-            (payload.slot_datetime, agent_id)
-        )
-        if cursor.fetchone():
-            raise HTTPException(status_code=400, detail="Time slot already exists for this agent")
+        with dict_cursor(conn) as cursor:
+            # Verify agent exists
+            cursor.execute("SELECT id FROM staff_agents WHERE id = %s", (agent_id,))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail="Agent not found")
             
-        cursor.execute(
-            "INSERT INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES (?, ?, ?)",
-            (payload.slot_datetime, 1 if payload.is_booked else 0, agent_id)
-        )
-        conn.commit()
-        new_id = cursor.lastrowid
-        return {"id": new_id, "slot_datetime": payload.slot_datetime, "success": True}
+            # Verify slot doesn't already exist for this agent
+            cursor.execute(
+                "SELECT id FROM mock_calendar_slots WHERE slot_datetime = CAST(%s AS TIMESTAMP) AND staff_agent_id = %s",
+                (payload.slot_datetime, agent_id)
+            )
+            if cursor.fetchone():
+                raise HTTPException(status_code=400, detail="Time slot already exists for this agent")
+                
+            cursor.execute(
+                "INSERT INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES (%s, %s, %s) RETURNING id",
+                (payload.slot_datetime, bool(payload.is_booked), agent_id)
+            )
+            conn.commit()
+            new_id = cursor.fetchone()["id"]
+            return {"id": new_id, "slot_datetime": payload.slot_datetime, "success": True}
 
 @router.patch("/calendar/{slot_id}")
 async def update_calendar_slot(slot_id: int, payload: CalendarSlotUpdate):
-    from serviceBot.db.connection import get_db_connection
+    from serviceBot.db.connection import get_db_connection, dict_cursor
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        # Verify slot exists
-        cursor.execute("SELECT id, slot_datetime, is_booked, staff_agent_id FROM mock_calendar_slots WHERE id = ?", (slot_id,))
-        row = cursor.fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Calendar slot not found")
-        
-        current_data = dict(row)
-        new_datetime = payload.slot_datetime if payload.slot_datetime is not None else current_data["slot_datetime"]
-        new_is_booked = 1 if (payload.is_booked if payload.is_booked is not None else current_data["is_booked"]) else 0
-        
-        # Update
-        cursor.execute(
-            "UPDATE mock_calendar_slots SET slot_datetime = ?, is_booked = ? WHERE id = ?",
-            (new_datetime, new_is_booked, slot_id)
-        )
-        conn.commit()
-        return {"id": slot_id, "slot_datetime": new_datetime, "is_booked": bool(new_is_booked), "success": True}
+        with dict_cursor(conn) as cursor:
+            # Verify slot exists
+            cursor.execute("SELECT id, slot_datetime, is_booked, staff_agent_id FROM mock_calendar_slots WHERE id = %s", (slot_id,))
+            row = cursor.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Calendar slot not found")
+            
+            current_data = dict(row)
+            new_datetime = payload.slot_datetime if payload.slot_datetime is not None else current_data["slot_datetime"]
+            new_is_booked = bool(payload.is_booked if payload.is_booked is not None else current_data["is_booked"])
+            
+            # Update
+            cursor.execute(
+                "UPDATE mock_calendar_slots SET slot_datetime = %s, is_booked = %s WHERE id = %s",
+                (new_datetime, new_is_booked, slot_id)
+            )
+            conn.commit()
+            if not isinstance(new_datetime, str):
+                new_datetime = new_datetime.strftime("%Y-%m-%d %H:%M:%S")
+            return {"id": slot_id, "slot_datetime": new_datetime, "is_booked": new_is_booked, "success": True}
 
 @router.delete("/calendar/{slot_id}")
 async def delete_calendar_slot(slot_id: int):
-    from serviceBot.db.connection import get_db_connection
+    from serviceBot.db.connection import get_db_connection, dict_cursor
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT id FROM mock_calendar_slots WHERE id = ?", (slot_id,))
-        if not cursor.fetchone():
-            raise HTTPException(status_code=404, detail="Calendar slot not found")
-            
-        cursor.execute("DELETE FROM mock_calendar_slots WHERE id = ?", (slot_id,))
-        conn.commit()
-        return {"id": slot_id, "success": True}
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT id FROM mock_calendar_slots WHERE id = %s", (slot_id,))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail="Calendar slot not found")
+                
+            cursor.execute("DELETE FROM mock_calendar_slots WHERE id = %s", (slot_id,))
+            conn.commit()
+            return {"id": slot_id, "success": True}
+
 
 class PopulateSlotsPayload(BaseModel):
     days: Optional[int] = 30
@@ -704,108 +713,131 @@ async def sync_all_calendar_slots(days: int = 30):
 
 
 @router.get("/calls")
-
 async def get_calls():
-    from serviceBot.db.connection import get_db_connection
+    from serviceBot.db.connection import get_db_connection, dict_cursor
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT cn.id, cn.call_id, c.name AS customer_name, c.phone, cn.summary, cn.transcript, cn.created_at,
-                   GROUP_CONCAT(v.year || ' ' || v.make || ' ' || v.model, ', ') AS vehicle
-            FROM crm_notes cn
-            JOIN customers c ON cn.customer_id = c.id
-            LEFT JOIN vehicles v ON v.customer_id = c.id
-            GROUP BY cn.id
-            ORDER BY cn.created_at DESC
-        """)
-        rows = cursor.fetchall()
-        return [dict(row) for row in rows]
+        with dict_cursor(conn) as cursor:
+            cursor.execute("""
+                SELECT cn.id, cn.call_id, c.name AS customer_name, c.phone, cn.summary, cn.transcript, cn.created_at,
+                       STRING_AGG(CONCAT(v.year, ' ', v.make, ' ', v.model), ', ') AS vehicle
+                FROM crm_notes cn
+                JOIN customers c ON cn.customer_id = c.id
+                LEFT JOIN vehicles v ON v.customer_id = c.id
+                GROUP BY cn.id, c.name, c.phone, cn.call_id, cn.summary, cn.transcript, cn.created_at
+                ORDER BY cn.created_at DESC
+            """)
+            rows = cursor.fetchall()
+            res = []
+            for row in rows:
+                r = dict(row)
+                if not isinstance(r["created_at"], str) and r["created_at"]:
+                    r["created_at"] = r["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+                res.append(r)
+            return res
 
 @router.get("/appointments")
 async def get_appointments():
-    from serviceBot.db.connection import get_db_connection
+    from serviceBot.db.connection import get_db_connection, dict_cursor
     with get_db_connection() as conn:
-        cursor = conn.conn.cursor() if hasattr(conn, 'conn') else conn.cursor()
-        cursor.execute("""
-            SELECT sr.id, sr.booking_time AS appointment_datetime, sr.service_type, sr.status, sr.created_at, c.name AS customer_name, c.phone,
-                   v.make, v.model, v.year
-            FROM service_requests sr
-            LEFT JOIN customers c ON sr.customer_id = c.id
-            LEFT JOIN vehicles v ON sr.vehicle_id = v.id
-            WHERE sr.booking_type = 'appointment'
-            ORDER BY sr.booking_time DESC
-        """)
-        rows = cursor.fetchall()
-        return [dict(row) for row in rows]
+        with dict_cursor(conn) as cursor:
+            cursor.execute("""
+                SELECT sr.id, sr.booking_time AS appointment_datetime, sr.service_type, sr.status, sr.created_at, c.name AS customer_name, c.phone,
+                       v.make, v.model, v.year
+                FROM service_requests sr
+                LEFT JOIN customers c ON sr.customer_id = c.id
+                LEFT JOIN vehicles v ON sr.vehicle_id = v.id
+                WHERE sr.booking_type = 'appointment'
+                ORDER BY sr.booking_time DESC
+            """)
+            rows = cursor.fetchall()
+            res = []
+            for row in rows:
+                r = dict(row)
+                if not isinstance(r["created_at"], str) and r["created_at"]:
+                    r["created_at"] = r["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+                res.append(r)
+            return res
 
 @router.get("/service-requests")
 async def get_service_requests():
-    from serviceBot.db.connection import get_db_connection
+    from serviceBot.db.connection import get_db_connection, dict_cursor
     with get_db_connection() as conn:
-        cursor = conn.conn.cursor() if hasattr(conn, 'conn') else conn.cursor()
-        cursor.execute("""
-            SELECT sr.id, sr.service_type, sr.issue_description, sr.status, sr.time_slot, sr.created_at,
-                   sr.booking_type, sr.booking_time,
-                   c.name AS customer_name, c.phone,
-                   v.make, v.model, v.year
-            FROM service_requests sr
-            LEFT JOIN customers c ON sr.customer_id = c.id
-            LEFT JOIN vehicles v ON sr.vehicle_id = v.id
-            ORDER BY sr.updated_at DESC
-        """)
-        rows = cursor.fetchall()
-        return [dict(row) for row in rows]
+        with dict_cursor(conn) as cursor:
+            cursor.execute("""
+                SELECT sr.id, sr.service_type, sr.issue_description, sr.status, sr.time_slot, sr.created_at,
+                       sr.booking_type, sr.booking_time,
+                       c.name AS customer_name, c.phone,
+                       v.make, v.model, v.year
+                FROM service_requests sr
+                LEFT JOIN customers c ON sr.customer_id = c.id
+                LEFT JOIN vehicles v ON sr.vehicle_id = v.id
+                ORDER BY sr.updated_at DESC
+            """)
+            rows = cursor.fetchall()
+            res = []
+            for row in rows:
+                r = dict(row)
+                if not isinstance(r["created_at"], str) and r["created_at"]:
+                    r["created_at"] = r["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+                res.append(r)
+            return res
 
 @router.get("/callbacks")
 async def get_callbacks():
-    from serviceBot.db.connection import get_db_connection
+    from serviceBot.db.connection import get_db_connection, dict_cursor
     with get_db_connection() as conn:
-        cursor = conn.conn.cursor() if hasattr(conn, 'conn') else conn.cursor()
-        cursor.execute("""
-            SELECT sr.id, sr.status, sr.created_at, sr.booking_time AS preferred_time, c.name AS customer_name, c.phone, sr.service_type, sr.issue_description,
-                   v.make, v.model, v.year
-            FROM service_requests sr
-            LEFT JOIN customers c ON sr.customer_id = c.id
-            LEFT JOIN vehicles v ON sr.vehicle_id = v.id
-            WHERE sr.booking_type = 'callback'
-            ORDER BY sr.updated_at DESC
-        """)
-        rows = cursor.fetchall()
-        return [dict(row) for row in rows]
+        with dict_cursor(conn) as cursor:
+            cursor.execute("""
+                SELECT sr.id, sr.status, sr.created_at, sr.booking_time AS preferred_time, c.name AS customer_name, c.phone, sr.service_type, sr.issue_description,
+                       v.make, v.model, v.year
+                FROM service_requests sr
+                LEFT JOIN customers c ON sr.customer_id = c.id
+                LEFT JOIN vehicles v ON sr.vehicle_id = v.id
+                WHERE sr.booking_type = 'callback'
+                ORDER BY sr.updated_at DESC
+            """)
+            rows = cursor.fetchall()
+            res = []
+            for row in rows:
+                r = dict(row)
+                if not isinstance(r["created_at"], str) and r["created_at"]:
+                    r["created_at"] = r["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+                res.append(r)
+            return res
 
 @router.get("/stats")
 async def get_stats():
-    from serviceBot.db.connection import get_db_connection
+    from serviceBot.db.connection import get_db_connection, dict_cursor
     with get_db_connection() as conn:
-        cursor = conn.conn.cursor() if hasattr(conn, 'conn') else conn.cursor()
-        
-        # Total Calls
-        cursor.execute("SELECT COUNT(*) FROM crm_notes")
-        total_calls = cursor.fetchone()[0]
-        
-        # Booked Appointments
-        cursor.execute("SELECT COUNT(*) FROM service_requests WHERE booking_type = 'appointment'")
-        total_appointments = cursor.fetchone()[0]
-        
-        # Service Requests
-        cursor.execute("SELECT COUNT(*) FROM service_requests")
-        total_requests = cursor.fetchone()[0]
-        
-        # Open Slots
-        cursor.execute("SELECT COUNT(*) FROM mock_calendar_slots WHERE is_booked = 0")
-        open_slots = cursor.fetchone()[0]
-        
-        # Callbacks
-        cursor.execute("SELECT COUNT(*) FROM service_requests WHERE booking_type = 'callback'")
-        total_callbacks = cursor.fetchone()[0]
+        with dict_cursor(conn) as cursor:
+            # Total Calls
+            cursor.execute("SELECT COUNT(*) AS count FROM crm_notes")
+            total_calls = cursor.fetchone()["count"]
             
-        return {
-            "total_calls": total_calls,
-            "total_appointments": total_appointments,
-            "total_requests": total_requests,
-            "open_slots": open_slots,
-            "total_callbacks": total_callbacks
-        }
+            # Booked Appointments
+            cursor.execute("SELECT COUNT(*) AS count FROM service_requests WHERE booking_type = 'appointment'")
+            total_appointments = cursor.fetchone()["count"]
+            
+            # Service Requests
+            cursor.execute("SELECT COUNT(*) AS count FROM service_requests")
+            total_requests = cursor.fetchone()["count"]
+            
+            # Open Slots
+            cursor.execute("SELECT COUNT(*) AS count FROM mock_calendar_slots WHERE is_booked = FALSE")
+            open_slots = cursor.fetchone()["count"]
+            
+            # Callbacks
+            cursor.execute("SELECT COUNT(*) AS count FROM service_requests WHERE booking_type = 'callback'")
+            total_callbacks = cursor.fetchone()["count"]
+                
+            return {
+                "total_calls": total_calls,
+                "total_appointments": total_appointments,
+                "total_requests": total_requests,
+                "open_slots": open_slots,
+                "total_callbacks": total_callbacks
+            }
+
 
 @router.post("/kb/upload")
 async def upload_kb_file(file: UploadFile = File(...)):
@@ -995,34 +1027,34 @@ async def gmail_oauth_callback(request: Request, code: str = None, error: str = 
     action_type = "calendar"
     
     if state:
-        from serviceBot.db.connection import get_db_connection
+        from serviceBot.db.connection import get_db_connection, dict_cursor
         with get_db_connection() as conn:
-            cursor = conn.cursor()
-            # Clean up states older than 15 minutes
-            cursor.execute("DELETE FROM oauth_states WHERE datetime(created_at) < datetime('now', '-15 minutes');")
-            cursor.execute("SELECT agent_id, action_type FROM oauth_states WHERE state = ?;", (state,))
-            state_row = cursor.fetchone()
-            if state_row:
-                agent_id = state_row["agent_id"]
-                action_type = state_row["action_type"]
-                cursor.execute("DELETE FROM oauth_states WHERE state = ?;", (state,))
-                conn.commit()
-            elif state.startswith("agent_"):
-                try:
-                    agent_id = int(state.split("_")[1])
-                    action_type = "calendar"
-                except ValueError:
-                    pass
-            else:
-                return HTMLResponse(content="""
-                <html>
-                <body style="font-family: sans-serif; background-color: #0c0d0e; color: #ef4444; padding: 50px; text-align: center;">
-                    <h2>Authentication Failed</h2>
-                    <p>Invalid or expired state parameter. Please request connection again.</p>
-                    <button onclick="window.close()" style="padding: 10px 20px; background: #5e6ad2; color: white; border: none; border-radius: 6px; cursor: pointer; margin-top: 20px;">Close Window</button>
-                </body>
-                </html>
-                """)
+            with dict_cursor(conn) as cursor:
+                # Clean up states older than 15 minutes
+                cursor.execute("DELETE FROM oauth_states WHERE created_at < NOW() - INTERVAL '15 minutes';")
+                cursor.execute("SELECT agent_id, action_type FROM oauth_states WHERE state = %s;", (state,))
+                state_row = cursor.fetchone()
+                if state_row:
+                    agent_id = state_row["agent_id"]
+                    action_type = state_row["action_type"]
+                    cursor.execute("DELETE FROM oauth_states WHERE state = %s;", (state,))
+                    conn.commit()
+                elif state.startswith("agent_"):
+                    try:
+                        agent_id = int(state.split("_")[1])
+                        action_type = "calendar"
+                    except ValueError:
+                        pass
+                else:
+                    return HTMLResponse(content="""
+                    <html>
+                    <body style="font-family: sans-serif; background-color: #0c0d0e; color: #ef4444; padding: 50px; text-align: center;">
+                        <h2>Authentication Failed</h2>
+                        <p>Invalid or expired state parameter. Please request connection again.</p>
+                        <button onclick="window.close()" style="padding: 10px 20px; background: #5e6ad2; color: white; border: none; border-radius: 6px; cursor: pointer; margin-top: 20px;">Close Window</button>
+                    </body>
+                    </html>
+                    """)
         
     from serviceBot.services.encryption import decrypt_key, encrypt_key
     config = load_config()
@@ -1067,7 +1099,7 @@ async def gmail_oauth_callback(request: Request, code: str = None, error: str = 
         refresh_token = data.get("refresh_token")
         expires_in = int(data.get("expires_in", 3600))
         expires_at = time.time() + expires_in - 60
-
+ 
         if agent_id is not None:
             # Query user email and account info from Google
             userinfo_url = "https://openidconnect.googleapis.com/v1/userinfo"
@@ -1081,55 +1113,55 @@ async def gmail_oauth_callback(request: Request, code: str = None, error: str = 
                 google_account_id = u_data.get("sub")
                 email = u_data.get("email")
                 google_name = u_data.get("name")
-
+ 
             granted_scopes = data.get("scope", "")
-
-            from serviceBot.db.connection import get_db_connection
+ 
+            from serviceBot.db.connection import get_db_connection, dict_cursor
             with get_db_connection() as conn:
-                cursor = conn.cursor()
-                
-                # Update staff agent name and email dynamically to match connected Google account
-                if google_name:
-                    cursor.execute("UPDATE staff_agents SET name = ? WHERE id = ?;", (google_name, agent_id))
-                if email:
-                    cursor.execute("UPDATE staff_agents SET email = ? WHERE id = ?;", (email, agent_id))
-                
-                # Enforce refresh token preservation if missing in current response
-                cursor.execute("SELECT refresh_token FROM user_google_accounts WHERE agent_id = ?;", (agent_id,))
-                existing_row = cursor.fetchone()
-                
-                db_refresh_token = None
-                if refresh_token:
-                    db_refresh_token = encrypt_key(refresh_token)
-                elif existing_row and existing_row["refresh_token"]:
-                    db_refresh_token = existing_row["refresh_token"]
+                with dict_cursor(conn) as cursor:
+                    # Update staff agent name and email dynamically to match connected Google account
+                    if google_name:
+                        cursor.execute("UPDATE staff_agents SET name = %s WHERE id = %s;", (google_name, agent_id))
+                    if email:
+                        cursor.execute("UPDATE staff_agents SET email = %s WHERE id = %s;", (email, agent_id))
+                    
+                    # Enforce refresh token preservation if missing in current response
+                    cursor.execute("SELECT refresh_token FROM user_google_accounts WHERE agent_id = %s;", (agent_id,))
+                    existing_row = cursor.fetchone()
+                    
+                    db_refresh_token = None
+                    if refresh_token:
+                        db_refresh_token = encrypt_key(refresh_token)
+                    elif existing_row and existing_row["refresh_token"]:
+                        db_refresh_token = existing_row["refresh_token"]
+ 
+                    # UPSERT user_google_accounts
+                    cursor.execute("""
+                        INSERT INTO user_google_accounts (agent_id, provider, google_account_id, email, access_token, refresh_token, expires_at, granted_scopes, last_refresh_time)
+                        VALUES (%s, 'google', %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT(agent_id) DO UPDATE SET
+                            google_account_id = excluded.google_account_id,
+                            email = excluded.email,
+                            access_token = excluded.access_token,
+                            refresh_token = COALESCE(excluded.refresh_token, user_google_accounts.refresh_token),
+                            expires_at = excluded.expires_at,
+                            granted_scopes = excluded.granted_scopes,
+                            last_refresh_time = excluded.last_refresh_time;
+                    """, (
+                        agent_id,
+                        google_account_id,
+                        email,
+                        encrypt_key(access_token),
+                        db_refresh_token,
+                        expires_at,
+                        granted_scopes,
+                        time.time()
+                    ))
+                    cursor.execute("SELECT name FROM staff_agents WHERE id = %s;", (agent_id,))
+                    agent_row = cursor.fetchone()
+                    agent_name = agent_row["name"] if agent_row else f"Agent {agent_id}"
+                    conn.commit()
 
-                # UPSERT user_google_accounts
-                cursor.execute("""
-                    INSERT INTO user_google_accounts (agent_id, provider, google_account_id, email, access_token, refresh_token, expires_at, granted_scopes, last_refresh_time)
-                    VALUES (?, 'google', ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(agent_id) DO UPDATE SET
-                        google_account_id = excluded.google_account_id,
-                        email = excluded.email,
-                        access_token = excluded.access_token,
-                        refresh_token = COALESCE(excluded.refresh_token, user_google_accounts.refresh_token),
-                        expires_at = excluded.expires_at,
-                        granted_scopes = excluded.granted_scopes,
-                        last_refresh_time = excluded.last_refresh_time;
-                """, (
-                    agent_id,
-                    google_account_id,
-                    email,
-                    encrypt_key(access_token),
-                    db_refresh_token,
-                    expires_at,
-                    granted_scopes,
-                    time.time()
-                ))
-                cursor.execute("SELECT name FROM staff_agents WHERE id = ?;", (agent_id,))
-                agent_row = cursor.fetchone()
-                agent_name = agent_row["name"] if agent_row else f"Agent {agent_id}"
-                conn.commit()
 
             message_type = "agent-auth-success" if action_type == "calendar" else "gmail-auth-success"
             title_text = "Calendar Connected!" if action_type == "calendar" else "Gmail Connected!"
