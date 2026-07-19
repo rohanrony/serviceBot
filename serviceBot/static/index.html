@@ -271,7 +271,7 @@
           <div class="content-card">
             <div class="card-header">
               <h3>Agent Configurations</h3>
-              <p class="text-muted">Configure prompt behaviors and required slots for specialized sub-agents.</p>
+              <p class="text-muted">Configure the core system prompt instructions and agent greeting for ElevenLabs.</p>
             </div>
             
             <form id="intent-config-form" class="form-grid">
@@ -281,30 +281,9 @@
               </div>
 
               <div class="form-group full-width">
-                <label for="prompt-router">Core Router (Classifier) System Prompt</label>
-                <textarea id="prompt-router" rows="4" class="form-input"></textarea>
+                <label for="prompt-system">Unified Agent System Prompt</label>
+                <textarea id="prompt-system" rows="18" class="form-input" placeholder="Enter the complete system prompt instructions..."></textarea>
               </div>
-
-              <div class="form-group full-width">
-                <label for="prompt-service-request">Service Request Agent Prompt</label>
-                <textarea id="prompt-service-request" rows="4" class="form-input"></textarea>
-              </div>
-
-              <div class="form-group full-width">
-                <label for="prompt-appointment">Appointment Booking Agent Prompt</label>
-                <textarea id="prompt-appointment" rows="4" class="form-input"></textarea>
-              </div>
-
-              <div class="form-group full-width">
-                <label for="prompt-faq">FAQ RAG Agent Prompt</label>
-                <textarea id="prompt-faq" rows="4" class="form-input"></textarea>
-              </div>
-
-              <div class="form-group full-width">
-                <label for="prompt-handoff">Human Handoff Agent Prompt</label>
-                <textarea id="prompt-handoff" rows="4" class="form-input"></textarea>
-              </div>
-              <!-- Required fields removed here to be specific to each service -->
               
               <div class="form-actions full-width">
                 <button type="submit" class="btn btn-primary" id="save-intents-btn">Save Configurations</button>

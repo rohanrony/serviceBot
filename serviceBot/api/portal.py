@@ -99,6 +99,7 @@ class ServiceCreate(BaseModel):
     req_location: Optional[bool] = True
 
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
+SYSTEM_PROMPT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "system_prompt.txt")
 
 def load_config():
     import json
@@ -133,17 +134,41 @@ def load_config():
         "gmail_token_expires_at": 0
     }
     if not os.path.exists(CONFIG_PATH):
-        return defaults
-    with open(CONFIG_PATH, "r") as f:
-        data = json.load(f)
-    # Merge defaults for any missing keys
-    for k, v in defaults.items():
-        if k not in data:
-            data[k] = v
+        data = defaults.copy()
+    else:
+        with open(CONFIG_PATH, "r") as f:
+            data = json.load(f)
+        # Merge defaults for any missing keys
+        for k, v in defaults.items():
+            if k not in data:
+                data[k] = v
+
+    # Also load system_prompt from system_prompt.txt
+    system_prompt = ""
+    if os.path.exists(SYSTEM_PROMPT_PATH):
+        try:
+            with open(SYSTEM_PROMPT_PATH, "r", encoding="utf-8") as f:
+                system_prompt = f.read()
+        except Exception as e:
+            print(f"Error loading system_prompt.txt: {e}")
+
+    if not system_prompt:
+        prompts = data.get("prompts", {})
+        system_prompt = f"You are Rachel, an AI voice assistant for Test Automotive.\n\n### Core Router:\n{prompts.get('router', '')}\n\n### Service Request:\n{prompts.get('service_request', '')}\n\n### Appointment:\n{prompts.get('appointment', '')}\n\n### FAQ:\n{prompts.get('faq', '')}\n\n### Handoff:\n{prompts.get('handoff', '')}"
+        
+    data["system_prompt"] = system_prompt
     return data
 
 def save_config(config_data):
     import json
+    system_prompt = config_data.pop("system_prompt", None)
+    if system_prompt is not None:
+        try:
+            with open(SYSTEM_PROMPT_PATH, "w", encoding="utf-8") as f:
+                f.write(system_prompt)
+        except Exception as e:
+            print(f"Error saving system_prompt.txt: {e}")
+
     with open(CONFIG_PATH, "w") as f:
         json.dump(config_data, f, indent=2)
 
@@ -240,7 +265,8 @@ async def sync_prompt_to_elevenlabs(prompt_text: str, first_message: str = None)
 
 class ConfigUpdatePayload(BaseModel):
     required_fields: dict
-    prompts: dict
+    prompts: Optional[dict] = None
+    system_prompt: Optional[str] = None
     first_message: Optional[str] = None
     handoff_phone_number: Optional[str] = None
 
@@ -253,13 +279,16 @@ async def update_config(payload: ConfigUpdatePayload):
     config_data = {
         "handoff_phone_number": payload.handoff_phone_number or "+14242704893",
         "required_fields": payload.required_fields,
-        "prompts": payload.prompts,
-        "first_message": payload.first_message
+        "prompts": payload.prompts or {},
+        "first_message": payload.first_message,
+        "system_prompt": payload.system_prompt
     }
     save_config(config_data)
     
-    prompts = payload.prompts
-    combined_prompt = f"""You are an advanced voice assistant for Test.
+    prompt_to_sync = payload.system_prompt
+    if not prompt_to_sync:
+        prompts = payload.prompts or {}
+        prompt_to_sync = f"""You are an advanced voice assistant for Test.
 
 ### Core Router instructions:
 {prompts.get('router', '')}
@@ -285,7 +314,7 @@ When you need to execute any tool or perform any database/server lookup (such as
 - When transferring: "Let me get a service advisor on the line for you...", "Transferring you now, please hold a moment..."
 Make sure the filler message sounds like a normal part of the conversation and is uttered right as you trigger the tool."""
 
-    await sync_prompt_to_elevenlabs(combined_prompt, payload.first_message)
+    await sync_prompt_to_elevenlabs(prompt_to_sync, payload.first_message)
     
     return {"success": True}
 
