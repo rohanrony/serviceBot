@@ -1,52 +1,52 @@
-import sqlite3
 import pytest
-from unittest.mock import patch
-from serviceBot.db.connection import DDL_SCHEMA
-from serviceBot.db.queries import lookup_customer_by_phone
+from serviceBot.db.connection import get_db_connection, dict_cursor
 
 @pytest.fixture
-def mock_db(tmp_path):
-    """Create a temporary SQLite database, initialize, and seed data."""
-    db_file = tmp_path / "test_voice_service.db"
-    conn = sqlite3.connect(db_file)
-    conn.execute("PRAGMA foreign_keys = ON;")
-    conn.executescript(DDL_SCHEMA)
+def mock_db():
+    """Clear database, initialize schema, and seed data in PostgreSQL."""
+    from serviceBot.db.seed import seed_db
     
-    cursor = conn.cursor()
-    # Seed data matching Sarah Johnson from spec
-    cursor.execute(
-        "INSERT INTO customers (id, name, phone, email) VALUES (?, ?, ?, ?);",
-        (1, 'Sarah Johnson', '+15551234567', 'sarah.j@example.com')
-    )
-    cursor.execute(
-        "INSERT INTO vehicles (id, customer_id, make, model, year, vin) VALUES (?, ?, ?, ?, ?, ?);",
-        (1, 1, 'Honda', 'Civic', 2020, '1HGCR2F8LAA123456')
-    )
-    cursor.execute(
-        "INSERT INTO service_requests (id, customer_id, vehicle_id, service_type, issue_description, status) VALUES (?, ?, ?, ?, ?, ?);",
-        (1, 1, 1, 'Brake repair', 'Grinding noise when stopping, brake light on.', 'pending')
-    )
-    # Seed services
-    cursor.execute(
-        "INSERT INTO services (name, description, price_range, duration_minutes) VALUES (?, ?, ?, ?);",
-        ("AC change", "A/C service", "$150-250", 60)
-    )
-    cursor.execute(
-        "INSERT INTO services (name, description, price_range, duration_minutes) VALUES (?, ?, ?, ?);",
-        ("Oil Change", "Oil change service", "$79-119", 45)
-    )
-    cursor.execute(
-        "INSERT INTO services (name, description, price_range, duration_minutes) VALUES (?, ?, ?, ?);",
-        ("Brake repair", "Brake service", "$199-450", 90)
-    )
-    conn.commit()
+    # Run seed_db first to ensure tables exist
+    seed_db()
     
-    # We patch the default DB_PATH to use our temp test db file
-    with patch("serviceBot.db.connection.DB_PATH", str(db_file)):
-        with patch("serviceBot.db.connection._db_initialized", True):
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("TRUNCATE TABLE customers, vehicles, service_requests, services CASCADE;")
+            
+            # Seed data matching Sarah Johnson from spec
+            cursor.execute(
+                "INSERT INTO customers (id, name, phone, email) VALUES (%s, %s, %s, %s);",
+                (1, 'Sarah Johnson', '+15551234567', 'sarah.j@example.com')
+            )
+            cursor.execute(
+                "INSERT INTO vehicles (id, customer_id, make, model, year, vin) VALUES (%s, %s, %s, %s, %s, %s);",
+                (1, 1, 'Honda', 'Civic', 2020, '1HGCR2F8LAA123456')
+            )
+            cursor.execute(
+                "INSERT INTO service_requests (id, customer_id, vehicle_id, service_type, issue_description, status) VALUES (%s, %s, %s, %s, %s, %s);",
+                (1, 1, 1, 'Brake repair', 'Grinding noise when stopping, brake light on.', 'pending')
+            )
+            # Seed services
+            cursor.execute(
+                "INSERT INTO services (name, description, price_range, duration_minutes) VALUES (%s, %s, %s, %s);",
+                ("AC change", "A/C service", "$150-250", 60)
+            )
+            cursor.execute(
+                "INSERT INTO services (name, description, price_range, duration_minutes) VALUES (%s, %s, %s, %s);",
+                ("Oil Change", "Oil change service", "$79-119", 45)
+            )
+            cursor.execute(
+                "INSERT INTO services (name, description, price_range, duration_minutes) VALUES (%s, %s, %s, %s);",
+                ("Brake repair", "Brake service", "$199-450", 90)
+            )
+            
+            # Reset sequences
+            for table in ["customers", "vehicles", "service_requests", "services"]:
+                cursor.execute(f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), COALESCE(MAX(id), 1)) FROM {table};")
+            
+            conn.commit()
             yield conn
-    
-    conn.close()
+
 
 def test_lookup_customer_by_phone_success(mock_db):
     """
@@ -196,5 +196,87 @@ def test_book_appointment_updates_service_type_and_prevents_overwrite(mock_db):
     assert new_row[0] == 'Oil Change'
     assert new_row[1] == 'appointment'
     assert new_row[2] == '2026-06-19 10:00:00'
+
+
+def test_fuzzy_service_catalog_matching(mock_db):
+    """Verify that we can match services with fuzzy names (like 'oil change (full synthetic)') to the correct catalog items."""
+    from serviceBot.db.queries import get_service_required_fields
+    
+    # "oil change (full synthetic)" should match "Oil Change"
+    res1 = get_service_required_fields("oil change (full synthetic)")
+    assert res1 is not None
+    assert res1["name"] == "Oil Change"
+    assert res1["duration_minutes"] == 45
+    
+    # "brake repair" should match "Brake repair"
+    res2 = get_service_required_fields("brake repair and pads")
+    assert res2 is not None
+    assert res2["name"] == "Brake repair"
+    assert res2["price_range"] == "$199-450"
+
+    # Completely unrelated service should return None
+    res_none = get_service_required_fields("completely random query")
+    assert res_none is None
+
+
+def test_book_appointment_vehicle_resolution_and_no_overwrite(mock_db):
+    """Verify that book_appointment uses the vehicle details and doesn't overwrite an already booked request."""
+    from serviceBot.db.queries import book_appointment, get_customer_appointments
+    
+    # Seed available calendar slots
+    cursor = mock_db.cursor()
+    cursor.execute(
+        "INSERT INTO mock_calendar_slots (slot_datetime, is_booked) VALUES (?, ?);",
+        ('2026-06-19 11:00:00', 0)
+    )
+    cursor.execute(
+        "INSERT INTO mock_calendar_slots (slot_datetime, is_booked) VALUES (?, ?);",
+        ('2026-06-19 14:00:00', 0)
+    )
+    mock_db.commit()
+
+    # Create another vehicle for customer 1
+    cursor.execute(
+        "INSERT INTO vehicles (id, customer_id, make, model, year, vin) VALUES (?, ?, ?, ?, ?, ?);",
+        (2, 1, 'Ford', 'F-150', 2018, '1FTFW1EF5JFC98765')
+    )
+    mock_db.commit()
+
+    # Book for Civic (vehicle_id = 1)
+    appt_id1 = book_appointment(
+        customer_id=1,
+        service_request_id=None,
+        appointment_datetime='2026-06-19 11:00:00',
+        service_type='Oil Change',
+        vehicle_details={"make": "Honda", "model": "Civic", "year": 2020}
+    )
+    
+    # Book for F-150 (vehicle_id = 2) - should not overwrite the first one
+    appt_id2 = book_appointment(
+        customer_id=1,
+        service_request_id=appt_id1, # pass the already booked request id to test overwrite prevention
+        appointment_datetime='2026-06-19 14:00:00',
+        service_type='Brake repair',
+        vehicle_details={"make": "Ford", "model": "F-150", "year": 2018}
+    )
+    
+    assert appt_id1 != appt_id2
+    
+    # Check that Sarah now has two separate appointments with correct vehicles returned by get_customer_appointments
+    appts = get_customer_appointments("+15551234567")
+    assert len(appts) >= 2
+    
+    # Check that appointments list contains vehicle make and model
+    civic_appt = next((a for a in appts if a["id"] == appt_id1), None)
+    f150_appt = next((a for a in appts if a["id"] == appt_id2), None)
+    
+    assert civic_appt is not None
+    assert civic_appt["make"] == "Honda"
+    assert civic_appt["model"] == "Civic"
+    
+    assert f150_appt is not None
+    assert f150_appt["make"] == "Ford"
+    assert f150_appt["model"] == "F-150"
+
 
 

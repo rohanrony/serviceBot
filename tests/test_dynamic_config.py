@@ -69,7 +69,7 @@ def test_get_and_post_config():
     assert response.status_code == 200
     config = response.json()
     assert "required_fields" in config
-    assert "prompts" in config
+    assert "system_prompt" in config
     
     payload = {
         "required_fields": {
@@ -79,13 +79,7 @@ def test_get_and_post_config():
             "issue_description": True,
             "location": True
         },
-        "prompts": {
-            "router": "Custom Router Prompt",
-            "service_request": "Custom SR Prompt",
-            "appointment": "Custom Appt Prompt",
-            "faq": "Custom FAQ Prompt",
-            "handoff": "Custom Handoff Prompt"
-        },
+        "system_prompt": "Custom Unified System Prompt for ElevenLabs Agent",
         "first_message": "Hello, Rachel here!"
     }
     
@@ -97,7 +91,7 @@ def test_get_and_post_config():
     new_config = get_res.json()
     assert new_config["required_fields"]["customer_name"] is False
     assert new_config["required_fields"]["phone_number"] is True
-    assert new_config["prompts"]["router"] == "Custom Router Prompt"
+    assert new_config["system_prompt"] == "Custom Unified System Prompt for ElevenLabs Agent"
     assert new_config["first_message"] == "Hello, Rachel here!"
 
 def test_dynamic_required_fields_intake():
@@ -110,13 +104,7 @@ def test_dynamic_required_fields_intake():
             "issue_description": True,
             "location": False
         },
-        "prompts": {
-            "router": "Router",
-            "service_request": "Service Request Prompt",
-            "appointment": "Appt",
-            "faq": "FAQ",
-            "handoff": "Handoff"
-        }
+        "system_prompt": "Service Request Prompt"
     }
     save_config(payload)
     
@@ -240,7 +228,7 @@ def test_service_specific_required_location():
         assert "location" in final_state["messages"][-1].content
 
 def test_view_kb_file_endpoint():
-    KB_DIR = "kb_documents"
+    from serviceBot.api.portal import KB_DIR
     os.makedirs(KB_DIR, exist_ok=True)
     filename = "test_view_doc.txt"
     file_path = os.path.join(KB_DIR, filename)
@@ -274,13 +262,7 @@ def test_post_config_syncs_to_elevenlabs(mock_patch):
             "issue_description": True,
             "location": True
         },
-        "prompts": {
-            "router": "Custom Router Prompt",
-            "service_request": "Custom SR Prompt",
-            "appointment": "Custom Appt Prompt",
-            "faq": "Custom FAQ Prompt",
-            "handoff": "Custom Handoff Prompt"
-        },
+        "system_prompt": "Custom Unified Prompt for ElevenLabs Agent Sync",
         "first_message": "Hello, I am Rachel!"
     }
     
@@ -294,7 +276,6 @@ def test_post_config_syncs_to_elevenlabs(mock_patch):
     assert "conversation_config" in kwargs["json"]
     assert "prompt" in kwargs["json"]["conversation_config"]["agent"]
     prompt_text = kwargs["json"]["conversation_config"]["agent"]["prompt"]["prompt"]
-    assert "Custom Router Prompt" in prompt_text
-    assert "Custom SR Prompt" in prompt_text
+    assert "Custom Unified Prompt for ElevenLabs Agent Sync" in prompt_text
     assert kwargs["json"]["conversation_config"]["agent"]["first_message"] == "Hello, I am Rachel!"
 

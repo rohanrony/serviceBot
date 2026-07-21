@@ -41,7 +41,7 @@ def get_user_google_credentials(agent_id: int) -> dict:
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT access_token, refresh_token, expires_at, granted_scopes, email, google_account_id FROM user_google_accounts WHERE agent_id = ?;",
+            "SELECT access_token, refresh_token, expires_at, granted_scopes, email, google_account_id FROM user_google_accounts WHERE agent_id = %s;",
             (agent_id,)
         )
         row = cursor.fetchone()
@@ -92,13 +92,13 @@ def get_user_google_credentials(agent_id: int) -> dict:
                 cursor = conn.cursor()
                 if new_refresh_token:
                     cursor.execute(
-                        "UPDATE user_google_accounts SET access_token = ?, refresh_token = ?, expires_at = ?, last_refresh_time = ? WHERE agent_id = ?;",
+                        "UPDATE user_google_accounts SET access_token = %s, refresh_token = %s, expires_at = %s, last_refresh_time = %s WHERE agent_id = %s;",
                         (encrypt_key(new_access_token), encrypt_key(new_refresh_token), new_expires_at, time.time(), agent_id)
                     )
                     refresh_token = new_refresh_token
                 else:
                     cursor.execute(
-                        "UPDATE user_google_accounts SET access_token = ?, expires_at = ?, last_refresh_time = ? WHERE agent_id = ?;",
+                        "UPDATE user_google_accounts SET access_token = %s, expires_at = %s, last_refresh_time = %s WHERE agent_id = %s;",
                         (encrypt_key(new_access_token), new_expires_at, time.time(), agent_id)
                     )
                 conn.commit()

@@ -29,6 +29,10 @@ def clean_db_agent():
             "VALUES (100, 'google', 'test.agent@example.com', ?, ?, ?, ?);",
             (encrypt_key("dummy_refresh_token"), encrypt_key("dummy_access_token"), "https://www.googleapis.com/auth/calendar.events", time.time() + 3600)
         )
+        cursor.execute(
+            "INSERT OR IGNORE INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) "
+            "VALUES ('2026-06-25 11:00:00', 0, 100);"
+        )
         conn.commit()
     yield
     with get_db_connection() as conn:
@@ -49,7 +53,7 @@ def test_portal_get_agents_includes_new_fields():
     test_agent = next((a for a in agents if a["id"] == 100), None)
     assert test_agent is not None
     assert test_agent["email"] == "test.agent@example.com"
-    assert test_agent["is_connected"] is False
+    assert test_agent["is_connected"] is True
 
 def test_portal_get_agent_oauth_url():
     # Configure mock Client ID first
@@ -168,16 +172,16 @@ def test_is_agent_free_busy(mock_get, mock_creds):
     mock_get.return_value = mock_get_resp_free
     assert is_agent_free(100, "2026-06-25 10:00:00") is True
 
-@patch("serviceBot.services.google_calendar.is_agent_free")
-def test_check_availability_filtering(mock_free):
+@patch("serviceBot.services.google_calendar.fetch_agent_events")
+def test_check_availability_filtering(mock_fetch):
     # If the agent is busy, slot should not be returned in check_availability
-    mock_free.return_value = False
+    mock_fetch.return_value = [{"id": "event1", "status": "confirmed", "start": {"dateTime": "2026-06-25T11:00:00-04:00"}, "end": {"dateTime": "2026-06-25T12:00:00-04:00"}}]
     slots = check_availability(preferred_date="2026-06-25 09:00:00")
     # Should not find 2026-06-25 11:00:00 because the single agent is busy
     assert "2026-06-25 11:00:00" not in slots
 
     # If the agent is free, slot should be returned
-    mock_free.return_value = True
+    mock_fetch.return_value = []
     slots = check_availability(preferred_date="2026-06-25 09:00:00")
     assert "2026-06-25 11:00:00" in slots
 

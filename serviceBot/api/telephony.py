@@ -11,7 +11,7 @@ from serviceBot.services.rag import FAQService
 from serviceBot.graph.nodes import handoff_node
 
 # Load env variables from .env file
-load_dotenv(override=True)
+load_dotenv(override=False)
 
 import re
 
@@ -85,46 +85,47 @@ def generate_service_summary(transcript: str) -> str:
         return f"Failed to generate AI summary: {str(e)}"
 
 def get_booking_details(customer_id: int, service_request_id: int = None) -> dict:
-    from serviceBot.db.connection import get_db_connection
+    from serviceBot.db.connection import get_db_connection, dict_cursor
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        # Get customer
-        cursor.execute("SELECT name, phone FROM customers WHERE id = ?;", (customer_id,))
-        cust = cursor.fetchone()
-        cust_name = cust["name"] if cust else "Unknown Customer"
-        cust_phone = cust["phone"] if cust else "Unknown Phone"
-        
-        # Get vehicle details
-        vehicle_str = "Unknown Vehicle"
-        issue_desc = ""
-        service_type = "Repair"
-        if service_request_id:
-            cursor.execute("""
-                SELECT sr.service_type, sr.issue_description, v.year, v.make, v.model 
-                FROM service_requests sr
-                LEFT JOIN vehicles v ON sr.vehicle_id = v.id
-                WHERE sr.id = ?;
-            """, (service_request_id,))
-            row = cursor.fetchone()
-            if row:
-                service_type = row["service_type"] or "Repair"
-                issue_desc = row["issue_description"] or ""
-                if row["make"] or row["model"]:
+        with dict_cursor(conn) as cursor:
+            # Get customer
+            cursor.execute("SELECT name, phone FROM customers WHERE id = %s;", (customer_id,))
+            cust = cursor.fetchone()
+            cust_name = cust["name"] if cust else "Unknown Customer"
+            cust_phone = cust["phone"] if cust else "Unknown Phone"
+            
+            # Get vehicle details
+            vehicle_str = "Unknown Vehicle"
+            issue_desc = ""
+            service_type = "Repair"
+            if service_request_id:
+                cursor.execute("""
+                    SELECT sr.service_type, sr.issue_description, v.year, v.make, v.model 
+                    FROM service_requests sr
+                    LEFT JOIN vehicles v ON sr.vehicle_id = v.id
+                    WHERE sr.id = %s;
+                """, (service_request_id,))
+                row = cursor.fetchone()
+                if row:
+                    service_type = row["service_type"] or "Repair"
+                    issue_desc = row["issue_description"] or ""
+                    if row["make"] or row["model"]:
+                        vehicle_str = f"{row['year'] or ''} {row['make'] or ''} {row['model'] or ''}".strip()
+            else:
+                # Get last vehicle
+                cursor.execute("SELECT year, make, model FROM vehicles WHERE customer_id = %s ORDER BY id DESC LIMIT 1;", (customer_id,))
+                row = cursor.fetchone()
+                if row:
                     vehicle_str = f"{row['year'] or ''} {row['make'] or ''} {row['model'] or ''}".strip()
-        else:
-            # Get last vehicle
-            cursor.execute("SELECT year, make, model FROM vehicles WHERE customer_id = ? ORDER BY id DESC LIMIT 1;", (customer_id,))
-            row = cursor.fetchone()
-            if row:
-                vehicle_str = f"{row['year'] or ''} {row['make'] or ''} {row['model'] or ''}".strip()
-                
-        return {
-            "customer_name": cust_name,
-            "phone": cust_phone,
-            "vehicle": vehicle_str,
-            "service_type": service_type,
-            "issue": issue_desc
-        }
+                    
+            return {
+                "customer_name": cust_name,
+                "phone": cust_phone,
+                "vehicle": vehicle_str,
+                "service_type": service_type,
+                "issue": issue_desc
+            }
+
 
 
 router = APIRouter(prefix="/api/v1/telephony", tags=["telephony"])
@@ -211,7 +212,8 @@ async def post_call_webhook(request: Request = None, payload: Dict[str, Any] = N
     import sys
     is_testing = "pytest" in sys.modules or any("pytest" in arg or "unittest" in arg for arg in sys.argv)
     if is_testing:
-        log_file = "/Users/rohanroy/.gemini/antigravity-ide/scratch/webhook_activity.log"
+        os.makedirs("./scratch", exist_ok=True)
+        log_file = "./scratch/webhook_activity.log"
     else:
         log_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "webhook_activity.log")
 
@@ -288,15 +290,15 @@ async def post_call_webhook(request: Request = None, payload: Dict[str, Any] = N
         customer = lookup_customer_by_phone(from_number_to_use)
             
         if not customer:
-            from serviceBot.db.connection import get_db_connection
+            from serviceBot.db.connection import get_db_connection, dict_cursor
             with get_db_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    "INSERT INTO customers (name, phone) VALUES (?, ?);",
-                    ("Unknown Customer", from_number_to_use)
-                )
-                conn.commit()
-                customer_id = cursor.lastrowid
+                with dict_cursor(conn) as cursor:
+                    cursor.execute(
+                        "INSERT INTO customers (name, phone) VALUES (%s, %s) RETURNING id;",
+                        ("Unknown Customer", from_number_to_use)
+                    )
+                    conn.commit()
+                    customer_id = cursor.fetchone()["id"]
         else:
             customer_id = customer["customer_id"]
             
@@ -316,80 +318,81 @@ async def post_call_webhook(request: Request = None, payload: Dict[str, Any] = N
         if callback_info:
             print("Extracted callback info from transcript, updating/creating service request...")
             log_to_file(f"Extracted callback info: {callback_info}\n")
-            from serviceBot.db.connection import get_db_connection
+            from serviceBot.db.connection import get_db_connection, dict_cursor
             with get_db_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT id FROM service_requests 
-                    WHERE customer_id = ? AND booking_type = 'callback' AND created_at >= datetime('now', '-5 minutes')
-                """, (customer_id,))
-                exists = cursor.fetchone()
-                if not exists:
-                    sr_id = None
-                    if customer:
-                        sr_id = customer.get("open_sr_id")
-                    if not sr_id:
-                        cursor.execute("""
-                            SELECT id FROM service_requests 
-                            WHERE customer_id = ? 
-                            ORDER BY id DESC LIMIT 1
-                        """, (customer_id,))
-                        sr_row = cursor.fetchone()
-                        if sr_row:
-                            sr_id = sr_row[0]
-                    
-                    if sr_id:
-                        # Select a staff agent to assign the callback to (default to ID 1 or the first agent)
-                        cursor.execute("SELECT id FROM staff_agents ORDER BY id ASC LIMIT 1;")
-                        agent_row = cursor.fetchone()
-                        staff_agent_id = agent_row[0] if agent_row else None
-                        
-                        cursor.execute("""
-                            UPDATE service_requests 
-                            SET booking_type = 'callback', booking_time = ?, staff_agent_id = ?, updated_at = CURRENT_TIMESTAMP
-                            WHERE id = ?;
-                        """, (callback_info.get("preferred_time"), staff_agent_id, sr_id))
-                    else:
-                        cursor.execute("SELECT id FROM vehicles WHERE customer_id = ? ORDER BY id DESC LIMIT 1;", (customer_id,))
-                        v_row = cursor.fetchone()
-                        v_id = v_row[0] if v_row else None
-                        if not v_id:
-                            cursor.execute("INSERT INTO vehicles (customer_id, make, model, year) VALUES (?, 'Unknown', 'Unknown', 2000);", (customer_id,))
-                            v_id = cursor.lastrowid
-                        
-                        # Select a staff agent to assign the callback to (default to ID 1 or the first agent)
-                        cursor.execute("SELECT id FROM staff_agents ORDER BY id ASC LIMIT 1;")
-                        agent_row = cursor.fetchone()
-                        staff_agent_id = agent_row[0] if agent_row else None
-                        
-                        cursor.execute("""
-                            INSERT INTO service_requests (customer_id, vehicle_id, service_type, issue_description, status, booking_type, booking_time, staff_agent_id)
-                            VALUES (?, ?, 'Repair', 'Callback requested from transcript.', 'pending', 'callback', ?, ?);
-                        """, (customer_id, v_id, callback_info.get("preferred_time"), staff_agent_id))
-                        sr_id = cursor.lastrowid
-                    conn.commit()
-                    print("Service request callback logged successfully!")
-                    log_to_file("Service request callback logged successfully!\n")
-                    
-                    # Trigger Gmail notification for callback request
-                    try:
-                        agent_email = None
-                        if staff_agent_id:
+                with dict_cursor(conn) as cursor:
+                    cursor.execute("""
+                        SELECT id FROM service_requests 
+                        WHERE customer_id = %s AND booking_type = 'callback' AND created_at >= NOW() - INTERVAL '5 minutes'
+                    """, (customer_id,))
+                    exists = cursor.fetchone()
+                    if not exists:
+                        sr_id = None
+                        if customer:
+                            sr_id = customer.get("open_sr_id")
+                        if not sr_id:
                             cursor.execute("""
-                                SELECT COALESCE(uga.email, sa.email) AS email
-                                FROM staff_agents sa
-                                LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id
-                                WHERE sa.id = ?;
-                            """, (staff_agent_id,))
-                            a_row = cursor.fetchone()
-                            agent_email = a_row["email"] if a_row else None
+                                SELECT id FROM service_requests 
+                                WHERE customer_id = %s 
+                                ORDER BY id DESC LIMIT 1
+                            """, (customer_id,))
+                            sr_row = cursor.fetchone()
+                            if sr_row:
+                                sr_id = sr_row["id"]
+                        
+                        if sr_id:
+                            # Select a staff agent to assign the callback to (default to ID 1 or the first agent)
+                            cursor.execute("SELECT id FROM staff_agents ORDER BY id ASC LIMIT 1;")
+                            agent_row = cursor.fetchone()
+                            staff_agent_id = agent_row["id"] if agent_row else None
                             
-                        details = get_booking_details(customer_id, sr_id)
-                        details["time"] = callback_info.get("preferred_time") or "ASAP"
-                        from serviceBot.services.gmail import send_booking_notification
-                        send_booking_notification("callback", details, agent_email=agent_email)
-                    except Exception as email_err:
-                        print(f"Error triggering webhook callback email: {email_err}")
+                            cursor.execute("""
+                                UPDATE service_requests 
+                                SET booking_type = 'callback', booking_time = %s, staff_agent_id = %s, updated_at = CURRENT_TIMESTAMP
+                                WHERE id = %s;
+                            """, (callback_info.get("preferred_time"), staff_agent_id, sr_id))
+                        else:
+                            cursor.execute("SELECT id FROM vehicles WHERE customer_id = %s ORDER BY id DESC LIMIT 1;", (customer_id,))
+                            v_row = cursor.fetchone()
+                            v_id = v_row["id"] if v_row else None
+                            if not v_id:
+                                cursor.execute("INSERT INTO vehicles (customer_id, make, model, year) VALUES (%s, 'Unknown', 'Unknown', 2000) RETURNING id;", (customer_id,))
+                                v_id = cursor.fetchone()["id"]
+                            
+                            # Select a staff agent to assign the callback to (default to ID 1 or the first agent)
+                            cursor.execute("SELECT id FROM staff_agents ORDER BY id ASC LIMIT 1;")
+                            agent_row = cursor.fetchone()
+                            staff_agent_id = agent_row["id"] if agent_row else None
+                            
+                            cursor.execute("""
+                                INSERT INTO service_requests (customer_id, vehicle_id, service_type, issue_description, status, booking_type, booking_time, staff_agent_id)
+                                VALUES (%s, %s, 'Repair', 'Callback requested from transcript.', 'pending', 'callback', %s, %s) RETURNING id;
+                            """, (customer_id, v_id, callback_info.get("preferred_time"), staff_agent_id))
+                            sr_id = cursor.fetchone()["id"]
+                        conn.commit()
+                        print("Service request callback logged successfully!")
+                        log_to_file("Service request callback logged successfully!\n")
+                        
+                        # Trigger Gmail notification for callback request
+                        try:
+                            agent_email = None
+                            if staff_agent_id:
+                                cursor.execute("""
+                                    SELECT COALESCE(uga.email, sa.email) AS email
+                                    FROM staff_agents sa
+                                    LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id
+                                    WHERE sa.id = %s;
+                                """, (staff_agent_id,))
+                                a_row = cursor.fetchone()
+                                agent_email = a_row["email"] if a_row else None
+                                
+                            details = get_booking_details(customer_id, sr_id)
+                            details["time"] = callback_info.get("preferred_time") or "ASAP"
+                            from serviceBot.services.gmail import send_booking_notification
+                            send_booking_notification("callback", details, agent_email=agent_email)
+                        except Exception as email_err:
+                            print(f"Error triggering webhook callback email: {email_err}")
+
         
         return {"success": True}
     except Exception as err:
@@ -519,23 +522,23 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                     customer_id = c_data["customer_id"]
                     # If existing customer name is "Unknown Customer" but we got a real name, update it!
                     if c_data.get("name") == "Unknown Customer" and customer_name and customer_name != "Unknown Customer":
-                        from serviceBot.db.connection import get_db_connection
+                        from serviceBot.db.connection import get_db_connection, dict_cursor
                         with get_db_connection() as conn:
-                            cursor = conn.cursor()
-                            cursor.execute("UPDATE customers SET name = ? WHERE id = ?;", (customer_name, customer_id))
-                            conn.commit()
+                            with dict_cursor(conn) as cursor:
+                                cursor.execute("UPDATE customers SET name = %s WHERE id = %s;", (customer_name, customer_id))
+                                conn.commit()
                 
                 if not customer_id:
                     # Insert customer
-                    from serviceBot.db.connection import get_db_connection
+                    from serviceBot.db.connection import get_db_connection, dict_cursor
                     with get_db_connection() as conn:
-                        cursor = conn.cursor()
-                        cursor.execute(
-                            "INSERT INTO customers (name, phone) VALUES (?, ?);",
-                            (customer_name or "Unknown Customer", phone_to_lookup)
-                        )
-                        conn.commit()
-                        customer_id = cursor.lastrowid
+                        with dict_cursor(conn) as cursor:
+                            cursor.execute(
+                                "INSERT INTO customers (name, phone) VALUES (%s, %s) RETURNING id;",
+                                (customer_name or "Unknown Customer", phone_to_lookup)
+                            )
+                            conn.commit()
+                            customer_id = cursor.fetchone()["id"]
 
                 # Create service request
                 vehicle_details = {"make": make, "model": model, "year": year}
@@ -598,45 +601,31 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                         customer_id = c_data["customer_id"]
                         sr_id = c_data.get("open_sr_id")
                         if c_data.get("name") == "Unknown Customer" and customer_name != "Unknown Customer":
-                            from serviceBot.db.connection import get_db_connection
+                            from serviceBot.db.connection import get_db_connection, dict_cursor
                             with get_db_connection() as conn:
-                                cursor = conn.cursor()
-                                cursor.execute("UPDATE customers SET name = ? WHERE id = ?;", (customer_name, customer_id))
-                                conn.commit()
+                                with dict_cursor(conn) as cursor:
+                                    cursor.execute("UPDATE customers SET name = %s WHERE id = %s;", (customer_name, customer_id))
+                                    conn.commit()
 
                     if not customer_id:
-                        from serviceBot.db.connection import get_db_connection
+                        from serviceBot.db.connection import get_db_connection, dict_cursor
                         with get_db_connection() as conn:
-                            cursor = conn.cursor()
-                            cursor.execute(
-                                "INSERT INTO customers (name, phone) VALUES (?, ?);",
-                                (customer_name, phone)
-                            )
-                            conn.commit()
-                            customer_id = cursor.lastrowid
-
-                    # Ensure vehicle is registered in the database for this customer if it wasn't already
-                    from serviceBot.db.connection import get_db_connection
-                    with get_db_connection() as conn:
-                        cursor = conn.cursor()
-                        cursor.execute(
-                            "SELECT id FROM vehicles WHERE customer_id = ? AND make = ? AND model = ? AND year = ?;",
-                            (customer_id, make, model, year)
-                        )
-                        v_row = cursor.fetchone()
-                        if not v_row:
-                            cursor.execute(
-                                "INSERT INTO vehicles (customer_id, make, model, year) VALUES (?, ?, ?, ?);",
-                                (customer_id, make, model, year)
-                            )
-                            conn.commit()
+                            with dict_cursor(conn) as cursor:
+                                cursor.execute(
+                                    "INSERT INTO customers (name, phone) VALUES (%s, %s) RETURNING id;",
+                                    (customer_name, phone)
+                                )
+                                conn.commit()
+                                customer_id = cursor.fetchone()["id"]
 
                     try:
+                        vehicle_details = {"make": make, "model": model, "year": year}
                         appt_id = book_appointment(
                             customer_id=customer_id,
                             service_request_id=sr_id,
                             appointment_datetime=appointment_datetime,
-                            service_type=service_type
+                            service_type=service_type,
+                            vehicle_details=vehicle_details
                         )
                         fields = get_service_required_fields(service_type)
                         price_range = fields["price_range"] if fields else "Varies"
@@ -650,16 +639,17 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                         # Trigger email notification
                         try:
                             agent_email = None
-                            from serviceBot.db.connection import get_db_connection
+                            from serviceBot.db.connection import get_db_connection, dict_cursor
                             with get_db_connection() as conn:
-                                cursor = conn.cursor()
-                                cursor.execute("""
-                                    SELECT COALESCE(uga.email, sa.email) AS email
-                                    FROM service_requests sr
-                                    JOIN staff_agents sa ON sr.staff_agent_id = sa.id
-                                    LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id
-                                    WHERE sr.id = ?;
-                                """, (appt_id,))
+                                with dict_cursor(conn) as cursor:
+                                    cursor.execute("""
+                                        SELECT COALESCE(uga.email, sa.email) AS email
+                                        FROM service_requests sr
+                                        JOIN staff_agents sa ON sr.staff_agent_id = sa.id
+                                        LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id
+                                        WHERE sr.id = %s;
+                                    """, (appt_id,))
+
                                 a_row = cursor.fetchone()
                                 agent_email = a_row["email"] if a_row else None
 
@@ -720,38 +710,22 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                         if not sr_id:
                             sr_id = c_data.get("open_sr_id")
                         if c_data.get("name") == "Unknown Customer" and customer_name != "Unknown Customer":
-                            from serviceBot.db.connection import get_db_connection
+                            from serviceBot.db.connection import get_db_connection, dict_cursor
                             with get_db_connection() as conn:
-                                cursor = conn.cursor()
-                                cursor.execute("UPDATE customers SET name = ? WHERE id = ?;", (customer_name, customer_id))
-                                conn.commit()
+                                with dict_cursor(conn) as cursor:
+                                    cursor.execute("UPDATE customers SET name = %s WHERE id = %s;", (customer_name, customer_id))
+                                    conn.commit()
                     
                     if not customer_id:
-                        from serviceBot.db.connection import get_db_connection
+                        from serviceBot.db.connection import get_db_connection, dict_cursor
                         with get_db_connection() as conn:
-                            cursor = conn.cursor()
-                            cursor.execute(
-                                "INSERT INTO customers (name, phone) VALUES (?, ?);",
-                                (customer_name, phone)
-                            )
-                            conn.commit()
-                            customer_id = cursor.lastrowid
-                    
-                    # Ensure vehicle is registered in the database for this customer if it wasn't already
-                    from serviceBot.db.connection import get_db_connection
-                    with get_db_connection() as conn:
-                        cursor = conn.cursor()
-                        cursor.execute(
-                            "SELECT id FROM vehicles WHERE customer_id = ? AND make = ? AND model = ? AND year = ?;",
-                            (customer_id, make, model, year)
-                        )
-                        v_row = cursor.fetchone()
-                        if not v_row:
-                            cursor.execute(
-                                "INSERT INTO vehicles (customer_id, make, model, year) VALUES (?, ?, ?, ?);",
-                                (customer_id, make, model, year)
-                            )
-                            conn.commit()
+                            with dict_cursor(conn) as cursor:
+                                cursor.execute(
+                                    "INSERT INTO customers (name, phone) VALUES (%s, %s) RETURNING id;",
+                                    (customer_name, phone)
+                                )
+                                conn.commit()
+                                customer_id = cursor.fetchone()["id"]
                     
                     if not sr_id and any(k in args for k in ["service_type", "issue_description", "make"]):
                         issue_description = args.get("issue_description") or args.get("issue") or "Not specified"
@@ -766,10 +740,12 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                     
                     try:
                         preferred_time = args.get("preferred_time") or args.get("time_slot") or args.get("time")
+                        vehicle_details = {"make": make, "model": model, "year": year}
                         cb_id = create_callback_request(
                             customer_id=customer_id,
                             service_request_id=sr_id,
-                            preferred_time=preferred_time
+                            preferred_time=preferred_time,
+                            vehicle_details=vehicle_details
                         )
                         result = {
                             "success": True,
@@ -780,18 +756,18 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                         # Trigger email notification
                         try:
                             agent_email = None
-                            from serviceBot.db.connection import get_db_connection
+                            from serviceBot.db.connection import get_db_connection, dict_cursor
                             with get_db_connection() as conn:
-                                cursor = conn.cursor()
-                                cursor.execute("""
-                                    SELECT COALESCE(uga.email, sa.email) AS email
-                                    FROM service_requests sr
-                                    JOIN staff_agents sa ON sr.staff_agent_id = sa.id
-                                    LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id
-                                    WHERE sr.id = ?;
-                                """, (cb_id,))
-                                a_row = cursor.fetchone()
-                                agent_email = a_row["email"] if a_row else None
+                                with dict_cursor(conn) as cursor:
+                                    cursor.execute("""
+                                        SELECT COALESCE(uga.email, sa.email) AS email
+                                        FROM service_requests sr
+                                        JOIN staff_agents sa ON sr.staff_agent_id = sa.id
+                                        LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id
+                                        WHERE sr.id = %s;
+                                    """, (cb_id,))
+                                    a_row = cursor.fetchone()
+                                    agent_email = a_row["email"] if a_row else None
 
                             details = get_booking_details(customer_id, cb_id)
                             details["time"] = preferred_time or "ASAP"
@@ -863,18 +839,19 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                                 cust_id = c_data["customer_id"]
                             if cust_id:
                                 agent_email = None
-                                from serviceBot.db.connection import get_db_connection
+                                from serviceBot.db.connection import get_db_connection, dict_cursor
                                 with get_db_connection() as conn:
-                                    cursor = conn.cursor()
-                                    cursor.execute("""
-                                        SELECT COALESCE(uga.email, sa.email) AS email
-                                        FROM service_requests sr
-                                        JOIN staff_agents sa ON sr.staff_agent_id = sa.id
-                                        LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id
-                                        WHERE sr.id = ?;
-                                    """, (appt_id,))
-                                    a_row = cursor.fetchone()
-                                    agent_email = a_row["email"] if a_row else None
+                                    with dict_cursor(conn) as cursor:
+                                        cursor.execute("""
+                                            SELECT COALESCE(uga.email, sa.email) AS email
+                                            FROM service_requests sr
+                                            JOIN staff_agents sa ON sr.staff_agent_id = sa.id
+                                            LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id
+                                            WHERE sr.id = %s;
+                                        """, (appt_id,))
+                                        a_row = cursor.fetchone()
+                                        agent_email = a_row["email"] if a_row else None
+
 
                                 details = get_booking_details(cust_id, appt_id)
                                 details["time"] = new_datetime
@@ -908,6 +885,7 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                     "service_name": fields_data["name"],
                     "description": fields_data["description"],
                     "price_range": fields_data["price_range"],
+                    "duration_minutes": fields_data["duration_minutes"],
                     "required_fields": {
                         "customer_name": bool(fields_data["req_customer_name"]),
                         "phone_number": bool(fields_data["req_phone_number"]),

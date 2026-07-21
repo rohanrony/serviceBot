@@ -26,7 +26,10 @@
 .switchboard/*.db-shm
 .switchboard/*.db-wal
 # <<< Switchboard managed exclusions <<<
-
+AGENTS.md
 .agents/*
+.agent/*
 .env
 .venv/*
+.vscode/*
+.switchboard/README.md

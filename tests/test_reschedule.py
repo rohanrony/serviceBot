@@ -12,13 +12,16 @@ def test_get_customer_appointments_query():
     # Seed a known customer and appointment
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("INSERT OR IGNORE INTO customers (id, name, phone) VALUES (15, 'Resched Customer', '555-999-8888')")
-        cursor.execute("INSERT OR IGNORE INTO service_requests (id, customer_id, vehicle_id, service_type, issue_description, booking_type, booking_time) VALUES (50, 15, 1, 'AC Service & Repair', 'Symptom description', 'appointment', '2026-06-12 10:00:00')")
+        cursor.execute("DELETE FROM service_requests WHERE id = 5000;")
+        cursor.execute("DELETE FROM customers WHERE id = 1500 OR phone = '555-999-8888';")
+        cursor.execute("INSERT INTO customers (id, name, phone) VALUES (1500, 'Resched Customer', '555-999-8888')")
+        cursor.execute("INSERT INTO service_requests (id, customer_id, vehicle_id, service_type, issue_description, booking_type, booking_time) VALUES (5000, 1500, 1, 'AC Service & Repair', 'Symptom description', 'appointment', '2026-06-12 10:00:00')")
         conn.commit()
         
     appts = get_customer_appointments("555-999-8888")
-    assert len(appts) >= 1
-    assert appts[0]["id"] == 50
+    assert len(appts) == 1
+    assert appts[0]["id"] == 5000
+    assert appts[0]["service_type"] == "AC Service & Repair"
     assert appts[0]["appointment_datetime"] == "2026-06-12 10:00:00"
     assert appts[0]["status"] == "pending"
 
