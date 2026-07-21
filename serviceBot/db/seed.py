@@ -21,12 +21,10 @@ def seed_db():
         conn.commit()
         
         # Insert Services
+        from serviceBot.seed_cba_services import SERVICES_DATA
         cba_services = [
-            (1, "Oil Change", "Full synthetic oil change, premium filter replacement, fluid top-off, and courtesy inspection", "$79-119", 45, True, True, True, True, True),
-            (2, "Brake Service & Repair", "Complimentary brake inspection, pad/shoe replacement, and rotor/drum resurfacing or replacement", "$199-450 per axle", 90, True, True, True, True, True),
-            (3, "Complimentary Courtesy Inspection", "Comprehensive multi-point visual inspection of major and minor vehicle systems", "$0", 20, True, True, True, True, True),
-            (4, "AC Service & Repair", "System performance test, leak check, refrigerant evacuation, and recharge", "$149-399", 60, True, True, True, True, True),
-            (5, "Engine Diagnostics", "Check engine light scanning, computerized diagnostics, and troubleshooting by ASE-certified technicians", "$119-189", 60, True, True, True, True, True)
+            (idx + 1, item[0], item[1], item[2], item[3], bool(item[4]), bool(item[5]), bool(item[6]), bool(item[7]), bool(item[8]))
+            for idx, item in enumerate(SERVICES_DATA)
         ]
         cursor.executemany(
             "INSERT INTO services (id, name, description, price_range, duration_minutes, req_customer_name, req_phone_number, req_vehicle_details, req_issue_description, req_location) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);",
