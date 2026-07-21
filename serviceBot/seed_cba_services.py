@@ -388,7 +388,7 @@ def main():
                 INSERT INTO services (
                     name, description, price_range, duration_minutes, 
                     req_customer_name, req_phone_number, req_vehicle_details, req_issue_description, req_location
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);
             """, svc)
             print(f"Added service: '{svc[0]}'")
             
