@@ -176,7 +176,7 @@ def appointment_booking_node(state: AgentState) -> Dict[str, Any]:
         from serviceBot.db.connection import get_db_connection
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT service_type FROM service_requests WHERE id = ?;", (sr_id,))
+            cursor.execute("SELECT service_type FROM service_requests WHERE id = %s;", (sr_id,))
             row = cursor.fetchone()
             if row:
                 service_type = row["service_type"]

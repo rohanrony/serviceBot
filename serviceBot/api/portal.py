@@ -172,11 +172,15 @@ Speak the filler naturally as part of the conversation so the caller experiences
     if not os.path.exists(CONFIG_PATH):
         data = defaults.copy()
     else:
-        with open(CONFIG_PATH, "r") as f:
-            data = json.load(f)
-        for k, v in defaults.items():
-            if k not in data:
-                data[k] = v
+        try:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            for k, v in defaults.items():
+                if k not in data:
+                    data[k] = v
+        except Exception as e:
+            print(f"Error loading {CONFIG_PATH}: {e}")
+            data = defaults.copy()
 
     # Also check system_prompt.txt for overrides
     if os.path.exists(SYSTEM_PROMPT_PATH):
@@ -492,6 +496,14 @@ async def delete_staff_agent(agent_id: int):
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 
+def _get_oauth_redirect_uri(request: Request) -> str:
+    x_proto = request.headers.get("x-forwarded-proto", "")
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
+    scheme = "https" if x_proto == "https" or (host and "onrender.com" in host) else request.url.scheme
+    base = f"{scheme}://{host}".rstrip("/")
+    return f"{base}/api/v1/portal/gmail/oauth/callback"
+
+
 @router.get("/agents/{agent_id}/google/auth-url")
 async def get_agent_google_auth_url(agent_id: int, request: Request, action: str = "calendar"):
     if action not in ["calendar", "gmail"]:
@@ -536,7 +548,7 @@ async def get_agent_google_auth_url(agent_id: int, request: Request, action: str
             cursor.execute("INSERT INTO oauth_states (state, agent_id, action_type) VALUES (%s, %s, %s);", (state, agent_id, action))
             conn.commit()
         
-    redirect_uri = f"{str(request.base_url).rstrip('/')}/api/v1/portal/gmail/oauth/callback"
+    redirect_uri = _get_oauth_redirect_uri(request)
     
     auth_url = (
         "https://accounts.google.com/o/oauth2/v2/auth?"
@@ -708,7 +720,7 @@ async def populate_agent_slots(agent_id: int, payload: PopulateSlotsPayload = No
 
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT id FROM staff_agents WHERE id = ?", (agent_id,))
+        cursor.execute("SELECT id FROM staff_agents WHERE id = %s", (agent_id,))
         if not cursor.fetchone():
             raise HTTPException(status_code=404, detail="Agent not found")
 
@@ -1028,7 +1040,7 @@ async def get_gmail_oauth_url(request: Request):
     if not client_id:
         raise HTTPException(status_code=400, detail="Google Client ID is not configured. Please save it in Gmail Settings or set GOOGLE_CLIENT_ID in your .env file.")
         
-    redirect_uri = f"{str(request.base_url).rstrip('/')}/api/v1/portal/gmail/oauth/callback"
+    redirect_uri = _get_oauth_redirect_uri(request)
     scope = "https://www.googleapis.com/auth/gmail.send"
     
     auth_url = (
@@ -1109,7 +1121,7 @@ async def gmail_oauth_callback(request: Request, code: str = None, error: str = 
     if not client_id or not client_secret:
         raise HTTPException(status_code=400, detail="OAuth credentials (ID/Secret) are missing in server config or .env file.")
         
-    redirect_uri = f"{str(request.base_url).rstrip('/')}/api/v1/portal/gmail/oauth/callback"
+    redirect_uri = _get_oauth_redirect_uri(request)
     
     token_url = "https://oauth2.googleapis.com/token"
     payload = {
