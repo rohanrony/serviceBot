@@ -172,11 +172,15 @@ Speak the filler naturally as part of the conversation so the caller experiences
     if not os.path.exists(CONFIG_PATH):
         data = defaults.copy()
     else:
-        with open(CONFIG_PATH, "r") as f:
-            data = json.load(f)
-        for k, v in defaults.items():
-            if k not in data:
-                data[k] = v
+        try:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            for k, v in defaults.items():
+                if k not in data:
+                    data[k] = v
+        except Exception as e:
+            print(f"Error loading {CONFIG_PATH}: {e}")
+            data = defaults.copy()
 
     # Also check system_prompt.txt for overrides
     if os.path.exists(SYSTEM_PROMPT_PATH):
