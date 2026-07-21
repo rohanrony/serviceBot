@@ -379,18 +379,18 @@ def main():
     with get_db_connection() as conn:
         cursor = conn.cursor()
         
-        # Clear existing services to replace with correct catalog
-        cursor.execute("DELETE FROM services;")
-        conn.commit()
-        
+        # Insert default catalog items if they do not already exist (preserving user-added catalog items)
         for svc in SERVICES_DATA:
             cursor.execute("""
                 INSERT INTO services (
                     name, description, price_range, duration_minutes, 
                     req_customer_name, req_phone_number, req_vehicle_details, req_issue_description, req_location
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);
-            """, svc)
-            print(f"Added service: '{svc[0]}'")
+                )
+                SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM services WHERE LOWER(name) = LOWER(%s)
+                );
+            """, (*svc, svc[0]))
             
         conn.commit()
         
