@@ -11,7 +11,7 @@ from serviceBot.services.rag import FAQService
 from serviceBot.graph.nodes import handoff_node
 
 # Load env variables from .env file
-load_dotenv(override=True)
+load_dotenv(override=False)
 
 import re
 
@@ -212,7 +212,8 @@ async def post_call_webhook(request: Request = None, payload: Dict[str, Any] = N
     import sys
     is_testing = "pytest" in sys.modules or any("pytest" in arg or "unittest" in arg for arg in sys.argv)
     if is_testing:
-        log_file = "/Users/rohanroy/.gemini/antigravity-ide/scratch/webhook_activity.log"
+        os.makedirs("./scratch", exist_ok=True)
+        log_file = "./scratch/webhook_activity.log"
     else:
         log_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "webhook_activity.log")
 

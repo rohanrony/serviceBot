@@ -154,8 +154,8 @@ try:
             create_payload = {
                 "settings": {
                     "name": "post call record",
-                    "webhookUrl": webhook_target_url,
-                    "authType": "hmac"
+                    "webhook_url": webhook_target_url,
+                    "auth_type": "hmac"
                 }
             }
             create_res = httpx.post("https://api.elevenlabs.io/v1/workspace/webhooks", json=create_payload, headers=headers)

@@ -118,3 +118,49 @@ def test_service_request_agent_all_fields_present():
         
         # Verify that service_request_id is populated in the state
         assert final_state["service_request_id"] == 42
+
+
+def test_service_request_agent_multiple_issues():
+    """
+    Assert that when multiple issues are specified (e.g. oil change + brake grinding),
+    the service request agent passes the combined issue description into create_service_request().
+    """
+    if service_request_node is None:
+        pytest.fail("service_request_node is not implemented/imported yet.")
+
+    initial_state: AgentState = {
+        "messages": [
+            HumanMessage(content="My 2020 Honda Civic needs an oil change and also has a grinding noise when stopping.")
+        ],
+        "customer": {
+            "id": 1,
+            "name": "Sarah Johnson",
+            "phone": "+15551234567",
+            "email": "sarah.j@example.com",
+            "vehicle_make": "Honda",
+            "vehicle_model": "Civic",
+            "vehicle_year": 2020,
+            "location": "Springfield"
+        },
+        "service_request_id": None,
+        "appointment_id": None,
+        "current_agent": "service_request",
+        "dtmf_active": False
+    }
+
+    with patch("serviceBot.graph.nodes.ChatOpenAI") as mock_chat, \
+         patch("serviceBot.db.queries.create_service_request") as mock_create:
+        
+        mock_create.return_value = 99
+        mock_instance = mock_chat.return_value
+        mock_instance.invoke.return_value = AIMessage(content="I have recorded both your oil change and brake inspection request.")
+        
+        final_state = service_request_node(initial_state)
+        
+        # Verify create_service_request was called with the multiple issue description
+        assert mock_create.called
+        call_kwargs = mock_create.call_args.kwargs
+        assert "oil change" in call_kwargs["issue"].lower()
+        assert "grinding" in call_kwargs["issue"].lower() or "brake" in call_kwargs["issue"].lower()
+        assert final_state["service_request_id"] == 99
+

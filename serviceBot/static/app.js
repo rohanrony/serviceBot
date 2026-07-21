@@ -722,11 +722,7 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // Populate textareas
       document.getElementById('prompt-first-message').value = config.first_message || '';
-      document.getElementById('prompt-router').value = config.prompts.router || '';
-      document.getElementById('prompt-service-request').value = config.prompts.service_request || '';
-      document.getElementById('prompt-appointment').value = config.prompts.appointment || '';
-      document.getElementById('prompt-faq').value = config.prompts.faq || '';
-      document.getElementById('prompt-handoff').value = config.prompts.handoff || '';
+      document.getElementById('prompt-system').value = config.system_prompt || '';
       
       // Populate checkboxes
       const reqCustomerName = document.getElementById('req-customer-name');
@@ -762,13 +758,7 @@ document.addEventListener('DOMContentLoaded', () => {
         vehicle_details: reqVehicleDetails ? reqVehicleDetails.checked : true,
         issue_description: reqIssueDescription ? reqIssueDescription.checked : true
       },
-      prompts: {
-        router: document.getElementById('prompt-router').value,
-        service_request: document.getElementById('prompt-service-request').value,
-        appointment: document.getElementById('prompt-appointment').value,
-        faq: document.getElementById('prompt-faq').value,
-        handoff: document.getElementById('prompt-handoff').value
-      },
+      system_prompt: document.getElementById('prompt-system').value,
       first_message: document.getElementById('prompt-first-message').value
     };
     

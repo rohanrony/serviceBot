@@ -96,12 +96,14 @@ def _generate_dynamic_slots(preferred_date_str: str, duration_minutes: int) -> l
     # Generate slots for up to 14 business days
     slots = []
     day_offset = 0
+    now_dt = dt_mod.datetime.now()
     while len(slots) < 60 and day_offset < 30:
         candidate_day = start_date + dt_mod.timedelta(days=day_offset)
         if candidate_day.weekday() < 5:  # Mon-Fri only
             for hour in [9, 11, 14, 16]:
                 slot_dt = dt_mod.datetime.combine(candidate_day, dt_mod.time(hour, 0, 0))
-                slots.append(slot_dt.strftime("%Y-%m-%d %H:%M:%S"))
+                if slot_dt > now_dt:
+                    slots.append(slot_dt.strftime("%Y-%m-%d %H:%M:%S"))
         day_offset += 1
     return slots
 
@@ -122,6 +124,7 @@ def check_availability(service_type: str = None, preferred_date: str = None) -> 
     returns an empty list.
     """
     import zoneinfo
+    import datetime as dt_mod
     from datetime import datetime, timedelta
     from concurrent.futures import ThreadPoolExecutor, as_completed
     from serviceBot.services.google_calendar import fetch_agent_events, parse_google_datetime
@@ -151,6 +154,18 @@ def check_availability(service_type: str = None, preferred_date: str = None) -> 
         with dict_cursor(conn) as cursor:
             cursor.execute(query, (start_time,))
             mock_rows = cursor.fetchall()
+
+    # Filter out past slots relative to current system time
+    now_dt = dt_mod.datetime.now()
+    if mock_rows:
+        filtered_mock_rows = []
+        for r in mock_rows:
+            val = r["slot_datetime"]
+            dt_val = dt_mod.datetime.strptime(val, "%Y-%m-%d %H:%M:%S") if isinstance(val, str) else val
+            if dt_val > now_dt:
+                filtered_mock_rows.append(r)
+        mock_rows = filtered_mock_rows
+
 
     # --- Get all Google Calendar connected agents ---
     with get_db_connection() as conn:
