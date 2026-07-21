@@ -718,11 +718,13 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const response = await fetch('/api/v1/portal/config');
       if (!response.ok) throw new Error('Failed to fetch configurations');
-      const config = await response.json();
+      const config = await response.json() || {};
       
       // Populate textareas
-      document.getElementById('prompt-first-message').value = config.first_message || '';
-      document.getElementById('prompt-system').value = config.system_prompt || '';
+      const firstMsgEl = document.getElementById('prompt-first-message');
+      const sysPromptEl = document.getElementById('prompt-system');
+      if (firstMsgEl) firstMsgEl.value = config.first_message || '';
+      if (sysPromptEl) sysPromptEl.value = config.system_prompt || '';
       
       // Populate checkboxes
       const reqCustomerName = document.getElementById('req-customer-name');
@@ -730,10 +732,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const reqVehicleDetails = document.getElementById('req-vehicle-details');
       const reqIssueDescription = document.getElementById('req-issue-description');
       
-      if (reqCustomerName) reqCustomerName.checked = !!config.required_fields.customer_name;
-      if (reqPhoneNumber) reqPhoneNumber.checked = !!config.required_fields.phone_number;
-      if (reqVehicleDetails) reqVehicleDetails.checked = !!config.required_fields.vehicle_details;
-      if (reqIssueDescription) reqIssueDescription.checked = !!config.required_fields.issue_description;
+      const reqFields = config.required_fields || {};
+      if (reqCustomerName) reqCustomerName.checked = !!reqFields.customer_name;
+      if (reqPhoneNumber) reqPhoneNumber.checked = !!reqFields.phone_number;
+      if (reqVehicleDetails) reqVehicleDetails.checked = !!reqFields.vehicle_details;
+      if (reqIssueDescription) reqIssueDescription.checked = !!reqFields.issue_description;
       
     } catch (err) {
       console.error(err);
@@ -743,38 +746,43 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Core router intents form
   const intentForm = document.getElementById('intent-config-form');
-  intentForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    
-    const reqCustomerName = document.getElementById('req-customer-name');
-    const reqPhoneNumber = document.getElementById('req-phone-number');
-    const reqVehicleDetails = document.getElementById('req-vehicle-details');
-    const reqIssueDescription = document.getElementById('req-issue-description');
-    
-    const payload = {
-      required_fields: {
-        customer_name: reqCustomerName ? reqCustomerName.checked : true,
-        phone_number: reqPhoneNumber ? reqPhoneNumber.checked : true,
-        vehicle_details: reqVehicleDetails ? reqVehicleDetails.checked : true,
-        issue_description: reqIssueDescription ? reqIssueDescription.checked : true
-      },
-      system_prompt: document.getElementById('prompt-system').value,
-      first_message: document.getElementById('prompt-first-message').value
-    };
-    
-    try {
-      const response = await fetch('/api/v1/portal/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      if (!response.ok) throw new Error('Failed to save configurations');
-      showToast('Agent prompts and intake fields updated successfully!');
-    } catch (err) {
-      console.error(err);
-      showToast('Error saving configuration: ' + err.message, 'error');
-    }
-  });
+  if (intentForm) {
+    intentForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const reqCustomerName = document.getElementById('req-customer-name');
+      const reqPhoneNumber = document.getElementById('req-phone-number');
+      const reqVehicleDetails = document.getElementById('req-vehicle-details');
+      const reqIssueDescription = document.getElementById('req-issue-description');
+      
+      const sysPromptEl = document.getElementById('prompt-system');
+      const firstMsgEl = document.getElementById('prompt-first-message');
+
+      const payload = {
+        required_fields: {
+          customer_name: reqCustomerName ? reqCustomerName.checked : true,
+          phone_number: reqPhoneNumber ? reqPhoneNumber.checked : true,
+          vehicle_details: reqVehicleDetails ? reqVehicleDetails.checked : true,
+          issue_description: reqIssueDescription ? reqIssueDescription.checked : true
+        },
+        system_prompt: sysPromptEl ? sysPromptEl.value : '',
+        first_message: firstMsgEl ? firstMsgEl.value : ''
+      };
+      
+      try {
+        const response = await fetch('/api/v1/portal/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!response.ok) throw new Error('Failed to save configurations');
+        showToast('Agent prompts and intake fields updated successfully!');
+      } catch (err) {
+        console.error(err);
+        showToast('Error saving configuration: ' + err.message, 'error');
+      }
+    });
+  }
 
   // --- VIEW 4: KNOWLEDGE BASE RETRIEVAL & MANAGEMENT ---
   async function loadKBData() {
