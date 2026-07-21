@@ -307,10 +307,19 @@ class ConversationSimulator:
             self.intake_state["model"] = "Civic"
 
         # Service / issue extraction
+        detected_issues = []
         if any(k in text_lower for k in ["oil change", "oil chang", "oil chenge"]):
-            self.intake_state["issue_description"] = "Oil Change"
-        elif any(k in text_lower for k in ["brake", "brakes", "squeaking", "grinding"]):
-            self.intake_state["issue_description"] = "Brake Inspection & Repair"
+            detected_issues.append("Oil Change")
+        if any(k in text_lower for k in ["brake", "brakes", "squeaking", "grinding"]):
+            detected_issues.append("Brake Inspection & Repair")
+        if detected_issues:
+            if self.intake_state.get("issue_description"):
+                current = self.intake_state["issue_description"]
+                new_issues = [i for i in detected_issues if i.lower() not in current.lower()]
+                if new_issues:
+                    self.intake_state["issue_description"] = f"{current} and {', '.join(new_issues)}"
+            else:
+                self.intake_state["issue_description"] = " and ".join(detected_issues)
 
     def _run_mock_turn(self, user_text: str) -> Dict[str, Any]:
         """Mock turn execution simulating realistic stateful voice assistant behavior."""

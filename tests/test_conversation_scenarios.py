@@ -77,3 +77,51 @@ def test_scenario_human_handoff(simulator):
     assert len(turn_res["tool_calls"]) == 1
     assert turn_res["tool_calls"][0]["tool_name"] == "cba_webhook"
     assert "connecting" in turn_res["assistant_response"].lower() or "hold" in turn_res["assistant_response"].lower()
+
+def test_multiple_service_issues_extraction(simulator):
+    """Verify that when a user mentions multiple issues (e.g. oil change + brakes), both issues are extracted into issue_description."""
+    simulator.run_turn("I need an oil change and my brakes are squeaking on my 2020 Honda Civic. Name is John Doe, 555-111-2222.")
+    assert simulator.intake_state["issue_description"] is not None
+    assert "Oil Change" in simulator.intake_state["issue_description"]
+    assert "Brake Inspection & Repair" in simulator.intake_state["issue_description"]
+
+def test_scenario_multiple_issues_booking_flow(simulator):
+    """Test complete flow where caller requests multiple services, rates are checked, and booking happens at the end of the call."""
+    script = [
+        "Hi, I need an oil change and brake inspection for my 2022 Ford F-150. My name is Mark Taylor, phone 555-888-9999.",
+        "What time slots are available for 2026-06-12?",
+        "That works. Please book the 10:00 AM appointment for both services."
+    ]
+
+    transcript = simulator.run_scenario(script)
+    assert len(transcript) == 3
+
+    # Turn 1: All intake details and multiple issues captured
+    assert simulator.intake_state["name"] == "Mark Taylor"
+    assert "Oil Change" in simulator.intake_state["issue_description"]
+    assert "Brake Inspection & Repair" in simulator.intake_state["issue_description"]
+
+    # Turn 2: Availability check before final booking request
+    assert any(tc["tool_name"] == "check_availability" for tc in transcript[1]["tool_calls"])
+
+    # Turn 3: Booking occurs as the final step after all details, pricing, and slots are captured
+    assert any(tc["tool_name"] == "book_appointment" for tc in transcript[2]["tool_calls"])
+
+def test_booking_deferred_until_call_completion(simulator):
+    """Verify that booking tool is executed only after all mandatory intake details and slot selection are finalized at the end of turn sequence."""
+    # Step 1: Initial intake without date selection - book_appointment should NOT be called yet
+    turn1 = simulator.run_turn("I want to book an appointment for an oil change. Name: Bob Smith, Phone: 555-333-4444, Car: 2018 Toyota Corolla.")
+    tool_names_turn1 = [tc["tool_name"] for tc in turn1["tool_calls"]]
+    assert "book_appointment" not in tool_names_turn1
+
+    # Step 2: Slot requested - availability checked first
+    turn2 = simulator.run_turn("Check slots for 2026-06-15.")
+    tool_names_turn2 = [tc["tool_name"] for tc in turn2["tool_calls"]]
+    assert "check_availability" in tool_names_turn2
+    assert "book_appointment" not in tool_names_turn2
+
+    # Step 3: Final confirmation at end of call - book_appointment called
+    turn3 = simulator.run_turn("Book the 10:00 AM slot on 2026-06-15.")
+    tool_names_turn3 = [tc["tool_name"] for tc in turn3["tool_calls"]]
+    assert "book_appointment" in tool_names_turn3
+

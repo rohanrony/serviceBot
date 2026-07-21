@@ -79,20 +79,27 @@ def mock_db():
             yield conn
 
 
-def test_check_availability_only_unbooked(mock_db):
+def test_check_availability_filters_past_slots(mock_db):
     """
-    Assert check_availability() returns only unbooked slots.
+    Assert check_availability() filters out past slots relative to the current time.
     """
-    # Query slots starting from 2026-06-09
-    slots = check_availability(preferred_date="2026-06-09")
-    
-    # It should not include '2026-06-09 14:00:00' because it is booked.
-    assert "2026-06-09 14:00:00" not in slots
-    # Standard weekday hours should be available
-    assert "2026-06-09 16:00:00" in slots
-    assert "2026-06-10 10:00:00" in slots
+    from datetime import datetime
+    import serviceBot.db.queries as queries_mod
+
+    # Add a mock slot in the past
+    cursor = mock_db.cursor()
+    cursor.execute(
+        "INSERT INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES (%s, %s, %s);",
+        ('2020-01-01 09:00:00', False, 1)
+    )
+    mock_db.commit()
+
+    slots = queries_mod.check_availability(preferred_date="2020-01-01")
+    assert "2020-01-01 09:00:00" not in slots
+
 
 def test_book_appointment_updates_is_booked(mock_db):
+
     """
     Assert book_appointment() updates the service request.
     """

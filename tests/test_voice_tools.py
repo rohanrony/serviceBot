@@ -404,6 +404,41 @@ def test_voice_tools_get_customer_appointments(mock_get_appts):
     assert data["result"]["appointments"][0]["service_type"] == "Repair"
 
 
+@patch("serviceBot.api.telephony.lookup_customer_by_phone")
+@patch("serviceBot.api.telephony.create_service_request")
+def test_voice_tools_create_service_request_multiple_issues(mock_create, mock_lookup):
+    mock_lookup.return_value = {"customer_id": 42}
+    mock_create.return_value = 102
+    
+    payload = {
+        "tool_call_id": "call_multi_issue",
+        "name": "create_service_request",
+        "arguments": {
+            "customer_name": "Mark Taylor",
+            "phone": "555-888-9999",
+            "make": "Ford",
+            "model": "F-150",
+            "year": 2022,
+            "issue_description": "Oil Change and Brake Inspection & Repair",
+            "service_type": "Oil Change & Brake Inspection"
+        }
+    }
+    response = client.post("/api/v1/voice/tools", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["tool_call_id"] == "call_multi_issue"
+    assert data["result"]["success"] is True
+    assert data["result"]["service_request_id"] == 102
+    mock_create.assert_called_once_with(
+        customer_id=42,
+        vehicle_details={"make": "Ford", "model": "F-150", "year": 2022},
+        issue="Oil Change and Brake Inspection & Repair",
+        service_type="Oil Change & Brake Inspection",
+        time_slot=None
+    )
+
+
+
 
 
 
