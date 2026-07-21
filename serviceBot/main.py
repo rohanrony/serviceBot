@@ -30,6 +30,11 @@ def _run_calendar_sync_loop(interval_seconds: int = 3600):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import sys
+    if any(x in sys.modules for x in ["pytest", "unittest"]) or any("demo" in arg or "test" in arg for arg in sys.argv):
+        yield
+        return
+
     # 1. Seed services catalog and sync to RAG KB
     try:
         from serviceBot.seed_cba_services import main as seed_main

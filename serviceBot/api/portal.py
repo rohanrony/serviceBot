@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import Optional
 from dotenv import load_dotenv
 
-load_dotenv(override=True)
+load_dotenv(override=False)
 
 router = APIRouter(prefix="/api/v1/portal", tags=["portal"])
 
@@ -36,7 +36,7 @@ async def get_elevenlabs_voices():
 async def update_elevenlabs_agent(payload: AgentUpdatePayload):
     import sys
     if not any(x in sys.modules for x in ["pytest", "unittest"]):
-        load_dotenv(override=True)
+        load_dotenv(override=False)
     api_key = os.getenv("ELEVENLABS_API_KEY", "")
     agent_id = os.getenv("ELEVENLABS_AGENT_ID", "")
     
@@ -103,6 +103,48 @@ SYSTEM_PROMPT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "s
 
 def load_config():
     import json
+    default_system_prompt = """You are Rachel, an AI voice assistant for Test Automotive. Be polite, friendly, professional, and conversational. Speak clearly and concisely.
+
+### 1. CORE INTENT & BEHAVIOR
+Understand the caller's intent and assist them naturally across these areas:
+- **Service Request / Courtesy Inspection Intake:** The caller reports a vehicle issue, asks for repair advice, or requests service.
+- **Appointment Booking & Rescheduling:** The caller wants to schedule, book, reschedule, or cancel a service appointment.
+- **FAQ & General Knowledge:** The caller has questions about business hours (Monday-Friday 7:00 AM - 6:00 PM, closed weekends), location, warranty, shuttle service, or specific service details.
+- **Human Handoff:** The caller explicitly requests to speak with a human agent, manager, or service advisor.
+
+### 2. MANDATORY INTAKE & SERVICE REQUESTS
+Under our "Nice Difference" policy, before booking any appointment or arranging a callback, you MUST collect and confirm:
+1. Customer's full name
+2. Valid 10-digit phone number (verify it has 10 digits)
+3. Vehicle details (Year, Make, and Model)
+4. Description of the vehicle issue or requested service
+
+If a specific service is requested (such as an oil change, brake inspection, or tire rotation), call `get_service_fields` first to verify any extra required details. Ask for missing details politely, one at a time.
+
+Once all mandatory details are collected, ask:
+"Would you like to book an appointment for this service now, or would you prefer to arrange a callback?"
+- If they prefer a callback: Ask for their preferred day and time window, then call `request_callback`.
+- If they want to book an appointment: Proceed to the Appointment Booking steps below.
+
+### 3. APPOINTMENT BOOKING & RESCHEDULING
+- **Checking Availability:** Always check open calendar slots first by calling `check_availability` with their preferred date or time window. Suggest the best available slots clearly.
+- **Mandatory Price & Duration Quote Before Booking:** BEFORE calling `book_appointment`, you MUST look up the service's estimated cost and time duration in our knowledge base (using `query_knowledge_base` if needed). Quote both clearly to the caller (for example: *"An oil change is typically $79 to $119 and takes about 45 minutes"*). Ask for their explicit confirmation to proceed at that rate. Only call `book_appointment` after they explicitly confirm.
+- **Rescheduling:** First call `get_customer_appointments` using their phone number to check current bookings. State their existing appointment time, then call `check_availability` for their preferred new date/time. Once confirmed, call `reschedule_appointment`.
+
+### 4. FAQ & KNOWLEDGE BASE
+When asked general questions about services, pricing, hours, or policies, call `query_knowledge_base`. Answer strictly using the context provided. Handle minor pronunciation differences or typos gracefully. Do not fabricate or hallucinate information not found in the knowledge base.
+
+### 5. HUMAN HANDOFF
+If the caller asks to speak to a person or if their issue requires immediate human attention during business hours (M-F 7am-6pm), summarize their details (name, phone, vehicle, issue) and call the handoff tool (`handoff` / `cba_webbook`) to transfer the call to +14242704893.
+
+### 6. CRITICAL DELAY PREVENTION (MANDATORY FILLER PHRASES)
+Whenever you call any tool or perform a database/server lookup (`check_availability`, `book_appointment`, `query_knowledge_base`, `get_service_fields`, `request_callback`, `handoff`), you MUST immediately utter a quick, natural conversational filler phrase BEFORE triggering the tool call. Do NOT remain silent while checking the system. Vary your phrases dynamically:
+- Checking calendar: *"Let me check our schedule for you..."*, *"Looking up open slots on the calendar..."*, *"Let's see what times we have available..."*
+- Looking up info/FAQ: *"Let me look that up for you..."*, *"Checking our service catalog, just a moment..."*, *"Let me check our details on that..."*
+- Booking/Saving: *"Getting that appointment booked for you now..."*, *"Saving those details for you, one moment..."*
+- Transferring: *"Connecting you with a service advisor now, please hold..."*
+Speak the filler naturally as part of the conversation so the caller experiences zero dead air."""
+
     defaults = {
         "handoff_phone_number": "+14242704893",
         "required_fields": {
@@ -112,14 +154,8 @@ def load_config():
             "issue_description": True,
             "location": True
         },
-        "prompts": {
-            "router": "You are Rachel, the voice assistant for Test. Start by introducing yourself. Your task is to understand the caller's intent and classify it:\n- 'new_customer_service_request': Caller wants to request service, reports a vehicle issue, or needs a courtesy inspection.\n- 'appointment_booking': Caller wants to schedule, book, or set up a service/repair appointment.\n- 'appointment_reschedule': Caller wants to change, reschedule, or cancel an existing appointment.\n- 'faq_business_knowledge': Caller has general questions about business hours (M-F 7am-6pm, closed weekends), location, warranty, shuttle service, or inspections.\n- 'human_handoff': Caller explicitly asks for a human agent, manager, or service advisor.\n- 'greeting': General greeting.\n- 'other': Any other queries.",
-            "service_request": "You are a helpful service advisor intake assistant. Under our 'Nice Difference' policy, we gather details for a courtesy inspection and service request...",
-            "appointment": "You are a scheduling assistant. Help the caller book or reschedule an appointment...",
-            "faq": "You are a friendly customer service FAQ assistant for Test...",
-            "handoff": "You are a human handoff assistant. Compile a clear summary of the conversation..."
-        },
-        "first_message": "Hello! Thank you for calling Test. I am Rachel, AI voice Assistant. How can I help you today?",
+        "system_prompt": default_system_prompt,
+        "first_message": "Hello! Thank you for calling Test Automotive. I am Rachel, AI voice Assistant. How can I help you today?",
         "gmail_enabled": False,
         "gmail_sender": "",
         "gmail_password": "",
@@ -138,30 +174,25 @@ def load_config():
     else:
         with open(CONFIG_PATH, "r") as f:
             data = json.load(f)
-        # Merge defaults for any missing keys
         for k, v in defaults.items():
             if k not in data:
                 data[k] = v
 
-    # Also load system_prompt from system_prompt.txt
-    system_prompt = ""
+    # Also check system_prompt.txt for overrides
     if os.path.exists(SYSTEM_PROMPT_PATH):
         try:
             with open(SYSTEM_PROMPT_PATH, "r", encoding="utf-8") as f:
-                system_prompt = f.read()
+                content = f.read().strip()
+                if content:
+                    data["system_prompt"] = content
         except Exception as e:
             print(f"Error loading system_prompt.txt: {e}")
 
-    if not system_prompt:
-        prompts = data.get("prompts", {})
-        system_prompt = f"You are Rachel, an AI voice assistant for Test Automotive.\n\n### Core Router:\n{prompts.get('router', '')}\n\n### Service Request:\n{prompts.get('service_request', '')}\n\n### Appointment:\n{prompts.get('appointment', '')}\n\n### FAQ:\n{prompts.get('faq', '')}\n\n### Handoff:\n{prompts.get('handoff', '')}"
-        
-    data["system_prompt"] = system_prompt
     return data
 
 def save_config(config_data):
     import json
-    system_prompt = config_data.pop("system_prompt", None)
+    system_prompt = config_data.get("system_prompt")
     if system_prompt is not None:
         try:
             with open(SYSTEM_PROMPT_PATH, "w", encoding="utf-8") as f:
@@ -276,44 +307,23 @@ async def get_config():
 
 @router.post("/config")
 async def update_config(payload: ConfigUpdatePayload):
+    prompt_to_sync = payload.system_prompt
+    if not prompt_to_sync and payload.prompts:
+        p = payload.prompts
+        prompt_to_sync = "\n\n".join([v for v in p.values() if isinstance(v, str) and v.strip()])
+
+    if not prompt_to_sync:
+        existing = load_config()
+        prompt_to_sync = existing.get("system_prompt", "")
+
     config_data = {
         "handoff_phone_number": payload.handoff_phone_number or "+14242704893",
         "required_fields": payload.required_fields,
-        "prompts": payload.prompts or {},
         "first_message": payload.first_message,
-        "system_prompt": payload.system_prompt
+        "system_prompt": prompt_to_sync
     }
     save_config(config_data)
     
-    prompt_to_sync = payload.system_prompt
-    if not prompt_to_sync:
-        prompts = payload.prompts or {}
-        prompt_to_sync = f"""You are an advanced voice assistant for Test.
-
-### Core Router instructions:
-{prompts.get('router', '')}
-
-### Service Request Intake instructions:
-{prompts.get('service_request', '')}
-
-### Appointment Booking instructions:
-{prompts.get('appointment', '')}
-
-### FAQ instructions:
-{prompts.get('faq', '')}
-
-### Handoff instructions:
-{prompts.get('handoff', '')}
-
-### Delay Prevention (Filler Messages Guidelines):
-When you need to execute any tool or perform any database/server lookup (such as querying the knowledge base, checking availability, fetching required service fields, booking/rescheduling, or transferring a call), you MUST immediately say a quick, conversational, and natural filler response before calling the tool. Do NOT remain silent while the tool runs. Customize the response dynamically to the situation to avoid repetition:
-- When checking server/FAQ: "Let me get that info for you...", "Please wait a moment while I check that for you...", "Checking our guidelines on that, one moment..."
-- When checking calendar availability: "Let me check our schedule for you...", "Checking our calendar for open slots...", "Let's see what we have available on that date..."
-- When retrieving appointment/customer record: "Let me pull up your booking details...", "Let me find your appointment record, just a moment..."
-- When booking/saving a request: "Sure, let me get that booked for you...", "Perfect, saving those details now..."
-- When transferring: "Let me get a service advisor on the line for you...", "Transferring you now, please hold a moment..."
-Make sure the filler message sounds like a normal part of the conversation and is uttered right as you trigger the tool."""
-
     await sync_prompt_to_elevenlabs(prompt_to_sync, payload.first_message)
     
     return {"success": True}

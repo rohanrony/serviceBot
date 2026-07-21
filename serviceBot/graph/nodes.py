@@ -26,7 +26,7 @@ def intent_classifier_node(state: AgentState) -> Dict[str, Any]:
     structured_llm = llm.with_structured_output(IntentClassification)
     
     config = load_config()
-    router_prompt = config.get("prompts", {}).get("router", "You are an intent classifier.")
+    router_prompt = config.get("system_prompt", "You are an intent classifier.")
     
     prompt = ChatPromptTemplate.from_messages([
         ("system", router_prompt),
@@ -126,7 +126,7 @@ def service_request_node(state: AgentState) -> Dict[str, Any]:
     # Check if any required fields are missing
     if missing:
         # Ask follow-up question via LLM
-        prompt_text = config.get("prompts", {}).get("service_request", "You are a customer service representative.")
+        prompt_text = config.get("system_prompt", "You are a customer service representative.")
         system_msg = SystemMessage(content=prompt_text)
         response = llm.invoke([system_msg] + messages)
         return {
@@ -148,7 +148,7 @@ def service_request_node(state: AgentState) -> Dict[str, Any]:
     )
 
     # Call LLM to confirm
-    prompt_text = config.get("prompts", {}).get("service_request", "You are a customer service representative.")
+    prompt_text = config.get("system_prompt", "You are a customer service representative.")
     system_msg = SystemMessage(content=prompt_text)
     response = llm.invoke([system_msg] + messages)
 
@@ -216,7 +216,7 @@ def appointment_booking_node(state: AgentState) -> Dict[str, Any]:
     llm_with_tools = llm.bind_tools(tools)
 
     config = load_config()
-    appt_prompt = config.get("prompts", {}).get("appointment", "You are a scheduling assistant.")
+    appt_prompt = config.get("system_prompt", "You are a scheduling assistant.")
     system_msg = SystemMessage(content=appt_prompt)
 
     # Invoke LLM

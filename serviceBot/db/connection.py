@@ -236,20 +236,24 @@ def get_db_connection():
     """Context manager yielding a psycopg2 connection with RealDictCursor support."""
     global _db_initialized
     db_url = get_db_url()
-    if not _db_initialized:
-        init_db(db_url)
-
-    pool = _get_pool()
-    conn = pool.getconn()
-    conn.autocommit = False
     try:
-        yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
+        if not _db_initialized:
+            init_db(db_url)
+
+        pool = _get_pool()
+        conn = pool.getconn()
+        conn.autocommit = False
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            pool.putconn(conn)
+    except Exception as err:
+        print(f"[get_db_connection] Database connection unavailable: {err}")
         raise
-    finally:
-        pool.putconn(conn)
 
 
 def dict_cursor(conn):

@@ -20,7 +20,7 @@ NC="\033[0m" # No Color
 
 # Default settings
 WORKSPACE_DIR="$(cd "$(dirname "$0")" && pwd)"
-SCRATCH_DIR="/Users/rohanroy/.gemini/antigravity-ide/scratch"
+SCRATCH_DIR="$WORKSPACE_DIR/scratch"
 CACHE_DIR="$SCRATCH_DIR/.pytest_cache"
 PYTEST_BIN="$WORKSPACE_DIR/.venv/bin/pytest"
 

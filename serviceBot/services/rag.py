@@ -1,4 +1,6 @@
 import os
+os.environ["ANONYMIZED_TELEMETRY"] = "False"
+os.environ["CHROMA_TELEMETRY_IMPL"] = "None"
 import chromadb
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
@@ -15,7 +17,7 @@ class FAQService:
         else:
             import sys
             is_testing = "pytest" in sys.modules or any("pytest" in arg or "unittest" in arg for arg in sys.argv)
-            path = "/Users/rohanroy/.gemini/antigravity-ide/scratch/chroma_db" if is_testing else "./chroma_db"
+            path = "./scratch/chroma_db" if is_testing else "./chroma_db"
             client = chromadb.PersistentClient(path=path)
             self.collection = client.get_or_create_collection("faq_collection")
 
@@ -68,7 +70,7 @@ class FAQService:
         
         from serviceBot.api.portal import load_config
         config = load_config()
-        faq_prompt = config.get("prompts", {}).get("faq", "You are a helpful customer service FAQ assistant for an automotive shop.\nAnswer the caller's question strictly using the provided search snippets context.\nIf the answer is not contained in the context, reply with: 'I am sorry, but I do not have that information in my knowledge base.'\nDo not make up any information or hallucinate.\n\nContext:\n{context}")
+        faq_prompt = config.get("system_prompt", "You are a helpful customer service FAQ assistant for an automotive shop.\nAnswer the caller's question strictly using the provided search snippets context.\nIf the answer is not contained in the context, reply with: 'I am sorry, but I do not have that information in my knowledge base.'\nDo not make up any information or hallucinate.")
         
         if "{context}" not in faq_prompt:
             faq_prompt += "\n\nContext:\n{context}"
