@@ -22,7 +22,7 @@
 
 # kanban.db is already excluded by .switchboard/* above — explicit entry for documentation clarity.
 # Never commit the kanban database: it contains machine-local state that differs per developer.
-.switchboard/*
+.switchboard/kanban.db
 .switchboard/*.db-shm
 .switchboard/*.db-wal
 # <<< Switchboard managed exclusions <<<
@@ -32,3 +32,4 @@ AGENTS.md
 .env
 .venv/*
 .vscode/*
+.switchboard/README.md
