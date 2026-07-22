@@ -87,12 +87,12 @@ def service_request_node(state: AgentState) -> Dict[str, Any]:
     
     matched_service = None
     # Try matching issue text or conversation to a service to get specific required fields
-    from serviceBot.db.connection import get_db_connection
+    from serviceBot.db.connection import get_db_connection, dict_cursor
     try:
         with get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT name, req_customer_name, req_phone_number, req_vehicle_details, req_issue_description, req_location FROM services")
-            all_services = cursor.fetchall()
+            with dict_cursor(conn) as cursor:
+                cursor.execute("SELECT name, req_customer_name, req_phone_number, req_vehicle_details, req_issue_description, req_location FROM services")
+                all_services = cursor.fetchall()
             
         conversation_text = " ".join([msg.content for msg in messages if isinstance(msg, HumanMessage)]).lower()
         for svc in all_services:

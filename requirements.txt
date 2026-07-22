@@ -10,3 +10,4 @@ chromadb
 openai
 twilio
 python-multipart
+tzdata

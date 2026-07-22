@@ -659,8 +659,11 @@ def create_admin_calendar_event(
             return False
 
         import zoneinfo
-        from datetime import datetime, timedelta
-        tz = zoneinfo.ZoneInfo("America/New_York")
+        from datetime import datetime, timedelta, timezone
+        try:
+            tz = zoneinfo.ZoneInfo("America/New_York")
+        except Exception:
+            tz = timezone(timedelta(hours=-4))
         start_dt = datetime.strptime(slot_datetime_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=tz)
         end_dt = start_dt + timedelta(minutes=duration_minutes)
 

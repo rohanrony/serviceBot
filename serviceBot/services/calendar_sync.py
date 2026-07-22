@@ -16,11 +16,11 @@ re-evaluated against live Google Calendar to flip them booked/available.
 
 import datetime
 import traceback
-import zoneinfo
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List, Optional
-
-TZ = zoneinfo.ZoneInfo("America/New_York")
+try:
+    import zoneinfo
+    TZ = zoneinfo.ZoneInfo("America/New_York")
+except Exception:
+    TZ = datetime.timezone(datetime.timedelta(hours=-4))
 DEFAULT_DAYS  = 30
 
 
