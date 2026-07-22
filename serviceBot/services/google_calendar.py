@@ -38,13 +38,14 @@ def get_user_google_credentials(agent_id: int) -> dict:
     if not client_id or not client_secret:
         raise GoogleAuthException("Google App Client ID or Secret is not configured. Please save it in Gmail Settings or set GOOGLE_CLIENT_ID in your .env file.")
 
+    from serviceBot.db.connection import dict_cursor
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT access_token, refresh_token, expires_at, granted_scopes, email, google_account_id FROM user_google_accounts WHERE agent_id = %s;",
-            (agent_id,)
-        )
-        row = cursor.fetchone()
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                "SELECT access_token, refresh_token, expires_at, granted_scopes, email, google_account_id FROM user_google_accounts WHERE agent_id = %s;",
+                (agent_id,)
+            )
+            row = cursor.fetchone()
 
     if not row or not row["access_token"]:
         raise GoogleAuthException(f"Google account is not connected for agent {agent_id}.")

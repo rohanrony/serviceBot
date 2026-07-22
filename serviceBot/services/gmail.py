@@ -402,16 +402,17 @@ def send_booking_notification(booking_type: str, details: dict, agent_email: Opt
     agent_id = None
     if agent_email:
         try:
+            from serviceBot.db.connection import dict_cursor
             with get_db_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT sa.id FROM staff_agents sa
-                    LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id
-                    WHERE sa.email = %s OR uga.email = %s;
-                """, (agent_email, agent_email))
-                row = cursor.fetchone()
-                if row:
-                    agent_id = row["id"]
+                with dict_cursor(conn) as cursor:
+                    cursor.execute("""
+                        SELECT sa.id FROM staff_agents sa
+                        LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id
+                        WHERE sa.email = %s OR uga.email = %s;
+                    """, (agent_email, agent_email))
+                    row = cursor.fetchone()
+                    if row:
+                        agent_id = row["id"]
         except Exception as e:
             print(f"Error looking up agent ID for email {agent_email}: {e}")
 
