@@ -123,7 +123,7 @@ def _generate_dynamic_slots(preferred_date_str: str, duration_minutes: int) -> l
     Returns a list of ISO datetime strings: YYYY-MM-DD HH:MM:SS.
     """
     import datetime as dt_mod
-    from serviceBot.services.calendar_sync import get_configured_business_hours
+    from serviceBot.services.calendar_sync import get_configured_business_hours, get_configured_business_days
     
     if preferred_date_str and len(preferred_date_str) >= 10:
         try:
@@ -143,9 +143,10 @@ def _generate_dynamic_slots(preferred_date_str: str, duration_minutes: int) -> l
     day_offset = 0
     now_dt = dt_mod.datetime.now()
     valid_hours = get_configured_business_hours()
+    valid_days = get_configured_business_days()
     while len(slots) < 60 and day_offset < 30:
         candidate_day = start_date + dt_mod.timedelta(days=day_offset)
-        if candidate_day.weekday() < 5:  # Mon-Fri only
+        if candidate_day.weekday() in valid_days:  # Configured operating days
             for hour in valid_hours:
                 slot_dt = dt_mod.datetime.combine(candidate_day, dt_mod.time(hour, 0, 0))
                 if slot_dt > now_dt:
@@ -386,9 +387,10 @@ def validate_booking_time(booking_time: str) -> bool:
         
     import re
     from datetime import datetime
-    from serviceBot.services.calendar_sync import get_configured_business_hours
+    from serviceBot.services.calendar_sync import get_configured_business_hours, get_configured_business_days
     
     valid_hours = get_configured_business_hours()
+    valid_days = get_configured_business_days()
     
     # Try parsing standard YYYY-MM-DD HH:MM:SS format
     dt = None
@@ -427,8 +429,8 @@ def validate_booking_time(booking_time: str) -> bool:
             return True
             
     if dt:
-        # Check weekday: 0 = Monday, 4 = Friday. Weekend is weekday > 4
-        if dt.weekday() > 4:
+        # Check weekday against configured operating business days (0=Mon, 6=Sun)
+        if dt.weekday() not in valid_days:
             return False
         # Check hour against configured business hours
         if dt.hour not in valid_hours:
@@ -1104,14 +1106,14 @@ def reschedule_appointment(appointment_id: int, new_datetime: str) -> bool:
 def update_service_request_status(request_id: int, status: str) -> dict:
     """
     Updates the status of a service request.
-    Valid statuses: 'pending', 'in_progress', 'completed', 'cancelled'.
+    Valid statuses: 'pending', 'in_progress', 'completed', 'cancelled', 'rescheduled'.
     Maps 'done' -> 'completed'.
     """
     normalized_status = status.lower().strip()
     if normalized_status == 'done':
         normalized_status = 'completed'
 
-    valid_statuses = ('pending', 'in_progress', 'completed', 'cancelled')
+    valid_statuses = ('pending', 'in_progress', 'completed', 'cancelled', 'rescheduled')
     if normalized_status not in valid_statuses:
         raise ValueError(f"Invalid status '{status}'. Must be one of {valid_statuses}")
 
@@ -1125,4 +1127,112 @@ def update_service_request_status(request_id: int, status: str) -> dict:
             if not row:
                 raise ValueError(f"Service request with ID {request_id} not found.")
             return dict(row)
+
+
+def assign_staff_agent_to_service_request(request_id: int, staff_agent_id: int = None) -> dict:
+    """
+    Assigns or updates the assigned staff agent / technician for a service request.
+    """
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            if staff_agent_id is not None:
+                cursor.execute("SELECT id, name FROM staff_agents WHERE id = %s;", (staff_agent_id,))
+                if not cursor.fetchone():
+                    raise ValueError(f"Staff agent with ID {staff_agent_id} does not exist.")
+            
+            cursor.execute(
+                "UPDATE service_requests SET staff_agent_id = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s RETURNING id, staff_agent_id, status, updated_at;",
+                (staff_agent_id, request_id)
+            )
+            row = cursor.fetchone()
+            if not row:
+                raise ValueError(f"Service request with ID {request_id} not found.")
+            return dict(row)
+
+
+def get_available_agents_for_request(request_id: int) -> list:
+    """
+    Fetches all staff agents and checks their availability for the scheduled booking_time/time_slot
+    of the given service request.
+    """
+    import datetime as dt_mod
+    from serviceBot.services.google_calendar import fetch_agent_events, parse_google_datetime
+
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                "SELECT id, booking_time, time_slot, service_type, staff_agent_id FROM service_requests WHERE id = %s;",
+                (request_id,)
+            )
+            sr = cursor.fetchone()
+            if not sr:
+                raise ValueError(f"Service request with ID {request_id} not found.")
+
+            cursor.execute("SELECT id, name, role, email FROM staff_agents ORDER BY id ASC;")
+            agents = [dict(row) for row in cursor.fetchall()]
+
+    b_time_str = sr.get("booking_time") or sr.get("time_slot")
+    if not b_time_str or str(b_time_str).upper() == "ASAP":
+        for a in agents:
+            a["is_available"] = True
+            a["reason"] = "Available"
+        return agents
+
+    try:
+        if len(str(b_time_str)) == 10:
+            start_dt = dt_mod.datetime.strptime(str(b_time_str), "%Y-%m-%d")
+        else:
+            start_dt = dt_mod.datetime.strptime(str(b_time_str)[:19], "%Y-%m-%d %H:%M:%S")
+    except Exception:
+        for a in agents:
+            a["is_available"] = True
+            a["reason"] = "Available"
+        return agents
+
+    start_str = start_dt.strftime("%Y-%m-%d %H:%M:%S")
+
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                "SELECT staff_agent_id FROM mock_calendar_slots WHERE slot_datetime = CAST(%s AS TIMESTAMP) AND is_booked = TRUE;",
+                (start_str,)
+            )
+            booked_slot_agent_ids = {r["staff_agent_id"] for r in cursor.fetchall() if r["staff_agent_id"] is not None}
+
+            cursor.execute(
+                "SELECT staff_agent_id FROM service_requests WHERE (booking_time = %s OR time_slot = %s) AND id != %s AND status NOT IN ('cancelled') AND staff_agent_id IS NOT NULL;",
+                (b_time_str, b_time_str, request_id)
+            )
+            conflicting_sr_agent_ids = {r["staff_agent_id"] for r in cursor.fetchall()}
+
+    for agent in agents:
+        agent_id = agent["id"]
+        is_busy = False
+        reason = "Available"
+
+        if agent_id in booked_slot_agent_ids:
+            is_busy = True
+            reason = "Booked in calendar"
+        elif agent_id in conflicting_sr_agent_ids:
+            is_busy = True
+            reason = "Assigned to another request at this time"
+        else:
+            try:
+                events = fetch_agent_events(agent_id)
+                if events:
+                    end_dt = start_dt + dt_mod.timedelta(minutes=60)
+                    for ev in events:
+                        ev_start = parse_google_datetime(ev.get("start", {}).get("dateTime") or ev.get("start", {}).get("date"))
+                        ev_end = parse_google_datetime(ev.get("end", {}).get("dateTime") or ev.get("end", {}).get("date"))
+                        if ev_start and ev_end and not (end_dt <= ev_start or start_dt >= ev_end):
+                            is_busy = True
+                            reason = "Busy in Google Calendar"
+                            break
+            except Exception:
+                pass
+
+        agent["is_available"] = not is_busy
+        agent["reason"] = reason
+
+    return agents
 

@@ -214,6 +214,7 @@ def create_agent_calendar_event(
         except Exception:
             from datetime import timezone
             tz = timezone(timedelta(hours=-4))
+
         start_dt = datetime.strptime(slot_datetime_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=tz)
         end_dt = start_dt + timedelta(minutes=duration_minutes)
         

@@ -16,6 +16,7 @@ re-evaluated against live Google Calendar to flip them booked/available.
 
 import datetime
 import traceback
+from typing import List, Dict, Any, Optional
 try:
     import zoneinfo
     TZ = zoneinfo.ZoneInfo("America/New_York")
@@ -44,15 +45,31 @@ def get_configured_business_hours() -> List[int]:
     return list(range(7, 18))
 
 
+def get_configured_business_days() -> List[int]:
+    """
+    Returns the list of integer business days of week (0=Monday, 6=Sunday).
+    Reads 'business_days' from config.json. Defaults to [0, 1, 2, 3, 4] (Mon-Fri).
+    """
+    try:
+        from serviceBot.api.portal import load_config
+        cfg = load_config()
+        if cfg.get("business_days") and isinstance(cfg["business_days"], list) and len(cfg["business_days"]) > 0:
+            return [int(d) for d in cfg["business_days"]]
+    except Exception as e:
+        print(f"[calendar_sync] Error loading configured business days: {e}")
+    return [0, 1, 2, 3, 4]
+
+
 def _generate_slot_strings(days: int = DEFAULT_DAYS, hours: List[int] = None) -> List[str]:
     """Return a list of 'YYYY-MM-DD HH:MM:SS' strings for business-hour slots."""
     if hours is None:
         hours = get_configured_business_hours()
+    valid_days = get_configured_business_days()
     today = datetime.date.today()
     slots = []
     for offset in range(days):
         day = today + datetime.timedelta(days=offset)
-        if day.weekday() >= 5:          # Skip Sat/Sun
+        if day.weekday() not in valid_days:          # Skip non-operating business days
             continue
         for hour in hours:
             dt = datetime.datetime.combine(day, datetime.time(hour, 0, 0))
