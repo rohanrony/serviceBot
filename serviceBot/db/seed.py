@@ -1,6 +1,17 @@
-from serviceBot.db.connection import get_db_connection
+import os
+import sys
+from serviceBot.db.connection import get_db_connection, get_db_url
 
-def seed_db():
+def seed_db(force: bool = False):
+    db_url = get_db_url()
+    live_db_url = os.getenv("DATABASE_URL")
+    is_testing = "pytest" in sys.modules or any("pytest" in arg or "unittest" in arg for arg in sys.argv)
+    
+    # Safety guard: prevent truncating live database unless explicitly forced
+    if db_url and db_url == live_db_url and not force and not is_testing:
+        print("[seed_db] Safety Guard: Skipping TRUNCATE on primary live DATABASE_URL. Use seed_db(force=True) to override.")
+        return
+
     with get_db_connection() as conn:
         cursor = conn.cursor()
         

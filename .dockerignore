@@ -1,0 +1,12 @@
+.venv
+.git
+.gitignore
+.DS_Store
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+scratch
+ngrok.log
+elevenlabs_sync.log
