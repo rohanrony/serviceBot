@@ -221,7 +221,7 @@ def sync_all_connected_agents(days: int = DEFAULT_DAYS) -> dict:
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             cursor.execute(
-                "SELECT agent_id FROM user_google_accounts WHERE refresh_token IS NOT NULL;"
+                "SELECT agent_id FROM user_google_accounts WHERE access_token IS NOT NULL AND access_token != '';"
             )
             agent_ids = [r["agent_id"] for r in cursor.fetchall()]
 

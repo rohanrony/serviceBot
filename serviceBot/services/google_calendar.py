@@ -139,6 +139,8 @@ def is_agent_free(agent_id: int, slot_datetime_str: str, duration_minutes: int =
         creds = get_user_google_credentials(agent_id)
         scopes = creds["granted_scopes"]
         required = {
+            "https://www.googleapis.com/auth/calendar",
+            "https://www.googleapis.com/auth/calendar.readonly",
             "https://www.googleapis.com/auth/calendar.events",
             "https://www.googleapis.com/auth/calendar.events.readonly"
         }
@@ -205,7 +207,11 @@ def create_agent_calendar_event(
     try:
         creds = get_user_google_credentials(agent_id)
         scopes = creds["granted_scopes"]
-        if "https://www.googleapis.com/auth/calendar.events" not in scopes:
+        write_scopes = {
+            "https://www.googleapis.com/auth/calendar",
+            "https://www.googleapis.com/auth/calendar.events"
+        }
+        if not (scopes & write_scopes):
             print(f"Agent {agent_id} Google Calendar error: Insufficient scope to write calendar events.")
             return False
 
@@ -261,6 +267,8 @@ def fetch_agent_events(agent_id: int, start_iso: str, end_iso: str) -> Optional[
         creds = get_user_google_credentials(agent_id)
         scopes = creds["granted_scopes"]
         required = {
+            "https://www.googleapis.com/auth/calendar",
+            "https://www.googleapis.com/auth/calendar.readonly",
             "https://www.googleapis.com/auth/calendar.events",
             "https://www.googleapis.com/auth/calendar.events.readonly"
         }
@@ -308,6 +316,8 @@ def list_upcoming_events(agent_id: int, max_results: int = 10) -> list:
     creds = get_user_google_credentials(agent_id)
     scopes = creds["granted_scopes"]
     required = {
+        "https://www.googleapis.com/auth/calendar",
+        "https://www.googleapis.com/auth/calendar.readonly",
         "https://www.googleapis.com/auth/calendar.events",
         "https://www.googleapis.com/auth/calendar.events.readonly"
     }
