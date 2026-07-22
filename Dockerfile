@@ -18,4 +18,4 @@ COPY . .
 ENV PORT=8080
 
 # Execute service catalog seeding on container startup, then launch Uvicorn server
-CMD exec python -m serviceBot.seed_cba_services && uvicorn serviceBot.main:app --host 0.0.0.0 --port $PORT
+CMD exec uvicorn serviceBot.main:app --host 0.0.0.0 --port $PORT
