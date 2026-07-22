@@ -280,6 +280,17 @@
                 <textarea id="prompt-first-message" rows="2" class="form-input" placeholder="e.g. Hello! Thank you for calling Test..."></textarea>
               </div>
 
+              <div class="form-group full-width" style="display: flex; gap: 1rem; margin-top: 0.5rem; margin-bottom: 0.5rem;">
+                <div style="flex: 1;">
+                  <label for="business-hours-start">Business Hours Start (24-hr format, e.g. 7 for 7:00 AM)</label>
+                  <input type="number" id="business-hours-start" min="0" max="23" class="form-input" value="7" style="width: 100%; padding: 0.5rem;" />
+                </div>
+                <div style="flex: 1;">
+                  <label for="business-hours-end">Business Hours End (24-hr format, e.g. 18 for 6:00 PM)</label>
+                  <input type="number" id="business-hours-end" min="1" max="24" class="form-input" value="18" style="width: 100%; padding: 0.5rem;" />
+                </div>
+              </div>
+
               <div class="form-group full-width">
                 <label for="prompt-system">Unified Agent System Prompt</label>
                 <textarea id="prompt-system" rows="18" class="form-input" placeholder="Enter the complete system prompt instructions..."></textarea>

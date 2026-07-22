@@ -148,6 +148,9 @@ Speak the filler naturally as part of the conversation so the caller experiences
 
     defaults = {
         "handoff_phone_number": "+14242704893",
+        "business_hours_start": 7,
+        "business_hours_end": 18,
+        "business_hours": [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
         "required_fields": {
             "customer_name": True,
             "phone_number": True,
@@ -305,6 +308,9 @@ class ConfigUpdatePayload(BaseModel):
     system_prompt: Optional[str] = None
     first_message: Optional[str] = None
     handoff_phone_number: Optional[str] = None
+    business_hours_start: Optional[int] = None
+    business_hours_end: Optional[int] = None
+    business_hours: Optional[list] = None
 
 @router.get("/config")
 async def get_config():
@@ -312,21 +318,35 @@ async def get_config():
 
 @router.post("/config")
 async def update_config(payload: ConfigUpdatePayload):
+    existing = load_config()
+
     prompt_to_sync = payload.system_prompt
     if not prompt_to_sync and payload.prompts:
         p = payload.prompts
         prompt_to_sync = "\n\n".join([v for v in p.values() if isinstance(v, str) and v.strip()])
 
     if not prompt_to_sync:
-        existing = load_config()
         prompt_to_sync = existing.get("system_prompt", "")
 
-    config_data = {
-        "handoff_phone_number": payload.handoff_phone_number or "+14242704893",
+    b_start = payload.business_hours_start if payload.business_hours_start is not None else existing.get("business_hours_start", 7)
+    b_end = payload.business_hours_end if payload.business_hours_end is not None else existing.get("business_hours_end", 18)
+    if payload.business_hours is not None:
+        b_hours = [int(h) for h in payload.business_hours]
+    elif payload.business_hours_start is not None or payload.business_hours_end is not None:
+        b_hours = list(range(b_start, b_end))
+    else:
+        b_hours = existing.get("business_hours", list(range(7, 18)))
+
+    config_data = existing.copy()
+    config_data.update({
+        "handoff_phone_number": payload.handoff_phone_number or existing.get("handoff_phone_number", "+14242704893"),
         "required_fields": payload.required_fields,
         "first_message": payload.first_message,
-        "system_prompt": prompt_to_sync
-    }
+        "system_prompt": prompt_to_sync,
+        "business_hours_start": b_start,
+        "business_hours_end": b_end,
+        "business_hours": b_hours
+    })
     save_config(config_data)
     
     await sync_prompt_to_elevenlabs(prompt_to_sync, payload.first_message)
@@ -700,7 +720,7 @@ async def delete_calendar_slot(slot_id: int):
 
 class PopulateSlotsPayload(BaseModel):
     days: Optional[int] = 30
-    hours: Optional[list] = None  # e.g. [9, 11, 14, 16] — defaults to business hours if None
+    hours: Optional[list] = None  # e.g. [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] — defaults to all available business hours if None
 
 @router.post("/agents/{agent_id}/calendar/populate")
 async def populate_agent_slots(agent_id: int, payload: PopulateSlotsPayload = None):
@@ -717,7 +737,7 @@ async def populate_agent_slots(agent_id: int, payload: PopulateSlotsPayload = No
         payload = PopulateSlotsPayload()
 
     days = max(1, min(payload.days or 30, 365))
-    hours = payload.hours if payload.hours else None  # None → calendar_sync uses default [9,11,14,16]
+    hours = payload.hours if payload.hours else None  # None → calendar_sync uses default business hours (7 AM - 6 PM)
 
     with get_db_connection() as conn:
         cursor = conn.cursor()

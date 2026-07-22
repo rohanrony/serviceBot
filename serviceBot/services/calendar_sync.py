@@ -9,7 +9,7 @@ Called:
   - Via the portal API endpoint POST /agents/{id}/calendar/populate
   - During check_availability when an agent has 0 DB slots
 
-Business hours: Mon–Fri, 9 AM / 11 AM / 2 PM / 4 PM (America/New_York)
+Business hours: Mon–Fri, 7 AM – 6 PM (America/New_York)
 Slots already booked (by the system) are preserved. Only UNBOOKED slots are
 re-evaluated against live Google Calendar to flip them booked/available.
 """
@@ -21,14 +21,33 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Optional
 
 TZ = zoneinfo.ZoneInfo("America/New_York")
-DEFAULT_HOURS = [9, 11, 14, 16]       # 9 AM, 11 AM, 2 PM, 4 PM
 DEFAULT_DAYS  = 30
+
+
+def get_configured_business_hours() -> List[int]:
+    """
+    Returns the list of integer hours for business hours based on portal configuration.
+    Reads 'business_hours_start', 'business_hours_end', or 'business_hours' from config.json.
+    Defaults to 7 AM – 6 PM (hours 7 through 17).
+    """
+    try:
+        from serviceBot.api.portal import load_config
+        cfg = load_config()
+        if cfg.get("business_hours") and isinstance(cfg["business_hours"], list) and len(cfg["business_hours"]) > 0:
+            return [int(h) for h in cfg["business_hours"]]
+        start = int(cfg.get("business_hours_start", 7))
+        end = int(cfg.get("business_hours_end", 18))
+        if start < end:
+            return list(range(start, end))
+    except Exception as e:
+        print(f"[calendar_sync] Error loading configured business hours: {e}")
+    return list(range(7, 18))
 
 
 def _generate_slot_strings(days: int = DEFAULT_DAYS, hours: List[int] = None) -> List[str]:
     """Return a list of 'YYYY-MM-DD HH:MM:SS' strings for business-hour slots."""
     if hours is None:
-        hours = DEFAULT_HOURS
+        hours = get_configured_business_hours()
     today = datetime.date.today()
     slots = []
     for offset in range(days):

@@ -720,11 +720,15 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!response.ok) throw new Error('Failed to fetch configurations');
       const config = await response.json() || {};
       
-      // Populate textareas
+      // Populate textareas and inputs
       const firstMsgEl = document.getElementById('prompt-first-message');
       const sysPromptEl = document.getElementById('prompt-system');
+      const bStartEl = document.getElementById('business-hours-start');
+      const bEndEl = document.getElementById('business-hours-end');
       if (firstMsgEl) firstMsgEl.value = config.first_message || '';
       if (sysPromptEl) sysPromptEl.value = config.system_prompt || '';
+      if (bStartEl) bStartEl.value = config.business_hours_start ?? 7;
+      if (bEndEl) bEndEl.value = config.business_hours_end ?? 18;
       
       // Populate checkboxes
       const reqCustomerName = document.getElementById('req-customer-name');
@@ -757,6 +761,8 @@ document.addEventListener('DOMContentLoaded', () => {
       
       const sysPromptEl = document.getElementById('prompt-system');
       const firstMsgEl = document.getElementById('prompt-first-message');
+      const bStartEl = document.getElementById('business-hours-start');
+      const bEndEl = document.getElementById('business-hours-end');
 
       const payload = {
         required_fields: {
@@ -766,7 +772,9 @@ document.addEventListener('DOMContentLoaded', () => {
           issue_description: reqIssueDescription ? reqIssueDescription.checked : true
         },
         system_prompt: sysPromptEl ? sysPromptEl.value : '',
-        first_message: firstMsgEl ? firstMsgEl.value : ''
+        first_message: firstMsgEl ? firstMsgEl.value : '',
+        business_hours_start: bStartEl ? parseInt(bStartEl.value, 10) : 7,
+        business_hours_end: bEndEl ? parseInt(bEndEl.value, 10) : 18
       };
       
       try {

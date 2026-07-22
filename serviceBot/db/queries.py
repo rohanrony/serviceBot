@@ -115,6 +115,7 @@ def _generate_dynamic_slots(preferred_date_str: str, duration_minutes: int) -> l
     Returns a list of ISO datetime strings: YYYY-MM-DD HH:MM:SS.
     """
     import datetime as dt_mod
+    from serviceBot.services.calendar_sync import get_configured_business_hours
     
     if preferred_date_str and len(preferred_date_str) >= 10:
         try:
@@ -133,10 +134,11 @@ def _generate_dynamic_slots(preferred_date_str: str, duration_minutes: int) -> l
     slots = []
     day_offset = 0
     now_dt = dt_mod.datetime.now()
+    valid_hours = get_configured_business_hours()
     while len(slots) < 60 and day_offset < 30:
         candidate_day = start_date + dt_mod.timedelta(days=day_offset)
         if candidate_day.weekday() < 5:  # Mon-Fri only
-            for hour in [9, 11, 14, 16]:
+            for hour in valid_hours:
                 slot_dt = dt_mod.datetime.combine(candidate_day, dt_mod.time(hour, 0, 0))
                 if slot_dt > now_dt:
                     slots.append(slot_dt.strftime("%Y-%m-%d %H:%M:%S"))
@@ -354,8 +356,7 @@ def check_availability(service_type: str = None, preferred_date: str = None) -> 
 
 def validate_booking_time(booking_time: str) -> bool:
     """
-    Validates that a booking datetime or time slot string is within company workhours.
-    Company workhours: Monday to Friday, 7:00 AM to 6:00 PM (Eastern Time).
+    Validates that a booking datetime or time slot string is within configured business workhours.
     If booking_time is 'ASAP', it is always valid.
     """
     if not booking_time:
@@ -367,6 +368,9 @@ def validate_booking_time(booking_time: str) -> bool:
         
     import re
     from datetime import datetime
+    from serviceBot.services.calendar_sync import get_configured_business_hours
+    
+    valid_hours = get_configured_business_hours()
     
     # Try parsing standard YYYY-MM-DD HH:MM:SS format
     dt = None
@@ -398,7 +402,7 @@ def validate_booking_time(booking_time: str) -> bool:
                 except Exception:
                     pass
             else:
-                if hour < 7 or hour >= 18:
+                if hour not in valid_hours:
                     return False
                 return True
         else:
@@ -408,8 +412,8 @@ def validate_booking_time(booking_time: str) -> bool:
         # Check weekday: 0 = Monday, 4 = Friday. Weekend is weekday > 4
         if dt.weekday() > 4:
             return False
-        # Check hour: 7:00 AM to 6:00 PM (hour must be between 7 and 17 inclusive)
-        if dt.hour < 7 or dt.hour >= 18:
+        # Check hour against configured business hours
+        if dt.hour not in valid_hours:
             return False
             
     return True
