@@ -20,7 +20,11 @@ def is_within_business_hours() -> bool:
     Checks if the current time in America/New_York (Eastern Time)
     is within business hours: Monday to Friday, 7:00 AM to 6:00 PM.
     """
-    tz = zoneinfo.ZoneInfo("America/New_York")
+    try:
+        tz = zoneinfo.ZoneInfo("America/New_York")
+    except Exception:
+        from datetime import timezone, timedelta
+        tz = timezone(timedelta(hours=-4))
     now = datetime.now(tz)
     # 0 = Monday, 4 = Friday
     if now.weekday() > 4:

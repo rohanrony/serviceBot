@@ -220,7 +220,11 @@ def check_availability(service_type: str = None, preferred_date: str = None) -> 
             cursor.execute("SELECT agent_id FROM user_google_accounts WHERE refresh_token IS NOT NULL;")
             connected_agent_ids = [r["agent_id"] for r in cursor.fetchall()]
 
-    tz = zoneinfo.ZoneInfo("America/New_York")
+    try:
+        tz = zoneinfo.ZoneInfo("America/New_York")
+    except Exception:
+        from datetime import timezone, timedelta
+        tz = timezone(timedelta(hours=-4))
     agent_events_map = {}
 
     # ===========================================================

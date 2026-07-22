@@ -146,7 +146,11 @@ def is_agent_free(agent_id: int, slot_datetime_str: str, duration_minutes: int =
             print(f"Agent {agent_id} Calendar: Insufficient scopes to check availability. Granted: {scopes}")
             return True
 
-        tz = zoneinfo.ZoneInfo("America/New_York")
+        try:
+            tz = zoneinfo.ZoneInfo("America/New_York")
+        except Exception:
+            from datetime import timezone
+            tz = timezone(timedelta(hours=-4))
         start_dt = datetime.strptime(slot_datetime_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=tz)
         end_dt = start_dt + timedelta(minutes=duration_minutes)
         
@@ -205,7 +209,11 @@ def create_agent_calendar_event(
             print(f"Agent {agent_id} Google Calendar error: Insufficient scope to write calendar events.")
             return False
 
-        tz = zoneinfo.ZoneInfo("America/New_York")
+        try:
+            tz = zoneinfo.ZoneInfo("America/New_York")
+        except Exception:
+            from datetime import timezone
+            tz = timezone(timedelta(hours=-4))
         start_dt = datetime.strptime(slot_datetime_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=tz)
         end_dt = start_dt + timedelta(minutes=duration_minutes)
         

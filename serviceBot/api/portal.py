@@ -759,20 +759,12 @@ async def populate_agent_slots(agent_id: int, payload: PopulateSlotsPayload = No
     slots are automatically marked as booked so the voice bot won't offer them.
     Skips slots that were already booked by the system.
     """
-    from serviceBot.db.connection import get_db_connection
-    from serviceBot.services.calendar_sync import sync_agent_slots
-
-    if payload is None:
-        payload = PopulateSlotsPayload()
-
-    days = max(1, min(payload.days or 30, 365))
-    hours = payload.hours if payload.hours else None  # None → calendar_sync uses default business hours (7 AM - 6 PM)
-
+    from serviceBot.db.connection import get_db_connection, dict_cursor
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT id FROM staff_agents WHERE id = %s", (agent_id,))
-        if not cursor.fetchone():
-            raise HTTPException(status_code=404, detail="Agent not found")
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT id FROM staff_agents WHERE id = %s", (agent_id,))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail="Agent not found")
 
     try:
         result = sync_agent_slots(agent_id=agent_id, days=days, hours=hours)
