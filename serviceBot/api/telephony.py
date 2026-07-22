@@ -849,10 +849,6 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                         # Trigger email notification
                         try:
                             agent_email = None
-                            from serviceBot.db.connection import get_db_connection, dict_cursor
-                            with get_db_connection() as conn:
-                                with dict_cursor(conn) as cursor:
-                                    cursor.execute("""
                             agent_name = None
                             from serviceBot.db.connection import get_db_connection, dict_cursor
                             with get_db_connection() as conn:
