@@ -391,3 +391,24 @@ def test_aggregate_service_duration_slot_checking_and_booking(mock_db):
     avail_slots = check_availability(service_type="Oil Change, Brake repair", preferred_date=slot1_str[:10])
     assert isinstance(avail_slots, list)
 
+
+def test_update_service_request_status(mock_db):
+    from serviceBot.db.queries import update_service_request_status
+
+    # 1. Update status from 'pending' to 'completed'
+    res = update_service_request_status(1, "completed")
+    assert res["status"] == "completed"
+
+    # 2. Update status using 'done' (maps to 'completed')
+    res2 = update_service_request_status(1, "done")
+    assert res2["status"] == "completed"
+
+    # 3. Update status back to 'pending'
+    res3 = update_service_request_status(1, "pending")
+    assert res3["status"] == "pending"
+
+    # 4. Invalid status raises ValueError
+    with pytest.raises(ValueError):
+        update_service_request_status(1, "invalid_status")
+
+

@@ -1,8 +1,13 @@
 document.addEventListener('DOMContentLoaded', () => {
   
-  // Local state for tables
+  // Local state for tables & pagination
   let allCalls = [];
   let allRequests = [];
+  let srCurrentPage = 1;
+  let srPageSize = 10;
+  let callsCurrentPage = 1;
+  let callsPageSize = 10;
+
 
   // Elements
   const navItems = document.querySelectorAll('.nav-item');
@@ -135,18 +140,74 @@ document.addEventListener('DOMContentLoaded', () => {
     return `${month}/${day}/${year} ${hours}:${minutes}`;
   }
 
+  async function updateRequestStatus(requestId, newStatus) {
+    try {
+      const response = await fetch(`/api/v1/portal/service-requests/${requestId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      });
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.detail || 'Failed to update request status');
+      }
+      const targetReq = allRequests.find(r => r.id === requestId);
+      if (targetReq) {
+        targetReq.status = newStatus === 'done' ? 'completed' : newStatus;
+      }
+      const label = (newStatus === 'completed' || newStatus === 'done') ? 'Done' : 'Pending';
+      showToast(`Service Request #${requestId} marked as ${label}!`, 'success');
+      
+      fetch('/api/v1/portal/stats')
+        .then(res => res.ok ? res.json() : null)
+        .then(stats => {
+          if (stats) {
+            const reqsStatEl = document.getElementById('stat-requests');
+            if (reqsStatEl) reqsStatEl.textContent = stats.total_requests;
+            const callbacksStatEl = document.getElementById('stat-callbacks');
+            if (callbacksStatEl) callbacksStatEl.textContent = stats.total_callbacks;
+            const apptsStatEl = document.getElementById('stat-appointments');
+            if (apptsStatEl) apptsStatEl.textContent = stats.total_appointments;
+          }
+        }).catch(err => console.error(err));
+
+      applyServiceRequestsFilter();
+    } catch (err) {
+      console.error(err);
+      showToast('Error: ' + err.message, 'error');
+    }
+  }
+
   function renderCallLogs(callsToRender) {
     const listBody = document.getElementById('call-logs-list');
     if (!listBody) return;
     
-    // Limit to top 10
-    const top10 = callsToRender.slice(0, 10);
+    const totalItems = callsToRender.length;
+    const totalPages = Math.ceil(totalItems / callsPageSize) || 1;
+    if (callsCurrentPage > totalPages) callsCurrentPage = totalPages;
+    if (callsCurrentPage < 1) callsCurrentPage = 1;
     
-    if (top10.length === 0) {
+    const startIndex = (callsCurrentPage - 1) * callsPageSize;
+    const paginatedCalls = callsToRender.slice(startIndex, startIndex + callsPageSize);
+    
+    const infoEl = document.getElementById('calls-pagination-info');
+    if (infoEl) {
+      const endItem = Math.min(startIndex + callsPageSize, totalItems);
+      infoEl.textContent = totalItems === 0 ? 'Showing 0 of 0 calls' : `Showing ${startIndex + 1}-${endItem} of ${totalItems} calls`;
+    }
+    const pageNumEl = document.getElementById('calls-page-num');
+    if (pageNumEl) pageNumEl.textContent = `Page ${callsCurrentPage} of ${totalPages}`;
+    
+    const prevBtn = document.getElementById('calls-prev-page');
+    if (prevBtn) prevBtn.disabled = callsCurrentPage <= 1;
+    const nextBtn = document.getElementById('calls-next-page');
+    if (nextBtn) nextBtn.disabled = callsCurrentPage >= totalPages;
+
+    if (paginatedCalls.length === 0) {
       listBody.innerHTML = `<tr><td colspan="6" class="text-center py-6 text-muted">No matching call records found.</td></tr>`;
     } else {
       listBody.innerHTML = '';
-      top10.forEach(call => {
+      paginatedCalls.forEach(call => {
         const tr = document.createElement('tr');
         const formattedDate = formatShortDate(call.created_at);
         
@@ -179,24 +240,47 @@ document.addEventListener('DOMContentLoaded', () => {
     const requestsListBody = document.getElementById('service-requests-list');
     if (!requestsListBody) return;
     
-    // Limit to top 10
-    const top10 = requestsToRender.slice(0, 10);
+    const totalItems = requestsToRender.length;
+    const totalPages = Math.ceil(totalItems / srPageSize) || 1;
+    if (srCurrentPage > totalPages) srCurrentPage = totalPages;
+    if (srCurrentPage < 1) srCurrentPage = 1;
     
-    if (top10.length === 0) {
-      requestsListBody.innerHTML = `<tr><td colspan="9" class="text-center py-6 text-muted">No matching service requests found.</td></tr>`;
+    const startIndex = (srCurrentPage - 1) * srPageSize;
+    const paginatedReqs = requestsToRender.slice(startIndex, startIndex + srPageSize);
+
+    const infoEl = document.getElementById('sr-pagination-info');
+    if (infoEl) {
+      const endItem = Math.min(startIndex + srPageSize, totalItems);
+      infoEl.textContent = totalItems === 0 ? 'Showing 0 of 0 requests' : `Showing ${startIndex + 1}-${endItem} of ${totalItems} requests`;
+    }
+    const pageNumEl = document.getElementById('sr-page-num');
+    if (pageNumEl) pageNumEl.textContent = `Page ${srCurrentPage} of ${totalPages}`;
+    
+    const prevBtn = document.getElementById('sr-prev-page');
+    if (prevBtn) prevBtn.disabled = srCurrentPage <= 1;
+    const nextBtn = document.getElementById('sr-next-page');
+    if (nextBtn) nextBtn.disabled = srCurrentPage >= totalPages;
+    
+    if (paginatedReqs.length === 0) {
+      requestsListBody.innerHTML = `<tr><td colspan="10" class="text-center py-6 text-muted">No matching service requests found.</td></tr>`;
     } else {
       requestsListBody.innerHTML = '';
-      top10.forEach(req => {
+      paginatedReqs.forEach(req => {
         const tr = document.createElement('tr');
         const formattedDate = formatShortDate(req.created_at);
         const vehicleStr = `${req.year} ${req.make} ${req.model}`;
         
         let statusBadgeClass = 'warning';
-        if (req.status === 'completed') statusBadgeClass = 'success';
-        else if (req.status === 'cancelled') statusBadgeClass = 'danger';
-        else if (req.status === 'in_progress') statusBadgeClass = 'info';
+        let statusDisplay = req.status;
+        if (req.status === 'completed') {
+          statusBadgeClass = 'success';
+          statusDisplay = 'done';
+        } else if (req.status === 'cancelled') {
+          statusBadgeClass = 'danger';
+        } else if (req.status === 'in_progress') {
+          statusBadgeClass = 'info';
+        }
 
-        // Request Type Badge
         let reqTypeBadge = '';
         if (req.booking_type === 'appointment') {
           reqTypeBadge = '<span class="badge success">Appointment</span>';
@@ -206,7 +290,6 @@ document.addEventListener('DOMContentLoaded', () => {
           reqTypeBadge = '<span class="text-muted">None</span>';
         }
 
-        // Booking Time Format
         let displayTime = '';
         if (req.booking_type === 'callback' && (!req.booking_time || req.booking_time.toUpperCase() === 'ASAP')) {
           displayTime = '<span class="badge danger">ASAP</span>';
@@ -215,6 +298,15 @@ document.addEventListener('DOMContentLoaded', () => {
           displayTime = `<strong>${formattedBooking}</strong>`;
         } else {
           displayTime = '<span class="text-muted">N/A</span>';
+        }
+
+        let actionButtonHtml = '';
+        if (req.status === 'pending' || req.status === 'in_progress') {
+          actionButtonHtml = `<button class="btn btn-sm btn-success mark-done-btn" data-id="${req.id}" style="padding: 3px 8px; font-size: 11.5px; border-radius: 4px;"><i class="fas fa-check"></i> Mark Done</button>`;
+        } else if (req.status === 'completed') {
+          actionButtonHtml = `<button class="btn btn-sm btn-secondary mark-pending-btn" data-id="${req.id}" style="padding: 3px 8px; font-size: 11.5px; border-radius: 4px;">Mark Pending</button>`;
+        } else {
+          actionButtonHtml = `<span class="text-muted">--</span>`;
         }
 
         tr.innerHTML = `
@@ -231,8 +323,23 @@ document.addEventListener('DOMContentLoaded', () => {
               <div class="tooltip-popup">${req.issue_description}</div>
             </div>
           </td>
-          <td><span class="badge ${statusBadgeClass}">${req.status}</span></td>
+          <td><span class="badge ${statusBadgeClass}">${statusDisplay}</span></td>
+          <td>${actionButtonHtml}</td>
         `;
+
+        const markDoneBtn = tr.querySelector('.mark-done-btn');
+        if (markDoneBtn) {
+          markDoneBtn.addEventListener('click', () => {
+            updateRequestStatus(req.id, 'completed');
+          });
+        }
+        const markPendingBtn = tr.querySelector('.mark-pending-btn');
+        if (markPendingBtn) {
+          markPendingBtn.addEventListener('click', () => {
+            updateRequestStatus(req.id, 'pending');
+          });
+        }
+
         requestsListBody.appendChild(tr);
       });
     }
@@ -253,7 +360,7 @@ document.addEventListener('DOMContentLoaded', () => {
         (req.issue_description || '').toLowerCase().includes(query);
         
       const matchesType = type === 'all' || req.booking_type === type;
-      const matchesStatus = status === 'all' || req.status === status;
+      const matchesStatus = status === 'all' || req.status === status || (status === 'completed' && req.status === 'done');
       
       return matchesText && matchesType && matchesStatus;
     });
@@ -275,27 +382,124 @@ document.addEventListener('DOMContentLoaded', () => {
     renderCallLogs(filtered);
   }
 
+  // Bind SR status quick-toggle buttons
+  const srToggleBtns = document.querySelectorAll('.sr-toggle-btn');
+  srToggleBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const targetStatus = btn.getAttribute('data-status');
+      srToggleBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      
+      const srStatusEl = document.getElementById('filter-sr-status');
+      if (srStatusEl) {
+        srStatusEl.value = targetStatus;
+      }
+      srCurrentPage = 1;
+      applyServiceRequestsFilter();
+    });
+  });
+
   // Bind filter listeners once
   const srSearch = document.getElementById('filter-sr-search');
   if (srSearch && !srSearch.dataset.listenerBound) {
     srSearch.dataset.listenerBound = 'true';
-    srSearch.addEventListener('input', applyServiceRequestsFilter);
+    srSearch.addEventListener('input', () => {
+      srCurrentPage = 1;
+      applyServiceRequestsFilter();
+    });
   }
   const srType = document.getElementById('filter-sr-type');
   if (srType && !srType.dataset.listenerBound) {
     srType.dataset.listenerBound = 'true';
-    srType.addEventListener('change', applyServiceRequestsFilter);
+    srType.addEventListener('change', () => {
+      srCurrentPage = 1;
+      applyServiceRequestsFilter();
+    });
   }
   const srStatus = document.getElementById('filter-sr-status');
   if (srStatus && !srStatus.dataset.listenerBound) {
     srStatus.dataset.listenerBound = 'true';
-    srStatus.addEventListener('change', applyServiceRequestsFilter);
+    srStatus.addEventListener('change', () => {
+      const val = srStatus.value;
+      srToggleBtns.forEach(b => {
+        if (b.getAttribute('data-status') === val) b.classList.add('active');
+        else b.classList.remove('active');
+      });
+      srCurrentPage = 1;
+      applyServiceRequestsFilter();
+    });
   }
+
+  const srPageSizeEl = document.getElementById('sr-page-size');
+  if (srPageSizeEl && !srPageSizeEl.dataset.listenerBound) {
+    srPageSizeEl.dataset.listenerBound = 'true';
+    srPageSizeEl.addEventListener('change', () => {
+      srPageSize = parseInt(srPageSizeEl.value) || 10;
+      srCurrentPage = 1;
+      applyServiceRequestsFilter();
+    });
+  }
+
+  const srPrevBtn = document.getElementById('sr-prev-page');
+  if (srPrevBtn && !srPrevBtn.dataset.listenerBound) {
+    srPrevBtn.dataset.listenerBound = 'true';
+    srPrevBtn.addEventListener('click', () => {
+      if (srCurrentPage > 1) {
+        srCurrentPage--;
+        applyServiceRequestsFilter();
+      }
+    });
+  }
+
+  const srNextBtn = document.getElementById('sr-next-page');
+  if (srNextBtn && !srNextBtn.dataset.listenerBound) {
+    srNextBtn.dataset.listenerBound = 'true';
+    srNextBtn.addEventListener('click', () => {
+      srCurrentPage++;
+      applyServiceRequestsFilter();
+    });
+  }
+
+  // Bind Calls filters & pagination
   const callsSearch = document.getElementById('filter-calls-search');
   if (callsSearch && !callsSearch.dataset.listenerBound) {
     callsSearch.dataset.listenerBound = 'true';
-    callsSearch.addEventListener('input', applyCallsFilter);
+    callsSearch.addEventListener('input', () => {
+      callsCurrentPage = 1;
+      applyCallsFilter();
+    });
   }
+
+  const callsPageSizeEl = document.getElementById('calls-page-size');
+  if (callsPageSizeEl && !callsPageSizeEl.dataset.listenerBound) {
+    callsPageSizeEl.dataset.listenerBound = 'true';
+    callsPageSizeEl.addEventListener('change', () => {
+      callsPageSize = parseInt(callsPageSizeEl.value) || 10;
+      callsCurrentPage = 1;
+      applyCallsFilter();
+    });
+  }
+
+  const callsPrevBtn = document.getElementById('calls-prev-page');
+  if (callsPrevBtn && !callsPrevBtn.dataset.listenerBound) {
+    callsPrevBtn.dataset.listenerBound = 'true';
+    callsPrevBtn.addEventListener('click', () => {
+      if (callsCurrentPage > 1) {
+        callsCurrentPage--;
+        applyCallsFilter();
+      }
+    });
+  }
+
+  const callsNextBtn = document.getElementById('calls-next-page');
+  if (callsNextBtn && !callsNextBtn.dataset.listenerBound) {
+    callsNextBtn.dataset.listenerBound = 'true';
+    callsNextBtn.addEventListener('click', () => {
+      callsCurrentPage++;
+      applyCallsFilter();
+    });
+  }
+
 
   async function loadDashboardData() {
     try {

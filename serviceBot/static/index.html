@@ -118,18 +118,23 @@
                 <h3>Service Requests</h3>
                 <p class="text-muted">Captured customer issues, service requirements, and scheduling preferences.</p>
               </div>
-              <div class="table-filters" style="display: flex; gap: 10px; flex-wrap: wrap;">
-                <input type="text" id="filter-sr-search" class="form-input" placeholder="Search requests..." style="width: 180px; padding: 6px 12px; font-size: 12.5px; background-color: var(--bg-input); border: 1px solid var(--border-card);">
-                <select id="filter-sr-type" class="form-input" style="width: 130px; padding: 6px 12px; font-size: 12.5px; background-color: var(--bg-input); border: 1px solid var(--border-card);">
+              <div class="table-filters" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                <div class="sr-status-toggle-container" style="display: inline-flex; background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 6px; padding: 2px;">
+                  <button type="button" class="sr-toggle-btn active" data-status="all">All</button>
+                  <button type="button" class="sr-toggle-btn" data-status="pending">Pending</button>
+                  <button type="button" class="sr-toggle-btn" data-status="completed">Done</button>
+                </div>
+                <input type="text" id="filter-sr-search" class="form-input" placeholder="Search requests..." style="width: 170px; padding: 6px 12px; font-size: 12.5px; background-color: var(--bg-input); border: 1px solid var(--border-card);">
+                <select id="filter-sr-type" class="form-input" style="width: 120px; padding: 6px 12px; font-size: 12.5px; background-color: var(--bg-input); border: 1px solid var(--border-card);">
                   <option value="all">All Types</option>
                   <option value="appointment">Appointments</option>
                   <option value="callback">Callbacks</option>
                 </select>
-                <select id="filter-sr-status" class="form-input" style="width: 130px; padding: 6px 12px; font-size: 12.5px; background-color: var(--bg-input); border: 1px solid var(--border-card);">
+                <select id="filter-sr-status" class="form-input" style="width: 140px; padding: 6px 12px; font-size: 12.5px; background-color: var(--bg-input); border: 1px solid var(--border-card);">
                   <option value="all">All Statuses</option>
                   <option value="pending">Pending</option>
+                  <option value="completed">Done (Completed)</option>
                   <option value="in_progress">In Progress</option>
-                  <option value="completed">Completed</option>
                   <option value="cancelled">Cancelled</option>
                 </select>
               </div>
@@ -192,14 +197,36 @@
                         <div class="tooltip-popup">Request Status</div>
                       </div>
                     </th>
+                    <th>
+                      <div class="tooltip-container">
+                        <div class="th-text-clipped">Action</div>
+                        <div class="tooltip-popup">Mark Pending/Done</div>
+                      </div>
+                    </th>
                   </tr>
                 </thead>
                 <tbody id="service-requests-list">
                   <tr>
-                    <td colspan="9" class="text-center py-6 text-muted">Loading service requests...</td>
+                    <td colspan="10" class="text-center py-6 text-muted">Loading service requests...</td>
                   </tr>
                 </tbody>
               </table>
+            </div>
+            <!-- SR Pagination -->
+            <div class="pagination-wrapper" id="sr-pagination-container" style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; padding: 4px 4px 0 4px; flex-wrap: wrap; gap: 10px;">
+              <div class="pagination-info text-muted" id="sr-pagination-info" style="font-size: 12.5px;">Showing 0 of 0 requests</div>
+              <div class="pagination-controls" style="display: flex; gap: 8px; align-items: center;">
+                <label style="font-size: 12px; color: var(--text-muted);">Per page:</label>
+                <select id="sr-page-size" class="form-input" style="width: 60px; padding: 3px 6px; font-size: 12px; background-color: var(--bg-input); border: 1px solid var(--border-card);">
+                  <option value="5">5</option>
+                  <option value="10" selected>10</option>
+                  <option value="25">25</option>
+                  <option value="50">50</option>
+                </select>
+                <button type="button" class="btn btn-secondary btn-sm" id="sr-prev-page" disabled style="padding: 3px 10px; font-size: 12px;">&laquo; Prev</button>
+                <span id="sr-page-num" style="font-size: 12.5px; font-weight: 500; min-width: 70px; text-align: center; color: var(--text-main);">Page 1 of 1</span>
+                <button type="button" class="btn btn-secondary btn-sm" id="sr-next-page" disabled style="padding: 3px 10px; font-size: 12px;">Next &raquo;</button>
+              </div>
             </div>
           </div>
 
@@ -262,6 +289,22 @@
                   </tr>
                 </tbody>
               </table>
+            </div>
+            <!-- Calls Pagination -->
+            <div class="pagination-wrapper" id="calls-pagination-container" style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; padding: 4px 4px 0 4px; flex-wrap: wrap; gap: 10px;">
+              <div class="pagination-info text-muted" id="calls-pagination-info" style="font-size: 12.5px;">Showing 0 of 0 calls</div>
+              <div class="pagination-controls" style="display: flex; gap: 8px; align-items: center;">
+                <label style="font-size: 12px; color: var(--text-muted);">Per page:</label>
+                <select id="calls-page-size" class="form-input" style="width: 60px; padding: 3px 6px; font-size: 12px; background-color: var(--bg-input); border: 1px solid var(--border-card);">
+                  <option value="5">5</option>
+                  <option value="10" selected>10</option>
+                  <option value="25">25</option>
+                  <option value="50">50</option>
+                </select>
+                <button type="button" class="btn btn-secondary btn-sm" id="calls-prev-page" disabled style="padding: 3px 10px; font-size: 12px;">&laquo; Prev</button>
+                <span id="calls-page-num" style="font-size: 12.5px; font-weight: 500; min-width: 70px; text-align: center; color: var(--text-main);">Page 1 of 1</span>
+                <button type="button" class="btn btn-secondary btn-sm" id="calls-next-page" disabled style="padding: 3px 10px; font-size: 12px;">Next &raquo;</button>
+              </div>
             </div>
           </div>
         </section>

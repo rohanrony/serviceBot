@@ -784,12 +784,16 @@ async def sync_all_calendar_slots(days: int = 30):
         raise HTTPException(status_code=500, detail=f"Sync failed: {str(exc)}")
 
 
+class ServiceRequestStatusUpdate(BaseModel):
+    status: str
+
+
 @router.get("/calls")
-async def get_calls():
+async def get_calls(limit: Optional[int] = None, offset: Optional[int] = None):
     from serviceBot.db.connection import get_db_connection, dict_cursor
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
-            cursor.execute("""
+            query = """
                 SELECT cn.id, cn.call_id, c.name AS customer_name, c.phone, cn.summary, cn.transcript, cn.created_at,
                        STRING_AGG(CONCAT(v.year, ' ', v.make, ' ', v.model), ', ') AS vehicle
                 FROM crm_notes cn
@@ -797,7 +801,15 @@ async def get_calls():
                 LEFT JOIN vehicles v ON v.customer_id = c.id
                 GROUP BY cn.id, c.name, c.phone, cn.call_id, cn.summary, cn.transcript, cn.created_at
                 ORDER BY cn.created_at DESC
-            """)
+            """
+            params = []
+            if limit is not None:
+                query += " LIMIT %s"
+                params.append(limit)
+                if offset is not None:
+                    query += " OFFSET %s"
+                    params.append(offset)
+            cursor.execute(query, params)
             rows = cursor.fetchall()
             res = []
             for row in rows:
@@ -831,11 +843,11 @@ async def get_appointments():
             return res
 
 @router.get("/service-requests")
-async def get_service_requests():
+async def get_service_requests(limit: Optional[int] = None, offset: Optional[int] = None):
     from serviceBot.db.connection import get_db_connection, dict_cursor
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
-            cursor.execute("""
+            query = """
                 SELECT sr.id, sr.service_type, sr.issue_description, sr.status, sr.time_slot, sr.created_at,
                        sr.booking_type, sr.booking_time,
                        c.name AS customer_name, c.phone,
@@ -844,7 +856,15 @@ async def get_service_requests():
                 LEFT JOIN customers c ON sr.customer_id = c.id
                 LEFT JOIN vehicles v ON sr.vehicle_id = v.id
                 ORDER BY sr.updated_at DESC
-            """)
+            """
+            params = []
+            if limit is not None:
+                query += " LIMIT %s"
+                params.append(limit)
+                if offset is not None:
+                    query += " OFFSET %s"
+                    params.append(offset)
+            cursor.execute(query, params)
             rows = cursor.fetchall()
             res = []
             for row in rows:
@@ -853,6 +873,19 @@ async def get_service_requests():
                     r["created_at"] = r["created_at"].strftime("%Y-%m-%d %H:%M:%S")
                 res.append(r)
             return res
+
+@router.patch("/service-requests/{request_id}/status")
+@router.put("/service-requests/{request_id}/status")
+async def update_service_request_status_endpoint(request_id: int, payload: ServiceRequestStatusUpdate):
+    from serviceBot.db.queries import update_service_request_status
+    try:
+        updated = update_service_request_status(request_id, payload.status)
+        return {"success": True, "data": updated}
+    except ValueError as val_err:
+        raise HTTPException(status_code=400, detail=str(val_err))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to update service request status: {str(exc)}")
+
 
 @router.get("/callbacks")
 async def get_callbacks():

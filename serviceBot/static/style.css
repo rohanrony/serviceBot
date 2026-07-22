@@ -700,6 +700,29 @@ textarea.form-input {
 #service-requests-table td:nth-child(8) { width: 160px; } /* Issue Description */
 #service-requests-table th:nth-child(9),
 #service-requests-table td:nth-child(9) { width: 85px; }  /* Status */
+#service-requests-table th:nth-child(10),
+#service-requests-table td:nth-child(10) { width: 110px; text-align: center; } /* Action */
+
+.sr-toggle-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.sr-toggle-btn.active {
+  background: #3b82f6;
+  color: #ffffff;
+}
+.sr-toggle-btn:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-main);
+}
+
 
 
 /* Recent Call History Columns: Wrap text to next line naturally to prevent clipping */

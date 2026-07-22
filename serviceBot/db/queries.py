@@ -1059,3 +1059,30 @@ def reschedule_appointment(appointment_id: int, new_datetime: str) -> bool:
             )
             
             return True
+
+
+def update_service_request_status(request_id: int, status: str) -> dict:
+    """
+    Updates the status of a service request.
+    Valid statuses: 'pending', 'in_progress', 'completed', 'cancelled'.
+    Maps 'done' -> 'completed'.
+    """
+    normalized_status = status.lower().strip()
+    if normalized_status == 'done':
+        normalized_status = 'completed'
+
+    valid_statuses = ('pending', 'in_progress', 'completed', 'cancelled')
+    if normalized_status not in valid_statuses:
+        raise ValueError(f"Invalid status '{status}'. Must be one of {valid_statuses}")
+
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                "UPDATE service_requests SET status = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s RETURNING id, status, updated_at;",
+                (normalized_status, request_id)
+            )
+            row = cursor.fetchone()
+            if not row:
+                raise ValueError(f"Service request with ID {request_id} not found.")
+            return dict(row)
+
