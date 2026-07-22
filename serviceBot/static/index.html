@@ -87,9 +87,17 @@
           <!-- Metric Row -->
           <div class="metrics-grid">
             <div class="metric-card">
-              <span class="metric-label">Total Calls</span>
+              <div class="metric-card-header">
+                <span class="metric-label">Total Calls</span>
+                <select id="calls-timeframe-select" class="timeframe-select" title="Select timeframe">
+                  <option value="24h">24h</option>
+                  <option value="7d" selected>7 Days</option>
+                  <option value="30d">30 Days</option>
+                  <option value="all">All Time</option>
+                </select>
+              </div>
               <h3 class="metric-value" id="stat-total-calls">--</h3>
-              <div class="metric-badge success">100% answer rate</div>
+              <div class="metric-badge success" id="stat-calls-badge">Past 7 days • 100% answer rate</div>
             </div>
             
             <div class="metric-card">
@@ -119,11 +127,7 @@
                 <p class="text-muted">Captured customer issues, service requirements, and scheduling preferences.</p>
               </div>
               <div class="table-filters" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
-                <div class="sr-status-toggle-container">
-                  <button type="button" class="sr-toggle-btn active" data-status="all">All</button>
-                  <button type="button" class="sr-toggle-btn" data-status="pending">Pending</button>
-                  <button type="button" class="sr-toggle-btn" data-status="completed">Done</button>
-                </div>
+
                 <input type="text" id="filter-sr-search" class="form-input" placeholder="Search requests..." style="width: 170px; padding: 6px 12px; font-size: 12.5px; background-color: var(--bg-input); border: 1px solid var(--border-card);">
                 <select id="filter-sr-type" class="form-input" style="width: 120px; padding: 6px 12px; font-size: 12.5px; background-color: var(--bg-input); border: 1px solid var(--border-card);">
                   <option value="all">All Types</option>
@@ -135,6 +139,7 @@
                   <option value="pending">Pending</option>
                   <option value="completed">Done (Completed)</option>
                   <option value="in_progress">In Progress</option>
+                  <option value="rescheduled">Rescheduled</option>
                   <option value="cancelled">Cancelled</option>
                 </select>
               </div>
@@ -181,8 +186,14 @@
                     </th>
                     <th>
                       <div class="tooltip-container">
-                        <div class="th-text-clipped">Booking / Preferred Time</div>
+                        <div class="th-text-clipped">Time</div>
                         <div class="tooltip-popup">Booking or Preferred Callback Time</div>
+                      </div>
+                    </th>
+                    <th>
+                      <div class="tooltip-container">
+                        <div class="th-text-clipped">Assigned Agent</div>
+                        <div class="tooltip-popup">Assigned Agent / Technician</div>
                       </div>
                     </th>
                     <th>
@@ -201,7 +212,7 @@
                 </thead>
                 <tbody id="service-requests-list">
                   <tr>
-                    <td colspan="9" class="text-center py-6 text-muted">Loading service requests...</td>
+                    <td colspan="10" class="text-center py-6 text-muted">Loading service requests...</td>
                   </tr>
                 </tbody>
               </table>
@@ -315,17 +326,6 @@
               <div class="form-group full-width">
                 <label for="prompt-first-message">Agent Greeting (First Message / Intro spoken to caller)</label>
                 <textarea id="prompt-first-message" rows="2" class="form-input" placeholder="e.g. Hello! Thank you for calling Test..."></textarea>
-              </div>
-
-              <div class="form-group full-width" style="display: flex; gap: 1rem; margin-top: 0.5rem; margin-bottom: 0.5rem;">
-                <div style="flex: 1;">
-                  <label for="business-hours-start">Business Hours Start (24-hr format, e.g. 7 for 7:00 AM)</label>
-                  <input type="number" id="business-hours-start" min="0" max="23" class="form-input" value="7" style="width: 100%; padding: 0.5rem;" />
-                </div>
-                <div style="flex: 1;">
-                  <label for="business-hours-end">Business Hours End (24-hr format, e.g. 18 for 6:00 PM)</label>
-                  <input type="number" id="business-hours-end" min="1" max="24" class="form-input" value="18" style="width: 100%; padding: 0.5rem;" />
-                </div>
               </div>
 
               <div class="form-group full-width">
@@ -509,23 +509,6 @@
             
             <!-- Right Column forms -->
             <div class="flex-1" style="display: flex; flex-direction: column; gap: 24px;">
-              <!-- Add Slot Form -->
-              <div class="content-card" style="width: 100%;">
-                <div class="card-header">
-                  <h3>Add Availability Slot</h3>
-                  <p class="text-muted">Insert a new booking slot for the selected agent.</p>
-                </div>
-                
-                <form id="add-slot-form">
-                  <div class="form-group">
-                    <label for="new-slot-datetime">Date & Time</label>
-                    <input type="datetime-local" id="new-slot-datetime" class="form-input" required>
-                  </div>
-                  
-                  <button type="submit" class="btn btn-primary full-width mt-4">Add Time Slot</button>
-                </form>
-              </div>
-
               <!-- Business Hours & Operating Days Form -->
               <div class="content-card" style="width: 100%;">
                 <div class="card-header">

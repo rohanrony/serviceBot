@@ -140,6 +140,28 @@ document.addEventListener('DOMContentLoaded', () => {
     return `${month}/${day}/${year} ${hours}:${minutes}`;
   }
 
+  async function updateAssignedAgent(requestId, staffAgentId) {
+    try {
+      const parsedId = staffAgentId ? parseInt(staffAgentId, 10) : null;
+      const response = await fetch(`/api/v1/portal/service-requests/${requestId}/assign-agent`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ staff_agent_id: parsedId })
+      });
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.detail || 'Failed to assign agent');
+      }
+      const targetReq = allRequests.find(r => r.id === requestId);
+      if (targetReq) {
+        targetReq.staff_agent_id = parsedId;
+      }
+      showToast(`Agent assigned for Service Request #${requestId}!`, 'success');
+    } catch (err) {
+      showToast(err.message, 'danger');
+    }
+  }
+
   async function updateRequestStatus(requestId, newStatus) {
     try {
       const response = await fetch(`/api/v1/portal/service-requests/${requestId}/status`, {
@@ -155,7 +177,15 @@ document.addEventListener('DOMContentLoaded', () => {
       if (targetReq) {
         targetReq.status = newStatus === 'done' ? 'completed' : newStatus;
       }
-      const label = (newStatus === 'completed' || newStatus === 'done') ? 'Done' : 'Pending';
+      const statusLabels = {
+        completed: 'Done',
+        done: 'Done',
+        pending: 'Pending',
+        in_progress: 'In Progress',
+        rescheduled: 'Rescheduled',
+        cancelled: 'Cancelled'
+      };
+      const label = statusLabels[newStatus] || newStatus;
       showToast(`Service Request #${requestId} marked as ${label}!`, 'success');
       
       fetch('/api/v1/portal/stats')
@@ -169,12 +199,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const apptsStatEl = document.getElementById('stat-appointments');
             if (apptsStatEl) apptsStatEl.textContent = stats.total_appointments;
           }
-        }).catch(err => console.error(err));
-
+        }).catch(() => {});
+      
       applyServiceRequestsFilter();
     } catch (err) {
-      console.error(err);
-      showToast('Error: ' + err.message, 'error');
+      showToast(err.message, 'danger');
     }
   }
 
@@ -262,7 +291,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (nextBtn) nextBtn.disabled = srCurrentPage >= totalPages;
     
     if (paginatedReqs.length === 0) {
-      requestsListBody.innerHTML = `<tr><td colspan="9" class="text-center py-6 text-muted">No matching service requests found.</td></tr>`;
+      requestsListBody.innerHTML = `<tr><td colspan="10" class="text-center py-6 text-muted">No matching service requests found.</td></tr>`;
     } else {
       requestsListBody.innerHTML = '';
       paginatedReqs.forEach(req => {
@@ -278,6 +307,8 @@ document.addEventListener('DOMContentLoaded', () => {
           statusBadgeClass = 'danger';
         } else if (currentStatus === 'in_progress') {
           statusBadgeClass = 'info';
+        } else if (currentStatus === 'rescheduled') {
+          statusBadgeClass = 'purple';
         }
 
         let reqTypeBadge = '';
@@ -299,11 +330,18 @@ document.addEventListener('DOMContentLoaded', () => {
           displayTime = '<span class="text-muted">N/A</span>';
         }
 
+        const agentSelectHtml = `
+          <select class="agent-select-badge" data-id="${req.id}">
+            <option value="">${req.staff_agent_name || 'Select Agent'}</option>
+          </select>
+        `;
+
         const statusSelectHtml = `
           <select class="status-select-badge ${statusBadgeClass}" data-id="${req.id}">
             <option value="pending" ${currentStatus === 'pending' ? 'selected' : ''}>pending</option>
-            <option value="completed" ${currentStatus === 'completed' || currentStatus === 'done' ? 'selected' : ''}>done</option>
             <option value="in_progress" ${currentStatus === 'in_progress' ? 'selected' : ''}>in progress</option>
+            <option value="completed" ${currentStatus === 'completed' || currentStatus === 'done' ? 'selected' : ''}>done</option>
+            <option value="rescheduled" ${currentStatus === 'rescheduled' ? 'selected' : ''}>rescheduled</option>
             <option value="cancelled" ${currentStatus === 'cancelled' ? 'selected' : ''}>cancelled</option>
           </select>
         `;
@@ -316,6 +354,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <td>${req.service_type}</td>
           <td>${reqTypeBadge}</td>
           <td>${displayTime}</td>
+          <td>${agentSelectHtml}</td>
           <td>
             <div class="tooltip-container">
               <div class="issue-desc-text">${req.issue_description}</div>
@@ -324,6 +363,34 @@ document.addEventListener('DOMContentLoaded', () => {
           </td>
           <td>${statusSelectHtml}</td>
         `;
+
+        const agentSelect = tr.querySelector('.agent-select-badge');
+        if (agentSelect) {
+          const loadAgentOptions = async () => {
+            try {
+              const res = await fetch(`/api/v1/portal/service-requests/${req.id}/available-agents`);
+              if (res.ok) {
+                const data = await res.json();
+                const agents = data.agents || [];
+                let html = '<option value="">Unassigned</option>';
+                agents.forEach(a => {
+                  const isSel = a.id === req.staff_agent_id ? 'selected' : '';
+                  const statusText = a.is_available ? '(Available)' : `(Busy - ${a.reason})`;
+                  html += `<option value="${a.id}" ${isSel}>${a.name} ${statusText}</option>`;
+                });
+                agentSelect.innerHTML = html;
+              }
+            } catch (err) {
+              console.error('Failed to load available agents', err);
+            }
+          };
+
+          loadAgentOptions();
+
+          agentSelect.addEventListener('change', (e) => {
+            updateAssignedAgent(req.id, e.target.value);
+          });
+        }
 
         const statusSelect = tr.querySelector('.status-select-badge');
         if (statusSelect) {
@@ -375,23 +442,6 @@ document.addEventListener('DOMContentLoaded', () => {
     renderCallLogs(filtered);
   }
 
-  // Bind SR status quick-toggle buttons
-  const srToggleBtns = document.querySelectorAll('.sr-toggle-btn');
-  srToggleBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      const targetStatus = btn.getAttribute('data-status');
-      srToggleBtns.forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      
-      const srStatusEl = document.getElementById('filter-sr-status');
-      if (srStatusEl) {
-        srStatusEl.value = targetStatus;
-      }
-      srCurrentPage = 1;
-      applyServiceRequestsFilter();
-    });
-  });
-
   // Bind filter listeners once
   const srSearch = document.getElementById('filter-sr-search');
   if (srSearch && !srSearch.dataset.listenerBound) {
@@ -413,11 +463,6 @@ document.addEventListener('DOMContentLoaded', () => {
   if (srStatus && !srStatus.dataset.listenerBound) {
     srStatus.dataset.listenerBound = 'true';
     srStatus.addEventListener('change', () => {
-      const val = srStatus.value;
-      srToggleBtns.forEach(b => {
-        if (b.getAttribute('data-status') === val) b.classList.add('active');
-        else b.classList.remove('active');
-      });
       srCurrentPage = 1;
       applyServiceRequestsFilter();
     });
@@ -493,17 +538,38 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  let currentCallsTimeframe = '7d';
+  const callsTimeframeSelect = document.getElementById('calls-timeframe-select');
+  if (callsTimeframeSelect) {
+    callsTimeframeSelect.addEventListener('change', (e) => {
+      currentCallsTimeframe = e.target.value;
+      loadDashboardData();
+    });
+  }
+
 
   async function loadDashboardData() {
     try {
       // Fetch stats
-      const statsResponse = await fetch('/api/v1/portal/stats');
+      const statsResponse = await fetch(`/api/v1/portal/stats?calls_timeframe=${currentCallsTimeframe}`);
       if (!statsResponse.ok) throw new Error('Failed to fetch stats');
       const stats = await statsResponse.json();
       
       // Render counts safely
       const totalCallsEl = document.getElementById('stat-total-calls');
       if (totalCallsEl) totalCallsEl.textContent = stats.total_calls;
+      
+      const callsBadgeEl = document.getElementById('stat-calls-badge');
+      if (callsBadgeEl) {
+        const labels = {
+          '24h': 'Past 24 hours',
+          '7d': 'Past 7 days',
+          '30d': 'Past 30 days',
+          'all': 'All time'
+        };
+        const labelText = labels[currentCallsTimeframe] || 'Past 7 days';
+        callsBadgeEl.textContent = `${labelText} • 100% answer rate`;
+      }
       
       const callbacksStatEl = document.getElementById('stat-callbacks');
       if (callbacksStatEl) callbacksStatEl.textContent = stats.total_callbacks;
@@ -948,12 +1014,8 @@ document.addEventListener('DOMContentLoaded', () => {
       // Populate textareas and inputs
       const firstMsgEl = document.getElementById('prompt-first-message');
       const sysPromptEl = document.getElementById('prompt-system');
-      const bStartEl = document.getElementById('business-hours-start');
-      const bEndEl = document.getElementById('business-hours-end');
       if (firstMsgEl) firstMsgEl.value = config.first_message || '';
       if (sysPromptEl) sysPromptEl.value = config.system_prompt || '';
-      if (bStartEl) bStartEl.value = config.business_hours_start ?? 7;
-      if (bEndEl) bEndEl.value = config.business_hours_end ?? 18;
       
       // Populate checkboxes
       const reqCustomerName = document.getElementById('req-customer-name');
@@ -986,8 +1048,6 @@ document.addEventListener('DOMContentLoaded', () => {
       
       const sysPromptEl = document.getElementById('prompt-system');
       const firstMsgEl = document.getElementById('prompt-first-message');
-      const bStartEl = document.getElementById('business-hours-start');
-      const bEndEl = document.getElementById('business-hours-end');
 
       const payload = {
         required_fields: {
@@ -997,9 +1057,7 @@ document.addEventListener('DOMContentLoaded', () => {
           issue_description: reqIssueDescription ? reqIssueDescription.checked : true
         },
         system_prompt: sysPromptEl ? sysPromptEl.value : '',
-        first_message: firstMsgEl ? firstMsgEl.value : '',
-        business_hours_start: bStartEl ? parseInt(bStartEl.value, 10) : 7,
-        business_hours_end: bEndEl ? parseInt(bEndEl.value, 10) : 18
+        first_message: firstMsgEl ? firstMsgEl.value : ''
       };
       
       try {
@@ -1397,41 +1455,43 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Attach form submission for adding slot
-        addSlotForm.addEventListener('submit', async (e) => {
-          e.preventDefault();
-          const selectedAgentId = staffAgentSelector.value;
-          if (!selectedAgentId) {
-            showToast('Please select a staff member first.', 'error');
-            return;
-          }
-          
-          const rawDatetime = newSlotDatetimeInput.value; // e.g. "2026-06-09T14:00"
-          if (!rawDatetime) return;
-          
-          // Format "2026-06-09T14:00" to "2026-06-09 14:00:00"
-          const formattedDatetime = rawDatetime.replace('T', ' ') + ':00';
-          
-          try {
-            const res = await fetch(`/api/v1/portal/agents/${selectedAgentId}/calendar`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ slot_datetime: formattedDatetime, is_booked: false })
-            });
-            
-            if (res.status === 400) {
-              const data = await res.json();
-              throw new Error(data.detail || 'Time slot already exists');
+        if (addSlotForm) {
+          addSlotForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const selectedAgentId = staffAgentSelector.value;
+            if (!selectedAgentId) {
+              showToast('Please select a staff member first.', 'error');
+              return;
             }
-            if (!res.ok) throw new Error('Failed to add slot');
             
-            showToast('Availability slot added successfully!');
-            newSlotDatetimeInput.value = '';
-            loadAgentCalendar(selectedAgentId);
-          } catch (err) {
-            console.error(err);
-            showToast('Error adding slot: ' + err.message, 'error');
-          }
-        });
+            const rawDatetime = newSlotDatetimeInput ? newSlotDatetimeInput.value : '';
+            if (!rawDatetime) return;
+            
+            // Format "2026-06-09T14:00" to "2026-06-09 14:00:00"
+            const formattedDatetime = rawDatetime.replace('T', ' ') + ':00';
+            
+            try {
+              const res = await fetch(`/api/v1/portal/agents/${selectedAgentId}/calendar`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ slot_datetime: formattedDatetime, is_booked: false })
+              });
+              
+              if (res.status === 400) {
+                const data = await res.json();
+                throw new Error(data.detail || 'Time slot already exists');
+              }
+              if (!res.ok) throw new Error('Failed to add slot');
+              
+              showToast('Availability slot added successfully!');
+              if (newSlotDatetimeInput) newSlotDatetimeInput.value = '';
+              loadAgentCalendar(selectedAgentId);
+            } catch (err) {
+              console.error(err);
+              showToast('Error adding slot: ' + err.message, 'error');
+            }
+          });
+        }
 
         // Add Staff Member Form handler
         if (addAgentForm) {

@@ -89,7 +89,7 @@ CREATE TABLE IF NOT EXISTS service_requests (
     vehicle_id INTEGER NOT NULL,
     service_type VARCHAR(100) NOT NULL,
     issue_description TEXT NOT NULL,
-    status VARCHAR(50) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'completed', 'cancelled')),
+    status VARCHAR(50) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'completed', 'cancelled', 'rescheduled')),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     time_slot VARCHAR(100) DEFAULT NULL,
@@ -224,6 +224,14 @@ def init_db(db_url: str = None):
         # Drop legacy tables
         cursor.execute("DROP TABLE IF EXISTS appointments")
         cursor.execute("DROP TABLE IF EXISTS callback_requests")
+
+        # Auto-migration: update status check constraint to include rescheduled
+        try:
+            cursor.execute("ALTER TABLE service_requests DROP CONSTRAINT IF EXISTS service_requests_status_check;")
+            cursor.execute("ALTER TABLE service_requests ADD CONSTRAINT service_requests_status_check CHECK (status IN ('pending', 'in_progress', 'completed', 'cancelled', 'rescheduled'));")
+            conn.commit()
+        except Exception:
+            conn.rollback()
 
         conn.commit()
         _db_initialized = True

@@ -253,6 +253,15 @@ def test_get_stats_endpoint():
     assert "total_requests" in stats
     assert "open_slots" in stats
     assert "total_callbacks" in stats
+    assert stats.get("timeframe") == "7d"
+
+    # Test timeframe parameters
+    for tf in ["24h", "7d", "30d", "all"]:
+        tf_resp = client.get(f"/api/v1/portal/stats?calls_timeframe={tf}")
+        assert tf_resp.status_code == 200
+        tf_data = tf_resp.json()
+        assert "total_calls" in tf_data
+        assert tf_data.get("timeframe") == tf
 
 
 def test_update_service_request_status_endpoint():
@@ -268,6 +277,16 @@ def test_update_service_request_status_endpoint():
         data = patch_res.json()
         assert data["success"] is True
         assert data["data"]["status"] == "completed"
+
+        # Update status to rescheduled
+        resched_res = client.patch(f"/api/v1/portal/service-requests/{req_id}/status", json={"status": "rescheduled"})
+        assert resched_res.status_code == 200
+        assert resched_res.json()["data"]["status"] == "rescheduled"
+
+        # Update status to cancelled
+        cancel_res = client.patch(f"/api/v1/portal/service-requests/{req_id}/status", json={"status": "cancelled"})
+        assert cancel_res.status_code == 200
+        assert cancel_res.json()["data"]["status"] == "cancelled"
 
         # Update back to pending
         patch_res_2 = client.patch(f"/api/v1/portal/service-requests/{req_id}/status", json={"status": "pending"})
@@ -285,6 +304,38 @@ def test_get_calls_and_service_requests_pagination():
     assert res_reqs.status_code == 200
     assert isinstance(res_reqs.json(), list)
     assert len(res_reqs.json()) <= 2
+
+
+def test_agent_availability_and_assignment_endpoints():
+    res = client.get("/api/v1/portal/service-requests")
+    assert res.status_code == 200
+    reqs = res.json()
+    if reqs:
+        req_id = reqs[0]["id"]
+        
+        # Test available agents endpoint
+        avail_res = client.get(f"/api/v1/portal/service-requests/{req_id}/available-agents")
+        assert avail_res.status_code == 200
+        avail_data = avail_res.json()
+        assert avail_data["success"] is True
+        assert "agents" in avail_data
+        assert isinstance(avail_data["agents"], list)
+
+        # Test assign agent endpoint
+        if avail_data["agents"]:
+            target_agent_id = avail_data["agents"][0]["id"]
+            assign_res = client.patch(f"/api/v1/portal/service-requests/{req_id}/assign-agent", json={"staff_agent_id": target_agent_id})
+            assert assign_res.status_code == 200
+            assert assign_res.json()["success"] is True
+            assert assign_res.json()["data"]["staff_agent_id"] == target_agent_id
+
+            # Verify in service requests list
+            verify_res = client.get("/api/v1/portal/service-requests")
+            assert verify_res.status_code == 200
+            matched = [r for r in verify_res.json() if r["id"] == req_id]
+            if matched:
+                assert matched[0]["staff_agent_id"] == target_agent_id
+
 
 
 

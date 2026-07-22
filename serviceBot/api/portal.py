@@ -823,6 +823,11 @@ class ServiceRequestStatusUpdate(BaseModel):
     status: str
 
 
+class AgentAssignPayload(BaseModel):
+    staff_agent_id: Optional[int] = None
+
+
+
 @router.get("/calls")
 async def get_calls(limit: Optional[int] = None, offset: Optional[int] = None):
     from serviceBot.db.connection import get_db_connection, dict_cursor
@@ -884,12 +889,14 @@ async def get_service_requests(limit: Optional[int] = None, offset: Optional[int
         with dict_cursor(conn) as cursor:
             query = """
                 SELECT sr.id, sr.service_type, sr.issue_description, sr.status, sr.time_slot, sr.created_at,
-                       sr.booking_type, sr.booking_time,
+                       sr.booking_type, sr.booking_time, sr.staff_agent_id,
                        c.name AS customer_name, c.phone,
-                       v.make, v.model, v.year
+                       v.make, v.model, v.year,
+                       sa.name AS staff_agent_name, sa.role AS staff_agent_role
                 FROM service_requests sr
                 LEFT JOIN customers c ON sr.customer_id = c.id
                 LEFT JOIN vehicles v ON sr.vehicle_id = v.id
+                LEFT JOIN staff_agents sa ON sr.staff_agent_id = sa.id
                 ORDER BY sr.updated_at DESC
             """
             params = []
@@ -922,6 +929,31 @@ async def update_service_request_status_endpoint(request_id: int, payload: Servi
         raise HTTPException(status_code=500, detail=f"Failed to update service request status: {str(exc)}")
 
 
+@router.get("/service-requests/{request_id}/available-agents")
+async def get_available_agents_for_request_endpoint(request_id: int):
+    from serviceBot.db.queries import get_available_agents_for_request
+    try:
+        agents = get_available_agents_for_request(request_id)
+        return {"success": True, "agents": agents}
+    except ValueError as val_err:
+        raise HTTPException(status_code=404, detail=str(val_err))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to check agent availability: {str(exc)}")
+
+
+@router.patch("/service-requests/{request_id}/assign-agent")
+@router.put("/service-requests/{request_id}/assign-agent")
+async def assign_agent_endpoint(request_id: int, payload: AgentAssignPayload):
+    from serviceBot.db.queries import assign_staff_agent_to_service_request
+    try:
+        updated = assign_staff_agent_to_service_request(request_id, payload.staff_agent_id)
+        return {"success": True, "data": updated}
+    except ValueError as val_err:
+        raise HTTPException(status_code=400, detail=str(val_err))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to assign staff agent: {str(exc)}")
+
+
 @router.get("/callbacks")
 async def get_callbacks():
     from serviceBot.db.connection import get_db_connection, dict_cursor
@@ -946,12 +978,20 @@ async def get_callbacks():
             return res
 
 @router.get("/stats")
-async def get_stats():
+async def get_stats(timeframe: Optional[str] = "7d", calls_timeframe: Optional[str] = None):
+    tf = calls_timeframe or timeframe or "7d"
     from serviceBot.db.connection import get_db_connection, dict_cursor
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
-            # Total Calls
-            cursor.execute("SELECT COUNT(*) AS count FROM crm_notes")
+            # Total Calls with timeframe filtering (default past 7 days)
+            if tf in ("24h", "1d"):
+                cursor.execute("SELECT COUNT(*) AS count FROM crm_notes WHERE created_at >= NOW() - INTERVAL '24 hours'")
+            elif tf == "7d":
+                cursor.execute("SELECT COUNT(*) AS count FROM crm_notes WHERE created_at >= NOW() - INTERVAL '7 days'")
+            elif tf == "30d":
+                cursor.execute("SELECT COUNT(*) AS count FROM crm_notes WHERE created_at >= NOW() - INTERVAL '30 days'")
+            else:
+                cursor.execute("SELECT COUNT(*) AS count FROM crm_notes")
             total_calls = cursor.fetchone()["count"]
             
             # Booked Appointments
@@ -975,8 +1015,10 @@ async def get_stats():
                 "total_appointments": total_appointments,
                 "total_requests": total_requests,
                 "open_slots": open_slots,
-                "total_callbacks": total_callbacks
+                "total_callbacks": total_callbacks,
+                "timeframe": tf
             }
+
 
 
 @router.post("/kb/upload")

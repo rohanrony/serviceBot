@@ -97,6 +97,13 @@ def seed_db(force: bool = False):
         )
 
         # Insert CRM Notes (Intake Calls & Transcripts)
+        import datetime
+        now_dt = datetime.datetime.now()
+        call_time_1 = (now_dt - datetime.timedelta(hours=12)).strftime("%Y-%m-%d %H:%M:%S")
+        call_time_2 = (now_dt - datetime.timedelta(days=2)).strftime("%Y-%m-%d %H:%M:%S")
+        call_time_3 = (now_dt - datetime.timedelta(days=5)).strftime("%Y-%m-%d %H:%M:%S")
+        call_time_4 = (now_dt - datetime.timedelta(days=15)).strftime("%Y-%m-%d %H:%M:%S")
+
         cursor.execute(
             "INSERT INTO crm_notes (id, call_id, customer_id, summary, transcript, created_at) VALUES (%s, %s, %s, %s, %s, %s);",
             (
@@ -105,7 +112,7 @@ def seed_db(force: bool = False):
                 1, 
                 "Customer Sarah Johnson reported grinding noise when stopping on her 2020 Honda Civic. Scheduled Brake Service & Repair and Courtesy Inspection for June 10th. Requested local shuttle service.",
                 "Advisor: Thank you for calling Test in Springfield, home of the Nice Difference. This is John, how can I help you?\nSarah: Hi, my Honda Civic's brakes are making a loud grinding noise when I stop, and the brake light just came on.\nAdvisor: I understand, Sarah. Safety is our priority. We can get you in for our complimentary Courtesy Inspection to check out the brake pads and rotors. We also have a free shuttle if you need a ride back home or to work. Would you like to schedule that?\nSarah: Yes, please. Monday afternoon at 2:00 PM would work best.\nAdvisor: Perfect, we have you set for Wednesday, June 10th at 2:00 PM. See you then!",
-                "2026-06-09 10:15:00"
+                call_time_1
             )
         )
         cursor.execute(
@@ -116,7 +123,7 @@ def seed_db(force: bool = False):
                 2, 
                 "David Smith requested a full synthetic oil change on his 2018 Ford F-150. Service completed on time. Courtesy inspection completed with green status overall.",
                 "Advisor: Test, this is John. How can I serve you today?\nDavid: Hi, I need to schedule a full synthetic oil change for my Ford F-150.\nAdvisor: Absolutely, David. We can set that up for you. That will include our full synthetic oil, premium filter, fluid top-off, and our complimentary Courtesy Inspection to check your vehicle's overall health.\nDavid: That sounds great. Do you have anything open today?\nAdvisor: Yes, we have a slot at 4:00 PM.\nDavid: Perfect, see you then.",
-                "2026-06-09 09:30:00"
+                call_time_2
             )
         )
         cursor.execute(
@@ -127,7 +134,7 @@ def seed_db(force: bool = False):
                 3, 
                 "Emily Davis reported AC blowing warm air on her 2021 Toyota RAV4. Scheduled AC performance test and inspection. Customer will use the free local shuttle service.",
                 "Advisor: Thank you for calling Test. This is John.\nEmily: Hi, my RAV4's air conditioner is blowing warm air, and it's really hot today.\nAdvisor: I hear you, Emily. We can run our AC performance test to check the refrigerant levels, scan for codes, and inspect components for leaks. We have an opening at 10:00 AM on Wednesday, June 10th.\nEmily: That works. Will I be able to get a ride to my office?\nAdvisor: Yes, our complimentary shuttle is happy to drop you off and pick you back up when the vehicle is ready.\nEmily: Wonderful, sign me up.",
-                "2026-06-09 11:45:00"
+                call_time_3
             )
         )
         cursor.execute(
@@ -138,7 +145,7 @@ def seed_db(force: bool = False):
                 4, 
                 "Michael Miller reported Check Engine light is on and engine running rough on 2015 Chevrolet Silverado. Scheduled Engine Diagnostics. Shuttle service coordinated.",
                 "Advisor: Test, John speaking. How can I help you?\nMichael: Hi, my Silverado's check engine light is flashing and the engine feels like it is running rough.\nAdvisor: A flashing check engine light indicates a potential misfire, Michael, so we definitely want to check that out as soon as possible. We will perform an Engine Diagnostic scan and physical check. We have an open slot on Thursday at 11:00 AM.\nMichael: That works. I will need the shuttle back to my house.\nAdvisor: Not a problem, we will coordinate that. See you Thursday.",
-                "2026-06-09 13:00:00"
+                call_time_4
             )
         )
 
