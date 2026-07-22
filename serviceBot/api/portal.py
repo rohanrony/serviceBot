@@ -371,19 +371,48 @@ async def get_services():
             
             cursor.execute("SELECT COUNT(*) AS count FROM services")
             if cursor.fetchone()["count"] == 0:
-                cursor.execute(
-                    "INSERT INTO services (name, description, price_range, duration_minutes, req_customer_name, req_phone_number, req_vehicle_details, req_issue_description, req_location) VALUES (%s, %s, %s, %s, TRUE, TRUE, TRUE, TRUE, TRUE)",
-                    ("Oil Change", "Full synthetic oil change, premium filter replacement, fluid top-off, and courtesy inspection", "$79-119", 45)
-                )
+                from serviceBot.seed_cba_services import SERVICES_DATA
+                for svc in SERVICES_DATA:
+                    cursor.execute(
+                        "INSERT INTO services (name, description, price_range, duration_minutes, req_customer_name, req_phone_number, req_vehicle_details, req_issue_description, req_location) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                        (svc[0], svc[1], svc[2], svc[3], bool(svc[4]), bool(svc[5]), bool(svc[6]), bool(svc[7]), bool(svc[8]))
+                    )
                 conn.commit()
                 try:
                     sync_services_to_kb()
                 except Exception:
                     pass
             
-            cursor.execute("SELECT id, name, description, price_range, duration_minutes, req_customer_name, req_phone_number, req_vehicle_details, req_issue_description, req_location FROM services")
+            cursor.execute("SELECT id, name, description, price_range, duration_minutes, req_customer_name, req_phone_number, req_vehicle_details, req_issue_description, req_location FROM services ORDER BY id ASC")
             rows = cursor.fetchall()
             return [dict(row) for row in rows]
+
+@router.post("/services/seed-defaults")
+async def seed_default_services():
+    from serviceBot.db.connection import get_db_connection, dict_cursor
+    from serviceBot.seed_cba_services import SERVICES_DATA
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            inserted_count = 0
+            for svc in SERVICES_DATA:
+                cursor.execute("""
+                    INSERT INTO services (
+                        name, description, price_range, duration_minutes, 
+                        req_customer_name, req_phone_number, req_vehicle_details, req_issue_description, req_location
+                    )
+                    SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM services WHERE LOWER(name) = LOWER(%s)
+                    );
+                """, (svc[0], svc[1], svc[2], svc[3], bool(svc[4]), bool(svc[5]), bool(svc[6]), bool(svc[7]), bool(svc[8]), svc[0]))
+                if cursor.rowcount > 0:
+                    inserted_count += 1
+            conn.commit()
+            try:
+                sync_services_to_kb()
+            except Exception:
+                pass
+            return {"success": True, "inserted_count": inserted_count, "total_defaults": len(SERVICES_DATA)}
 
 @router.post("/services", status_code=201)
 async def create_service(payload: ServiceCreate):

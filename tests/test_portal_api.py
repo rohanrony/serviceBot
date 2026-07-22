@@ -54,7 +54,14 @@ def test_get_services_endpoint():
     services = response.json()
     assert isinstance(services, list)
     assert len(services) > 0
-    assert services[0]["name"] == "Oil Change"
+
+def test_seed_default_services_endpoint():
+    response = client.post("/api/v1/portal/services/seed-defaults")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is True
+    assert "inserted_count" in data
+    assert data["total_defaults"] == 33
 
 def test_create_service_endpoint():
     payload = {

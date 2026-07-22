@@ -52,7 +52,7 @@
         </a>
         <a href="#gmail" class="nav-item" data-tab="gmail">
           <svg class="nav-icon" viewBox="0 0 24 24"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg>
-          Gmail Settings
+          Admin Notifications
         </a>
       </nav>
       
@@ -352,9 +352,14 @@
             
             <!-- Service List -->
             <div class="content-card flex-2">
-              <div class="card-header">
-                <h3>Services Catalog</h3>
-                <p class="text-muted">Current services and standard pricing database.</p>
+              <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <h3>Services Catalog</h3>
+                  <p class="text-muted">Current services and standard pricing database.</p>
+                </div>
+                <button class="btn btn-secondary btn-sm" id="seed-default-services-btn" style="white-space: nowrap;">
+                  <i class="fas fa-database"></i> Seed Default Catalog (33 Services)
+                </button>
               </div>
               
               <div class="table-container">
@@ -675,15 +680,15 @@
           </div>
         </section>
 
-        <!-- VIEW 7: GMAIL NOTIFICATION SETTINGS -->
+        <!-- VIEW 7: ADMIN NOTIFICATION SETTINGS -->
         <section id="gmail-view" class="view-section">
           <div class="layout-split">
             
             <!-- Gmail Configuration Card -->
             <div class="content-card flex-2">
               <div class="card-header">
-                <h3>Gmail Notification Integration</h3>
-                <p class="text-muted">Receive instant email alerts whenever customer bookings, reschedules, or callbacks occur.</p>
+                <h3>Admin Notification Settings</h3>
+                <p class="text-muted">Configure the default admin email that gets notified each time a slot is booked. Every booking sends the assigned mechanic their notification, and a copy is sent here so you always know who gets which service request.</p>
               </div>
               
               <form id="gmail-config-form" class="form-grid">
@@ -746,8 +751,8 @@
                 </div>
                 
                 <div class="form-group full-width">
-                  <label for="gmail-recipient">Predefined Recipient Email Address</label>
-                  <input type="text" id="gmail-recipient" class="form-input" placeholder="e.g. notifications@yourcompany.com, info@yourcompany.com" required>
+                  <label for="gmail-recipient">Admin Notification Email</label>
+                  <input type="text" id="gmail-recipient" class="form-input" placeholder="e.g. admin@yourshop.com — receives a copy of every booking" required>
                 </div>
                 
                 <div class="form-actions full-width" style="display: flex; gap: 12px; justify-content: flex-end; align-items: center; margin-top: 16px;">

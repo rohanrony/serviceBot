@@ -650,6 +650,24 @@ def book_appointment(customer_id: int, service_request_id: int, appointment_date
                 duration_minutes=duration_minutes
             )
 
+            # Create Admin Google Calendar event
+            try:
+                cursor.execute("SELECT name FROM staff_agents WHERE id = %s;", (chosen_agent_id,))
+                sa_row = cursor.fetchone()
+                mech_name = sa_row["name"] if sa_row else f"Agent {chosen_agent_id}"
+
+                from serviceBot.services.gmail import create_admin_calendar_event
+                create_admin_calendar_event(
+                    customer_name=customer_name,
+                    service_type=matched_service_name,
+                    issue_description=issue_desc,
+                    slot_datetime_str=appointment_datetime,
+                    mechanic_name=mech_name,
+                    duration_minutes=duration_minutes
+                )
+            except Exception as admin_cal_err:
+                print(f"Error creating admin calendar event: {admin_cal_err}")
+
             return service_request_id
 
 
@@ -1057,7 +1075,25 @@ def reschedule_appointment(appointment_id: int, new_datetime: str) -> bool:
                 slot_datetime_str=new_datetime,
                 duration_minutes=duration_minutes
             )
-            
+
+            # Create Admin Google Calendar event
+            try:
+                cursor.execute("SELECT name FROM staff_agents WHERE id = %s;", (chosen_agent_id,))
+                sa_row = cursor.fetchone()
+                mech_name = sa_row["name"] if sa_row else f"Agent {chosen_agent_id}"
+
+                from serviceBot.services.gmail import create_admin_calendar_event
+                create_admin_calendar_event(
+                    customer_name=customer_name,
+                    service_type=service_type,
+                    issue_description=issue_desc,
+                    slot_datetime_str=new_datetime,
+                    mechanic_name=mech_name,
+                    duration_minutes=duration_minutes
+                )
+            except Exception as admin_cal_err:
+                print(f"Error creating admin calendar event: {admin_cal_err}")
+
             return True
 
 

@@ -647,6 +647,24 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // Seed Default Services Button
+  const seedDefaultServicesBtn = document.getElementById('seed-default-services-btn');
+  if (seedDefaultServicesBtn) {
+    seedDefaultServicesBtn.addEventListener('click', async () => {
+      if (!confirm('Populate/Restore all 33 default auto services into your catalog?')) return;
+      try {
+        const res = await fetch('/api/v1/portal/services/seed-defaults', { method: 'POST' });
+        if (!res.ok) throw new Error('Failed to seed default catalog');
+        const data = await res.json();
+        showToast(`Catalog updated! Added ${data.inserted_count} missing default services. Total catalog: ${data.total_defaults} services.`, 'success');
+        loadServicesData();
+      } catch (err) {
+        console.error(err);
+        showToast('Error seeding default catalog: ' + err.message, 'error');
+      }
+    });
+  }
+
   // Edit Service Drawer Actions
   function openEditDrawer(svc) {
     document.getElementById('edit-service-id').value = svc.id;
@@ -1551,7 +1569,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // --- VIEW 7: GMAIL NOTIFICATION CONFIG ---
+  // --- VIEW 7: ADMIN NOTIFICATION CONFIG ---
   function toggleGmailAuthFields(authType) {
     const smtpPassGroup = document.getElementById('gmail-smtp-pass-group');
     const smtpServerGroup = document.getElementById('gmail-smtp-server-group');
