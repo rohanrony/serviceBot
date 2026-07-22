@@ -17,6 +17,7 @@ re-evaluated against live Google Calendar to flip them booked/available.
 import datetime
 import traceback
 from typing import List, Dict, Any, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 try:
     import zoneinfo
     TZ = zoneinfo.ZoneInfo("America/New_York")
