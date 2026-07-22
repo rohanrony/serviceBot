@@ -44,7 +44,7 @@ VOICE_TOOLS = [
         "type": "function",
         "function": {
             "name": "create_service_request",
-            "description": "Create a service request / courtesy inspection intake record once mandatory details are collected.",
+            "description": "Create a service request / intake record for either an appointment or a callback once mandatory details are collected.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -53,25 +53,12 @@ VOICE_TOOLS = [
                     "make": {"type": "string", "description": "Vehicle make (e.g. Honda)."},
                     "model": {"type": "string", "description": "Vehicle model (e.g. Civic)."},
                     "year": {"type": "integer", "description": "Vehicle year (e.g. 2020)."},
-                    "issue_description": {"type": "string", "description": "Detailed description of the issue or requested service."}
+                    "issue_description": {"type": "string", "description": "Detailed description of the issue or requested service(s)."},
+                    "service_type": {"type": "string", "description": "Type of service requested."},
+                    "booking_type": {"type": "string", "enum": ["appointment", "callback"], "description": "Specify whether the service request is booked as an appointment or callback."},
+                    "booking_time": {"type": "string", "description": "Scheduled appointment datetime or preferred callback window."}
                 },
-                "required": ["customer_name", "phone", "make", "model", "year", "issue_description"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "book_appointment",
-            "description": "Book a scheduled service appointment after mandatory details are collected, availability is checked, and price/duration quote is confirmed by customer.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "phone": {"type": "string", "description": "Customer 10-digit phone number."},
-                    "appointment_datetime": {"type": "string", "description": "Confirmed date and time string (e.g. '2026-06-10 10:00:00')."},
-                    "service_type": {"type": "string", "description": "Type of service being booked."}
-                },
-                "required": ["phone", "appointment_datetime", "service_type"]
+                "required": ["customer_name", "phone", "make", "model", "year", "issue_description", "booking_type"]
             }
         }
     },

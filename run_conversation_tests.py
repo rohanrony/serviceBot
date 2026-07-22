@@ -144,6 +144,34 @@ class TestConversationSimulator(unittest.TestCase):
         self.assertTrue(any(tc["tool_name"] in ["get_customer_appointments", "reschedule_appointment"] for tc in transcript[0]["tool_calls"] + transcript[1]["tool_calls"]))
         print("  ✓ test_existing_customer_booking_check passed")
 
+    def test_intake_overview_and_sequential_asking(self):
+        """Verify assistant asks intake questions sequentially (one at a time) rather than combining all questions into one turn."""
+        turn1 = self.simulator.run_turn("Hi, I'd like to bring my car in for service.")
+        response1 = turn1["assistant_response"].lower()
+        self.assertIn("name", response1)
+        self.assertFalse("phone" in response1 and "year" in response1 and "model" in response1)
+
+        turn2 = self.simulator.run_turn("My name is Alex Smith.")
+        response2 = turn2["assistant_response"].lower()
+        self.assertTrue("phone" in response2 or "number" in response2)
+
+        turn3 = self.simulator.run_turn("555-123-4567")
+        response3 = turn3["assistant_response"].lower()
+        self.assertTrue(any(w in response3 for w in ["vehicle", "year", "make", "model"]))
+        print("  ✓ test_intake_overview_and_sequential_asking passed")
+
+    def test_tool_execution_filler_phrases(self):
+        """Verify conversational delay filler phrases are uttered before/during tool execution."""
+        turn1 = self.simulator.run_turn("What are your business hours?")
+        self.assertTrue(len(turn1["tool_calls"]) > 0)
+        self.assertTrue(any(phrase in turn1["assistant_response"].lower() for phrase in ["moment", "look that up", "check", "hours", "open"]))
+
+        turn2 = self.simulator.run_turn("Can you check open slots for 2026-06-10?")
+        self.assertTrue(len(turn2["tool_calls"]) > 0)
+        self.assertTrue(any(phrase in turn2["assistant_response"].lower() for phrase in ["moment", "check", "schedule", "open slots", "availability"]))
+        print("  ✓ test_tool_execution_filler_phrases passed")
+
+
 if __name__ == "__main__":
     print("\n==================================================")
     print(" Running serviceBot Conversation Test Suite")

@@ -513,6 +513,14 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                 issue_description = args.get("issue_description") or args.get("issue") or "Not specified"
                 service_type = args.get("service_type") or args.get("serviceType") or "Repair"
                 time_slot = args.get("time_slot") or args.get("timeSlot")
+                booking_type = args.get("booking_type") or args.get("bookingType")
+                booking_time = args.get("booking_time") or args.get("bookingTime") or args.get("appointment_datetime") or args.get("preferred_time") or time_slot
+
+                if not booking_type:
+                    if args.get("appointment_datetime") or args.get("appointmentDatetime"):
+                        booking_type = "appointment"
+                    elif args.get("preferred_time") or args.get("preferredTime"):
+                        booking_type = "callback"
 
                 # Check if customer exists
                 customer_id = None
@@ -547,13 +555,77 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                     vehicle_details=vehicle_details,
                     issue=issue_description,
                     service_type=service_type,
-                    time_slot=time_slot
+                    time_slot=time_slot,
+                    booking_type=booking_type,
+                    booking_time=booking_time
                 )
-                result = {
-                    "success": True,
-                    "service_request_id": sr_id,
-                    "message": "Service request created successfully."
-                }
+
+                fields = get_service_required_fields(service_type)
+                price_range = fields["price_range"] if fields else "Varies"
+
+                if booking_type == "appointment":
+                    result = {
+                        "success": True,
+                        "service_request_id": sr_id,
+                        "booking_type": "appointment",
+                        "message": f"Service request booked as an appointment successfully. The estimated rate for this service is {price_range}. Please inform the customer of this rate."
+                    }
+                    try:
+                        agent_email = None
+                        from serviceBot.db.connection import get_db_connection, dict_cursor
+                        with get_db_connection() as conn:
+                            with dict_cursor(conn) as cursor:
+                                cursor.execute("""
+                                    SELECT COALESCE(uga.email, sa.email) AS email
+                                    FROM service_requests sr
+                                    LEFT JOIN staff_agents sa ON sr.staff_agent_id = sa.id
+                                    LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id
+                                    WHERE sr.id = %s;
+                                """, (sr_id,))
+                                a_row = cursor.fetchone()
+                                agent_email = a_row["email"] if a_row else None
+
+                        details = get_booking_details(customer_id, sr_id)
+                        details["time"] = booking_time or "Scheduled"
+                        details["service_type"] = service_type
+                        from serviceBot.services.gmail import send_booking_notification
+                        send_booking_notification("appointment", details, agent_email=agent_email)
+                    except Exception as email_err:
+                        print(f"Error triggering service request appointment email: {email_err}")
+                elif booking_type == "callback":
+                    result = {
+                        "success": True,
+                        "service_request_id": sr_id,
+                        "booking_type": "callback",
+                        "message": "Service request callback recorded successfully."
+                    }
+                    try:
+                        agent_email = None
+                        from serviceBot.db.connection import get_db_connection, dict_cursor
+                        with get_db_connection() as conn:
+                            with dict_cursor(conn) as cursor:
+                                cursor.execute("""
+                                    SELECT COALESCE(uga.email, sa.email) AS email
+                                    FROM service_requests sr
+                                    LEFT JOIN staff_agents sa ON sr.staff_agent_id = sa.id
+                                    LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id
+                                    WHERE sr.id = %s;
+                                """, (sr_id,))
+                                a_row = cursor.fetchone()
+                                agent_email = a_row["email"] if a_row else None
+
+                        details = get_booking_details(customer_id, sr_id)
+                        details["time"] = booking_time or "ASAP"
+                        from serviceBot.services.gmail import send_booking_notification
+                        send_booking_notification("callback", details, agent_email=agent_email)
+                    except Exception as email_err:
+                        print(f"Error triggering service request callback email: {email_err}")
+                else:
+                    result = {
+                        "success": True,
+                        "service_request_id": sr_id,
+                        "message": "Service request created successfully."
+                    }
 
         elif tool_name == "book_appointment":
             phone = args.get("phone")

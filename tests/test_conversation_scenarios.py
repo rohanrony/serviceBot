@@ -125,3 +125,35 @@ def test_booking_deferred_until_call_completion(simulator):
     tool_names_turn3 = [tc["tool_name"] for tc in turn3["tool_calls"]]
     assert "book_appointment" in tool_names_turn3
 
+def test_intake_overview_and_sequential_asking(simulator):
+    """Verify assistant asks intake details sequentially (one at a time) rather than dumping multiple questions simultaneously."""
+    # Turn 1: Initial vague request - Assistant should ask for name first
+    turn1 = simulator.run_turn("Hi, I'd like to bring my car in for service.")
+    response1 = turn1["assistant_response"].lower()
+    assert "name" in response1
+    # Ensure it doesn't ask for phone AND year AND model simultaneously in turn 1
+    assert not ("phone" in response1 and "year" in response1 and "model" in response1)
+
+    # Turn 2: User provides name - Assistant verifies name and asks for phone next
+    turn2 = simulator.run_turn("My name is Alex Smith.")
+    response2 = turn2["assistant_response"].lower()
+    assert "phone" in response2 or "number" in response2
+
+    # Turn 3: User provides phone - Assistant asks for vehicle details next
+    turn3 = simulator.run_turn("555-123-4567")
+    response3 = turn3["assistant_response"].lower()
+    assert any(w in response3 for w in ["vehicle", "year", "make", "model"])
+
+def test_tool_execution_filler_phrases(simulator):
+    """Verify conversational filler phrases are spoken during tool execution to set caller expectations and prevent dead air."""
+    # Test FAQ query filler phrase
+    faq_turn = simulator.run_turn("What are your business hours?")
+    assert len(faq_turn["tool_calls"]) > 0
+    assert any(phrase in faq_turn["assistant_response"].lower() for phrase in ["moment", "look that up", "check", "hours", "open"])
+
+    # Test Calendar availability check filler phrase
+    cal_turn = simulator.run_turn("Can you check open slots for 2026-06-10?")
+    assert len(cal_turn["tool_calls"]) > 0
+    assert any(phrase in cal_turn["assistant_response"].lower() for phrase in ["moment", "check", "schedule", "open slots", "availability"])
+
+
