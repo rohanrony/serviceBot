@@ -59,6 +59,62 @@ def test_voice_tools_create_service_request(mock_create, mock_lookup):
     assert data["result"]["service_request_id"] == 101
 
 @patch("serviceBot.api.telephony.lookup_customer_by_phone")
+@patch("serviceBot.api.telephony.create_service_request")
+def test_voice_tools_create_service_request_as_appointment(mock_create, mock_lookup):
+    mock_lookup.return_value = {"customer_id": 42}
+    mock_create.return_value = 102
+    
+    payload = {
+        "tool_call_id": "call_apt_1",
+        "name": "create_service_request",
+        "arguments": {
+            "customer_name": "Sarah Johnson",
+            "phone": "555-123-4567",
+            "make": "Honda",
+            "model": "Civic",
+            "year": 2020,
+            "issue_description": "Oil Change",
+            "booking_type": "appointment",
+            "booking_time": "2026-06-10 10:00:00"
+        }
+    }
+    response = client.post("/api/v1/voice/tools", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["tool_call_id"] == "call_apt_1"
+    assert data["result"]["success"] is True
+    assert data["result"]["service_request_id"] == 102
+    assert data["result"]["booking_type"] == "appointment"
+
+@patch("serviceBot.api.telephony.lookup_customer_by_phone")
+@patch("serviceBot.api.telephony.create_service_request")
+def test_voice_tools_create_service_request_as_callback(mock_create, mock_lookup):
+    mock_lookup.return_value = {"customer_id": 42}
+    mock_create.return_value = 103
+    
+    payload = {
+        "tool_call_id": "call_cb_1",
+        "name": "create_service_request",
+        "arguments": {
+            "customer_name": "Sarah Johnson",
+            "phone": "555-123-4567",
+            "make": "Honda",
+            "model": "Civic",
+            "year": 2020,
+            "issue_description": "Engine noise inspection",
+            "booking_type": "callback",
+            "booking_time": "Tomorrow morning"
+        }
+    }
+    response = client.post("/api/v1/voice/tools", json=payload)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["tool_call_id"] == "call_cb_1"
+    assert data["result"]["success"] is True
+    assert data["result"]["service_request_id"] == 103
+    assert data["result"]["booking_type"] == "callback"
+
+@patch("serviceBot.api.telephony.lookup_customer_by_phone")
 @patch("serviceBot.api.telephony.book_appointment")
 def test_voice_tools_book_appointment(mock_book, mock_lookup):
     mock_lookup.return_value = {

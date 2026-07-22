@@ -38,13 +38,27 @@ def lookup_customer_by_phone(phone: str) -> dict:
                 return None
             return dict(row)
 
-def create_service_request(customer_id: int, vehicle_details: dict, issue: str, service_type: str = "Repair", time_slot: str = None) -> int:
+def create_service_request(
+    customer_id: int,
+    vehicle_details: dict,
+    issue: str,
+    service_type: str = "Repair",
+    time_slot: str = None,
+    booking_type: str = None,
+    booking_time: str = None,
+    staff_agent_id: int = None
+) -> int:
     """
     Creates a vehicle if it does not exist, and inserts a service request for the customer and vehicle.
+    Supports booking_type ('appointment' or 'callback') and booking_time.
+    If booking_type is 'appointment' and a matching mock_calendar_slot exists, marks the slot as booked.
     """
     # Try fuzzy catalog matching for service type
     fields = get_service_required_fields(service_type)
     matched_service_name = fields["name"] if fields else service_type
+
+    if not booking_time and time_slot:
+        booking_time = time_slot
 
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
@@ -63,12 +77,34 @@ def create_service_request(customer_id: int, vehicle_details: dict, issue: str, 
                 )
                 vehicle_id = cursor.fetchone()['id']
             
-            # Insert service request
+            # If staff_agent_id is not specified, assign default staff agent if available
+            if not staff_agent_id:
+                cursor.execute("SELECT id FROM staff_agents ORDER BY id ASC LIMIT 1;")
+                sa_row = cursor.fetchone()
+                if sa_row:
+                    staff_agent_id = sa_row["id"]
+
+            # Insert service request with booking_type and booking_time
             cursor.execute(
-                "INSERT INTO service_requests (customer_id, vehicle_id, service_type, issue_description, status, time_slot) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id;",
-                (customer_id, vehicle_id, matched_service_name, issue, "pending", time_slot)
+                """
+                INSERT INTO service_requests 
+                (customer_id, vehicle_id, service_type, issue_description, status, time_slot, booking_type, booking_time, staff_agent_id) 
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id;
+                """,
+                (customer_id, vehicle_id, matched_service_name, issue, "pending", time_slot, booking_type, booking_time, staff_agent_id)
             )
             sr_id = cursor.fetchone()['id']
+
+            # If booked as appointment, attempt to mark mock calendar slot as booked
+            if booking_type == "appointment" and booking_time:
+                try:
+                    cursor.execute(
+                        "UPDATE mock_calendar_slots SET is_booked = TRUE WHERE slot_datetime = CAST(%s AS TIMESTAMP);",
+                        (booking_time,)
+                    )
+                except Exception:
+                    pass
+
             return sr_id
 
 
