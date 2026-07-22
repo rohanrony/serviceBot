@@ -262,7 +262,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (nextBtn) nextBtn.disabled = srCurrentPage >= totalPages;
     
     if (paginatedReqs.length === 0) {
-      requestsListBody.innerHTML = `<tr><td colspan="10" class="text-center py-6 text-muted">No matching service requests found.</td></tr>`;
+      requestsListBody.innerHTML = `<tr><td colspan="9" class="text-center py-6 text-muted">No matching service requests found.</td></tr>`;
     } else {
       requestsListBody.innerHTML = '';
       paginatedReqs.forEach(req => {
@@ -270,14 +270,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const formattedDate = formatShortDate(req.created_at);
         const vehicleStr = `${req.year} ${req.make} ${req.model}`;
         
+        let currentStatus = req.status;
         let statusBadgeClass = 'warning';
-        let statusDisplay = req.status;
-        if (req.status === 'completed') {
+        if (currentStatus === 'completed' || currentStatus === 'done') {
           statusBadgeClass = 'success';
-          statusDisplay = 'done';
-        } else if (req.status === 'cancelled') {
+        } else if (currentStatus === 'cancelled') {
           statusBadgeClass = 'danger';
-        } else if (req.status === 'in_progress') {
+        } else if (currentStatus === 'in_progress') {
           statusBadgeClass = 'info';
         }
 
@@ -300,14 +299,14 @@ document.addEventListener('DOMContentLoaded', () => {
           displayTime = '<span class="text-muted">N/A</span>';
         }
 
-        let actionButtonHtml = '';
-        if (req.status === 'pending' || req.status === 'in_progress') {
-          actionButtonHtml = `<button class="btn btn-sm btn-success mark-done-btn" data-id="${req.id}" style="padding: 3px 8px; font-size: 11.5px; border-radius: 4px;"><i class="fas fa-check"></i> Mark Done</button>`;
-        } else if (req.status === 'completed') {
-          actionButtonHtml = `<button class="btn btn-sm btn-secondary mark-pending-btn" data-id="${req.id}" style="padding: 3px 8px; font-size: 11.5px; border-radius: 4px;">Mark Pending</button>`;
-        } else {
-          actionButtonHtml = `<span class="text-muted">--</span>`;
-        }
+        const statusSelectHtml = `
+          <select class="status-select-badge ${statusBadgeClass}" data-id="${req.id}">
+            <option value="pending" ${currentStatus === 'pending' ? 'selected' : ''}>pending</option>
+            <option value="completed" ${currentStatus === 'completed' || currentStatus === 'done' ? 'selected' : ''}>done</option>
+            <option value="in_progress" ${currentStatus === 'in_progress' ? 'selected' : ''}>in progress</option>
+            <option value="cancelled" ${currentStatus === 'cancelled' ? 'selected' : ''}>cancelled</option>
+          </select>
+        `;
 
         tr.innerHTML = `
           <td>${formattedDate}</td>
@@ -323,20 +322,14 @@ document.addEventListener('DOMContentLoaded', () => {
               <div class="tooltip-popup">${req.issue_description}</div>
             </div>
           </td>
-          <td><span class="badge ${statusBadgeClass}">${statusDisplay}</span></td>
-          <td>${actionButtonHtml}</td>
+          <td>${statusSelectHtml}</td>
         `;
 
-        const markDoneBtn = tr.querySelector('.mark-done-btn');
-        if (markDoneBtn) {
-          markDoneBtn.addEventListener('click', () => {
-            updateRequestStatus(req.id, 'completed');
-          });
-        }
-        const markPendingBtn = tr.querySelector('.mark-pending-btn');
-        if (markPendingBtn) {
-          markPendingBtn.addEventListener('click', () => {
-            updateRequestStatus(req.id, 'pending');
+        const statusSelect = tr.querySelector('.status-select-badge');
+        if (statusSelect) {
+          statusSelect.addEventListener('change', (e) => {
+            const newStatus = e.target.value;
+            updateRequestStatus(req.id, newStatus);
           });
         }
 
@@ -650,17 +643,27 @@ document.addEventListener('DOMContentLoaded', () => {
   // Seed Default Services Button
   const seedDefaultServicesBtn = document.getElementById('seed-default-services-btn');
   if (seedDefaultServicesBtn) {
-    seedDefaultServicesBtn.addEventListener('click', async () => {
-      if (!confirm('Populate/Restore all 33 default auto services into your catalog?')) return;
+    seedDefaultServicesBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      seedDefaultServicesBtn.disabled = true;
+      const originalContent = seedDefaultServicesBtn.innerHTML;
+      seedDefaultServicesBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Seeding...';
+
       try {
         const res = await fetch('/api/v1/portal/services/seed-defaults', { method: 'POST' });
-        if (!res.ok) throw new Error('Failed to seed default catalog');
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({}));
+          throw new Error(errBody.detail || 'Failed to seed default catalog');
+        }
         const data = await res.json();
         showToast(`Catalog updated! Added ${data.inserted_count} missing default services. Total catalog: ${data.total_defaults} services.`, 'success');
-        loadServicesData();
+        await loadServicesData();
       } catch (err) {
         console.error(err);
         showToast('Error seeding default catalog: ' + err.message, 'error');
+      } finally {
+        seedDefaultServicesBtn.disabled = false;
+        seedDefaultServicesBtn.innerHTML = originalContent;
       }
     });
   }
@@ -1250,6 +1253,26 @@ document.addEventListener('DOMContentLoaded', () => {
       // Update the connection status UI
       await updateAgentConnectionUI();
 
+      // Populate Business Hours & Workdays config in Staff view
+      try {
+        const cfgRes = await fetch('/api/v1/portal/config');
+        if (cfgRes.ok) {
+          const cfg = await cfgRes.json();
+          const bStartEl = document.getElementById('staff-bhours-start');
+          const bEndEl = document.getElementById('staff-bhours-end');
+          if (bStartEl) bStartEl.value = cfg.business_hours_start ?? 7;
+          if (bEndEl) bEndEl.value = cfg.business_hours_end ?? 18;
+          
+          const validDays = cfg.business_days || [0, 1, 2, 3, 4];
+          const dayCbs = document.querySelectorAll('.staff-day-cb');
+          dayCbs.forEach(cb => {
+            cb.checked = validDays.includes(parseInt(cb.value, 10));
+          });
+        }
+      } catch (err) {
+        console.error('Error fetching config for staff view:', err);
+      }
+
       // Load calendar for the initially selected agent
       const initialAgentId = staffAgentSelector.value;
       if (initialAgentId) {
@@ -1474,6 +1497,47 @@ document.addEventListener('DOMContentLoaded', () => {
           });
         }
         
+        // Business Hours & Workdays Form handler
+        const staffBhoursForm = document.getElementById('staff-bhours-form');
+        if (staffBhoursForm && !staffBhoursForm.dataset.listenerAttached) {
+          staffBhoursForm.dataset.listenerAttached = 'true';
+          staffBhoursForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const bStartEl = document.getElementById('staff-bhours-start');
+            const bEndEl = document.getElementById('staff-bhours-end');
+            const dayCbs = document.querySelectorAll('.staff-day-cb');
+            
+            const bStart = bStartEl ? parseInt(bStartEl.value, 10) : 7;
+            const bEnd = bEndEl ? parseInt(bEndEl.value, 10) : 18;
+            const selectedDays = [];
+            dayCbs.forEach(cb => {
+              if (cb.checked) selectedDays.push(parseInt(cb.value, 10));
+            });
+            
+            if (selectedDays.length === 0) {
+              showToast('Please select at least one operating day of the week.', 'error');
+              return;
+            }
+            
+            try {
+              const res = await fetch('/api/v1/portal/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  business_hours_start: bStart,
+                  business_hours_end: bEnd,
+                  business_days: selectedDays
+                })
+              });
+              if (!res.ok) throw new Error('Failed to update business hours');
+              showToast('Business hours and operating workdays updated successfully!');
+            } catch (err) {
+              console.error(err);
+              showToast('Error saving business hours: ' + err.message, 'error');
+            }
+          });
+        }
+
         isStaffListenerAttached = true;
       }
       

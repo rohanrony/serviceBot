@@ -119,7 +119,7 @@
                 <p class="text-muted">Captured customer issues, service requirements, and scheduling preferences.</p>
               </div>
               <div class="table-filters" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
-                <div class="sr-status-toggle-container" style="display: inline-flex; background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 6px; padding: 2px;">
+                <div class="sr-status-toggle-container">
                   <button type="button" class="sr-toggle-btn active" data-status="all">All</button>
                   <button type="button" class="sr-toggle-btn" data-status="pending">Pending</button>
                   <button type="button" class="sr-toggle-btn" data-status="completed">Done</button>
@@ -197,17 +197,11 @@
                         <div class="tooltip-popup">Request Status</div>
                       </div>
                     </th>
-                    <th>
-                      <div class="tooltip-container">
-                        <div class="th-text-clipped">Action</div>
-                        <div class="tooltip-popup">Mark Pending/Done</div>
-                      </div>
-                    </th>
                   </tr>
                 </thead>
                 <tbody id="service-requests-list">
                   <tr>
-                    <td colspan="10" class="text-center py-6 text-muted">Loading service requests...</td>
+                    <td colspan="9" class="text-center py-6 text-muted">Loading service requests...</td>
                   </tr>
                 </tbody>
               </table>
@@ -357,7 +351,7 @@
                   <h3>Services Catalog</h3>
                   <p class="text-muted">Current services and standard pricing database.</p>
                 </div>
-                <button class="btn btn-secondary btn-sm" id="seed-default-services-btn" style="white-space: nowrap;">
+                <button type="button" class="btn btn-secondary btn-sm" id="seed-default-services-btn" style="white-space: nowrap;">
                   <i class="fas fa-database"></i> Seed Default Catalog (33 Services)
                 </button>
               </div>
@@ -529,6 +523,56 @@
                   </div>
                   
                   <button type="submit" class="btn btn-primary full-width mt-4">Add Time Slot</button>
+                </form>
+              </div>
+
+              <!-- Business Hours & Operating Days Form -->
+              <div class="content-card" style="width: 100%;">
+                <div class="card-header">
+                  <h3>Business Hours & Workdays</h3>
+                  <p class="text-muted">Set daily work hours and operating days of the week.</p>
+                </div>
+                
+                <form id="staff-bhours-form">
+                  <div style="display: flex; gap: 10px; margin-bottom: 12px;">
+                    <div style="flex: 1;">
+                      <label for="staff-bhours-start" style="font-size: 12px;">Start Hour</label>
+                      <input type="number" id="staff-bhours-start" min="0" max="23" class="form-input" value="7" style="padding: 6px 10px; font-size: 12.5px;" required>
+                    </div>
+                    <div style="flex: 1;">
+                      <label for="staff-bhours-end" style="font-size: 12px;">End Hour</label>
+                      <input type="number" id="staff-bhours-end" min="1" max="24" class="form-input" value="18" style="padding: 6px 10px; font-size: 12.5px;" required>
+                    </div>
+                  </div>
+
+                  <div class="form-group">
+                    <label style="font-size: 12px;">Operating Days</label>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px;">
+                      <label class="checkbox-item" style="font-size: 12px; gap: 4px;">
+                        <input type="checkbox" class="staff-day-cb" value="0" checked> Mon
+                      </label>
+                      <label class="checkbox-item" style="font-size: 12px; gap: 4px;">
+                        <input type="checkbox" class="staff-day-cb" value="1" checked> Tue
+                      </label>
+                      <label class="checkbox-item" style="font-size: 12px; gap: 4px;">
+                        <input type="checkbox" class="staff-day-cb" value="2" checked> Wed
+                      </label>
+                      <label class="checkbox-item" style="font-size: 12px; gap: 4px;">
+                        <input type="checkbox" class="staff-day-cb" value="3" checked> Thu
+                      </label>
+                      <label class="checkbox-item" style="font-size: 12px; gap: 4px;">
+                        <input type="checkbox" class="staff-day-cb" value="4" checked> Fri
+                      </label>
+                      <label class="checkbox-item" style="font-size: 12px; gap: 4px;">
+                        <input type="checkbox" class="staff-day-cb" value="5"> Sat
+                      </label>
+                      <label class="checkbox-item" style="font-size: 12px; gap: 4px;">
+                        <input type="checkbox" class="staff-day-cb" value="6"> Sun
+                      </label>
+                    </div>
+                  </div>
+
+                  <button type="submit" class="btn btn-secondary full-width mt-4" style="font-size: 12.5px; padding: 7px;">Save Hours & Workdays</button>
                 </form>
               </div>
 
@@ -923,6 +967,6 @@
   <div class="toast" id="app-toast">Action completed successfully</div>
 
   <!-- Javascript Logic -->
-  <script src="app.js?v=14"></script>
+  <script src="app.js?v=15"></script>
 </body>
 </html>

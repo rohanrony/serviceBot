@@ -699,29 +699,115 @@ textarea.form-input {
 #service-requests-table th:nth-child(8),
 #service-requests-table td:nth-child(8) { width: 160px; } /* Issue Description */
 #service-requests-table th:nth-child(9),
-#service-requests-table td:nth-child(9) { width: 85px; }  /* Status */
-#service-requests-table th:nth-child(10),
-#service-requests-table td:nth-child(10) { width: 110px; text-align: center; } /* Action */
+#service-requests-table td:nth-child(9) { width: 120px; text-align: center; } /* Status Select Badge */
+
+/* Segmented Pill Control for Service Request Status Filter */
+.sr-status-toggle-container {
+  display: inline-flex;
+  align-items: center;
+  background-color: var(--bg-input, #161a23);
+  border: 1px solid var(--border-card, rgba(255, 255, 255, 0.12));
+  border-radius: 8px;
+  padding: 3px;
+  gap: 2px;
+  height: 33px;
+  box-sizing: border-box;
+}
 
 .sr-toggle-btn {
   background: transparent;
   border: none;
-  color: var(--text-muted);
+  color: var(--text-muted, #9ca3af);
   font-size: 12px;
   font-weight: 500;
-  padding: 4px 10px;
-  border-radius: 4px;
+  padding: 4px 12px;
+  border-radius: 6px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  outline: none;
+  height: 25px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
 }
+
 .sr-toggle-btn.active {
-  background: #3b82f6;
+  background: var(--accent-primary, #3b82f6);
   color: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 2px 6px rgba(59, 130, 246, 0.4);
 }
+
 .sr-toggle-btn:hover:not(.active) {
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-main, #f3f4f6);
 }
+
+/* Interactive Status Select Badge in Table Column 9 */
+.status-select-badge {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 3px 20px 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.2s ease;
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  background-size: 10px 10px;
+  text-transform: lowercase;
+}
+
+.status-select-badge:hover {
+  filter: brightness(1.2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.status-select-badge.warning,
+.status-select-badge[data-status="pending"] {
+  background-color: rgba(245, 158, 11, 0.18);
+  color: #f59e0b;
+  border-color: rgba(245, 158, 11, 0.4);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23f59e0b'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+}
+
+.status-select-badge.success,
+.status-select-badge[data-status="completed"],
+.status-select-badge[data-status="done"] {
+  background-color: rgba(16, 185, 129, 0.18);
+  color: #10b981;
+  border-color: rgba(16, 185, 129, 0.4);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2310b981'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+}
+
+.status-select-badge.info,
+.status-select-badge[data-status="in_progress"] {
+  background-color: rgba(59, 130, 246, 0.18);
+  color: #3b82f6;
+  border-color: rgba(59, 130, 246, 0.4);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%233b82f6'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+}
+
+.status-select-badge.danger,
+.status-select-badge[data-status="cancelled"] {
+  background-color: rgba(239, 68, 68, 0.18);
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.4);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ef4444'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+}
+
+.status-select-badge option {
+  background-color: #1a1e29;
+  color: #f3f4f6;
+  font-weight: 500;
+  padding: 6px 10px;
+}
+
 
 
 

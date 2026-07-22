@@ -151,6 +151,7 @@ Speak the filler naturally as part of the conversation so the caller experiences
         "business_hours_start": 7,
         "business_hours_end": 18,
         "business_hours": [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
+        "business_days": [0, 1, 2, 3, 4],
         "required_fields": {
             "customer_name": True,
             "phone_number": True,
@@ -303,7 +304,7 @@ async def sync_prompt_to_elevenlabs(prompt_text: str, first_message: str = None)
             print(f"Failed to sync prompt to ElevenLabs: {str(e)}")
 
 class ConfigUpdatePayload(BaseModel):
-    required_fields: dict
+    required_fields: Optional[dict] = None
     prompts: Optional[dict] = None
     system_prompt: Optional[str] = None
     first_message: Optional[str] = None
@@ -311,6 +312,7 @@ class ConfigUpdatePayload(BaseModel):
     business_hours_start: Optional[int] = None
     business_hours_end: Optional[int] = None
     business_hours: Optional[list] = None
+    business_days: Optional[list] = None
 
 @router.get("/config")
 async def get_config():
@@ -337,15 +339,19 @@ async def update_config(payload: ConfigUpdatePayload):
     else:
         b_hours = existing.get("business_hours", list(range(7, 18)))
 
+    b_days = [int(d) for d in payload.business_days] if payload.business_days is not None else existing.get("business_days", [0, 1, 2, 3, 4])
+    req_fields = payload.required_fields if payload.required_fields is not None else existing.get("required_fields", {})
+
     config_data = existing.copy()
     config_data.update({
         "handoff_phone_number": payload.handoff_phone_number or existing.get("handoff_phone_number", "+14242704893"),
-        "required_fields": payload.required_fields,
-        "first_message": payload.first_message,
+        "required_fields": req_fields,
+        "first_message": payload.first_message if payload.first_message is not None else existing.get("first_message", ""),
         "system_prompt": prompt_to_sync,
         "business_hours_start": b_start,
         "business_hours_end": b_end,
-        "business_hours": b_hours
+        "business_hours": b_hours,
+        "business_days": b_days
     })
     save_config(config_data)
     
@@ -760,6 +766,14 @@ async def populate_agent_slots(agent_id: int, payload: PopulateSlotsPayload = No
     Skips slots that were already booked by the system.
     """
     from serviceBot.db.connection import get_db_connection, dict_cursor
+    from serviceBot.services.calendar_sync import sync_agent_slots
+
+    if payload is None:
+        payload = PopulateSlotsPayload()
+
+    days = max(1, min(payload.days or 30, 365))
+    hours = payload.hours if payload.hours else None
+
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             cursor.execute("SELECT id FROM staff_agents WHERE id = %s", (agent_id,))

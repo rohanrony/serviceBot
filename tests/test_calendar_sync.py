@@ -7,6 +7,7 @@ from serviceBot.services.calendar_sync import (
     sync_agent_slots,
     sync_all_connected_agents,
     get_configured_business_hours,
+    get_configured_business_days,
 )
 from serviceBot.db.connection import get_db_connection
 
@@ -27,6 +28,15 @@ def test_get_configured_business_hours(mock_load_config):
     }
     hours = get_configured_business_hours()
     assert hours == [9, 11, 14, 16]
+
+@patch("serviceBot.api.portal.load_config")
+def test_get_configured_business_days(mock_load_config):
+    """Verify get_configured_business_days reads business_days list from config."""
+    mock_load_config.return_value = {
+        "business_days": [0, 1, 2, 3, 4, 5]  # Mon through Sat
+    }
+    days = get_configured_business_days()
+    assert days == [0, 1, 2, 3, 4, 5]
 
 def test_generate_slot_strings():
     """Verify that slot strings are correctly generated within business hours and skip weekends."""

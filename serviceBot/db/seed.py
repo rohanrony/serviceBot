@@ -157,12 +157,12 @@ def seed_db(force: bool = False):
         import datetime
         import random
         
-        start_date = datetime.date.today()
-        from serviceBot.services.calendar_sync import get_configured_business_hours
+        from serviceBot.services.calendar_sync import get_configured_business_hours, get_configured_business_days
         hours = get_configured_business_hours()
+        valid_days = get_configured_business_days()
         for day_offset in range(30):
             current_day = start_date + datetime.timedelta(days=day_offset)
-            if current_day.weekday() < 5:
+            if current_day.weekday() in valid_days:
                 for hour in hours:
                     slot_dt = datetime.datetime.combine(current_day, datetime.time(hour, 0, 0))
                     slot_str = slot_dt.strftime("%Y-%m-%d %H:%M:%S")

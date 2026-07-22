@@ -123,7 +123,7 @@ def _generate_dynamic_slots(preferred_date_str: str, duration_minutes: int) -> l
     Returns a list of ISO datetime strings: YYYY-MM-DD HH:MM:SS.
     """
     import datetime as dt_mod
-    from serviceBot.services.calendar_sync import get_configured_business_hours
+    from serviceBot.services.calendar_sync import get_configured_business_hours, get_configured_business_days
     
     if preferred_date_str and len(preferred_date_str) >= 10:
         try:
@@ -143,9 +143,10 @@ def _generate_dynamic_slots(preferred_date_str: str, duration_minutes: int) -> l
     day_offset = 0
     now_dt = dt_mod.datetime.now()
     valid_hours = get_configured_business_hours()
+    valid_days = get_configured_business_days()
     while len(slots) < 60 and day_offset < 30:
         candidate_day = start_date + dt_mod.timedelta(days=day_offset)
-        if candidate_day.weekday() < 5:  # Mon-Fri only
+        if candidate_day.weekday() in valid_days:  # Configured operating days
             for hour in valid_hours:
                 slot_dt = dt_mod.datetime.combine(candidate_day, dt_mod.time(hour, 0, 0))
                 if slot_dt > now_dt:
@@ -386,9 +387,10 @@ def validate_booking_time(booking_time: str) -> bool:
         
     import re
     from datetime import datetime
-    from serviceBot.services.calendar_sync import get_configured_business_hours
+    from serviceBot.services.calendar_sync import get_configured_business_hours, get_configured_business_days
     
     valid_hours = get_configured_business_hours()
+    valid_days = get_configured_business_days()
     
     # Try parsing standard YYYY-MM-DD HH:MM:SS format
     dt = None
@@ -427,8 +429,8 @@ def validate_booking_time(booking_time: str) -> bool:
             return True
             
     if dt:
-        # Check weekday: 0 = Monday, 4 = Friday. Weekend is weekday > 4
-        if dt.weekday() > 4:
+        # Check weekday against configured operating business days (0=Mon, 6=Sun)
+        if dt.weekday() not in valid_days:
             return False
         # Check hour against configured business hours
         if dt.hour not in valid_hours:
