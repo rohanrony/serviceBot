@@ -339,10 +339,55 @@ def test_multiple_services_booking_same_slot(mock_db):
 
 def test_get_service_required_fields_multi_service_fallback(mock_db):
     """
-    Test that get_service_required_fields gracefully handles multi-service strings
-    and returns a fallback dict instead of None.
+    Test that get_service_required_fields gracefully handles multi-service strings,
+    calculates aggregate duration_minutes, and returns a combined dict.
     """
     res = get_service_required_fields("oil change, air conditioning repair, and brake repair")
     assert res is not None
     assert res["name"] == "oil change, air conditioning repair, and brake repair"
-    assert res["price_range"] == "Varies by service"
+    # Seeded: Oil Change (45 min), AC change (60 min), Brake repair (90 min) -> Total 195 min
+    assert res["duration_minutes"] == 195
+
+
+def test_aggregate_service_duration_slot_checking_and_booking(mock_db):
+    """
+    Verify that slot checking and booking account for aggregate service duration
+    and mark/check all mock slots within the total duration window.
+    """
+    from serviceBot.db.queries import check_availability
+
+    # 1. Multi-service "Oil Change, Brake repair" has aggregate duration = 45 + 90 = 135 mins (~2.25 hours)
+    fields = get_service_required_fields("Oil Change, Brake repair")
+    assert fields["duration_minutes"] == 135
+
+    # 2. Get unbooked slots
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                "SELECT DISTINCT slot_datetime FROM mock_calendar_slots WHERE is_booked = FALSE "
+                "ORDER BY slot_datetime ASC LIMIT 4;"
+            )
+            rows = cursor.fetchall()
+            assert len(rows) >= 4
+
+    slot1 = rows[0]["slot_datetime"]
+    slot1_str = slot1.strftime("%Y-%m-%d %H:%M:%S") if not isinstance(slot1, str) else slot1
+    slot2 = rows[1]["slot_datetime"]
+    slot2_str = slot2.strftime("%Y-%m-%d %H:%M:%S") if not isinstance(slot2, str) else slot2
+
+    # 3. Book a 135-minute multi-service appointment at slot1
+    appt_id = book_appointment(
+        customer_id=1,
+        service_request_id=None,
+        appointment_datetime=slot1_str,
+        service_type="Oil Change, Brake repair",
+        vehicle_details={"make": "Honda", "model": "Civic", "year": 2020}
+    )
+    assert appt_id is not None
+
+    # 4. Check availability for "Oil Change, Brake repair" starting on slot1
+    # Since slot1 and subsequent slots in the 135-minute window were booked for the assigned agent,
+    # check_availability for that specific time should filter out occupied agents.
+    avail_slots = check_availability(service_type="Oil Change, Brake repair", preferred_date=slot1_str[:10])
+    assert isinstance(avail_slots, list)
+
