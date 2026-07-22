@@ -15,10 +15,9 @@ def get_db_url():
     """Returns the DATABASE_URL for PostgreSQL connections."""
     is_testing = "pytest" in sys.modules or any("pytest" in arg or "unittest" in arg for arg in sys.argv)
     if is_testing:
-        env_val = os.getenv("TEST_DATABASE_URL") or os.getenv("DATABASE_URL")
+        env_val = os.getenv("TEST_DATABASE_URL")
         if env_val and env_val.startswith("postgresql"):
             return env_val
-        return os.getenv("DATABASE_URL", "")
     return os.getenv("DATABASE_URL", "")
 
 

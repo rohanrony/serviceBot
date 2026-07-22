@@ -5,9 +5,9 @@ import sys
 
 sys.dont_write_bytecode = True
 
-# Force DATABASE_URL to use a separate database for tests if available, fallback to DATABASE_URL
-if not os.environ.get("DATABASE_URL") or not os.environ["DATABASE_URL"].startswith("postgresql"):
-    os.environ["DATABASE_URL"] = os.getenv("TEST_DATABASE_URL") or os.getenv("DATABASE_URL") or "postgresql://localhost/voice_service_test"
+# Force DATABASE_URL to use TEST_DATABASE_URL for tests to prevent truncating live database
+test_db_url = os.getenv("TEST_DATABASE_URL") or "postgresql://localhost/voice_service_test"
+os.environ["DATABASE_URL"] = test_db_url
 os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 
 # Redirect KB_DIR to writeable workspace scratch path
