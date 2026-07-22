@@ -11,18 +11,24 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
   <!-- Stylesheets -->
-  <link rel="stylesheet" href="style.css?v=13">
+  <link rel="stylesheet" href="style.css?v=14">
 </head>
 <body>
 
   <!-- App Wrapper -->
   <div class="app-container">
     
+    <!-- Mobile Sidebar Overlay -->
+    <div class="sidebar-mobile-overlay" id="sidebar-mobile-overlay"></div>
+
     <!-- Sidebar Navigation -->
-    <aside class="sidebar">
+    <aside class="sidebar" id="app-sidebar">
       <div class="sidebar-brand">
         <div class="brand-logo"></div>
         <h1>serviceBot</h1>
+        <button id="sidebar-collapse-btn" class="sidebar-collapse-btn" title="Hide Sidebar" aria-label="Hide Sidebar">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+        </button>
       </div>
       
       <nav class="sidebar-nav">
@@ -67,8 +73,13 @@
       <!-- HEADER -->
       <header class="app-header">
         <div class="header-info">
-          <h2 id="current-view-title">Dashboard Overview</h2>
-          <p class="text-muted">Real-time summaries and configuration dashboard.</p>
+          <button id="sidebar-toggle-btn" class="sidebar-toggle-btn" title="Toggle Sidebar" aria-label="Toggle Sidebar">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg>
+          </button>
+          <div>
+            <h2 id="current-view-title">Dashboard Overview</h2>
+            <p class="text-muted">Real-time summaries and configuration dashboard.</p>
+          </div>
         </div>
         
         <div class="header-actions">
@@ -121,20 +132,20 @@
           
           <!-- Service Requests Table -->
           <div class="content-card mt-6">
-            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; margin-bottom: 16px;">
+            <div class="card-header card-header-split">
               <div>
                 <h3>Service Requests</h3>
                 <p class="text-muted">Captured customer issues, service requirements, and scheduling preferences.</p>
               </div>
-              <div class="table-filters" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+              <div class="table-filters">
 
-                <input type="text" id="filter-sr-search" class="form-input" placeholder="Search requests..." style="width: 170px; padding: 6px 12px; font-size: 12.5px; background-color: var(--bg-input); border: 1px solid var(--border-card);">
-                <select id="filter-sr-type" class="form-input" style="width: 120px; padding: 6px 12px; font-size: 12.5px; background-color: var(--bg-input); border: 1px solid var(--border-card);">
+                <input type="text" id="filter-sr-search" class="form-input filter-search" placeholder="Search requests...">
+                <select id="filter-sr-type" class="form-input filter-type">
                   <option value="all">All Types</option>
                   <option value="appointment">Appointments</option>
                   <option value="callback">Callbacks</option>
                 </select>
-                <select id="filter-sr-status" class="form-input" style="width: 140px; padding: 6px 12px; font-size: 12.5px; background-color: var(--bg-input); border: 1px solid var(--border-card);">
+                <select id="filter-sr-status" class="form-input filter-status">
                   <option value="all">All Statuses</option>
                   <option value="pending">Pending</option>
                   <option value="completed">Done (Completed)</option>
@@ -174,13 +185,7 @@
                     </th>
                     <th>
                       <div class="tooltip-container">
-                        <div class="th-text-clipped">Service Type</div>
-                        <div class="tooltip-popup">Service Type</div>
-                      </div>
-                    </th>
-                    <th>
-                      <div class="tooltip-container">
-                        <div class="th-text-clipped">Request Type</div>
+                        <div class="th-text-clipped">Type</div>
                         <div class="tooltip-popup">Request Type (Appointment / Callback)</div>
                       </div>
                     </th>
@@ -192,13 +197,13 @@
                     </th>
                     <th>
                       <div class="tooltip-container">
-                        <div class="th-text-clipped">Assigned Agent</div>
+                        <div class="th-text-clipped">Agent</div>
                         <div class="tooltip-popup">Assigned Agent / Technician</div>
                       </div>
                     </th>
                     <th>
                       <div class="tooltip-container">
-                        <div class="th-text-clipped">Issue Description</div>
+                        <div class="th-text-clipped">Description</div>
                         <div class="tooltip-popup">Customer Issue Description</div>
                       </div>
                     </th>
@@ -212,38 +217,38 @@
                 </thead>
                 <tbody id="service-requests-list">
                   <tr>
-                    <td colspan="10" class="text-center py-6 text-muted">Loading service requests...</td>
+                    <td colspan="9" class="text-center py-6 text-muted">Loading service requests...</td>
                   </tr>
                 </tbody>
               </table>
             </div>
             <!-- SR Pagination -->
-            <div class="pagination-wrapper" id="sr-pagination-container" style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; padding: 4px 4px 0 4px; flex-wrap: wrap; gap: 10px;">
-              <div class="pagination-info text-muted" id="sr-pagination-info" style="font-size: 12.5px;">Showing 0 of 0 requests</div>
-              <div class="pagination-controls" style="display: flex; gap: 8px; align-items: center;">
-                <label style="font-size: 12px; color: var(--text-muted);">Per page:</label>
-                <select id="sr-page-size" class="form-input" style="width: 60px; padding: 3px 6px; font-size: 12px; background-color: var(--bg-input); border: 1px solid var(--border-card);">
+            <div class="pagination-wrapper" id="sr-pagination-container">
+              <div class="pagination-info text-muted" id="sr-pagination-info">Showing 0 of 0 requests</div>
+              <div class="pagination-controls">
+                <label>Per page:</label>
+                <select id="sr-page-size" class="form-input page-size-select">
                   <option value="5">5</option>
                   <option value="10" selected>10</option>
                   <option value="25">25</option>
                   <option value="50">50</option>
                 </select>
-                <button type="button" class="btn btn-secondary btn-sm" id="sr-prev-page" disabled style="padding: 3px 10px; font-size: 12px;">&laquo; Prev</button>
-                <span id="sr-page-num" style="font-size: 12.5px; font-weight: 500; min-width: 70px; text-align: center; color: var(--text-main);">Page 1 of 1</span>
-                <button type="button" class="btn btn-secondary btn-sm" id="sr-next-page" disabled style="padding: 3px 10px; font-size: 12px;">Next &raquo;</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="sr-prev-page" disabled>&laquo; Prev</button>
+                <span id="sr-page-num" class="page-num">Page 1 of 1</span>
+                <button type="button" class="btn btn-secondary btn-sm" id="sr-next-page" disabled>Next &raquo;</button>
               </div>
             </div>
           </div>
 
           <!-- 4. Call History Table -->
           <div class="content-card mt-6">
-            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; margin-bottom: 16px;">
+            <div class="card-header card-header-split">
               <div>
                 <h3>Recent Call History</h3>
                 <p class="text-muted">Logs, transcripts, and AI-generated summaries of recent calls.</p>
               </div>
               <div class="table-filters">
-                <input type="text" id="filter-calls-search" class="form-input" placeholder="Search calls..." style="width: 200px; padding: 6px 12px; font-size: 12.5px; background-color: var(--bg-input); border: 1px solid var(--border-card);">
+                <input type="text" id="filter-calls-search" class="form-input filter-calls-search" placeholder="Search calls...">
               </div>
             </div>
             <div class="table-container">
@@ -296,19 +301,19 @@
               </table>
             </div>
             <!-- Calls Pagination -->
-            <div class="pagination-wrapper" id="calls-pagination-container" style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; padding: 4px 4px 0 4px; flex-wrap: wrap; gap: 10px;">
-              <div class="pagination-info text-muted" id="calls-pagination-info" style="font-size: 12.5px;">Showing 0 of 0 calls</div>
-              <div class="pagination-controls" style="display: flex; gap: 8px; align-items: center;">
-                <label style="font-size: 12px; color: var(--text-muted);">Per page:</label>
-                <select id="calls-page-size" class="form-input" style="width: 60px; padding: 3px 6px; font-size: 12px; background-color: var(--bg-input); border: 1px solid var(--border-card);">
+            <div class="pagination-wrapper" id="calls-pagination-container">
+              <div class="pagination-info text-muted" id="calls-pagination-info">Showing 0 of 0 calls</div>
+              <div class="pagination-controls">
+                <label>Per page:</label>
+                <select id="calls-page-size" class="form-input page-size-select">
                   <option value="5">5</option>
                   <option value="10" selected>10</option>
                   <option value="25">25</option>
                   <option value="50">50</option>
                 </select>
-                <button type="button" class="btn btn-secondary btn-sm" id="calls-prev-page" disabled style="padding: 3px 10px; font-size: 12px;">&laquo; Prev</button>
-                <span id="calls-page-num" style="font-size: 12.5px; font-weight: 500; min-width: 70px; text-align: center; color: var(--text-main);">Page 1 of 1</span>
-                <button type="button" class="btn btn-secondary btn-sm" id="calls-next-page" disabled style="padding: 3px 10px; font-size: 12px;">Next &raquo;</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="calls-prev-page" disabled>&laquo; Prev</button>
+                <span id="calls-page-num" class="page-num">Page 1 of 1</span>
+                <button type="button" class="btn btn-secondary btn-sm" id="calls-next-page" disabled>Next &raquo;</button>
               </div>
             </div>
           </div>
@@ -346,7 +351,7 @@
             
             <!-- Service List -->
             <div class="content-card flex-2">
-              <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+              <div class="card-header card-header-split">
                 <div>
                   <h3>Services Catalog</h3>
                   <p class="text-muted">Current services and standard pricing database.</p>
@@ -442,18 +447,18 @@
             
             <!-- Agent Selection & Slots Table -->
             <div class="content-card flex-2">
-              <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+              <div class="card-header card-header-split" style="margin-bottom: 24px;">
                 <div>
                   <h3>Staff Member Schedules</h3>
                   <p class="text-muted">Live calendar slots auto-synced from Google Calendar every hour.</p>
                 </div>
                 
-                <div style="display: flex; align-items: center; gap: 10px;">
+                <div class="staff-header-actions">
                   <button type="button" class="btn btn-secondary btn-sm" id="sync-calendar-btn" title="Refresh all connected agents' slots from Google Calendar now" style="display: flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: 12px; border-color: #10b981; color: #10b981;">
                     <svg viewBox="0 0 24 24" style="width: 13px; height: 13px; fill: currentColor; flex-shrink: 0;"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
                     Sync Calendar
                   </button>
-                  <div class="form-group" style="min-width: 240px; margin: 0;">
+                  <div class="form-group staff-agent-select-wrap">
                     <select id="staff-agent-selector" class="form-input">
                       <!-- Loaded dynamically -->
                     </select>
@@ -461,8 +466,8 @@
                 </div>
               </div>
               
-              <div id="agent-calendar-connection-status" style="margin-bottom: 16px; display: flex; flex-direction: column; gap: 8px; font-size: 12px; border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 10px 14px; background: rgba(255,255,255,0.02);">
-                <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+              <div id="agent-calendar-connection-status" class="connection-status-panel">
+                <div class="connection-status-row">
                   <span style="color: var(--text-muted);">Google Calendar:</span>
                   <div style="display: flex; align-items: center; gap: 8px;">
                     <span id="agent-calendar-status-badge" class="badge danger" style="font-size: 10px; padding: 2px 6px;">Disconnected</span>
@@ -471,7 +476,7 @@
                     </button>
                   </div>
                 </div>
-                <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+                <div class="connection-status-row">
                   <span style="color: var(--text-muted);">Gmail Send:</span>
                   <div style="display: flex; align-items: center; gap: 8px;">
                     <span id="agent-gmail-status-badge" class="badge danger" style="font-size: 10px; padding: 2px 6px;">Disconnected</span>
@@ -480,7 +485,7 @@
                     </button>
                   </div>
                 </div>
-                <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 8px; margin-top: 4px;">
+                <div class="connection-status-row-border">
                   <span style="color: var(--text-muted);">Profile Action:</span>
                   <button type="button" class="btn btn-secondary btn-sm" id="delete-agent-profile-btn" style="padding: 2px 8px; font-size: 10px; border-color: var(--color-danger); color: var(--color-danger);">
                     Delete Profile
@@ -950,6 +955,6 @@
   <div class="toast" id="app-toast">Action completed successfully</div>
 
   <!-- Javascript Logic -->
-  <script src="app.js?v=15"></script>
+  <script src="app.js?v=16"></script>
 </body>
 </html>

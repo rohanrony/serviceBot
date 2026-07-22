@@ -10,11 +10,88 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
   // Elements
+  const appContainer = document.querySelector('.app-container');
+  const sidebarToggleBtn = document.getElementById('sidebar-toggle-btn');
+  const sidebarCollapseBtn = document.getElementById('sidebar-collapse-btn');
   const navItems = document.querySelectorAll('.nav-item');
   const viewSections = document.querySelectorAll('.view-section');
   const viewTitle = document.getElementById('current-view-title');
   const refreshBtn = document.getElementById('refresh-data-btn');
   const toast = document.getElementById('app-toast');
+
+  // Sidebar Toggle & Persistence (Responsive-aware)
+  const sidebar = document.getElementById('app-sidebar');
+  const mobileOverlay = document.getElementById('sidebar-mobile-overlay');
+
+  function isMobileView() {
+    return window.innerWidth <= 1024;
+  }
+
+  // On desktop: restore sidebar state from localStorage
+  // On mobile: sidebar is always hidden by default (CSS handles this)
+  if (!isMobileView()) {
+    const isSidebarHidden = localStorage.getItem('sidebarHidden') === 'true';
+    if (isSidebarHidden && appContainer) {
+      appContainer.classList.add('sidebar-hidden');
+    }
+  }
+
+  function toggleSidebar() {
+    if (!appContainer) return;
+
+    if (isMobileView()) {
+      // Mobile: toggle slide-in sidebar with overlay
+      const isOpen = sidebar && sidebar.classList.contains('mobile-open');
+      if (isOpen) {
+        closeMobileSidebar();
+      } else {
+        openMobileSidebar();
+      }
+    } else {
+      // Desktop: toggle sidebar-hidden class
+      appContainer.classList.toggle('sidebar-hidden');
+      const isHidden = appContainer.classList.contains('sidebar-hidden');
+      localStorage.setItem('sidebarHidden', isHidden ? 'true' : 'false');
+    }
+  }
+
+  function openMobileSidebar() {
+    if (sidebar) sidebar.classList.add('mobile-open');
+    if (mobileOverlay) mobileOverlay.classList.add('active');
+    document.body.style.overflow = 'hidden'; // prevent scroll behind sidebar
+  }
+
+  function closeMobileSidebar() {
+    if (sidebar) sidebar.classList.remove('mobile-open');
+    if (mobileOverlay) mobileOverlay.classList.remove('active');
+    document.body.style.overflow = '';
+  }
+
+  // Close mobile sidebar when clicking overlay
+  if (mobileOverlay) {
+    mobileOverlay.addEventListener('click', closeMobileSidebar);
+  }
+
+  // Close mobile sidebar when a nav item is clicked (navigates to a tab)
+  navItems.forEach(item => {
+    item.addEventListener('click', () => {
+      if (isMobileView()) closeMobileSidebar();
+    });
+  });
+
+  // Handle window resize: close mobile sidebar if resizing to desktop
+  window.addEventListener('resize', () => {
+    if (!isMobileView()) {
+      closeMobileSidebar();
+    }
+  });
+
+  if (sidebarToggleBtn) {
+    sidebarToggleBtn.addEventListener('click', toggleSidebar);
+  }
+  if (sidebarCollapseBtn) {
+    sidebarCollapseBtn.addEventListener('click', toggleSidebar);
+  }
   
   // Edit Service Drawer Elements
   const editDrawer = document.getElementById('edit-service-drawer');
@@ -291,7 +368,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (nextBtn) nextBtn.disabled = srCurrentPage >= totalPages;
     
     if (paginatedReqs.length === 0) {
-      requestsListBody.innerHTML = `<tr><td colspan="10" class="text-center py-6 text-muted">No matching service requests found.</td></tr>`;
+      requestsListBody.innerHTML = `<tr><td colspan="9" class="text-center py-6 text-muted">No matching service requests found.</td></tr>`;
     } else {
       requestsListBody.innerHTML = '';
       paginatedReqs.forEach(req => {
@@ -351,7 +428,6 @@ document.addEventListener('DOMContentLoaded', () => {
           <td><strong>${req.customer_name || 'Unknown Customer'}</strong></td>
           <td class="text-muted">${req.phone || '--'}</td>
           <td>${vehicleStr}</td>
-          <td>${req.service_type}</td>
           <td>${reqTypeBadge}</td>
           <td>${displayTime}</td>
           <td>${agentSelectHtml}</td>
