@@ -5,9 +5,28 @@ from serviceBot.services.calendar_sync import (
     _generate_slot_strings,
     _check_busy_via_calendar,
     sync_agent_slots,
-    sync_all_connected_agents
+    sync_all_connected_agents,
+    get_configured_business_hours,
 )
 from serviceBot.db.connection import get_db_connection
+
+@patch("serviceBot.api.portal.load_config")
+def test_get_configured_business_hours(mock_load_config):
+    """Verify get_configured_business_hours reads business_hours_start/end and list from config."""
+    # Test custom start and end hours (8 AM to 5 PM -> 8..16)
+    mock_load_config.return_value = {
+        "business_hours_start": 8,
+        "business_hours_end": 17,
+    }
+    hours = get_configured_business_hours()
+    assert hours == [8, 9, 10, 11, 12, 13, 14, 15, 16]
+
+    # Test explicit business_hours list
+    mock_load_config.return_value = {
+        "business_hours": [9, 11, 14, 16]
+    }
+    hours = get_configured_business_hours()
+    assert hours == [9, 11, 14, 16]
 
 def test_generate_slot_strings():
     """Verify that slot strings are correctly generated within business hours and skip weekends."""
@@ -20,7 +39,7 @@ def test_generate_slot_strings():
     for slot in slots:
         dt = datetime.strptime(slot, "%Y-%m-%d %H:%M:%S")
         assert dt.weekday() < 5 # Monday-Friday only
-        assert dt.hour in [9, 11, 14, 16]
+        assert 7 <= dt.hour <= 17
 
 @patch("serviceBot.services.google_calendar.fetch_agent_events")
 def test_check_busy_via_calendar(mock_fetch):

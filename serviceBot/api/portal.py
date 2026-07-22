@@ -148,6 +148,9 @@ Speak the filler naturally as part of the conversation so the caller experiences
 
     defaults = {
         "handoff_phone_number": "+14242704893",
+        "business_hours_start": 7,
+        "business_hours_end": 18,
+        "business_hours": [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
         "required_fields": {
             "customer_name": True,
             "phone_number": True,
@@ -305,6 +308,9 @@ class ConfigUpdatePayload(BaseModel):
     system_prompt: Optional[str] = None
     first_message: Optional[str] = None
     handoff_phone_number: Optional[str] = None
+    business_hours_start: Optional[int] = None
+    business_hours_end: Optional[int] = None
+    business_hours: Optional[list] = None
 
 @router.get("/config")
 async def get_config():
@@ -312,21 +318,35 @@ async def get_config():
 
 @router.post("/config")
 async def update_config(payload: ConfigUpdatePayload):
+    existing = load_config()
+
     prompt_to_sync = payload.system_prompt
     if not prompt_to_sync and payload.prompts:
         p = payload.prompts
         prompt_to_sync = "\n\n".join([v for v in p.values() if isinstance(v, str) and v.strip()])
 
     if not prompt_to_sync:
-        existing = load_config()
         prompt_to_sync = existing.get("system_prompt", "")
 
-    config_data = {
-        "handoff_phone_number": payload.handoff_phone_number or "+14242704893",
+    b_start = payload.business_hours_start if payload.business_hours_start is not None else existing.get("business_hours_start", 7)
+    b_end = payload.business_hours_end if payload.business_hours_end is not None else existing.get("business_hours_end", 18)
+    if payload.business_hours is not None:
+        b_hours = [int(h) for h in payload.business_hours]
+    elif payload.business_hours_start is not None or payload.business_hours_end is not None:
+        b_hours = list(range(b_start, b_end))
+    else:
+        b_hours = existing.get("business_hours", list(range(7, 18)))
+
+    config_data = existing.copy()
+    config_data.update({
+        "handoff_phone_number": payload.handoff_phone_number or existing.get("handoff_phone_number", "+14242704893"),
         "required_fields": payload.required_fields,
         "first_message": payload.first_message,
-        "system_prompt": prompt_to_sync
-    }
+        "system_prompt": prompt_to_sync,
+        "business_hours_start": b_start,
+        "business_hours_end": b_end,
+        "business_hours": b_hours
+    })
     save_config(config_data)
     
     await sync_prompt_to_elevenlabs(prompt_to_sync, payload.first_message)
@@ -351,19 +371,48 @@ async def get_services():
             
             cursor.execute("SELECT COUNT(*) AS count FROM services")
             if cursor.fetchone()["count"] == 0:
-                cursor.execute(
-                    "INSERT INTO services (name, description, price_range, duration_minutes, req_customer_name, req_phone_number, req_vehicle_details, req_issue_description, req_location) VALUES (%s, %s, %s, %s, TRUE, TRUE, TRUE, TRUE, TRUE)",
-                    ("Oil Change", "Full synthetic oil change, premium filter replacement, fluid top-off, and courtesy inspection", "$79-119", 45)
-                )
+                from serviceBot.seed_cba_services import SERVICES_DATA
+                for svc in SERVICES_DATA:
+                    cursor.execute(
+                        "INSERT INTO services (name, description, price_range, duration_minutes, req_customer_name, req_phone_number, req_vehicle_details, req_issue_description, req_location) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                        (svc[0], svc[1], svc[2], svc[3], bool(svc[4]), bool(svc[5]), bool(svc[6]), bool(svc[7]), bool(svc[8]))
+                    )
                 conn.commit()
                 try:
                     sync_services_to_kb()
                 except Exception:
                     pass
             
-            cursor.execute("SELECT id, name, description, price_range, duration_minutes, req_customer_name, req_phone_number, req_vehicle_details, req_issue_description, req_location FROM services")
+            cursor.execute("SELECT id, name, description, price_range, duration_minutes, req_customer_name, req_phone_number, req_vehicle_details, req_issue_description, req_location FROM services ORDER BY id ASC")
             rows = cursor.fetchall()
             return [dict(row) for row in rows]
+
+@router.post("/services/seed-defaults")
+async def seed_default_services():
+    from serviceBot.db.connection import get_db_connection, dict_cursor
+    from serviceBot.seed_cba_services import SERVICES_DATA
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            inserted_count = 0
+            for svc in SERVICES_DATA:
+                cursor.execute("""
+                    INSERT INTO services (
+                        name, description, price_range, duration_minutes, 
+                        req_customer_name, req_phone_number, req_vehicle_details, req_issue_description, req_location
+                    )
+                    SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM services WHERE LOWER(name) = LOWER(%s)
+                    );
+                """, (svc[0], svc[1], svc[2], svc[3], bool(svc[4]), bool(svc[5]), bool(svc[6]), bool(svc[7]), bool(svc[8]), svc[0]))
+                if cursor.rowcount > 0:
+                    inserted_count += 1
+            conn.commit()
+            try:
+                sync_services_to_kb()
+            except Exception:
+                pass
+            return {"success": True, "inserted_count": inserted_count, "total_defaults": len(SERVICES_DATA)}
 
 @router.post("/services", status_code=201)
 async def create_service(payload: ServiceCreate):
@@ -700,7 +749,7 @@ async def delete_calendar_slot(slot_id: int):
 
 class PopulateSlotsPayload(BaseModel):
     days: Optional[int] = 30
-    hours: Optional[list] = None  # e.g. [9, 11, 14, 16] — defaults to business hours if None
+    hours: Optional[list] = None  # e.g. [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] — defaults to all available business hours if None
 
 @router.post("/agents/{agent_id}/calendar/populate")
 async def populate_agent_slots(agent_id: int, payload: PopulateSlotsPayload = None):
@@ -717,7 +766,7 @@ async def populate_agent_slots(agent_id: int, payload: PopulateSlotsPayload = No
         payload = PopulateSlotsPayload()
 
     days = max(1, min(payload.days or 30, 365))
-    hours = payload.hours if payload.hours else None  # None → calendar_sync uses default [9,11,14,16]
+    hours = payload.hours if payload.hours else None  # None → calendar_sync uses default business hours (7 AM - 6 PM)
 
     with get_db_connection() as conn:
         cursor = conn.cursor()
@@ -764,12 +813,16 @@ async def sync_all_calendar_slots(days: int = 30):
         raise HTTPException(status_code=500, detail=f"Sync failed: {str(exc)}")
 
 
+class ServiceRequestStatusUpdate(BaseModel):
+    status: str
+
+
 @router.get("/calls")
-async def get_calls():
+async def get_calls(limit: Optional[int] = None, offset: Optional[int] = None):
     from serviceBot.db.connection import get_db_connection, dict_cursor
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
-            cursor.execute("""
+            query = """
                 SELECT cn.id, cn.call_id, c.name AS customer_name, c.phone, cn.summary, cn.transcript, cn.created_at,
                        STRING_AGG(CONCAT(v.year, ' ', v.make, ' ', v.model), ', ') AS vehicle
                 FROM crm_notes cn
@@ -777,7 +830,15 @@ async def get_calls():
                 LEFT JOIN vehicles v ON v.customer_id = c.id
                 GROUP BY cn.id, c.name, c.phone, cn.call_id, cn.summary, cn.transcript, cn.created_at
                 ORDER BY cn.created_at DESC
-            """)
+            """
+            params = []
+            if limit is not None:
+                query += " LIMIT %s"
+                params.append(limit)
+                if offset is not None:
+                    query += " OFFSET %s"
+                    params.append(offset)
+            cursor.execute(query, params)
             rows = cursor.fetchall()
             res = []
             for row in rows:
@@ -811,11 +872,11 @@ async def get_appointments():
             return res
 
 @router.get("/service-requests")
-async def get_service_requests():
+async def get_service_requests(limit: Optional[int] = None, offset: Optional[int] = None):
     from serviceBot.db.connection import get_db_connection, dict_cursor
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
-            cursor.execute("""
+            query = """
                 SELECT sr.id, sr.service_type, sr.issue_description, sr.status, sr.time_slot, sr.created_at,
                        sr.booking_type, sr.booking_time,
                        c.name AS customer_name, c.phone,
@@ -824,7 +885,15 @@ async def get_service_requests():
                 LEFT JOIN customers c ON sr.customer_id = c.id
                 LEFT JOIN vehicles v ON sr.vehicle_id = v.id
                 ORDER BY sr.updated_at DESC
-            """)
+            """
+            params = []
+            if limit is not None:
+                query += " LIMIT %s"
+                params.append(limit)
+                if offset is not None:
+                    query += " OFFSET %s"
+                    params.append(offset)
+            cursor.execute(query, params)
             rows = cursor.fetchall()
             res = []
             for row in rows:
@@ -833,6 +902,19 @@ async def get_service_requests():
                     r["created_at"] = r["created_at"].strftime("%Y-%m-%d %H:%M:%S")
                 res.append(r)
             return res
+
+@router.patch("/service-requests/{request_id}/status")
+@router.put("/service-requests/{request_id}/status")
+async def update_service_request_status_endpoint(request_id: int, payload: ServiceRequestStatusUpdate):
+    from serviceBot.db.queries import update_service_request_status
+    try:
+        updated = update_service_request_status(request_id, payload.status)
+        return {"success": True, "data": updated}
+    except ValueError as val_err:
+        raise HTTPException(status_code=400, detail=str(val_err))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to update service request status: {str(exc)}")
+
 
 @router.get("/callbacks")
 async def get_callbacks():

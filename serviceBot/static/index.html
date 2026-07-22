@@ -52,7 +52,7 @@
         </a>
         <a href="#gmail" class="nav-item" data-tab="gmail">
           <svg class="nav-icon" viewBox="0 0 24 24"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg>
-          Gmail Settings
+          Admin Notifications
         </a>
       </nav>
       
@@ -118,18 +118,23 @@
                 <h3>Service Requests</h3>
                 <p class="text-muted">Captured customer issues, service requirements, and scheduling preferences.</p>
               </div>
-              <div class="table-filters" style="display: flex; gap: 10px; flex-wrap: wrap;">
-                <input type="text" id="filter-sr-search" class="form-input" placeholder="Search requests..." style="width: 180px; padding: 6px 12px; font-size: 12.5px; background-color: var(--bg-input); border: 1px solid var(--border-card);">
-                <select id="filter-sr-type" class="form-input" style="width: 130px; padding: 6px 12px; font-size: 12.5px; background-color: var(--bg-input); border: 1px solid var(--border-card);">
+              <div class="table-filters" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                <div class="sr-status-toggle-container" style="display: inline-flex; background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 6px; padding: 2px;">
+                  <button type="button" class="sr-toggle-btn active" data-status="all">All</button>
+                  <button type="button" class="sr-toggle-btn" data-status="pending">Pending</button>
+                  <button type="button" class="sr-toggle-btn" data-status="completed">Done</button>
+                </div>
+                <input type="text" id="filter-sr-search" class="form-input" placeholder="Search requests..." style="width: 170px; padding: 6px 12px; font-size: 12.5px; background-color: var(--bg-input); border: 1px solid var(--border-card);">
+                <select id="filter-sr-type" class="form-input" style="width: 120px; padding: 6px 12px; font-size: 12.5px; background-color: var(--bg-input); border: 1px solid var(--border-card);">
                   <option value="all">All Types</option>
                   <option value="appointment">Appointments</option>
                   <option value="callback">Callbacks</option>
                 </select>
-                <select id="filter-sr-status" class="form-input" style="width: 130px; padding: 6px 12px; font-size: 12.5px; background-color: var(--bg-input); border: 1px solid var(--border-card);">
+                <select id="filter-sr-status" class="form-input" style="width: 140px; padding: 6px 12px; font-size: 12.5px; background-color: var(--bg-input); border: 1px solid var(--border-card);">
                   <option value="all">All Statuses</option>
                   <option value="pending">Pending</option>
+                  <option value="completed">Done (Completed)</option>
                   <option value="in_progress">In Progress</option>
-                  <option value="completed">Completed</option>
                   <option value="cancelled">Cancelled</option>
                 </select>
               </div>
@@ -192,14 +197,36 @@
                         <div class="tooltip-popup">Request Status</div>
                       </div>
                     </th>
+                    <th>
+                      <div class="tooltip-container">
+                        <div class="th-text-clipped">Action</div>
+                        <div class="tooltip-popup">Mark Pending/Done</div>
+                      </div>
+                    </th>
                   </tr>
                 </thead>
                 <tbody id="service-requests-list">
                   <tr>
-                    <td colspan="9" class="text-center py-6 text-muted">Loading service requests...</td>
+                    <td colspan="10" class="text-center py-6 text-muted">Loading service requests...</td>
                   </tr>
                 </tbody>
               </table>
+            </div>
+            <!-- SR Pagination -->
+            <div class="pagination-wrapper" id="sr-pagination-container" style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; padding: 4px 4px 0 4px; flex-wrap: wrap; gap: 10px;">
+              <div class="pagination-info text-muted" id="sr-pagination-info" style="font-size: 12.5px;">Showing 0 of 0 requests</div>
+              <div class="pagination-controls" style="display: flex; gap: 8px; align-items: center;">
+                <label style="font-size: 12px; color: var(--text-muted);">Per page:</label>
+                <select id="sr-page-size" class="form-input" style="width: 60px; padding: 3px 6px; font-size: 12px; background-color: var(--bg-input); border: 1px solid var(--border-card);">
+                  <option value="5">5</option>
+                  <option value="10" selected>10</option>
+                  <option value="25">25</option>
+                  <option value="50">50</option>
+                </select>
+                <button type="button" class="btn btn-secondary btn-sm" id="sr-prev-page" disabled style="padding: 3px 10px; font-size: 12px;">&laquo; Prev</button>
+                <span id="sr-page-num" style="font-size: 12.5px; font-weight: 500; min-width: 70px; text-align: center; color: var(--text-main);">Page 1 of 1</span>
+                <button type="button" class="btn btn-secondary btn-sm" id="sr-next-page" disabled style="padding: 3px 10px; font-size: 12px;">Next &raquo;</button>
+              </div>
             </div>
           </div>
 
@@ -263,6 +290,22 @@
                 </tbody>
               </table>
             </div>
+            <!-- Calls Pagination -->
+            <div class="pagination-wrapper" id="calls-pagination-container" style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; padding: 4px 4px 0 4px; flex-wrap: wrap; gap: 10px;">
+              <div class="pagination-info text-muted" id="calls-pagination-info" style="font-size: 12.5px;">Showing 0 of 0 calls</div>
+              <div class="pagination-controls" style="display: flex; gap: 8px; align-items: center;">
+                <label style="font-size: 12px; color: var(--text-muted);">Per page:</label>
+                <select id="calls-page-size" class="form-input" style="width: 60px; padding: 3px 6px; font-size: 12px; background-color: var(--bg-input); border: 1px solid var(--border-card);">
+                  <option value="5">5</option>
+                  <option value="10" selected>10</option>
+                  <option value="25">25</option>
+                  <option value="50">50</option>
+                </select>
+                <button type="button" class="btn btn-secondary btn-sm" id="calls-prev-page" disabled style="padding: 3px 10px; font-size: 12px;">&laquo; Prev</button>
+                <span id="calls-page-num" style="font-size: 12.5px; font-weight: 500; min-width: 70px; text-align: center; color: var(--text-main);">Page 1 of 1</span>
+                <button type="button" class="btn btn-secondary btn-sm" id="calls-next-page" disabled style="padding: 3px 10px; font-size: 12px;">Next &raquo;</button>
+              </div>
+            </div>
           </div>
         </section>
         
@@ -278,6 +321,17 @@
               <div class="form-group full-width">
                 <label for="prompt-first-message">Agent Greeting (First Message / Intro spoken to caller)</label>
                 <textarea id="prompt-first-message" rows="2" class="form-input" placeholder="e.g. Hello! Thank you for calling Test..."></textarea>
+              </div>
+
+              <div class="form-group full-width" style="display: flex; gap: 1rem; margin-top: 0.5rem; margin-bottom: 0.5rem;">
+                <div style="flex: 1;">
+                  <label for="business-hours-start">Business Hours Start (24-hr format, e.g. 7 for 7:00 AM)</label>
+                  <input type="number" id="business-hours-start" min="0" max="23" class="form-input" value="7" style="width: 100%; padding: 0.5rem;" />
+                </div>
+                <div style="flex: 1;">
+                  <label for="business-hours-end">Business Hours End (24-hr format, e.g. 18 for 6:00 PM)</label>
+                  <input type="number" id="business-hours-end" min="1" max="24" class="form-input" value="18" style="width: 100%; padding: 0.5rem;" />
+                </div>
               </div>
 
               <div class="form-group full-width">
@@ -298,9 +352,14 @@
             
             <!-- Service List -->
             <div class="content-card flex-2">
-              <div class="card-header">
-                <h3>Services Catalog</h3>
-                <p class="text-muted">Current services and standard pricing database.</p>
+              <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <h3>Services Catalog</h3>
+                  <p class="text-muted">Current services and standard pricing database.</p>
+                </div>
+                <button class="btn btn-secondary btn-sm" id="seed-default-services-btn" style="white-space: nowrap;">
+                  <i class="fas fa-database"></i> Seed Default Catalog (33 Services)
+                </button>
               </div>
               
               <div class="table-container">
@@ -621,15 +680,15 @@
           </div>
         </section>
 
-        <!-- VIEW 7: GMAIL NOTIFICATION SETTINGS -->
+        <!-- VIEW 7: ADMIN NOTIFICATION SETTINGS -->
         <section id="gmail-view" class="view-section">
           <div class="layout-split">
             
             <!-- Gmail Configuration Card -->
             <div class="content-card flex-2">
               <div class="card-header">
-                <h3>Gmail Notification Integration</h3>
-                <p class="text-muted">Receive instant email alerts whenever customer bookings, reschedules, or callbacks occur.</p>
+                <h3>Admin Notification Settings</h3>
+                <p class="text-muted">Configure the default admin email that gets notified each time a slot is booked. Every booking sends the assigned mechanic their notification, and a copy is sent here so you always know who gets which service request.</p>
               </div>
               
               <form id="gmail-config-form" class="form-grid">
@@ -692,8 +751,8 @@
                 </div>
                 
                 <div class="form-group full-width">
-                  <label for="gmail-recipient">Predefined Recipient Email Address</label>
-                  <input type="text" id="gmail-recipient" class="form-input" placeholder="e.g. notifications@yourcompany.com, info@yourcompany.com" required>
+                  <label for="gmail-recipient">Admin Notification Email</label>
+                  <input type="text" id="gmail-recipient" class="form-input" placeholder="e.g. admin@yourshop.com — receives a copy of every booking" required>
                 </div>
                 
                 <div class="form-actions full-width" style="display: flex; gap: 12px; justify-content: flex-end; align-items: center; margin-top: 16px;">

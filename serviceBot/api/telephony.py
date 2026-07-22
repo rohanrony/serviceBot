@@ -376,20 +376,24 @@ async def post_call_webhook(request: Request = None, payload: Dict[str, Any] = N
                         # Trigger Gmail notification for callback request
                         try:
                             agent_email = None
+                            agent_name = None
                             if staff_agent_id:
                                 cursor.execute("""
-                                    SELECT COALESCE(uga.email, sa.email) AS email
+                                    SELECT sa.name, COALESCE(uga.email, sa.email) AS email
                                     FROM staff_agents sa
                                     LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id
                                     WHERE sa.id = %s;
                                 """, (staff_agent_id,))
                                 a_row = cursor.fetchone()
-                                agent_email = a_row["email"] if a_row else None
+                                if a_row:
+                                    agent_name = a_row["name"]
+                                    agent_email = a_row["email"]
                                 
                             details = get_booking_details(customer_id, sr_id)
                             details["time"] = callback_info.get("preferred_time") or "ASAP"
-                            from serviceBot.services.gmail import send_booking_notification
+                            from serviceBot.services.gmail import send_booking_notification, send_admin_notification
                             send_booking_notification("callback", details, agent_email=agent_email)
+                            send_admin_notification("callback", details, mechanic_name=agent_name, mechanic_email=agent_email)
                         except Exception as email_err:
                             print(f"Error triggering webhook callback email: {email_err}")
 
@@ -450,7 +454,8 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
     try:
         if tool_name == "check_availability":
             preferred_date = args.get("preferred_date") or args.get("preferredDate")
-            slots = check_availability(preferred_date=preferred_date)
+            service_type = args.get("service_type") or args.get("serviceType") or args.get("service") or args.get("issue_description") or args.get("issue")
+            slots = check_availability(service_type=service_type, preferred_date=preferred_date)
             result = {
                 "success": True,
                 "available_slots": slots,
@@ -572,24 +577,28 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                     }
                     try:
                         agent_email = None
+                        agent_name = None
                         from serviceBot.db.connection import get_db_connection, dict_cursor
                         with get_db_connection() as conn:
                             with dict_cursor(conn) as cursor:
                                 cursor.execute("""
-                                    SELECT COALESCE(uga.email, sa.email) AS email
+                                    SELECT sa.name, COALESCE(uga.email, sa.email) AS email
                                     FROM service_requests sr
                                     LEFT JOIN staff_agents sa ON sr.staff_agent_id = sa.id
                                     LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id
                                     WHERE sr.id = %s;
                                 """, (sr_id,))
                                 a_row = cursor.fetchone()
-                                agent_email = a_row["email"] if a_row else None
+                                if a_row:
+                                    agent_name = a_row["name"]
+                                    agent_email = a_row["email"]
 
                         details = get_booking_details(customer_id, sr_id)
                         details["time"] = booking_time or "Scheduled"
                         details["service_type"] = service_type
-                        from serviceBot.services.gmail import send_booking_notification
+                        from serviceBot.services.gmail import send_booking_notification, send_admin_notification
                         send_booking_notification("appointment", details, agent_email=agent_email)
+                        send_admin_notification("appointment", details, mechanic_name=agent_name, mechanic_email=agent_email)
                     except Exception as email_err:
                         print(f"Error triggering service request appointment email: {email_err}")
                 elif booking_type == "callback":
@@ -601,23 +610,27 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                     }
                     try:
                         agent_email = None
+                        agent_name = None
                         from serviceBot.db.connection import get_db_connection, dict_cursor
                         with get_db_connection() as conn:
                             with dict_cursor(conn) as cursor:
                                 cursor.execute("""
-                                    SELECT COALESCE(uga.email, sa.email) AS email
+                                    SELECT sa.name, COALESCE(uga.email, sa.email) AS email
                                     FROM service_requests sr
                                     LEFT JOIN staff_agents sa ON sr.staff_agent_id = sa.id
                                     LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id
                                     WHERE sr.id = %s;
                                 """, (sr_id,))
                                 a_row = cursor.fetchone()
-                                agent_email = a_row["email"] if a_row else None
+                                if a_row:
+                                    agent_name = a_row["name"]
+                                    agent_email = a_row["email"]
 
                         details = get_booking_details(customer_id, sr_id)
                         details["time"] = booking_time or "ASAP"
-                        from serviceBot.services.gmail import send_booking_notification
+                        from serviceBot.services.gmail import send_booking_notification, send_admin_notification
                         send_booking_notification("callback", details, agent_email=agent_email)
+                        send_admin_notification("callback", details, mechanic_name=agent_name, mechanic_email=agent_email)
                     except Exception as email_err:
                         print(f"Error triggering service request callback email: {email_err}")
                 else:
@@ -711,25 +724,29 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                         # Trigger email notification
                         try:
                             agent_email = None
+                            agent_name = None
                             from serviceBot.db.connection import get_db_connection, dict_cursor
                             with get_db_connection() as conn:
                                 with dict_cursor(conn) as cursor:
                                     cursor.execute("""
-                                        SELECT COALESCE(uga.email, sa.email) AS email
+                                        SELECT sa.name, COALESCE(uga.email, sa.email) AS email
                                         FROM service_requests sr
                                         JOIN staff_agents sa ON sr.staff_agent_id = sa.id
                                         LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id
                                         WHERE sr.id = %s;
                                     """, (appt_id,))
 
-                                a_row = cursor.fetchone()
-                                agent_email = a_row["email"] if a_row else None
+                                    a_row = cursor.fetchone()
+                                    if a_row:
+                                        agent_name = a_row["name"]
+                                        agent_email = a_row["email"]
 
                             details = get_booking_details(customer_id, appt_id)
                             details["time"] = appointment_datetime
                             details["service_type"] = service_type
-                            from serviceBot.services.gmail import send_booking_notification
+                            from serviceBot.services.gmail import send_booking_notification, send_admin_notification
                             send_booking_notification("appointment", details, agent_email=agent_email)
+                            send_admin_notification("appointment", details, mechanic_name=agent_name, mechanic_email=agent_email)
                         except Exception as email_err:
                             print(f"Error triggering book appointment email: {email_err}")
                     except ValueError as val_err:
@@ -832,19 +849,27 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                             with get_db_connection() as conn:
                                 with dict_cursor(conn) as cursor:
                                     cursor.execute("""
-                                        SELECT COALESCE(uga.email, sa.email) AS email
+                            agent_name = None
+                            from serviceBot.db.connection import get_db_connection, dict_cursor
+                            with get_db_connection() as conn:
+                                with dict_cursor(conn) as cursor:
+                                    cursor.execute("""
+                                        SELECT sa.name, COALESCE(uga.email, sa.email) AS email
                                         FROM service_requests sr
                                         JOIN staff_agents sa ON sr.staff_agent_id = sa.id
                                         LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id
                                         WHERE sr.id = %s;
                                     """, (cb_id,))
                                     a_row = cursor.fetchone()
-                                    agent_email = a_row["email"] if a_row else None
+                                    if a_row:
+                                        agent_name = a_row["name"]
+                                        agent_email = a_row["email"]
 
                             details = get_booking_details(customer_id, cb_id)
                             details["time"] = preferred_time or "ASAP"
-                            from serviceBot.services.gmail import send_booking_notification
+                            from serviceBot.services.gmail import send_booking_notification, send_admin_notification
                             send_booking_notification("callback", details, agent_email=agent_email)
+                            send_admin_notification("callback", details, mechanic_name=agent_name, mechanic_email=agent_email)
                         except Exception as email_err:
                             print(f"Error triggering callback email: {email_err}")
                     except ValueError as val_err:
@@ -911,24 +936,28 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                                 cust_id = c_data["customer_id"]
                             if cust_id:
                                 agent_email = None
+                                agent_name = None
                                 from serviceBot.db.connection import get_db_connection, dict_cursor
                                 with get_db_connection() as conn:
                                     with dict_cursor(conn) as cursor:
                                         cursor.execute("""
-                                            SELECT COALESCE(uga.email, sa.email) AS email
+                                            SELECT sa.name, COALESCE(uga.email, sa.email) AS email
                                             FROM service_requests sr
                                             JOIN staff_agents sa ON sr.staff_agent_id = sa.id
                                             LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id
                                             WHERE sr.id = %s;
                                         """, (appt_id,))
                                         a_row = cursor.fetchone()
-                                        agent_email = a_row["email"] if a_row else None
+                                        if a_row:
+                                            agent_name = a_row["name"]
+                                            agent_email = a_row["email"]
 
 
                                 details = get_booking_details(cust_id, appt_id)
                                 details["time"] = new_datetime
-                                from serviceBot.services.gmail import send_booking_notification
+                                from serviceBot.services.gmail import send_booking_notification, send_admin_notification
                                 send_booking_notification("reschedule", details, agent_email=agent_email)
+                                send_admin_notification("reschedule", details, mechanic_name=agent_name, mechanic_email=agent_email)
                         except Exception as email_err:
                             print(f"Error triggering reschedule email: {email_err}")
                     except Exception as e:

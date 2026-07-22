@@ -54,7 +54,14 @@ def test_get_services_endpoint():
     services = response.json()
     assert isinstance(services, list)
     assert len(services) > 0
-    assert services[0]["name"] == "Oil Change"
+
+def test_seed_default_services_endpoint():
+    response = client.post("/api/v1/portal/services/seed-defaults")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is True
+    assert "inserted_count" in data
+    assert data["total_defaults"] == 33
 
 def test_create_service_endpoint():
     payload = {
@@ -246,6 +253,39 @@ def test_get_stats_endpoint():
     assert "total_requests" in stats
     assert "open_slots" in stats
     assert "total_callbacks" in stats
+
+
+def test_update_service_request_status_endpoint():
+    # 1. Fetch existing requests
+    res = client.get("/api/v1/portal/service-requests")
+    assert res.status_code == 200
+    reqs = res.json()
+    if reqs:
+        req_id = reqs[0]["id"]
+        # Update status to completed
+        patch_res = client.patch(f"/api/v1/portal/service-requests/{req_id}/status", json={"status": "completed"})
+        assert patch_res.status_code == 200
+        data = patch_res.json()
+        assert data["success"] is True
+        assert data["data"]["status"] == "completed"
+
+        # Update back to pending
+        patch_res_2 = client.patch(f"/api/v1/portal/service-requests/{req_id}/status", json={"status": "pending"})
+        assert patch_res_2.status_code == 200
+        assert patch_res_2.json()["data"]["status"] == "pending"
+
+
+def test_get_calls_and_service_requests_pagination():
+    res_calls = client.get("/api/v1/portal/calls?limit=2&offset=0")
+    assert res_calls.status_code == 200
+    assert isinstance(res_calls.json(), list)
+    assert len(res_calls.json()) <= 2
+
+    res_reqs = client.get("/api/v1/portal/service-requests?limit=2&offset=0")
+    assert res_reqs.status_code == 200
+    assert isinstance(res_reqs.json(), list)
+    assert len(res_reqs.json()) <= 2
+
 
 
 

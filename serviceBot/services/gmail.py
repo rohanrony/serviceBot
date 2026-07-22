@@ -452,3 +452,247 @@ def send_booking_notification(booking_type: str, details: dict, agent_email: Opt
             html_body=html_body,
             plain_body=plain_body
         )
+
+def send_admin_notification(booking_type: str, details: dict, mechanic_name: Optional[str] = None, mechanic_email: Optional[str] = None) -> bool:
+    """
+    Sends an admin notification email (CC copy) to the configured admin recipient address,
+    including the details of which mechanic/staff agent was assigned to the service request.
+    """
+    config = load_config()
+    if not config.get("gmail_enabled"):
+        print("Admin Notifications: disabled in settings.")
+        return False
+
+    sender = config.get("gmail_sender", "")
+    admin_recipient = config.get("gmail_recipient", "")
+
+    if not sender or not admin_recipient:
+        print("Admin Notifications: configured incorrectly; missing sender or admin recipient address.")
+        return False
+
+    if booking_type == "appointment":
+        color = "#6366f1"  # Indigo Primary
+        type_title = "Admin Alert: New Appointment Scheduled"
+        time_label = "Appointment Date & Time"
+    elif booking_type == "reschedule":
+        color = "#3b82f6"  # Blue Info
+        type_title = "Admin Alert: Appointment Rescheduled"
+        time_label = "New Date & Time"
+    else:
+        color = "#f59e0b"  # Amber Warning
+        type_title = "Admin Alert: New Callback Requested"
+        time_label = "Preferred Callback Time"
+
+    assigned_str = f"{mechanic_name or 'Staff Member'} ({mechanic_email})" if mechanic_email else (mechanic_name or "Assigned Staff")
+    subject = f"[Admin Copy] {type_title} - Assigned to {mechanic_name or 'Staff'}"
+
+    html_body = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <style>
+            body {{
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+                background-color: #f3f4f6;
+                color: #1f2937;
+                margin: 0;
+                padding: 20px;
+            }}
+            .card {{
+                max-width: 600px;
+                margin: 0 auto;
+                background: #ffffff;
+                border-radius: 12px;
+                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+                border-top: 8px solid {color};
+                overflow: hidden;
+            }}
+            .header {{
+                padding: 24px;
+                text-align: center;
+                background-color: #fdfdfd;
+                border-bottom: 1px solid #f3f4f6;
+            }}
+            .header h1 {{
+                font-size: 20px;
+                font-weight: 700;
+                color: #111827;
+                margin: 0;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+            }}
+            .content {{
+                padding: 24px;
+            }}
+            .table {{
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 12px;
+            }}
+            .table th, .table td {{
+                padding: 12px;
+                text-align: left;
+                border-bottom: 1px solid #f3f4f6;
+                font-size: 14px;
+            }}
+            .table th {{
+                color: #6b7280;
+                font-weight: 500;
+                width: 35%;
+            }}
+            .table td {{
+                color: #111827;
+                font-weight: 600;
+            }}
+            .badge {{
+                display: inline-block;
+                padding: 4px 8px;
+                border-radius: 9999px;
+                font-size: 12px;
+                font-weight: 600;
+                background-color: rgba(99, 102, 241, 0.1);
+                color: #6366f1;
+            }}
+            .footer {{
+                padding: 16px;
+                text-align: center;
+                background-color: #f9fafb;
+                font-size: 11px;
+                color: #9ca3af;
+                border-top: 1px solid #f3f4f6;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <div class="header">
+                <h1>{type_title}</h1>
+            </div>
+            <div class="content">
+                <table class="table">
+                    <tr>
+                        <th>Assigned Mechanic / Staff</th>
+                        <td><span class="badge" style="background-color: rgba(16, 185, 129, 0.1); color: #10b981;">{assigned_str}</span></td>
+                    </tr>
+                    <tr>
+                        <th>Customer Name</th>
+                        <td>{details.get('customer_name', 'N/A')}</td>
+                    </tr>
+                    <tr>
+                        <th>Phone Number</th>
+                        <td>{details.get('phone', 'N/A')}</td>
+                    </tr>
+                    <tr>
+                        <th>Vehicle Details</th>
+                        <td>{details.get('vehicle', 'N/A')}</td>
+                    </tr>
+                    <tr>
+                        <th>Service Type</th>
+                        <td><span class="badge">{details.get('service_type', 'N/A')}</span></td>
+                    </tr>
+                    <tr>
+                        <th>{time_label}</th>
+                        <td><strong style="color: {color};">{details.get('time', 'N/A')}</strong></td>
+                    </tr>
+                    {"<tr><th>Issue Description</th><td>" + details.get('issue') + "</td></tr>" if details.get('issue') else ""}
+                </table>
+            </div>
+            <div class="footer">
+                Admin Notification sent automatically by serviceBot.
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+
+    plain_body = f"""
+    === {type_title} ===
+    Assigned Staff: {assigned_str}
+    Customer: {details.get('customer_name', 'N/A')}
+    Phone: {details.get('phone', 'N/A')}
+    Vehicle: {details.get('vehicle', 'N/A')}
+    Service Type: {details.get('service_type', 'N/A')}
+    {time_label}: {details.get('time', 'N/A')}
+    {"Issue: " + details.get('issue') if details.get('issue') else ""}
+    """
+
+    auth_type = config.get("gmail_auth_type", "app_password")
+    if auth_type == "oauth2":
+        return send_gmail_api_email(
+            sender=sender,
+            recipient=admin_recipient,
+            subject=subject,
+            html_body=html_body,
+            plain_body=plain_body
+        )
+    else:
+        encrypted_pw = config.get("gmail_password", "")
+        server = config.get("gmail_smtp_server", "smtp.gmail.com")
+        port = int(config.get("gmail_smtp_port", 587))
+        return send_smtp_email(
+            sender=sender,
+            encrypted_password=encrypted_pw,
+            recipient=admin_recipient,
+            server=server,
+            port=port,
+            subject=subject,
+            html_body=html_body,
+            plain_body=plain_body
+        )
+
+def create_admin_calendar_event(
+    customer_name: str,
+    service_type: str,
+    issue_description: str,
+    slot_datetime_str: str,
+    mechanic_name: Optional[str] = None,
+    duration_minutes: int = 60
+) -> bool:
+    """
+    Inserts a calendar event into the Admin's Google Calendar using system-level OAuth credentials.
+    """
+    try:
+        access_token = get_gmail_access_token()
+        if not access_token:
+            print("Admin Calendar: No active Google OAuth access token available for system/admin.")
+            return False
+
+        import zoneinfo
+        from datetime import datetime, timedelta
+        tz = zoneinfo.ZoneInfo("America/New_York")
+        start_dt = datetime.strptime(slot_datetime_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=tz)
+        end_dt = start_dt + timedelta(minutes=duration_minutes)
+
+        start_iso = start_dt.isoformat()
+        end_iso = end_dt.isoformat()
+
+        url = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "summary": f"serviceBot Booking - {customer_name} ({mechanic_name or 'Assigned Staff'})",
+            "description": f"Assigned Mechanic: {mechanic_name or 'Unassigned'}\nService Type: {service_type}\nIssue: {issue_description}\nAutomatically logged for Admin by serviceBot.",
+            "start": {
+                "dateTime": start_iso,
+                "timeZone": "America/New_York"
+            },
+            "end": {
+                "dateTime": end_iso,
+                "timeZone": "America/New_York"
+            }
+        }
+
+        response = httpx.post(url, headers=headers, json=payload, timeout=10.0)
+        if response.status_code in [200, 201]:
+            print("Admin Google Calendar event created successfully!")
+            return True
+
+        print(f"Failed to create Admin Google Calendar event (HTTP {response.status_code}): {response.text}")
+        return False
+    except Exception as e:
+        print(f"Exception creating admin calendar event: {str(e)}")
+        return False
+
