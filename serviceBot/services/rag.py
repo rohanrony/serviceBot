@@ -43,13 +43,13 @@ class FAQService:
         if results and "documents" in results and results["documents"]:
             context_snippets = results["documents"][0]
 
-        # Dynamically retrieve the actual services catalog from the SQLite database
+        # Dynamically retrieve the actual services catalog from the database
         try:
-            from serviceBot.db.connection import get_db_connection
+            from serviceBot.db.connection import get_db_connection, dict_cursor
             with get_db_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT name, description, price_range, duration_minutes FROM services")
-                rows = cursor.fetchall()
+                with dict_cursor(conn) as cursor:
+                    cursor.execute("SELECT name, description, price_range, duration_minutes FROM services")
+                    rows = cursor.fetchall()
                 if rows:
                     db_services = []
                     for row in rows:

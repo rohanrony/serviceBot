@@ -16,9 +16,14 @@ def get_db_url():
     is_testing = "pytest" in sys.modules or any("pytest" in arg or "unittest" in arg for arg in sys.argv)
     if is_testing:
         env_val = os.getenv("TEST_DATABASE_URL")
-        if env_val and env_val.startswith("postgresql"):
+        if env_val and (env_val.startswith("postgresql") or env_val.startswith("postgres")):
+            if env_val.startswith("postgres://"):
+                env_val = env_val.replace("postgres://", "postgresql://", 1)
             return env_val
-    return os.getenv("DATABASE_URL", "")
+    url = os.getenv("DATABASE_URL", "")
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql://", 1)
+    return url
 
 
 # Lazy connection pool (initialized on first use)
@@ -29,7 +34,7 @@ def _get_pool():
     global _pool
     if _pool is None:
         db_url = get_db_url()
-        if not db_url or not db_url.startswith("postgresql"):
+        if not db_url or not (db_url.startswith("postgresql") or db_url.startswith("postgres")):
             raise RuntimeError(
                 "DATABASE_URL must be a PostgreSQL connection string "
                 "(e.g. postgresql://user:pass@host/dbname). "

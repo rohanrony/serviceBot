@@ -208,13 +208,13 @@ def save_config(config_data):
         json.dump(config_data, f, indent=2)
 
 def sync_services_to_kb():
-    from serviceBot.db.connection import get_db_connection
+    from serviceBot.db.connection import get_db_connection, dict_cursor
     from serviceBot.services.rag import FAQService
     
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT name, description, price_range, duration_minutes FROM services")
-        rows = cursor.fetchall()
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT name, description, price_range, duration_minutes FROM services")
+            rows = cursor.fetchall()
         
     lines = ["# Auto Service Catalog and Offerings"]
     for row in rows:
