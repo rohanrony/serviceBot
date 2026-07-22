@@ -431,8 +431,9 @@ def book_appointment(customer_id: int, service_request_id: int, appointment_date
     # 1. Enforce that the service requested is in the services catalog
     fields = get_service_required_fields(service_type)
     if not fields:
-        raise ValueError(f"Service '{service_type}' is not found in our catalog. Please choose a valid service from the catalog.")
-    matched_service_name = fields["name"]
+        matched_service_name = service_type if service_type else "Repair"
+    else:
+        matched_service_name = fields["name"]
     
     # 2. Enforce customer and vehicle mandatory checks
     with get_db_connection() as conn:
@@ -480,12 +481,21 @@ def book_appointment(customer_id: int, service_request_id: int, appointment_date
 
             # Sanity check: check if the customer already has an appointment booked for the same vehicle at this slot
             cursor.execute(
-                "SELECT id FROM service_requests WHERE customer_id = %s AND vehicle_id = %s AND booking_type = 'appointment' AND booking_time = %s AND status IN ('pending', 'in_progress');",
+                "SELECT id, service_type, issue_description FROM service_requests WHERE customer_id = %s AND vehicle_id = %s AND booking_type = 'appointment' AND booking_time = %s AND status IN ('pending', 'in_progress');",
                 (customer_id, vehicle_id, appointment_datetime)
             )
             existing_appt = cursor.fetchone()
             if existing_appt:
-                raise ValueError(f"You already have an appointment booked for this vehicle at {appointment_datetime}.")
+                existing_id = existing_appt["id"]
+                curr_service = existing_appt.get("service_type") or ""
+                if matched_service_name and matched_service_name not in curr_service:
+                    new_service_type = f"{curr_service}, {matched_service_name}".strip(", ")
+                    cursor.execute(
+                        "UPDATE service_requests SET service_type = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s;",
+                        (new_service_type, existing_id)
+                    )
+                    conn.commit()
+                return existing_id
 
     if not validate_booking_time(appointment_datetime):
         raise ValueError(f"Booking time {appointment_datetime} is outside company workhours (Monday to Friday, 7:00 AM to 6:00 PM).")
@@ -611,7 +621,21 @@ def find_best_service_match(query_name: str, services_list: list) -> dict:
     if not cleaned_query:
         return None
 
-    query_tokens = set(cleaned_query.split())
+    # First check for exact match
+    for s in services_list:
+        if cleaned_query == clean_str(s["name"]):
+            return s
+
+    # Check if the query matches MULTIPLE distinct services in the catalog
+    matching_services = []
+    for s in services_list:
+        db_name_clean = clean_str(s["name"])
+        if db_name_clean and (db_name_clean in cleaned_query or cleaned_query in db_name_clean):
+            matching_services.append(s)
+
+    # If the user input contains multiple distinct catalog services, return None to trigger multi-service fallback
+    if len(matching_services) > 1:
+        return None
 
     best_match = None
     best_score = 0.0
@@ -620,16 +644,13 @@ def find_best_service_match(query_name: str, services_list: list) -> dict:
         db_name = s["name"]
         cleaned_db = clean_str(db_name)
         db_tokens = set(cleaned_db.split())
+        query_tokens = set(cleaned_query.split())
 
-        # 1. Exact match
-        if cleaned_query == cleaned_db:
-            return s
-
-        # 2. Substring match
+        # Substring match
         if cleaned_query in cleaned_db or cleaned_db in cleaned_query:
             score = 0.8 + (min(len(cleaned_query), len(cleaned_db)) / max(len(cleaned_query), len(cleaned_db))) * 0.19
         else:
-            # 3. Token overlap (Jaccard similarity)
+            # Token overlap (Jaccard similarity)
             intersection = query_tokens.intersection(db_tokens)
             union = query_tokens.union(db_tokens)
             score = len(intersection) / len(union) if union else 0.0
@@ -659,7 +680,21 @@ def get_service_required_fields(service_name: str) -> dict:
             cursor.execute(query)
             rows = [dict(row) for row in cursor.fetchall()]
         
-    return find_best_service_match(service_name, rows)
+    match = find_best_service_match(service_name, rows)
+    if match:
+        return match
+
+    return {
+        "name": service_name,
+        "description": "Vehicle service and repair",
+        "price_range": "Varies by service",
+        "duration_minutes": 60,
+        "req_customer_name": True,
+        "req_phone_number": True,
+        "req_vehicle_details": True,
+        "req_issue_description": True,
+        "req_location": False
+    }
 
 def create_crm_note(call_id: str, customer_id: int, summary: str, transcript: str) -> int:
     """
