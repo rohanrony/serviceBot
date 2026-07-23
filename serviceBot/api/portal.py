@@ -1301,9 +1301,7 @@ async def gmail_oauth_callback(request: Request, code: str = None, error: str = 
             from serviceBot.db.connection import get_db_connection, dict_cursor
             with get_db_connection() as conn:
                 with dict_cursor(conn) as cursor:
-                    # Update staff agent name and email dynamically to match connected Google account
-                    if google_name:
-                        cursor.execute("UPDATE staff_agents SET name = %s WHERE id = %s;", (google_name, agent_id))
+                    # Update staff agent email dynamically to match connected Google account (retaining original agent name)
                     if email:
                         cursor.execute("UPDATE staff_agents SET email = %s WHERE id = %s;", (email, agent_id))
                     

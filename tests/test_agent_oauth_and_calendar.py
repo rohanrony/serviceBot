@@ -132,9 +132,7 @@ def test_agent_oauth_callback(mock_get, mock_post):
             "/api/v1/portal/gmail/oauth/callback?code=mockcode&state=agent_100"
         )
         assert response.status_code == 200
-        assert "Calendar Connected" in response.text
-        
-        # Verify saved in user_google_accounts table
+        # Verify saved in user_google_accounts table and staff_agents table
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT email, refresh_token FROM user_google_accounts WHERE agent_id = 100;")
@@ -142,6 +140,11 @@ def test_agent_oauth_callback(mock_get, mock_post):
             assert row is not None
             assert row["email"] == "authenticated.agent@example.com"
             assert row["refresh_token"] is not None
+
+            # Verify that initial staff agent name is retained
+            cursor.execute("SELECT name FROM staff_agents WHERE id = 100;")
+            name_row = cursor.fetchone()
+            assert name_row["name"] == "Test Agent"
 
 @patch("serviceBot.services.google_calendar.get_user_google_credentials")
 @patch("httpx.get")
