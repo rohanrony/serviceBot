@@ -478,13 +478,18 @@ def send_admin_notification(booking_type: str, details: dict, mechanic_name: Opt
         color = "#3b82f6"  # Blue Info
         type_title = "Admin Alert: Appointment Rescheduled"
         time_label = "New Date & Time"
+    elif booking_type in ["reassign", "reassigned"]:
+        color = "#8b5cf6"  # Purple Reassigned
+        type_title = "Admin Alert: Agent Switched / Appointment Reassigned"
+        time_label = "Appointment Date & Time"
     else:
         color = "#f59e0b"  # Amber Warning
         type_title = "Admin Alert: New Callback Requested"
         time_label = "Preferred Callback Time"
 
     assigned_str = f"{mechanic_name or 'Staff Member'} ({mechanic_email})" if mechanic_email else (mechanic_name or "Assigned Staff")
-    subject = f"[Admin Copy] {type_title} - Assigned to {mechanic_name or 'Staff'}"
+    subject = f"[Admin Copy] {type_title} - Reassigned to {mechanic_name or 'Staff'}"
+
 
     html_body = f"""
     <!DOCTYPE html>
@@ -575,6 +580,8 @@ def send_admin_notification(booking_type: str, details: dict, mechanic_name: Opt
                         <th>Assigned Mechanic / Staff</th>
                         <td><span class="badge" style="background-color: rgba(16, 185, 129, 0.1); color: #10b981;">{assigned_str}</span></td>
                     </tr>
+                    {"<tr><th>Previous Agent</th><td>" + str(details.get('previous_agent_name')) + "</td></tr>" if details.get('previous_agent_name') else ""}
+
                     <tr>
                         <th>Customer Name</th>
                         <td>{details.get('customer_name', 'N/A')}</td>
@@ -670,11 +677,19 @@ def create_admin_calendar_event(
         start_iso = start_dt.isoformat()
         end_iso = end_dt.isoformat()
 
+        config = load_config()
+        admin_recipient = config.get("gmail_recipient", "")
+
         url = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
+        params = {"sendUpdates": "all"}
         headers = {
             "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json"
         }
+        attendees = []
+        if admin_recipient:
+            attendees.append({"email": admin_recipient})
+
         payload = {
             "summary": f"serviceBot Booking - {customer_name} ({mechanic_name or 'Assigned Staff'})",
             "description": f"Assigned Mechanic: {mechanic_name or 'Unassigned'}\nService Type: {service_type}\nIssue: {issue_description}\nAutomatically logged for Admin by serviceBot.",
@@ -685,10 +700,11 @@ def create_admin_calendar_event(
             "end": {
                 "dateTime": end_iso,
                 "timeZone": "America/New_York"
-            }
+            },
+            "attendees": attendees
         }
 
-        response = httpx.post(url, headers=headers, json=payload, timeout=10.0)
+        response = httpx.post(url, headers=headers, params=params, json=payload, timeout=10.0)
         if response.status_code in [200, 201]:
             print("Admin Google Calendar event created successfully!")
             return True

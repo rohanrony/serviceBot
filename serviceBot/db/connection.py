@@ -159,6 +159,22 @@ CREATE TABLE IF NOT EXISTS oauth_states (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (agent_id) REFERENCES staff_agents(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS outbox_notifications (
+    id SERIAL PRIMARY KEY,
+    event_type VARCHAR(50) NOT NULL,
+    request_id INTEGER DEFAULT NULL,
+    payload JSONB NOT NULL,
+    attempts INTEGER DEFAULT 0,
+    max_attempts INTEGER DEFAULT 7,
+    status VARCHAR(50) DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'PROCESSING', 'DELIVERED', 'FAILED_REVERTED')),
+    next_retry_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    error_log TEXT DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_outbox_status_next_retry ON outbox_notifications(status, next_retry_at);
 """
 
 _db_initialized = False
@@ -248,23 +264,41 @@ def get_db_connection():
     """Context manager yielding a psycopg2 connection with RealDictCursor support."""
     global _db_initialized
     db_url = get_db_url()
+    conn = None
     try:
         if not _db_initialized:
             init_db(db_url)
 
         pool = _get_pool()
         conn = pool.getconn()
+        if conn and conn.closed != 0:
+            try:
+                pool.putconn(conn, close=True)
+            except Exception:
+                pass
+            conn = pool.getconn()
+
         conn.autocommit = False
         try:
             yield conn
-            conn.commit()
+            if conn and conn.closed == 0:
+                conn.commit()
         except Exception:
-            conn.rollback()
+            if conn and conn.closed == 0:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
             raise
         finally:
-            pool.putconn(conn)
+            if conn:
+                is_closed = (conn.closed != 0)
+                try:
+                    pool.putconn(conn, close=is_closed)
+                except Exception:
+                    pass
     except Exception as err:
-        print(f"[get_db_connection] Database connection unavailable: {err}")
+        print(f"[get_db_connection] Database connection error: {err}")
         raise
 
 

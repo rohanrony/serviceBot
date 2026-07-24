@@ -233,7 +233,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (targetReq) {
         targetReq.staff_agent_id = parsedId;
       }
-      showToast(`Agent assigned for Service Request #${requestId}!`, 'success');
+      showToast(`Agent reassigned for Service Request #${requestId}! Slot updated, old invite cancelled & admin notified.`, 'success');
+
     } catch (err) {
       showToast(err.message, 'danger');
     }
@@ -452,7 +453,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 agents.forEach(a => {
                   const isSel = a.id === req.staff_agent_id ? 'selected' : '';
                   const statusText = a.is_available ? '(Available)' : `(Busy - ${a.reason})`;
-                  html += `<option value="${a.id}" ${isSel}>${a.name} ${statusText}</option>`;
+                  const emailSuffix = a.email ? ` - ${a.email}` : '';
+                  html += `<option value="${a.id}" ${isSel}>${a.name}${emailSuffix} ${statusText}</option>`;
                 });
                 agentSelect.innerHTML = html;
               }
@@ -1278,9 +1280,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const connectCalendarBtn = document.getElementById('connect-agent-calendar-btn');
     const gmailBadge = document.getElementById('agent-gmail-status-badge');
     const connectGmailBtn = document.getElementById('connect-agent-gmail-btn');
+    const agentEmailDisplay = document.getElementById('agent-email-status-display');
     
     if (!calendarBadge || !connectCalendarBtn || !gmailBadge || !connectGmailBtn) return;
     
+    const selectedOpt = Array.from(staffAgentSelector.options || []).find(opt => opt.value == selectedAgentId);
+    const fallbackEmail = selectedOpt ? selectedOpt.dataset.email : '';
+
     if (!selectedAgentId) {
       calendarBadge.className = 'badge danger';
       calendarBadge.textContent = 'Disconnected';
@@ -1299,6 +1305,7 @@ document.addEventListener('DOMContentLoaded', () => {
       connectGmailBtn.disabled = true;
       
       if (deleteAgentProfileBtn) deleteAgentProfileBtn.disabled = true;
+      if (agentEmailDisplay) agentEmailDisplay.textContent = 'No agent selected';
       return;
     }
     
@@ -1314,6 +1321,17 @@ document.addEventListener('DOMContentLoaded', () => {
       
       const calendarConnected = status.is_connected && status.scopes.includes('https://www.googleapis.com/auth/calendar.events');
       const gmailConnected = status.is_connected && status.scopes.includes('https://www.googleapis.com/auth/gmail.send');
+      
+      if (agentEmailDisplay) {
+        const activeEmail = status.email || fallbackEmail;
+        if (activeEmail) {
+          agentEmailDisplay.textContent = activeEmail;
+        } else if (calendarConnected || gmailConnected || status.is_connected) {
+          agentEmailDisplay.textContent = 'Connected (Google Account)';
+        } else {
+          agentEmailDisplay.textContent = 'No email configured';
+        }
+      }
       
       if (calendarConnected) {
         calendarBadge.className = 'badge success';
@@ -1348,6 +1366,9 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch (err) {
       console.error('Error fetching Google connection status:', err);
+      if (agentEmailDisplay) {
+        agentEmailDisplay.textContent = fallbackEmail || 'No email configured';
+      }
     }
   }
 
@@ -1372,7 +1393,8 @@ document.addEventListener('DOMContentLoaded', () => {
       agents.forEach(agent => {
         const opt = document.createElement('option');
         opt.value = agent.id;
-        opt.textContent = `${agent.name} (${agent.role || 'Service Agent'})`;
+        const emailSuffix = agent.email ? ` - ${agent.email}` : '';
+        opt.textContent = `${agent.name} (${agent.role || 'Service Agent'})${emailSuffix}`;
         opt.dataset.email = agent.email || '';
         staffAgentSelector.appendChild(opt);
       });

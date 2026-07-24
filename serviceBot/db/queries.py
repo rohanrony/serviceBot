@@ -1,4 +1,7 @@
 from serviceBot.db.connection import get_db_connection, dict_cursor
+import datetime as dt_mod
+from datetime import timedelta
+
 
 def lookup_customer_by_phone(phone: str) -> dict:
     """
@@ -1132,14 +1135,111 @@ def update_service_request_status(request_id: int, status: str) -> dict:
 def assign_staff_agent_to_service_request(request_id: int, staff_agent_id: int = None) -> dict:
     """
     Assigns or updates the assigned staff agent / technician for a service request.
+    Triggers slot booking changes in mock_calendar_slots, cancels the old agent's Google Calendar invite,
+    sends a new Google Calendar invite & email to the new agent, and updates the Admin via email and calendar.
     """
+    import datetime as dt_mod
+    from serviceBot.services.google_calendar import delete_agent_calendar_event, create_agent_calendar_event
+    from serviceBot.services.gmail import send_booking_notification, send_admin_notification, create_admin_calendar_event
+
+
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
+            # 1. Fetch current service request and related customer/vehicle details
+            cursor.execute("""
+                SELECT sr.id, sr.staff_agent_id, sr.booking_time, sr.time_slot, sr.service_type, sr.issue_description,
+                       sr.customer_id, sr.vehicle_id,
+                       c.name AS customer_name, c.phone AS customer_phone,
+                       v.year AS vehicle_year, v.make AS vehicle_make, v.model AS vehicle_model
+                FROM service_requests sr
+                LEFT JOIN customers c ON sr.customer_id = c.id
+                LEFT JOIN vehicles v ON sr.vehicle_id = v.id
+                WHERE sr.id = %s;
+            """, (request_id,))
+            sr = cursor.fetchone()
+            if not sr:
+                raise ValueError(f"Service request with ID {request_id} not found.")
+
+            old_agent_id = sr.get("staff_agent_id")
+            old_agent_name = None
+            old_agent_email = None
+            if old_agent_id:
+                cursor.execute("SELECT name, email FROM staff_agents WHERE id = %s;", (old_agent_id,))
+                oa_row = cursor.fetchone()
+                if oa_row:
+                    old_agent_name = oa_row["name"]
+                    old_agent_email = oa_row["email"]
+
+            new_agent_name = None
+            new_agent_email = None
             if staff_agent_id is not None:
-                cursor.execute("SELECT id, name FROM staff_agents WHERE id = %s;", (staff_agent_id,))
-                if not cursor.fetchone():
+                cursor.execute("SELECT id, name, email FROM staff_agents WHERE id = %s;", (staff_agent_id,))
+                na_row = cursor.fetchone()
+                if not na_row:
                     raise ValueError(f"Staff agent with ID {staff_agent_id} does not exist.")
-            
+                new_agent_name = na_row["name"]
+                new_agent_email = na_row["email"]
+
+            # 2. Check if agent is being switched/reassigned
+            is_agent_changed = (old_agent_id != staff_agent_id)
+            booking_time_str = sr.get("booking_time") or sr.get("time_slot")
+            if isinstance(booking_time_str, dt_mod.datetime):
+                booking_time_str = booking_time_str.strftime("%Y-%m-%d %H:%M:%S")
+
+            if is_agent_changed and booking_time_str and str(booking_time_str).upper() != "ASAP":
+                # --- A. Slot Booking Changes ---
+                # Unbook slot for previous agent if present
+                if old_agent_id:
+                    cursor.execute(
+                        "UPDATE mock_calendar_slots SET is_booked = FALSE WHERE staff_agent_id = %s AND slot_datetime = CAST(%s AS TIMESTAMP);",
+                        (old_agent_id, str(booking_time_str)[:19])
+                    )
+
+                # Reserve slot for new agent if present
+                if staff_agent_id is not None:
+                    cursor.execute(
+                        "SELECT id FROM mock_calendar_slots WHERE staff_agent_id = %s AND slot_datetime = CAST(%s AS TIMESTAMP);",
+                        (staff_agent_id, str(booking_time_str)[:19])
+                    )
+                    existing_slot = cursor.fetchone()
+                    if existing_slot:
+                        cursor.execute(
+                            "UPDATE mock_calendar_slots SET is_booked = TRUE WHERE id = %s;",
+                            (existing_slot["id"],)
+                        )
+                    else:
+                        cursor.execute(
+                            "INSERT INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES (CAST(%s AS TIMESTAMP), TRUE, %s) ON CONFLICT (slot_datetime, staff_agent_id) DO UPDATE SET is_booked = TRUE;",
+                            (str(booking_time_str)[:19], staff_agent_id)
+                        )
+
+                # Prepare details dictionary for email notifications
+                v_parts = [sr.get("vehicle_year"), sr.get("vehicle_make"), sr.get("vehicle_model")]
+                v_str = " ".join([str(p) for p in v_parts if p]).strip() or "N/A"
+                details = {
+                    "customer_name": sr.get("customer_name") or "Unknown Customer",
+                    "phone": sr.get("customer_phone") or "N/A",
+                    "vehicle": v_str,
+                    "service_type": sr.get("service_type") or "N/A",
+                    "time": str(booking_time_str)[:19],
+                    "issue": sr.get("issue_description") or "",
+                    "previous_agent_name": old_agent_name or "Unassigned"
+                }
+
+                # Transactional Outbox Event: Atomically enqueue outbox record in same DB transaction
+                from serviceBot.services.outbox_worker import enqueue_outbox_event
+                outbox_payload = {
+                    "old_agent_id": old_agent_id,
+                    "old_agent_name": old_agent_name,
+                    "new_agent_id": staff_agent_id,
+                    "new_agent_name": new_agent_name,
+                    "new_agent_email": new_agent_email,
+                    "booking_time_str": str(booking_time_str)[:19] if booking_time_str else None,
+                    "details": details
+                }
+                enqueue_outbox_event(cursor, "agent_reassignment", request_id, outbox_payload)
+
+            # 3. Update database record
             cursor.execute(
                 "UPDATE service_requests SET staff_agent_id = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s RETURNING id, staff_agent_id, status, updated_at;",
                 (staff_agent_id, request_id)
@@ -1148,6 +1248,7 @@ def assign_staff_agent_to_service_request(request_id: int, staff_agent_id: int =
             if not row:
                 raise ValueError(f"Service request with ID {request_id} not found.")
             return dict(row)
+
 
 
 def get_available_agents_for_request(request_id: int) -> list:

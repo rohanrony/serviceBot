@@ -13,7 +13,7 @@ class GoogleAuthException(Exception):
     """Custom exception for expired, invalid, revoked, or insufficient Google credentials."""
     pass
 
-def get_user_google_credentials(agent_id: int) -> dict:
+def get_user_google_credentials(agent_id: int, force_refresh: bool = False) -> dict:
     """
     Loads, checks, and automatically refreshes Google credentials for a staff agent from `user_google_accounts`.
     Returns a dictionary containing:
@@ -58,8 +58,8 @@ def get_user_google_credentials(agent_id: int) -> dict:
     granted_scopes_str = row["granted_scopes"] or ""
     scopes = set(granted_scopes_str.split())
 
-    # Refresh 60 seconds before actual expiration
-    if expires_at - 60 < time.time():
+    # Refresh 60 seconds before actual expiration or if forced
+    if force_refresh or (expires_at - 60 < time.time()):
         if not refresh_token:
             raise GoogleAuthException("Google access token is expired and refresh token is missing. Please reconnect.")
 
@@ -172,6 +172,16 @@ def is_agent_free(agent_id: int, slot_datetime_str: str, duration_minutes: int =
         }
         
         response = httpx.get(url, headers=headers, params=params, timeout=10.0)
+        if response.status_code == 401:
+            print(f"Agent {agent_id} Google Calendar 401 Unauthorized. Retrying with forced token refresh...")
+            try:
+                creds = get_user_google_credentials(agent_id, force_refresh=True)
+                headers["Authorization"] = f"Bearer {creds['access_token']}"
+                response = httpx.get(url, headers=headers, params=params, timeout=10.0)
+            except Exception as ref_err:
+                print(f"Forced token refresh for agent {agent_id} failed: {ref_err}")
+                return True
+
         if response.status_code == 403:
             print(f"Agent {agent_id} Google Calendar forbidden (403): Workspace admin block or scope disabled.")
             return True
@@ -227,11 +237,19 @@ def create_agent_calendar_event(
         start_iso = start_dt.isoformat()
         end_iso = end_dt.isoformat()
 
+        config = load_config()
+        admin_recipient = config.get("gmail_recipient", "")
+
         url = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
+        params = {"sendUpdates": "all"}
         headers = {
             "Authorization": f"Bearer {creds['access_token']}",
             "Content-Type": "application/json"
         }
+        attendees = []
+        if admin_recipient:
+            attendees.append({"email": admin_recipient})
+
         payload = {
             "summary": f"serviceBot Appointment - {customer_name}",
             "description": f"Service Type: {service_type}\nIssue: {issue_description}\nAutomatically booked by serviceBot.",
@@ -242,10 +260,11 @@ def create_agent_calendar_event(
             "end": {
                 "dateTime": end_iso,
                 "timeZone": "America/New_York"
-            }
+            },
+            "attendees": attendees
         }
         
-        response = httpx.post(url, headers=headers, json=payload, timeout=10.0)
+        response = httpx.post(url, headers=headers, params=params, json=payload, timeout=10.0)
         if response.status_code in [200, 201]:
             print(f"Google Calendar event created successfully for agent {agent_id}!")
             return True
@@ -290,6 +309,16 @@ def fetch_agent_events(agent_id: int, start_iso: str, end_iso: str) -> Optional[
         
         print(f"Pre-fetching Google Calendar events for agent {agent_id} from {start_iso} to {end_iso}...")
         response = httpx.get(url, headers=headers, params=params, timeout=10.0)
+        if response.status_code == 401:
+            print(f"Agent {agent_id} calendar pre-fetch 401 Unauthorized. Retrying with forced token refresh...")
+            try:
+                creds = get_user_google_credentials(agent_id, force_refresh=True)
+                headers["Authorization"] = f"Bearer {creds['access_token']}"
+                response = httpx.get(url, headers=headers, params=params, timeout=10.0)
+            except Exception as ref_err:
+                print(f"Forced token refresh for agent {agent_id} failed: {ref_err}")
+                return []
+
         if response.status_code == 403:
             raise GoogleAuthException("Workspace admin blocked access or calendar API is disabled.")
         elif response.status_code != 200:
@@ -368,3 +397,64 @@ def parse_google_datetime(dt_dict: dict, tz) -> Optional[datetime]:
         val = dt_dict["date"]
         return datetime.strptime(val, "%Y-%m-%d").replace(tzinfo=tz)
     return None
+
+
+def delete_agent_calendar_event(
+    agent_id: int, 
+    slot_datetime_str: str, 
+    duration_minutes: int = 60
+) -> bool:
+    """
+    Finds and deletes/cancels a Google Calendar event for an agent matching a specific slot time.
+    """
+    try:
+        creds = get_user_google_credentials(agent_id)
+        scopes = creds["granted_scopes"]
+        write_scopes = {
+            "https://www.googleapis.com/auth/calendar",
+            "https://www.googleapis.com/auth/calendar.events"
+        }
+        if not (scopes & write_scopes):
+            print(f"Agent {agent_id} Google Calendar error: Insufficient scope to delete calendar events.")
+            return False
+
+        try:
+            tz = zoneinfo.ZoneInfo("America/New_York")
+        except Exception:
+            from datetime import timezone
+            tz = timezone(timedelta(hours=-4))
+
+        start_dt = datetime.strptime(slot_datetime_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=tz)
+        end_dt = start_dt + timedelta(minutes=duration_minutes)
+
+        start_iso = (start_dt - timedelta(minutes=5)).isoformat()
+        end_iso = (end_dt + timedelta(minutes=5)).isoformat()
+
+        events = fetch_agent_events(agent_id, start_iso, end_iso)
+        if not events:
+            print(f"No events found to cancel for agent {agent_id} at {slot_datetime_str}")
+            return False
+
+        cancelled_any = False
+        headers = {
+            "Authorization": f"Bearer {creds['access_token']}",
+            "Content-Type": "application/json"
+        }
+
+        for ev in events:
+            summary = ev.get("summary", "")
+            if "serviceBot" in summary or "Appointment" in summary:
+                event_id = ev.get("id")
+                if event_id:
+                    del_url = f"https://www.googleapis.com/calendar/v3/calendars/primary/events/{event_id}"
+                    res = httpx.delete(del_url, headers=headers, timeout=10.0)
+                    if res.status_code in [200, 204]:
+                        print(f"Cancelled Google Calendar event {event_id} for agent {agent_id}")
+                        cancelled_any = True
+                    else:
+                        print(f"Failed to delete event {event_id} (HTTP {res.status_code}): {res.text}")
+        return cancelled_any
+    except Exception as e:
+        print(f"Exception cancelling calendar event for agent {agent_id}: {str(e)}")
+        return False
+

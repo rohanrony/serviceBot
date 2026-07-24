@@ -381,6 +381,7 @@ def main():
         
         # Insert default catalog items if they do not already exist (preserving user-added catalog items)
         for svc in SERVICES_DATA:
+            name, desc, price, dur, r_name, r_phone, r_veh, r_issue, r_loc = svc
             cursor.execute("""
                 INSERT INTO services (
                     name, description, price_range, duration_minutes, 
@@ -390,7 +391,7 @@ def main():
                 WHERE NOT EXISTS (
                     SELECT 1 FROM services WHERE LOWER(name) = LOWER(%s)
                 );
-            """, (*svc, svc[0]))
+            """, (name, desc, price, dur, bool(r_name), bool(r_phone), bool(r_veh), bool(r_issue), bool(r_loc), name))
             
         conn.commit()
         
