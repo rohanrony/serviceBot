@@ -504,13 +504,16 @@ async def get_staff_agents():
                 LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id;
             """)
             rows = cursor.fetchall()
+            config = load_config()
+            system_email = config.get("gmail_sender") or os.getenv("GMAIL_SENDER") or None
             agents = []
             for row in rows:
+                resolved_email = row["google_email"] or row["db_email"] or system_email
                 d = {
                     "id": row["id"],
                     "name": row["name"],
                     "role": row["role"],
-                    "email": row["google_email"] or row["db_email"],
+                    "email": resolved_email,
                     "is_connected": bool(row["google_email"])
                 }
                 agents.append(d)
@@ -628,20 +631,25 @@ async def get_agent_google_status(agent_id: int):
     from serviceBot.db.connection import get_db_connection, dict_cursor
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
-            cursor.execute("SELECT id FROM staff_agents WHERE id = %s;", (agent_id,))
-            if not cursor.fetchone():
+            cursor.execute("SELECT id, email FROM staff_agents WHERE id = %s;", (agent_id,))
+            sa_row = cursor.fetchone()
+            if not sa_row:
                 raise HTTPException(status_code=404, detail="Agent not found")
                 
             cursor.execute("SELECT email, granted_scopes FROM user_google_accounts WHERE agent_id = %s;", (agent_id,))
             row = cursor.fetchone()
         
+    config = load_config()
+    system_email = config.get("gmail_sender") or os.getenv("GMAIL_SENDER") or None
+
+    db_email = sa_row["email"] if sa_row else None
     if not row:
-        return {"is_connected": False, "email": None, "scopes": []}
+        return {"is_connected": False, "email": db_email or system_email, "scopes": []}
         
     scopes = row["granted_scopes"].split() if row["granted_scopes"] else []
     return {
         "is_connected": True,
-        "email": row["email"],
+        "email": row["email"] or db_email or system_email,
         "scopes": scopes
     }
 
@@ -1172,7 +1180,7 @@ async def get_gmail_oauth_url(request: Request):
         raise HTTPException(status_code=400, detail="Google Client ID is not configured. Please save it in Gmail Settings or set GOOGLE_CLIENT_ID in your .env file.")
         
     redirect_uri = _get_oauth_redirect_uri(request)
-    scope = "https://www.googleapis.com/auth/gmail.send"
+    scope = "openid email profile https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/calendar.events"
     
     auth_url = (
         "https://accounts.google.com/o/oauth2/v2/auth?"

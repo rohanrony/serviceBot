@@ -56,4 +56,3 @@ Use reassuring phrases so the caller knows what to expect and experiences zero d
 - Saving / Booking Service Request: *"Please wait a moment, getting that service request booked for you now..."*, *"Saving those details for you, one moment..."*
 - Transferring: *"Connecting you with a service advisor now, please hold..."*
 Speak the filler phrase naturally so the caller understands a lookup is happening and the brief wait is expected.
-

@@ -71,7 +71,12 @@ async def lifespan(app: FastAPI):
         name="calendar-slot-refresh",
     )
     sync_thread.start()
-    print("[calendar_sync] Hourly background slot refresh thread started.")
+    # 4. Start Outbox background worker thread for ACID notifications
+    try:
+        from serviceBot.services.outbox_worker import start_outbox_worker
+        start_outbox_worker()
+    except Exception as e:
+        print(f"[outbox_worker] Warning: Failed to launch outbox worker: {e}")
 
     yield
 

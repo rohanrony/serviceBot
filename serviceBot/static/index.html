@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
   <!-- Stylesheets -->
-  <link rel="stylesheet" href="style.css?v=14">
+  <link rel="stylesheet" href="style.css?v=15">
 </head>
 <body>
 
@@ -467,6 +467,10 @@
               </div>
               
               <div id="agent-calendar-connection-status" class="connection-status-panel">
+                <div class="connection-status-row">
+                  <span style="color: var(--text-muted);">Agent Email:</span>
+                  <span id="agent-email-status-display" style="font-weight: 500; font-size: 11px; color: var(--text-main);">No email configured</span>
+                </div>
                 <div class="connection-status-row">
                   <span style="color: var(--text-muted);">Google Calendar:</span>
                   <div style="display: flex; align-items: center; gap: 8px;">
@@ -955,6 +959,6 @@
   <div class="toast" id="app-toast">Action completed successfully</div>
 
   <!-- Javascript Logic -->
-  <script src="app.js?v=16"></script>
+  <script src="app.js?v=17"></script>
 </body>
 </html>
