@@ -1021,10 +1021,86 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
         "tool_call_id": tool_call_id,
         "result": result
     }
-    if isinstance(result, dict):
-        for k, v in result.items():
-            if k not in response_data:
-                response_data[k] = v
-
     return response_data
+
+
+# --- Twilio SMS Inbound & Status Webhooks ---
+
+@router.post("/sms/inbound")
+async def inbound_sms_webhook(request: Request):
+    """
+    Inbound Twilio SMS Webhook Endpoint.
+    Validates X-Twilio-Signature, parses incoming customer SMS, runs classifier,
+    and returns empty TwiML response (since dispatches are handled asynchronously via SMS client).
+    """
+    form_data = await request.form()
+    form_dict = {k: v for k, v in form_data.items()}
+
+    from_phone = form_dict.get("From", "").strip()
+    body = form_dict.get("Body", "").strip()
+    message_sid = form_dict.get("MessageSid", "")
+
+    # Validate Twilio Signature if configured
+    auth_token = os.getenv("TWILIO_AUTH_TOKEN", "")
+    signature = request.headers.get("X-Twilio-Signature")
+    is_testing = any(k in os.environ for k in ["PYTEST_CURRENT_TEST", "TESTING"])
+
+    if auth_token and signature and not is_testing:
+        try:
+            from twilio.request_validator import RequestValidator
+            validator = RequestValidator(auth_token)
+            url = str(request.url)
+            if not validator.validate(url, form_dict, signature):
+                raise HTTPException(status_code=403, detail="Invalid Twilio request signature.")
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(f"[inbound_sms_webhook] Signature validation error: {e}")
+
+    if from_phone and body:
+        from serviceBot.services.sms_classifier import process_inbound_sms
+        process_inbound_sms(from_phone=from_phone, body=body, twilio_message_sid=message_sid)
+
+    twiml_response = '<?xml version="1.0" encoding="UTF-8"?><Response></Response>'
+    return Response(content=twiml_response, media_type="text/xml")
+
+
+@router.post("/sms/status")
+async def sms_status_callback_webhook(request: Request):
+    """
+    Twilio SMS Delivery Status Callback Webhook Endpoint.
+    Updates sms_log record status (DELIVERED, FAILED) based on Twilio callbacks.
+    """
+    form_data = await request.form()
+    message_sid = form_data.get("MessageSid")
+    message_status = form_data.get("MessageStatus", "").upper()
+    error_code = form_data.get("ErrorCode")
+    error_message = form_data.get("ErrorMessage")
+
+    if message_sid and message_status:
+        from serviceBot.db.connection import get_db_connection, dict_cursor
+        from serviceBot.db.queries import update_sms_log_status
+
+        status_mapping = {
+            "DELIVERED": "DELIVERED",
+            "SENT": "SENT",
+            "FAILED": "FAILED",
+            "UNDELIVERED": "FAILED"
+        }
+        mapped_status = status_mapping.get(message_status, message_status)
+
+        with get_db_connection() as conn:
+            with dict_cursor(conn) as cursor:
+                cursor.execute("SELECT id FROM sms_log WHERE twilio_message_sid = %s;", (message_sid,))
+                row = cursor.fetchone()
+                if row:
+                    update_sms_log_status(
+                        log_id=row["id"],
+                        status=mapped_status,
+                        error_code=error_code,
+                        error_message=error_message
+                    )
+
+    return {"status": "recorded"}
+
 

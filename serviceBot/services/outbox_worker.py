@@ -85,9 +85,12 @@ def process_outbox_batch(batch_size: int = 10):
                     err_msg = f"{type(err).__name__}: {str(err)}\n{traceback.format_exc()}"
                     new_attempts = attempts + 1
 
-                    if new_attempts >= max_attempts:
-                        # --- REVERT & COMPENSATION ON 7 FAILURES ---
-                        print(f"[OUTBOX CRITICAL] Event {item_id} ({event_type}) reached {max_attempts} failures! Executing compensating transaction...")
+                    # Hard failure error codes (30003, 30005, 30006, 21610) terminate retry loop immediately
+                    is_hard_failure = any(code in str(err) for code in ["30003", "30005", "30006", "21610"])
+
+                    if new_attempts >= max_attempts or is_hard_failure:
+                        # --- REVERT & COMPENSATION ON FAILURES ---
+                        print(f"[OUTBOX CRITICAL] Event {item_id} ({event_type}) failed! Hard Failure: {is_hard_failure}. Executing compensating transaction...")
                         _execute_revert_compensation(conn, event_type, request_id, payload, err_msg)
                         with dict_cursor(conn) as cursor:
                             cursor.execute(
@@ -100,8 +103,13 @@ def process_outbox_batch(batch_size: int = 10):
                             )
                         conn.commit()
                     else:
-                        # --- EXPONENTIAL BACKOFF RETRY ---
-                        delay_seconds = 2 ** new_attempts  # 2s, 4s, 8s, 16s, 32s, 64s, 128s
+                        # --- EXPONENTIAL / SMS BACKOFF RETRY ---
+                        if event_type.startswith("sms_"):
+                            sms_backoffs = {1: 30, 2: 120, 3: 600}
+                            delay_seconds = sms_backoffs.get(new_attempts, 600)
+                        else:
+                            delay_seconds = 2 ** new_attempts  # 2s, 4s, 8s, 16s, 32s, 64s, 128s
+
                         print(f"[outbox] Event {item_id} failed attempt {new_attempts}/{max_attempts}. Retrying in {delay_seconds}s. Error: {err}")
                         with dict_cursor(conn) as cursor:
                             cursor.execute(
@@ -117,6 +125,7 @@ def process_outbox_batch(batch_size: int = 10):
                                 (new_attempts, str(delay_seconds), err_msg, item_id)
                             )
                         conn.commit()
+
 
     except Exception as outer_err:
         print(f"[outbox_worker] Batch processing exception: {outer_err}")
@@ -185,6 +194,21 @@ def _dispatch_outbox_event(event_type: str, request_id: Optional[int], payload: 
             )
 
         send_admin_notification(booking_type, details, mechanic_name=agent_name, mechanic_email=agent_email)
+
+    elif event_type.startswith("sms_"):
+        from serviceBot.services.sms_router import SMSNotificationRouter
+        router_svc = SMSNotificationRouter()
+        sms_event_type = payload.get("sms_event_type", event_type.replace("sms_", "").upper())
+        router_svc.process_event(
+            event_type=sms_event_type,
+            appointment_id=request_id or payload.get("appointment_id"),
+            customer_phone=payload.get("customer_phone"),
+            agent_phone=payload.get("agent_phone"),
+            previous_agent_phone=payload.get("previous_agent_phone"),
+            admin_phone=payload.get("admin_phone"),
+            booking_time=payload.get("booking_time")
+        )
+
 
 
 def _execute_revert_compensation(conn, event_type: str, request_id: Optional[int], payload: dict, err_log: str):

@@ -1116,7 +1116,7 @@ def update_service_request_status(request_id: int, status: str) -> dict:
     if normalized_status == 'done':
         normalized_status = 'completed'
 
-    valid_statuses = ('pending', 'in_progress', 'completed', 'cancelled', 'rescheduled')
+    valid_statuses = ('pending', 'confirmed', 'in_progress', 'completed', 'cancelled', 'cancelled_by_customer', 'rescheduled')
     if normalized_status not in valid_statuses:
         raise ValueError(f"Invalid status '{status}'. Must be one of {valid_statuses}")
 
@@ -1336,4 +1336,416 @@ def get_available_agents_for_request(request_id: int) -> list:
         agent["reason"] = reason
 
     return agents
+
+
+# --- SMS Notification System & Two-Way Handoff Queries ---
+
+def get_sms_config() -> dict:
+    """Fetches the global SMS configuration."""
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT * FROM sms_config ORDER BY id ASC LIMIT 1;")
+            row = cursor.fetchone()
+            if not row:
+                return {}
+            d = dict(row)
+            if isinstance(d.get("quiet_start_time"), (dt_mod.time, dt_mod.datetime)):
+                d["quiet_start_time"] = str(d["quiet_start_time"])
+            if isinstance(d.get("quiet_end_time"), (dt_mod.time, dt_mod.datetime)):
+                d["quiet_end_time"] = str(d["quiet_end_time"])
+            return d
+
+
+def update_sms_config(data: dict) -> dict:
+    """Updates SMS configuration settings."""
+    allowed = {
+        "quiet_hours_enabled", "quiet_start_time", "quiet_end_time",
+        "urgent_threshold_hours", "support_phone_number",
+        "auto_responder_template", "auto_responder_debounce_seconds", "environment"
+    }
+    updates = []
+    params = []
+    for k, v in data.items():
+        if k in allowed:
+            updates.append(f"{k} = %s")
+            params.append(v)
+    if not updates:
+        return get_sms_config()
+
+    query = f"UPDATE sms_config SET {', '.join(updates)}, updated_at = CURRENT_TIMESTAMP WHERE id = (SELECT id FROM sms_config ORDER BY id ASC LIMIT 1) RETURNING *;"
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(query, params)
+            row = cursor.fetchone()
+            d = dict(row) if row else {}
+            if isinstance(d.get("quiet_start_time"), (dt_mod.time, dt_mod.datetime)):
+                d["quiet_start_time"] = str(d["quiet_start_time"])
+            if isinstance(d.get("quiet_end_time"), (dt_mod.time, dt_mod.datetime)):
+                d["quiet_end_time"] = str(d["quiet_end_time"])
+            return d
+
+
+def get_sms_matrix_rules() -> list:
+    """Fetches all event matrix notification rules."""
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT * FROM sms_matrix_rules ORDER BY event_type, recipient_role;")
+            return [dict(r) for r in cursor.fetchall()]
+
+
+def update_sms_matrix_rule(event_type: str, recipient_role: str, enabled: bool) -> dict:
+    """Updates or inserts a matrix rule for an event and recipient role."""
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                """
+                INSERT INTO sms_matrix_rules (event_type, recipient_role, enabled)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (event_type, recipient_role)
+                DO UPDATE SET enabled = EXCLUDED.enabled
+                RETURNING *;
+                """,
+                (event_type, recipient_role, enabled)
+            )
+            return dict(cursor.fetchone())
+
+
+def get_sms_whitelist() -> list:
+    """Fetches all whitelisted phone numbers for test environment."""
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT * FROM sms_whitelist ORDER BY created_at DESC;")
+            return [dict(r) for r in cursor.fetchall()]
+
+
+def add_sms_whitelist(phone_number: str, friendly_name: str = None, twilio_verified: bool = False) -> dict:
+    """Adds a phone number to the SMS test whitelist."""
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                """
+                INSERT INTO sms_whitelist (phone_number, friendly_name, twilio_verified)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (phone_number) DO UPDATE SET friendly_name = EXCLUDED.friendly_name, twilio_verified = EXCLUDED.twilio_verified
+                RETURNING *;
+                """,
+                (phone_number, friendly_name, twilio_verified)
+            )
+            return dict(cursor.fetchone())
+
+
+def delete_sms_whitelist(whitelist_id: int) -> bool:
+    """Deletes a phone number entry from the SMS test whitelist."""
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("DELETE FROM sms_whitelist WHERE id = %s;", (whitelist_id,))
+            return cursor.rowcount > 0
+
+
+def is_phone_whitelisted(phone_number: str) -> bool:
+    """Checks whether a phone number is present in the SMS test whitelist."""
+    import re
+    if not phone_number:
+        return False
+    clean = re.sub(r"\D", "", phone_number)
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT phone_number FROM sms_whitelist;")
+            for r in cursor.fetchall():
+                w_clean = re.sub(r"\D", "", r["phone_number"])
+                if w_clean == clean or (len(w_clean) == 10 and clean.endswith(w_clean)):
+                    return True
+            return False
+
+
+def log_sms_dispatch(
+    appointment_id: int,
+    recipient_type: str,
+    recipient_phone: str,
+    template_type: str,
+    status: str = "PENDING",
+    twilio_message_sid: str = None,
+    error_code: str = None,
+    error_message: str = None,
+    retry_count: int = 0,
+    scheduled_send_at: dt_mod.datetime = None
+) -> int:
+    """Logs an SMS dispatch attempt into the sms_log table."""
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                """
+                INSERT INTO sms_log 
+                (appointment_id, recipient_type, recipient_phone, template_type, twilio_message_sid, status, error_code, error_message, retry_count, scheduled_send_at, sent_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id;
+                """,
+                (
+                    appointment_id, recipient_type, recipient_phone, template_type,
+                    twilio_message_sid, status, error_code, error_message, retry_count,
+                    scheduled_send_at, dt_mod.datetime.utcnow() if status in ("SENT", "DELIVERED") else None
+                )
+            )
+            return cursor.fetchone()["id"]
+
+
+def update_sms_log_status(
+    log_id: int,
+    status: str,
+    twilio_message_sid: str = None,
+    error_code: str = None,
+    error_message: str = None,
+    increment_retry: bool = False
+):
+    """Updates an existing sms_log record status and details."""
+    updates = ["status = %s"]
+    params = [status]
+    if twilio_message_sid:
+        updates.append("twilio_message_sid = %s")
+        params.append(twilio_message_sid)
+    if error_code is not None:
+        updates.append("error_code = %s")
+        params.append(error_code)
+    if error_message is not None:
+        updates.append("error_message = %s")
+        params.append(error_message)
+    if increment_retry:
+        updates.append("retry_count = retry_count + 1")
+    if status in ("SENT", "DELIVERED"):
+        updates.append("sent_at = CURRENT_TIMESTAMP")
+
+    params.append(log_id)
+    query = f"UPDATE sms_log SET {', '.join(updates)} WHERE id = %s RETURNING *;"
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(query, params)
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+
+def get_sms_logs_by_appointment(appointment_id: int) -> list:
+    """Fetches all SMS dispatch logs for a given appointment."""
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT * FROM sms_log WHERE appointment_id = %s ORDER BY created_at ASC;", (appointment_id,))
+            return [dict(r) for r in cursor.fetchall()]
+
+
+def get_sms_log_by_id(log_id: int) -> dict:
+    """Fetches a single SMS log by ID."""
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT * FROM sms_log WHERE id = %s;", (log_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+
+def schedule_sms_reminder(appointment_id: int, recipient_type: str, recipient_phone: str, reminder_type: str, scheduled_at: dt_mod.datetime) -> int:
+    """Schedules a pre-appointment SMS reminder in sms_reminders table."""
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                """
+                INSERT INTO sms_reminders (appointment_id, recipient_type, recipient_phone, reminder_type, scheduled_at, status)
+                VALUES (%s, %s, %s, %s, %s, 'PENDING')
+                RETURNING id;
+                """,
+                (appointment_id, recipient_type, recipient_phone, reminder_type, scheduled_at)
+            )
+            return cursor.fetchone()["id"]
+
+
+def cancel_pending_sms_reminders(appointment_id: int):
+    """Marks all pending reminders for an appointment as CANCELLED."""
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                "UPDATE sms_reminders SET status = 'CANCELLED' WHERE appointment_id = %s AND status = 'PENDING';",
+                (appointment_id,)
+            )
+
+
+def get_due_sms_reminders() -> list:
+    """Fetches all pending SMS reminders that are scheduled at or before NOW."""
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                "SELECT * FROM sms_reminders WHERE status = 'PENDING' AND scheduled_at <= CURRENT_TIMESTAMP ORDER BY scheduled_at ASC;"
+            )
+            return [dict(r) for r in cursor.fetchall()]
+
+
+def mark_sms_reminder_status(reminder_id: int, status: str):
+    """Updates the status of an SMS reminder."""
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("UPDATE sms_reminders SET status = %s WHERE id = %s;", (status, reminder_id))
+
+
+def get_due_queued_sms_logs() -> list:
+    """Fetches SMS logs in QUEUED status whose scheduled_send_at is due."""
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                "SELECT * FROM sms_log WHERE status = 'QUEUED' AND scheduled_send_at <= CURRENT_TIMESTAMP ORDER BY scheduled_send_at ASC;"
+            )
+            return [dict(r) for r in cursor.fetchall()]
+
+
+def get_or_create_sms_conversation(customer_phone: str, context_appointment_id: int = None, assigned_agent_id: int = None) -> dict:
+    """Gets an existing conversation for a customer phone number or creates a new one."""
+    import re
+    cleaned_phone = customer_phone.strip()
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT * FROM sms_conversations WHERE customer_phone = %s;", (cleaned_phone,))
+            row = cursor.fetchone()
+            if row:
+                if context_appointment_id or assigned_agent_id:
+                    cursor.execute(
+                        "UPDATE sms_conversations SET context_appointment_id = COALESCE(%s, context_appointment_id), assigned_agent_id = COALESCE(%s, assigned_agent_id), updated_at = CURRENT_TIMESTAMP WHERE id = %s RETURNING *;",
+                        (context_appointment_id, assigned_agent_id, row["id"])
+                    )
+                    return dict(cursor.fetchone())
+                return dict(row)
+            
+            cursor.execute(
+                """
+                INSERT INTO sms_conversations (customer_phone, state, context_appointment_id, assigned_agent_id)
+                VALUES (%s, 'AUTOMATED', %s, %s)
+                RETURNING *;
+                """,
+                (cleaned_phone, context_appointment_id, assigned_agent_id)
+            )
+            return dict(cursor.fetchone())
+
+
+def update_sms_conversation_state(conversation_id: int, state: str, last_auto_responder_at: dt_mod.datetime = None) -> dict:
+    """Updates the state of an SMS conversation."""
+    updates = ["state = %s", "updated_at = CURRENT_TIMESTAMP"]
+    params = [state]
+    if last_auto_responder_at is not None:
+        updates.append("last_auto_responder_at = %s")
+        params.append(last_auto_responder_at)
+
+    params.append(conversation_id)
+    query = f"UPDATE sms_conversations SET {', '.join(updates)} WHERE id = %s RETURNING *;"
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(query, params)
+            row = cursor.fetchone()
+            return dict(row) if row else {}
+
+
+def get_sms_conversations(state: str = None, assigned_agent_id: int = None) -> list:
+    """Lists SMS conversations filtered optionally by state or assigned_agent_id."""
+    where_clauses = []
+    params = []
+    if state:
+        where_clauses.append("c.state = %s")
+        params.append(state)
+    if assigned_agent_id:
+        where_clauses.append("c.assigned_agent_id = %s")
+        params.append(assigned_agent_id)
+
+    where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+    query = f"""
+    SELECT 
+        c.*,
+        cust.name AS customer_name,
+        sa.name AS agent_name,
+        sr.service_type AS appointment_service_type,
+        sr.booking_time AS appointment_time
+    FROM sms_conversations c
+    LEFT JOIN customers cust ON REPLACE(REPLACE(REPLACE(cust.phone, '-', ''), ' ', ''), '+1', '') = REPLACE(REPLACE(REPLACE(c.customer_phone, '-', ''), ' ', ''), '+1', '')
+    LEFT JOIN staff_agents sa ON c.assigned_agent_id = sa.id
+    LEFT JOIN service_requests sr ON c.context_appointment_id = sr.id
+    {where_sql}
+    ORDER BY c.updated_at DESC;
+    """
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(query, params)
+            return [dict(r) for r in cursor.fetchall()]
+
+
+def add_sms_message(conversation_id: int, direction: str, sender_type: str, sender_name: str, body: str, twilio_message_sid: str = None) -> dict:
+    """Adds a message entry to a conversation history."""
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                """
+                INSERT INTO sms_messages (conversation_id, direction, sender_type, sender_name, body, twilio_message_sid)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING *;
+                """,
+                (conversation_id, direction, sender_type, sender_name, body, twilio_message_sid)
+            )
+            msg = dict(cursor.fetchone())
+            cursor.execute("UPDATE sms_conversations SET updated_at = CURRENT_TIMESTAMP WHERE id = %s;", (conversation_id,))
+            return msg
+
+
+def get_sms_messages(conversation_id: int) -> list:
+    """Fetches all messages for a given conversation ordered chronologically."""
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT * FROM sms_messages WHERE conversation_id = %s ORDER BY created_at ASC;", (conversation_id,))
+            return [dict(r) for r in cursor.fetchall()]
+
+
+def update_customer_opt_in(phone: str, opt_in: bool) -> bool:
+    """Updates or inserts customer.sms_opt_in status by phone number."""
+    import re
+    if not phone:
+        return False
+    cleaned = re.sub(r"\D", "", phone)
+    if len(cleaned) == 11 and cleaned.startswith("1"):
+        cleaned = cleaned[1:]
+
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                """
+                UPDATE customers 
+                SET sms_opt_in = %s 
+                WHERE phone = %s OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, '-', ''), ' ', ''), '(', ''), ')', ''), '+1', '') = %s;
+                """,
+                (opt_in, phone, cleaned)
+            )
+            if cursor.rowcount == 0:
+                cursor.execute(
+                    """
+                    INSERT INTO customers (name, phone, sms_opt_in)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (phone) DO UPDATE SET sms_opt_in = EXCLUDED.sms_opt_in;
+                    """,
+                    (f"Customer {cleaned}", phone, opt_in)
+                )
+            return True
+
+
+
+def get_customer_opt_in(phone: str) -> bool:
+    """Checks customer.sms_opt_in status for a phone number."""
+    import re
+    if not phone:
+        return True
+    cleaned = re.sub(r"\D", "", phone)
+    if len(cleaned) == 11 and cleaned.startswith("1"):
+        cleaned = cleaned[1:]
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                """
+                SELECT sms_opt_in FROM customers 
+                WHERE phone = %s OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, '-', ''), ' ', ''), '(', ''), ')', ''), '+1', '') = %s;
+                """,
+                (phone, cleaned)
+            )
+            row = cursor.fetchone()
+            if row and row["sms_opt_in"] is not None:
+                return row["sms_opt_in"]
+            return True
+
 

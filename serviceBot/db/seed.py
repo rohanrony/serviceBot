@@ -26,10 +26,18 @@ def seed_db(force: bool = False):
                 staff_agents, 
                 services, 
                 user_google_accounts, 
-                oauth_states 
+                oauth_states,
+                sms_config,
+                sms_matrix_rules,
+                sms_whitelist,
+                sms_log,
+                sms_reminders,
+                sms_conversations,
+                sms_messages
             CASCADE;
         """)
         conn.commit()
+
         
         # Insert Services
         from serviceBot.seed_cba_services import SERVICES_DATA
@@ -167,8 +175,11 @@ def seed_db(force: bool = False):
         from serviceBot.services.calendar_sync import get_configured_business_hours, get_configured_business_days
         hours = get_configured_business_hours()
         valid_days = get_configured_business_days()
+        start_date = datetime.date.today()
+        slots = []
         for day_offset in range(30):
             current_day = start_date + datetime.timedelta(days=day_offset)
+
             if current_day.weekday() in valid_days:
                 for hour in hours:
                     slot_dt = datetime.datetime.combine(current_day, datetime.time(hour, 0, 0))
@@ -182,12 +193,57 @@ def seed_db(force: bool = False):
             slots
         )
         
+        # Seed default sms_config if empty
+        cursor.execute("SELECT COUNT(*) FROM sms_config;")
+        if cursor.fetchone()[0] == 0:
+            cursor.execute("""
+                INSERT INTO sms_config (quiet_hours_enabled, quiet_start_time, quiet_end_time, urgent_threshold_hours, support_phone_number, auto_responder_template, auto_responder_debounce_seconds, environment)
+                VALUES (TRUE, '21:00', '08:00', 12, '+18005550199', 'Thank you! Our team has received your message. For urgent help, call {support_number}.', 60, 'TEST');
+            """)
+
+        # Seed default sms_matrix_rules if empty
+        cursor.execute("SELECT COUNT(*) FROM sms_matrix_rules;")
+        if cursor.fetchone()[0] == 0:
+            default_rules = [
+                ("BOOKING", "customer", True),
+                ("BOOKING", "agent", True),
+                ("BOOKING", "admin", False),
+                ("RESCHEDULED", "customer", True),
+                ("RESCHEDULED", "agent", True),
+                ("RESCHEDULED", "admin", False),
+                ("REASSIGNED", "customer", False),
+                ("REASSIGNED", "agent", True),
+                ("REASSIGNED", "previous_agent", True),
+                ("REASSIGNED", "admin", False),
+                ("RESCHEDULED_REASSIGNED", "customer", True),
+                ("RESCHEDULED_REASSIGNED", "agent", True),
+                ("RESCHEDULED_REASSIGNED", "previous_agent", True),
+                ("RESCHEDULED_REASSIGNED", "admin", False),
+                ("CANCELLED_BY_CUSTOMER", "customer", True),
+                ("CANCELLED_BY_CUSTOMER", "agent", True),
+                ("CANCELLED_BY_CUSTOMER", "admin", False),
+                ("CANCELLED_BY_ADMIN", "customer", True),
+                ("CANCELLED_BY_ADMIN", "agent", True),
+                ("CANCELLED_BY_ADMIN", "admin", False),
+                ("REMINDER_24H", "customer", True),
+                ("REMINDER_24H", "admin", False),
+                ("REMINDER_2H", "customer", True),
+                ("REMINDER_2H", "agent", True),
+                ("REMINDER_2H", "admin", False),
+            ]
+            for event_type, recipient_role, enabled in default_rules:
+                cursor.execute(
+                    "INSERT INTO sms_matrix_rules (event_type, recipient_role, enabled) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING;",
+                    (event_type, recipient_role, enabled)
+                )
+
         # Reset SERIAL sequences
         for table in ["customers", "vehicles", "service_requests", "crm_notes", "staff_agents", "services"]:
             cursor.execute(f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), COALESCE(MAX(id), 1)) FROM {table};")
         
         conn.commit()
         print("Database seeded successfully with Test mock data!")
+
 
  
 if __name__ == "__main__":

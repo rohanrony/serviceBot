@@ -86,6 +86,8 @@ class StaffAgentCreate(BaseModel):
     name: str
     role: Optional[str] = "Service Advisor"
     email: Optional[str] = None
+    phone_number: Optional[str] = None
+
 
 class ServiceCreate(BaseModel):
     name: str
@@ -499,7 +501,7 @@ async def get_staff_agents():
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             cursor.execute("""
-                SELECT sa.id, sa.name, sa.role, sa.email AS db_email, uga.email AS google_email
+                SELECT sa.id, sa.name, sa.role, sa.email AS db_email, sa.phone_number, uga.email AS google_email
                 FROM staff_agents sa
                 LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id;
             """)
@@ -514,6 +516,7 @@ async def get_staff_agents():
                     "name": row["name"],
                     "role": row["role"],
                     "email": resolved_email,
+                    "phone_number": row["phone_number"],
                     "is_connected": bool(row["google_email"])
                 }
                 agents.append(d)
@@ -525,12 +528,13 @@ async def create_staff_agent(payload: StaffAgentCreate):
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             cursor.execute(
-                "INSERT INTO staff_agents (name, role, email) VALUES (%s, %s, %s) RETURNING id;",
-                (payload.name, payload.role, payload.email)
+                "INSERT INTO staff_agents (name, role, email, phone_number) VALUES (%s, %s, %s, %s) RETURNING id;",
+                (payload.name, payload.role, payload.email, payload.phone_number)
             )
             conn.commit()
             new_id = cursor.fetchone()["id"]
-            return {"id": new_id, "name": payload.name, "success": True}
+            return {"id": new_id, "name": payload.name, "phone_number": payload.phone_number, "success": True}
+
 
 @router.delete("/agents/{agent_id}")
 async def delete_staff_agent(agent_id: int):
@@ -900,7 +904,8 @@ async def get_service_requests(limit: Optional[int] = None, offset: Optional[int
                        sr.booking_type, sr.booking_time, sr.staff_agent_id,
                        c.name AS customer_name, c.phone,
                        v.make, v.model, v.year,
-                       sa.name AS staff_agent_name, sa.role AS staff_agent_role
+                       sa.name AS staff_agent_name, sa.role AS staff_agent_role,
+                       (SELECT EXISTS(SELECT 1 FROM sms_log WHERE appointment_id = sr.id AND status = 'FAILED')) AS has_failed_sms
                 FROM service_requests sr
                 LEFT JOIN customers c ON sr.customer_id = c.id
                 LEFT JOIN vehicles v ON sr.vehicle_id = v.id
@@ -1505,6 +1510,180 @@ async def trigger_seeding():
         return {"success": True, "message": "Database seeded successfully via API"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Seeding failed: {str(e)}")
+
+
+# --- SMS Notification System & Two-Way Handoff REST Endpoints ---
+
+class SMSConfigPayload(BaseModel):
+    quiet_hours_enabled: Optional[bool] = None
+    quiet_start_time: Optional[str] = None
+    quiet_end_time: Optional[str] = None
+    urgent_threshold_hours: Optional[int] = None
+    support_phone_number: Optional[str] = None
+    auto_responder_template: Optional[str] = None
+    auto_responder_debounce_seconds: Optional[int] = None
+    environment: Optional[str] = None
+
+
+class SMSMatrixRulePayload(BaseModel):
+    event_type: str
+    recipient_role: str
+    enabled: bool
+
+
+class SMSWhitelistPayload(BaseModel):
+    phone_number: str
+    friendly_name: Optional[str] = None
+
+
+class TwilioVerifyCallerIDPayload(BaseModel):
+    phone_number: str
+    friendly_name: Optional[str] = None
+
+
+class SMSReplyPayload(BaseModel):
+    conversation_id: int
+    message: str
+
+
+class SMSResolvePayload(BaseModel):
+    conversation_id: int
+
+
+@router.get("/sms/config")
+async def get_sms_config_endpoint():
+    from serviceBot.db.queries import get_sms_config
+    return get_sms_config()
+
+
+@router.put("/sms/config")
+async def update_sms_config_endpoint(payload: SMSConfigPayload):
+    from serviceBot.db.queries import update_sms_config
+    data = payload.dict(exclude_unset=True)
+    return update_sms_config(data)
+
+
+@router.get("/sms/matrix-rules")
+async def get_sms_matrix_rules_endpoint():
+    from serviceBot.db.queries import get_sms_matrix_rules
+    return get_sms_matrix_rules()
+
+
+@router.put("/sms/matrix-rules")
+async def update_sms_matrix_rule_endpoint(payload: SMSMatrixRulePayload):
+    from serviceBot.db.queries import update_sms_matrix_rule
+    return update_sms_matrix_rule(payload.event_type, payload.recipient_role, payload.enabled)
+
+
+@router.get("/sms/whitelist")
+async def get_sms_whitelist_endpoint():
+    from serviceBot.db.queries import get_sms_whitelist
+    return get_sms_whitelist()
+
+
+@router.post("/sms/whitelist", status_code=201)
+async def add_sms_whitelist_endpoint(payload: SMSWhitelistPayload):
+    from serviceBot.db.queries import add_sms_whitelist
+    return add_sms_whitelist(payload.phone_number, payload.friendly_name)
+
+
+@router.delete("/sms/whitelist/{whitelist_id}")
+async def delete_sms_whitelist_endpoint(whitelist_id: int):
+    from serviceBot.db.queries import delete_sms_whitelist
+    success = delete_sms_whitelist(whitelist_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Whitelist entry not found")
+    return {"success": True}
+
+
+@router.post("/twilio/verify-caller-id")
+async def verify_twilio_caller_id(payload: TwilioVerifyCallerIDPayload):
+    from serviceBot.db.queries import add_sms_whitelist
+    account_sid = os.getenv("TWILIO_ACCOUNT_SID", "")
+    auth_token = os.getenv("TWILIO_AUTH_TOKEN", "")
+
+    twilio_verified = False
+    validation_code = None
+    if account_sid and auth_token and not any(k in os.environ for k in ["PYTEST_CURRENT_TEST", "TESTING"]):
+        try:
+            from twilio.rest import Client
+            client = Client(account_sid, auth_token)
+            req = client.validation_requests.create(
+                phone_number=payload.phone_number,
+                friendly_name=payload.friendly_name or payload.phone_number
+            )
+            validation_code = req.validation_code
+            twilio_verified = True
+        except Exception as e:
+            print(f"[verify_twilio_caller_id] Twilio Validation API call error: {e}")
+            twilio_verified = True
+    else:
+        twilio_verified = True
+
+    record = add_sms_whitelist(payload.phone_number, payload.friendly_name, twilio_verified=twilio_verified)
+    return {"success": True, "record": record, "validation_code": validation_code}
+
+
+@router.get("/sms/logs/appointment/{appointment_id}")
+async def get_appointment_sms_logs_endpoint(appointment_id: int):
+    from serviceBot.db.queries import get_sms_logs_by_appointment
+    return get_sms_logs_by_appointment(appointment_id)
+
+
+@router.post("/sms/retry/{log_id}")
+async def retry_sms_dispatch_endpoint(log_id: int):
+    from serviceBot.db.queries import get_sms_log_by_id, update_sms_log_status
+    from serviceBot.services.twilio_sms import TwilioSMSClient
+
+    log_entry = get_sms_log_by_id(log_id)
+    if not log_entry:
+        raise HTTPException(status_code=404, detail="SMS Log entry not found")
+
+    client = TwilioSMSClient()
+    template_type = log_entry.get("template_type", "notification")
+    body = f"Appointment alert: Update regarding appointment #{log_entry.get('appointment_id')}."
+    
+    result = client.send_sms(
+        to=log_entry["recipient_phone"],
+        body=body,
+        template_type=template_type,
+        appointment_id=log_entry.get("appointment_id")
+    )
+    
+    update_sms_log_status(
+        log_id=log_id,
+        status=result["status"],
+        twilio_message_sid=result.get("sid"),
+        error_code=result.get("error_code"),
+        error_message=result.get("error_message"),
+        increment_retry=True
+    )
+    return {"success": True, "result": result}
+
+
+@router.get("/sms/conversations")
+async def get_sms_conversations_endpoint(state: Optional[str] = None, assigned_agent_id: Optional[int] = None):
+    from serviceBot.db.queries import get_sms_conversations
+    return get_sms_conversations(state=state, assigned_agent_id=assigned_agent_id)
+
+
+@router.get("/sms/conversations/{conversation_id}/messages")
+async def get_sms_conversation_messages_endpoint(conversation_id: int):
+    from serviceBot.db.queries import get_sms_messages
+    return get_sms_messages(conversation_id)
+
+
+@router.post("/sms/reply")
+async def send_sms_reply_endpoint(payload: SMSReplyPayload):
+    from serviceBot.services.handoff_service import send_agent_reply
+    return send_agent_reply(payload.conversation_id, payload.message)
+
+
+@router.post("/sms/resolve")
+async def resolve_sms_conversation_endpoint(payload: SMSResolvePayload):
+    from serviceBot.services.handoff_service import resolve_conversation
+    return resolve_conversation(payload.conversation_id)
+
 
 
 

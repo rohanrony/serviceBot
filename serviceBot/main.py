@@ -35,50 +35,28 @@ async def lifespan(app: FastAPI):
         yield
         return
 
-    # 1. Seed services catalog and sync to RAG KB
-    try:
-        from serviceBot.seed_cba_services import main as seed_main
-        print("[lifespan] Seeding services catalog...")
-        seed_main()
-        print("[lifespan] Services catalog seeded and synced successfully.")
-    except Exception as e:
-        print(f"Warning: Failed to seed services catalog: {e}")
-
-    # 1.5. Sync prompts to ElevenLabs
-    try:
-        from serviceBot.api.portal import load_config, sync_prompt_to_elevenlabs
-        config = load_config()
-        system_prompt = config.get("system_prompt")
-        await sync_prompt_to_elevenlabs(system_prompt, config.get("first_message"))
-        print("[lifespan] Prompts synced to ElevenLabs successfully.")
-    except Exception as e:
-        print(f"Warning: Failed to sync prompts to ElevenLabs on startup: {e}")
-
-    # 2. Immediately sync all connected agents' Google Calendar → DB slots
-    try:
-        from serviceBot.services.calendar_sync import sync_all_connected_agents
-        results = sync_all_connected_agents(days=30)
-        total_new = sum(r.get("created", 0) for r in results.values() if isinstance(r, dict))
-        print(f"[calendar_sync] Startup sync complete. Agents synced: {list(results.keys())} | New slots: {total_new}")
-    except Exception as e:
-        print(f"[calendar_sync] Warning: Startup calendar sync failed: {e}")
-
-    # 3. Start hourly background refresh thread (daemon so it exits with the server)
-    sync_thread = threading.Thread(
-        target=_run_calendar_sync_loop,
-        args=(3600,),
-        daemon=True,
-        name="calendar-slot-refresh",
-    )
-    sync_thread.start()
-    # 4. Start Outbox background worker thread for ACID notifications
+    # 1. Start background worker threads
     try:
         from serviceBot.services.outbox_worker import start_outbox_worker
         start_outbox_worker()
     except Exception as e:
         print(f"[outbox_worker] Warning: Failed to launch outbox worker: {e}")
 
+
+    try:
+        from serviceBot.services.quiet_hours import start_quiet_hours_queue_worker
+        start_quiet_hours_queue_worker()
+    except Exception as e:
+        print(f"[quiet_hours_worker] Warning: Failed to launch quiet hours worker: {e}")
+
+    try:
+        from serviceBot.services.sms_reminders import start_reminder_polling_worker
+        start_reminder_polling_worker()
+    except Exception as e:
+        print(f"[reminder_worker] Warning: Failed to launch reminder worker: {e}")
+
     yield
+
 
 app = FastAPI(
     title="serviceBot Server",
@@ -91,10 +69,12 @@ app = FastAPI(
 async def health_check():
     return {"status": "healthy"}
 
-# Include API routers
 app.include_router(telephony_router)
 app.include_router(voice_router)
 app.include_router(portal_router)
+
+
+
 
 @app.get("/portal")
 async def redirect_portal_to_slash():

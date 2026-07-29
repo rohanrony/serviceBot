@@ -121,49 +121,127 @@ document.addEventListener('DOMContentLoaded', () => {
     documentDrawerOverlay.classList.remove('active');
   }
   
-  closeDocumentDrawerBtn.addEventListener('click', closeDocumentDrawer);
-  documentDrawerOverlay.addEventListener('click', closeDocumentDrawer);
+  if (closeDocumentDrawerBtn) closeDocumentDrawerBtn.addEventListener('click', closeDocumentDrawer);
+  if (documentDrawerOverlay) documentDrawerOverlay.addEventListener('click', closeDocumentDrawer);
   
+  // Mapped View Titles & Subtitles
+  const TAB_METADATA = {
+    'dashboard': {
+      title: 'Dashboard Overview',
+      subtitle: 'Real-time summaries, call metrics, and captured service request triage.'
+    },
+    'intents': {
+      title: 'Agent Configurations',
+      subtitle: 'Configure ElevenLabs system prompt instructions, greetings, and AI persona.'
+    },
+    'services': {
+      title: 'Services Catalog',
+      subtitle: 'Automotive service catalog database, duration, pricing, and required intake fields.'
+    },
+    'staff': {
+      title: 'Staff Calendars',
+      subtitle: 'Technician calendars, working shifts, slot availability, and Google Calendar sync.'
+    },
+    'knowledge': {
+      title: 'Knowledge Base RAG',
+      subtitle: 'Upload and index FAQ documents for real-time AI vector retrieval.'
+    },
+    'keys': {
+      title: 'API Keys & Voice Settings',
+      subtitle: 'Configure ElevenLabs voice IDs, LLM brains, and encrypted system API keys.'
+    },
+    'gmail': {
+      title: 'Admin Notification Settings',
+      subtitle: 'Configure admin booking email alerts, SMTP, and Google OAuth2 authorization.'
+    },
+    'sms-inbox': {
+      title: 'Live SMS Inbox',
+      subtitle: 'Real-time 2-way customer SMS dispatch, quick reply templates, and human handoff queue.'
+    },
+    'sms-config': {
+      title: 'SMS Telephony Configuration',
+      subtitle: 'Global SMS support numbers, notification matrix rules, and test environment whitelist.'
+    }
+  };
+
+  const viewSubtitle = document.getElementById('current-view-subtitle');
+
+  function switchTab(tabName, updateHash = true) {
+    if (!TAB_METADATA[tabName]) {
+      tabName = 'dashboard';
+    }
+
+    // Update sidebar nav items state
+    navItems.forEach(nav => {
+      if (nav.getAttribute('data-tab') === tabName) {
+        nav.classList.add('active');
+      } else {
+        nav.classList.remove('active');
+      }
+    });
+
+    // Toggle views visibility
+    document.querySelectorAll('.view-section').forEach(section => {
+      if (section.id === `${tabName}-view`) {
+        section.classList.add('active');
+      } else {
+        section.classList.remove('active');
+      }
+    });
+
+    // Update title & subtitle header text
+    const meta = TAB_METADATA[tabName];
+    if (viewTitle) viewTitle.textContent = meta.title;
+    if (viewSubtitle) viewSubtitle.textContent = meta.subtitle;
+
+    // Update URL hash if requested
+    if (updateHash && window.location.hash !== `#${tabName}`) {
+      window.history.pushState(null, '', `#${tabName}`);
+    }
+
+    // Trigger data loader for the active tab
+    if (tabName === 'dashboard') {
+      loadDashboardData();
+    } else if (tabName === 'intents') {
+      loadConfigData();
+    } else if (tabName === 'services') {
+      loadServicesData();
+    } else if (tabName === 'keys') {
+      loadVoiceData();
+    } else if (tabName === 'staff') {
+      loadStaffView();
+    } else if (tabName === 'knowledge') {
+      loadKBData();
+    } else if (tabName === 'gmail') {
+      loadGmailConfig();
+    } else if (tabName === 'sms-config') {
+      loadSMSConfig();
+      loadSMSMatrixRules();
+      loadSMSWhitelist();
+    } else if (tabName === 'sms-inbox') {
+      const filterEl = document.getElementById('sms-thread-filter');
+      loadSMSConversations(filterEl ? filterEl.value : 'all');
+    }
+  }
+
+  window.handleUrlHash = function() {
+    const rawHash = (window.location.hash || '').replace(/^#/, '').trim();
+    if (rawHash && TAB_METADATA[rawHash]) {
+      switchTab(rawHash, false);
+    } else {
+      switchTab('dashboard', false);
+    }
+  };
+
   // Tab Navigation Switching
   navItems.forEach(item => {
     item.addEventListener('click', (e) => {
       e.preventDefault();
-      
       const tabName = item.getAttribute('data-tab');
-      
-      // Update sidebar nav items state
-      navItems.forEach(nav => nav.classList.remove('active'));
-      item.classList.add('active');
-      
-      // Toggle views visibility
-      viewSections.forEach(section => {
-        section.classList.remove('active');
-        if (section.id === `${tabName}-view`) {
-          section.classList.add('active');
-        }
-      });
-      
-      // Update title text
-      viewTitle.textContent = item.textContent.trim();
-      
-      // Perform automatic fetch checks based on tab name
-      if (tabName === 'dashboard') {
-        loadDashboardData();
-      } else if (tabName === 'intents') {
-        loadConfigData();
-      } else if (tabName === 'services') {
-        loadServicesData();
-      } else if (tabName === 'keys') {
-        loadVoiceData();
-      } else if (tabName === 'staff') {
-        loadStaffView();
-      } else if (tabName === 'knowledge') {
-        loadKBData();
-      } else if (tabName === 'gmail') {
-        loadGmailConfig();
-      }
+      switchTab(tabName, true);
     });
   });
+
 
   // Dashboard Sub-Tab Navigation Switching
   const dashTabBtns = document.querySelectorAll('.dashboard-tab-btn');
@@ -369,7 +447,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (nextBtn) nextBtn.disabled = srCurrentPage >= totalPages;
     
     if (paginatedReqs.length === 0) {
-      requestsListBody.innerHTML = `<tr><td colspan="9" class="text-center py-6 text-muted">No matching service requests found.</td></tr>`;
+      requestsListBody.innerHTML = `<tr><td colspan="10" class="text-center py-6 text-muted">No matching service requests found.</td></tr>`;
     } else {
       requestsListBody.innerHTML = '';
       paginatedReqs.forEach(req => {
@@ -379,9 +457,9 @@ document.addEventListener('DOMContentLoaded', () => {
         
         let currentStatus = req.status;
         let statusBadgeClass = 'warning';
-        if (currentStatus === 'completed' || currentStatus === 'done') {
+        if (currentStatus === 'completed' || currentStatus === 'done' || currentStatus === 'confirmed') {
           statusBadgeClass = 'success';
-        } else if (currentStatus === 'cancelled') {
+        } else if (currentStatus === 'cancelled' || currentStatus === 'cancelled_by_customer') {
           statusBadgeClass = 'danger';
         } else if (currentStatus === 'in_progress') {
           statusBadgeClass = 'info';
@@ -417,11 +495,22 @@ document.addEventListener('DOMContentLoaded', () => {
         const statusSelectHtml = `
           <select class="status-select-badge ${statusBadgeClass}" data-id="${req.id}">
             <option value="pending" ${currentStatus === 'pending' ? 'selected' : ''}>pending</option>
+            <option value="confirmed" ${currentStatus === 'confirmed' ? 'selected' : ''}>confirmed</option>
             <option value="in_progress" ${currentStatus === 'in_progress' ? 'selected' : ''}>in progress</option>
             <option value="completed" ${currentStatus === 'completed' || currentStatus === 'done' ? 'selected' : ''}>done</option>
             <option value="rescheduled" ${currentStatus === 'rescheduled' ? 'selected' : ''}>rescheduled</option>
             <option value="cancelled" ${currentStatus === 'cancelled' ? 'selected' : ''}>cancelled</option>
+            <option value="cancelled_by_customer" ${currentStatus === 'cancelled_by_customer' ? 'selected' : ''}>cancelled by customer</option>
           </select>
+        `;
+
+        const hasFailedSms = !!req.has_failed_sms;
+        const failedIndicator = hasFailedSms ? `<span class="badge danger" style="margin-right: 4px;" title="SMS Delivery Failed">⚠️ SMS Failed</span>` : '';
+        const actionsHtml = `
+          <div style="display: flex; align-items: center; gap: 4px;">
+            ${failedIndicator}
+            <button type="button" class="btn btn-secondary btn-sm details-sms-log-btn" data-id="${req.id}">Details</button>
+          </div>
         `;
 
         tr.innerHTML = `
@@ -439,7 +528,15 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
           </td>
           <td>${statusSelectHtml}</td>
+          <td>${actionsHtml}</td>
         `;
+
+        const detailsBtn = tr.querySelector('.details-sms-log-btn');
+        if (detailsBtn) {
+          detailsBtn.addEventListener('click', () => {
+            if (window.openSMSLogDrawer) window.openSMSLogDrawer(req.id);
+          });
+        }
 
         const agentSelect = tr.querySelector('.agent-select-badge');
         if (agentSelect) {
@@ -719,12 +816,12 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function closeDrawer() {
-    drawer.classList.remove('active');
-    overlay.classList.remove('active');
+    if (drawer) drawer.classList.remove('active');
+    if (overlay) overlay.classList.remove('active');
   }
 
-  closeBtn.addEventListener('click', closeDrawer);
-  overlay.addEventListener('click', closeDrawer);
+  if (closeBtn) closeBtn.addEventListener('click', closeDrawer);
+  if (overlay) overlay.addEventListener('click', closeDrawer);
 
   // --- VIEW 3: SERVICES RETRIEVAL & ADDITIONS ---
   async function loadServicesData() {
@@ -814,6 +911,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Edit Service Drawer Actions
   function openEditDrawer(svc) {
+    if (!editDrawer) return;
     document.getElementById('edit-service-id').value = svc.id;
     document.getElementById('edit-service-name').value = svc.name;
     document.getElementById('edit-service-desc').value = svc.description || '';
@@ -826,86 +924,90 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('edit-service-req-issue-description').checked = svc.req_issue_description !== undefined ? !!svc.req_issue_description : true;
     document.getElementById('edit-service-req-location').checked = svc.req_location !== undefined ? !!svc.req_location : true;
     
-    editDrawer.classList.add('active');
-    editDrawerOverlay.classList.add('active');
+    if (editDrawer) editDrawer.classList.add('active');
+    if (editDrawerOverlay) editDrawerOverlay.classList.add('active');
   }
 
   function closeEditDrawer() {
-    editDrawer.classList.remove('active');
-    editDrawerOverlay.classList.remove('active');
+    if (editDrawer) editDrawer.classList.remove('active');
+    if (editDrawerOverlay) editDrawerOverlay.classList.remove('active');
   }
 
-  closeEditDrawerBtn.addEventListener('click', closeEditDrawer);
-  cancelEditBtn.addEventListener('click', closeEditDrawer);
-  editDrawerOverlay.addEventListener('click', closeEditDrawer);
+  if (closeEditDrawerBtn) closeEditDrawerBtn.addEventListener('click', closeEditDrawer);
+  if (cancelEditBtn) cancelEditBtn.addEventListener('click', closeEditDrawer);
+  if (editDrawerOverlay) editDrawerOverlay.addEventListener('click', closeEditDrawer);
 
-  editServiceForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    
-    const id = document.getElementById('edit-service-id').value;
-    const payload = {
-      name: document.getElementById('edit-service-name').value,
-      description: document.getElementById('edit-service-desc').value,
-      price_range: document.getElementById('edit-service-price').value,
-      duration_minutes: parseInt(document.getElementById('edit-service-duration').value, 10),
-      req_customer_name: document.getElementById('edit-service-req-customer-name').checked,
-      req_phone_number: document.getElementById('edit-service-req-phone-number').checked,
-      req_vehicle_details: document.getElementById('edit-service-req-vehicle-details').checked,
-      req_issue_description: document.getElementById('edit-service-req-issue-description').checked,
-      req_location: document.getElementById('edit-service-req-location').checked
-    };
-    
-    try {
-      const response = await fetch(`/api/v1/portal/services/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+  if (editServiceForm) {
+    editServiceForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
       
-      if (!response.ok) throw new Error('Failed to update service');
+      const id = document.getElementById('edit-service-id').value;
+      const payload = {
+        name: document.getElementById('edit-service-name').value,
+        description: document.getElementById('edit-service-desc').value,
+        price_range: document.getElementById('edit-service-price').value,
+        duration_minutes: parseInt(document.getElementById('edit-service-duration').value, 10),
+        req_customer_name: document.getElementById('edit-service-req-customer-name').checked,
+        req_phone_number: document.getElementById('edit-service-req-phone-number').checked,
+        req_vehicle_details: document.getElementById('edit-service-req-vehicle-details').checked,
+        req_issue_description: document.getElementById('edit-service-req-issue-description').checked,
+        req_location: document.getElementById('edit-service-req-location').checked
+      };
       
-      showToast('Service updated successfully!');
-      closeEditDrawer();
-      loadServicesData();
-    } catch (err) {
-      console.error(err);
-      showToast('Error updating service: ' + err.message, 'error');
-    }
-  });
+      try {
+        const response = await fetch(`/api/v1/portal/services/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        
+        if (!response.ok) throw new Error('Failed to update service');
+        
+        showToast('Service updated successfully!');
+        closeEditDrawer();
+        loadServicesData();
+      } catch (err) {
+        console.error(err);
+        showToast('Error updating service: ' + err.message, 'error');
+      }
+    });
+  }
 
   const addServiceForm = document.getElementById('add-service-form');
-  addServiceForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    
-    const payload = {
-      name: document.getElementById('new-service-name').value,
-      description: document.getElementById('new-service-desc').value,
-      price_range: document.getElementById('new-service-price').value,
-      duration_minutes: parseInt(document.getElementById('new-service-duration').value, 10),
-      req_customer_name: document.getElementById('new-service-req-customer-name').checked,
-      req_phone_number: document.getElementById('new-service-req-phone-number').checked,
-      req_vehicle_details: document.getElementById('new-service-req-vehicle-details').checked,
-      req_issue_description: document.getElementById('new-service-req-issue-description').checked,
-      req_location: document.getElementById('new-service-req-location').checked
-    };
-    
-    try {
-      const response = await fetch('/api/v1/portal/services', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+  if (addServiceForm) {
+    addServiceForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
       
-      if (!response.ok) throw new Error('Failed to add service');
+      const payload = {
+        name: document.getElementById('new-service-name').value,
+        description: document.getElementById('new-service-desc').value,
+        price_range: document.getElementById('new-service-price').value,
+        duration_minutes: parseInt(document.getElementById('new-service-duration').value, 10),
+        req_customer_name: document.getElementById('new-service-req-customer-name').checked,
+        req_phone_number: document.getElementById('new-service-req-phone-number').checked,
+        req_vehicle_details: document.getElementById('new-service-req-vehicle-details').checked,
+        req_issue_description: document.getElementById('new-service-req-issue-description').checked,
+        req_location: document.getElementById('new-service-req-location').checked
+      };
       
-      showToast('Service created successfully!');
-      addServiceForm.reset();
-      loadServicesData();
-    } catch (err) {
-      console.error(err);
-      showToast('Error creating service: ' + err.message, 'error');
-    }
-  });
+      try {
+        const response = await fetch('/api/v1/portal/services', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        
+        if (!response.ok) throw new Error('Failed to add service');
+        
+        showToast('Service created successfully!');
+        addServiceForm.reset();
+        loadServicesData();
+      } catch (err) {
+        console.error(err);
+        showToast('Error creating service: ' + err.message, 'error');
+      }
+    });
+  }
 
   // --- VIEW 4: FILE DRAG AND DROP (RAG) ---
   const dropZone = document.getElementById('kb-drop-zone');
@@ -915,41 +1017,45 @@ document.addEventListener('DOMContentLoaded', () => {
   const progressPercent = document.getElementById('upload-percent');
   const progressText = document.getElementById('upload-status-text');
 
-  // Trigger file browsing on click
-  dropZone.addEventListener('click', () => fileInput.click());
+  if (dropZone) {
+    // Trigger file browsing on click
+    dropZone.addEventListener('click', () => fileInput && fileInput.click());
 
-  // Prevent default drag behaviors
-  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-    dropZone.addEventListener(eventName, preventDefaults, false);
-  });
-  function preventDefaults(e) {
-    e.preventDefault();
-    e.stopPropagation();
+    // Prevent default drag behaviors
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+      dropZone.addEventListener(eventName, preventDefaults, false);
+    });
+    function preventDefaults(e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    // Handle active states on hover
+    ['dragenter', 'dragover'].forEach(eventName => {
+      dropZone.addEventListener(eventName, () => dropZone.classList.add('active'), false);
+    });
+    ['dragleave', 'drop'].forEach(eventName => {
+      dropZone.addEventListener(eventName, () => dropZone.classList.remove('active'), false);
+    });
+
+    // Handle dropped files
+    dropZone.addEventListener('drop', (e) => {
+      const dt = e.dataTransfer;
+      const files = dt.files;
+      if (files.length > 0) {
+        uploadKBFile(files[0]);
+      }
+    });
   }
 
-  // Handle active states on hover
-  ['dragenter', 'dragover'].forEach(eventName => {
-    dropZone.addEventListener(eventName, () => dropZone.classList.add('active'), false);
-  });
-  ['dragleave', 'drop'].forEach(eventName => {
-    dropZone.addEventListener(eventName, () => dropZone.classList.remove('active'), false);
-  });
-
-  // Handle dropped files
-  dropZone.addEventListener('drop', (e) => {
-    const dt = e.dataTransfer;
-    const files = dt.files;
-    if (files.length > 0) {
-      uploadKBFile(files[0]);
-    }
-  });
-
   // Handle file selection
-  fileInput.addEventListener('change', () => {
-    if (fileInput.files.length > 0) {
-      uploadKBFile(fileInput.files[0]);
-    }
-  });
+  if (fileInput) {
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files.length > 0) {
+        uploadKBFile(fileInput.files[0]);
+      }
+    });
+  }
 
   async function uploadKBFile(file) {
     if (!file.name.endsWith('.txt') && !file.name.endsWith('.md')) {
@@ -961,10 +1067,10 @@ document.addEventListener('DOMContentLoaded', () => {
     formData.append('file', file);
     
     // Show progress loading indicators
-    progressContainer.classList.remove('hidden');
-    progressFill.style.width = '30%';
-    progressPercent.textContent = '30%';
-    progressText.textContent = 'Uploading file...';
+    if (progressContainer) progressContainer.classList.remove('hidden');
+    if (progressFill) progressFill.style.width = '30%';
+    if (progressPercent) progressPercent.textContent = '30%';
+    if (progressText) progressText.textContent = 'Uploading file...';
     
     try {
       const response = await fetch('/api/v1/portal/kb/upload', {
@@ -975,20 +1081,20 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!response.ok) throw new Error('File upload failure');
       const data = await response.json();
       
-      progressFill.style.width = '100%';
-      progressPercent.textContent = '100%';
-      progressText.textContent = 'Completed!';
+      if (progressFill) progressFill.style.width = '100%';
+      if (progressPercent) progressPercent.textContent = '100%';
+      if (progressText) progressText.textContent = 'Completed!';
       
       showToast(`Successfully indexed ${data.chunk_count} chunks into local ChromaDB!`);
       loadKBData();
       
       setTimeout(() => {
-        progressContainer.classList.add('hidden');
+        if (progressContainer) progressContainer.classList.add('hidden');
       }, 3000);
       
     } catch (err) {
       console.error(err);
-      progressContainer.classList.add('hidden');
+      if (progressContainer) progressContainer.classList.add('hidden');
       showToast('Ingestion failed: ' + err.message, 'error');
     }
   }
@@ -1014,73 +1120,80 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await response.json();
       
       const select = document.getElementById('agent-voice-selection');
-      select.innerHTML = '';
-      
-      if (data.voices && data.voices.length > 0) {
-        data.voices.forEach(voice => {
-          const opt = document.createElement('option');
-          opt.value = voice.voice_id;
-          opt.textContent = `${voice.name} (${voice.category})`;
-          select.appendChild(opt);
-        });
-      } else {
-        select.innerHTML = '<option value="default">No custom voices found</option>';
+      if (select) {
+        select.innerHTML = '';
+        if (data.voices && data.voices.length > 0) {
+          data.voices.forEach(voice => {
+            const opt = document.createElement('option');
+            opt.value = voice.voice_id;
+            opt.textContent = `${voice.name} (${voice.category})`;
+            select.appendChild(opt);
+          });
+        } else {
+          select.innerHTML = '<option value="default">No custom voices found</option>';
+        }
       }
     } catch (err) {
       console.warn(err);
       const select = document.getElementById('agent-voice-selection');
-      select.innerHTML = '<option value="default_mock">Mock Rachel (Default ElevenLabs)</option>' +
-                         '<option value="default_mock2">Mock Clyde (Default ElevenLabs)</option>';
+      if (select) {
+        select.innerHTML = '<option value="default_mock">Mock Rachel (Default ElevenLabs)</option>' +
+                           '<option value="default_mock2">Mock Clyde (Default ElevenLabs)</option>';
+      }
     }
   }
 
   // Form Submit updates Voice routing Agent ID
   const voiceRoutingForm = document.getElementById('voice-routing-form');
-  voiceRoutingForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const model = document.getElementById('agent-llm-model').value;
-    const voiceId = document.getElementById('agent-voice-selection').value;
-    const handoffPhone = document.getElementById('agent-handoff-phone').value;
-    
-    try {
-      const response = await fetch('/api/v1/portal/elevenlabs/agent', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: model, voice_id: voiceId })
-      });
+  if (voiceRoutingForm) {
+    voiceRoutingForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const model = document.getElementById('agent-llm-model').value;
+      const voiceId = document.getElementById('agent-voice-selection').value;
+      const handoffPhone = document.getElementById('agent-handoff-phone').value;
       
-      if (!response.ok) throw new Error('Dynamic ElevenLabs configuration update failed');
-      showToast('Agent model and voice configurations updated live!');
-    } catch (err) {
-      console.warn(err);
-      showToast('Saved settings locally (Mock status: ElevenLabs ID not found)', 'success');
-    }
-
-    try {
-      const configRes = await fetch('/api/v1/portal/config');
-      if (configRes.ok) {
-        const config = await configRes.json();
-        config.handoff_phone_number = handoffPhone;
-        
-        const updateRes = await fetch('/api/v1/portal/config', {
-          method: 'POST',
+      try {
+        const response = await fetch('/api/v1/portal/elevenlabs/agent', {
+          method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(config)
+          body: JSON.stringify({ model: model, voice_id: voiceId })
         });
-        if (!updateRes.ok) throw new Error('Failed to save configuration');
+        
+        if (!response.ok) throw new Error('Dynamic ElevenLabs configuration update failed');
+        showToast('Agent model and voice configurations updated live!');
+      } catch (err) {
+        console.warn(err);
+        showToast('Saved settings locally (Mock status: ElevenLabs ID not found)', 'success');
       }
-    } catch (err) {
-      console.error(err);
-      showToast('Error saving handoff phone: ' + err.message, 'error');
-    }
-  });
+
+      try {
+        const configRes = await fetch('/api/v1/portal/config');
+        if (configRes.ok) {
+          const config = await configRes.json();
+          config.handoff_phone_number = handoffPhone;
+          
+          const updateRes = await fetch('/api/v1/portal/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config)
+          });
+          if (!updateRes.ok) throw new Error('Failed to save configuration');
+        }
+      } catch (err) {
+        console.error(err);
+        showToast('Error saving handoff phone: ' + err.message, 'error');
+      }
+    });
+  }
 
   // Secrets Encrypt Form
   const saveKeysForm = document.getElementById('save-api-keys-form');
-  saveKeysForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    showToast('API credentials encrypted and securely saved at rest!');
-  });
+  if (saveKeysForm) {
+    saveKeysForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      showToast('API credentials encrypted and securely saved at rest!');
+    });
+  }
 
   // --- VIEW 2: CONFIGURATION MANAGER ---
   async function loadConfigData() {
@@ -1293,6 +1406,7 @@ document.addEventListener('DOMContentLoaded', () => {
       connectCalendarBtn.textContent = 'Connect';
       connectCalendarBtn.classList.add('btn-secondary');
       connectCalendarBtn.style.borderColor = 'var(--color-primary)';
+      connectCalendarBtn.style.color = '#fff';
       connectCalendarBtn.dataset.isConnected = 'false';
       connectCalendarBtn.disabled = true;
       
@@ -1301,6 +1415,7 @@ document.addEventListener('DOMContentLoaded', () => {
       connectGmailBtn.textContent = 'Connect';
       connectGmailBtn.classList.add('btn-secondary');
       connectGmailBtn.style.borderColor = 'var(--color-primary)';
+      connectGmailBtn.style.color = '#fff';
       connectGmailBtn.dataset.isConnected = 'false';
       connectGmailBtn.disabled = true;
       
@@ -1337,8 +1452,9 @@ document.addEventListener('DOMContentLoaded', () => {
         calendarBadge.className = 'badge success';
         calendarBadge.textContent = 'Connected';
         connectCalendarBtn.textContent = 'Disconnect';
-        connectCalendarBtn.classList.remove('btn-secondary');
+        connectCalendarBtn.classList.add('btn-secondary');
         connectCalendarBtn.style.borderColor = 'var(--color-danger)';
+        connectCalendarBtn.style.color = 'var(--color-danger)';
         connectCalendarBtn.dataset.isConnected = 'true';
       } else {
         calendarBadge.className = 'badge danger';
@@ -1346,6 +1462,7 @@ document.addEventListener('DOMContentLoaded', () => {
         connectCalendarBtn.textContent = 'Connect';
         connectCalendarBtn.classList.add('btn-secondary');
         connectCalendarBtn.style.borderColor = 'var(--color-primary)';
+        connectCalendarBtn.style.color = '#fff';
         connectCalendarBtn.dataset.isConnected = 'false';
       }
       
@@ -1353,8 +1470,9 @@ document.addEventListener('DOMContentLoaded', () => {
         gmailBadge.className = 'badge success';
         gmailBadge.textContent = 'Connected';
         connectGmailBtn.textContent = 'Disconnect';
-        connectGmailBtn.classList.remove('btn-secondary');
+        connectGmailBtn.classList.add('btn-secondary');
         connectGmailBtn.style.borderColor = 'var(--color-danger)';
+        connectGmailBtn.style.color = 'var(--color-danger)';
         connectGmailBtn.dataset.isConnected = 'true';
       } else {
         gmailBadge.className = 'badge danger';
@@ -1362,6 +1480,7 @@ document.addEventListener('DOMContentLoaded', () => {
         connectGmailBtn.textContent = 'Connect';
         connectGmailBtn.classList.add('btn-secondary');
         connectGmailBtn.style.borderColor = 'var(--color-primary)';
+        connectGmailBtn.style.color = '#fff';
         connectGmailBtn.dataset.isConnected = 'false';
       }
     } catch (err) {
@@ -1598,6 +1717,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const name = newAgentNameInput.value.trim();
             const role = newAgentRoleInput.value.trim() || 'Service Advisor';
             const email = newAgentEmailInput.value.trim() || null;
+            const newAgentPhoneInput = document.getElementById('new-agent-phone');
+            const phone_number = newAgentPhoneInput ? (newAgentPhoneInput.value.trim() || null) : null;
             
             if (!name) return;
             
@@ -1605,13 +1726,27 @@ document.addEventListener('DOMContentLoaded', () => {
               const response = await fetch('/api/v1/portal/agents', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, role, email })
+                body: JSON.stringify({ name, role, email, phone_number })
               });
               if (!response.ok) {
                 const data = await response.json();
                 throw new Error(data.detail || 'Failed to add staff member');
               }
               const data = await response.json();
+
+              // Auto-trigger Twilio Verified Caller ID if phone_number is provided
+              if (phone_number) {
+                try {
+                  await fetch('/api/v1/portal/twilio/verify-caller-id', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone_number, friendly_name: name })
+                  });
+                } catch (e) {
+                  console.error('Auto caller-id verify error:', e);
+                }
+              }
+
               showToast(`Staff member "${name}" registered successfully!`);
               addAgentForm.reset();
               newAgentRoleInput.value = 'Service Advisor'; // restore default
@@ -1621,6 +1756,30 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (err) {
               console.error(err);
               showToast('Error adding staff member: ' + err.message, 'error');
+            }
+          });
+        }
+
+        const verifyAgentTwilioBtn = document.getElementById('verify-agent-twilio-btn');
+        if (verifyAgentTwilioBtn) {
+          verifyAgentTwilioBtn.addEventListener('click', async () => {
+            const newAgentPhoneInput = document.getElementById('new-agent-phone');
+            const phone = newAgentPhoneInput ? newAgentPhoneInput.value.trim() : '';
+            if (!phone) {
+              showToast('Please enter a phone number first.', 'error');
+              return;
+            }
+            try {
+              const name = newAgentNameInput ? newAgentNameInput.value.trim() : 'Staff Member';
+              const res = await fetch('/api/v1/portal/twilio/verify-caller-id', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone_number: phone, friendly_name: name })
+              });
+              if (!res.ok) throw new Error('Verification request failed');
+              showToast(`Phone number ${phone} submitted to Twilio Verified Caller IDs!`);
+            } catch (err) {
+              showToast('Twilio verification error: ' + err.message, 'error');
             }
           });
         }
@@ -2042,13 +2201,585 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
 
+  // --- VIEW: LIVE SMS INBOX & SMS CONFIGURATION ---
+  let activeConversationId = null;
+
+  async function loadSMSConfig() {
+    try {
+      const res = await fetch('/api/v1/portal/sms/config');
+      if (!res.ok) return;
+      const config = await res.json();
+      if (!config) return;
+
+      document.getElementById('sms-config-support-phone').value = config.support_phone_number || '';
+      const envVal = (config.environment === 'TESTING' || config.environment === 'TEST') ? 'TEST' : (config.environment || 'TEST');
+      document.getElementById('sms-config-environment').value = envVal;
+      document.getElementById('sms-config-quiet-start').value = config.quiet_start_time || '21:00';
+      document.getElementById('sms-config-quiet-end').value = config.quiet_end_time || '08:00';
+      document.getElementById('sms-config-auto-responder').value = config.auto_responder_template || '';
+    } catch (err) {
+      console.error('Error loading SMS config:', err);
+    }
+  }
+
+  async function loadSMSMatrixRules() {
+    try {
+      const res = await fetch('/api/v1/portal/sms/matrix-rules');
+      if (!res.ok) return;
+      const rules = await res.json();
+      const tbody = document.getElementById('sms-matrix-rules-tbody');
+      if (!tbody) return;
+      tbody.innerHTML = '';
+
+      const events = ['BOOKING', 'RESCHEDULED', 'REASSIGNED', 'RESCHEDULED_REASSIGNED', 'CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_ADMIN', 'REMINDER_24H', 'REMINDER_2H'];
+      const roles = ['customer', 'agent', 'previous_agent', 'admin'];
+
+      events.forEach(evt => {
+        const tr = document.createElement('tr');
+        const formattedEventName = evt.replace(/_/g, ' ');
+        tr.innerHTML = `<td><span style="font-size: 12px; font-weight: 500; color: var(--text-main);">${formattedEventName}</span></td>` + roles.map(r => {
+          const rule = rules.find(x => x.event_type === evt && x.recipient_role === r);
+          const checked = rule ? rule.enabled : (r !== 'admin' && !(evt === 'REASSIGNED' && r === 'customer'));
+          return `<td>
+            <label class="matrix-status-pill ${checked ? 'active' : 'disabled'}" style="cursor: pointer;">
+              <input type="checkbox" class="sms-matrix-cb" data-event="${evt}" data-role="${r}" ${checked ? 'checked' : ''} style="margin-right: 4px;">
+              <span>${checked ? 'Active' : 'Disabled'}</span>
+            </label>
+          </td>`;
+        }).join('');
+        tbody.appendChild(tr);
+      });
+
+      tbody.querySelectorAll('.sms-matrix-cb').forEach(cb => {
+        cb.addEventListener('change', async (e) => {
+          const event_type = e.target.dataset.event;
+          const recipient_role = e.target.dataset.role;
+          const enabled = e.target.checked;
+          const pill = e.target.closest('.matrix-status-pill');
+          if (pill) {
+            pill.className = `matrix-status-pill ${enabled ? 'active' : 'disabled'}`;
+            const labelSpan = pill.querySelector('span');
+            if (labelSpan) labelSpan.textContent = enabled ? 'Active' : 'Disabled';
+          }
+          await fetch('/api/v1/portal/sms/matrix-rules', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ event_type, recipient_role, enabled })
+          });
+          showToast('Notification matrix rule updated.');
+        });
+      });
+    } catch (err) {
+      console.error('Error loading matrix rules:', err);
+    }
+  }
+
+  async function loadSMSWhitelist() {
+    try {
+      const res = await fetch('/api/v1/portal/sms/whitelist');
+      if (!res.ok) return;
+      const whitelist = await res.json();
+      const tbody = document.getElementById('sms-whitelist-tbody');
+      if (!tbody) return;
+      tbody.innerHTML = '';
+
+      if (whitelist.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="text-muted text-center py-6">No whitelisted numbers added. All outbound SMS logged locally in test mode.</td></tr>';
+        return;
+      }
+
+      whitelist.forEach(item => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><code style="font-size: 12.5px; background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px;">${item.phone_number}</code></td>
+          <td><strong>${item.friendly_name || '--'}</strong></td>
+          <td>
+            <span class="${item.twilio_verified ? 'badge-verified' : 'badge-unverified'}">
+              ${item.twilio_verified ? 'Verified' : 'Pending'}
+            </span>
+          </td>
+          <td>
+            <button class="btn btn-sm btn-danger delete-whitelist-btn" data-id="${item.id}">
+              <svg class="btn-icon" viewBox="0 0 24 24" width="14" height="14"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+              Remove
+            </button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      tbody.querySelectorAll('.delete-whitelist-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const id = e.target.closest('button').dataset.id;
+          await fetch(`/api/v1/portal/sms/whitelist/${id}`, { method: 'DELETE' });
+          showToast('Whitelist entry removed.');
+          loadSMSWhitelist();
+        });
+      });
+    } catch (err) {
+      console.error('Error loading SMS whitelist:', err);
+    }
+  }
+
+  const smsGlobalForm = document.getElementById('sms-global-config-form');
+  if (smsGlobalForm) {
+    smsGlobalForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const payload = {
+        support_phone_number: document.getElementById('sms-config-support-phone').value,
+        environment: document.getElementById('sms-config-environment').value,
+        quiet_start_time: document.getElementById('sms-config-quiet-start').value,
+        quiet_end_time: document.getElementById('sms-config-quiet-end').value,
+        auto_responder_template: document.getElementById('sms-config-auto-responder').value
+      };
+      await fetch('/api/v1/portal/sms/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      showToast('SMS global configuration saved successfully.');
+    });
+  }
+
+  const smsWhitelistForm = document.getElementById('sms-add-whitelist-form');
+  if (smsWhitelistForm) {
+    smsWhitelistForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const phone_number = document.getElementById('whitelist-phone-input').value;
+      const friendly_name = document.getElementById('whitelist-name-input').value;
+      await fetch('/api/v1/portal/twilio/verify-caller-id', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone_number, friendly_name })
+      });
+      showToast('Phone number added and caller ID verified.');
+      document.getElementById('whitelist-phone-input').value = '';
+      document.getElementById('whitelist-name-input').value = '';
+      loadSMSWhitelist();
+    });
+  }
+
+  let cachedConversationsList = [];
+
+  async function loadSMSConversations(filterState = 'HANDOFF_REQUIRED') {
+    try {
+      const url = filterState && filterState !== 'all' ? `/api/v1/portal/sms/conversations?state=${filterState}` : '/api/v1/portal/sms/conversations';
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const convs = await res.json();
+      cachedConversationsList = convs;
+
+      // Update stat counter pills
+      let countAttention = 0, countProgress = 0, countResolved = 0;
+      convs.forEach(c => {
+        if (c.state === 'HANDOFF_REQUIRED') countAttention++;
+        else if (c.state === 'IN_PROGRESS') countProgress++;
+        else if (c.state === 'RESOLVED') countResolved++;
+      });
+      const statAttentionEl = document.getElementById('stat-sms-attention');
+      const statProgressEl = document.getElementById('stat-sms-progress');
+      const statResolvedEl = document.getElementById('stat-sms-resolved');
+      if (statAttentionEl) statAttentionEl.textContent = `🔴 ${countAttention} Handoffs`;
+      if (statProgressEl) statProgressEl.textContent = `🟡 ${countProgress} In Progress`;
+      if (statResolvedEl) statResolvedEl.textContent = `🟢 ${countResolved} Resolved`;
+
+      renderFilteredConversations();
+    } catch (err) {
+      console.error('Error loading SMS conversations:', err);
+    }
+  }
+
+  function renderFilteredConversations() {
+    const container = document.getElementById('sms-threads-list');
+    if (!container) return;
+    container.innerHTML = '';
+
+    const searchTerm = (document.getElementById('sms-thread-search-input')?.value || '').toLowerCase().trim();
+    const filtered = cachedConversationsList.filter(c => {
+      if (!searchTerm) return true;
+      const nameMatch = (c.customer_name || '').toLowerCase().includes(searchTerm);
+      const phoneMatch = (c.customer_phone || '').toLowerCase().includes(searchTerm);
+      return nameMatch || phoneMatch;
+    });
+
+    if (filtered.length === 0) {
+      container.innerHTML = '<div class="threads-empty-state"><p class="text-muted text-center">No matching conversation threads found.</p></div>';
+      return;
+    }
+
+    filtered.forEach(c => {
+      const item = document.createElement('div');
+      const isActive = c.id === activeConversationId;
+      item.className = `thread-item ${isActive ? 'active' : ''}`;
+      
+      let stateBadgeText = 'Bot Active';
+      let stateBadgeClass = 'automated';
+      let avatarRing = 'ring-resolved';
+
+      if (c.state === 'HANDOFF_REQUIRED') {
+        stateBadgeText = 'Needs Handoff';
+        stateBadgeClass = 'handoff';
+        avatarRing = 'ring-handoff';
+      } else if (c.state === 'IN_PROGRESS') {
+        stateBadgeText = 'In Progress';
+        stateBadgeClass = 'progress';
+        avatarRing = 'ring-progress';
+      } else if (c.state === 'RESOLVED') {
+        stateBadgeText = 'Resolved';
+        stateBadgeClass = 'resolved';
+        avatarRing = 'ring-resolved';
+      }
+
+      const initialChar = (c.customer_name ? c.customer_name.charAt(0) : 'P').toUpperCase();
+      const formattedTime = c.updated_at ? new Date(c.updated_at).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : '';
+
+      item.innerHTML = `
+        <div class="thread-avatar ${avatarRing}">${initialChar}</div>
+        <div class="thread-content-body">
+          <div class="thread-row-top">
+            <span class="thread-customer-title">${c.customer_name || c.customer_phone}</span>
+            <span class="thread-time">${formattedTime}</span>
+          </div>
+          <div class="thread-phone-subtitle">${c.customer_phone}</div>
+          <span class="thread-state-badge ${stateBadgeClass}">${stateBadgeText}</span>
+        </div>
+      `;
+
+      item.addEventListener('click', () => {
+        activeConversationId = c.id;
+        document.querySelectorAll('.thread-item').forEach(el => el.classList.remove('active'));
+        item.classList.add('active');
+        loadSMSMessages(c.id, c);
+      });
+      container.appendChild(item);
+    });
+  }
+
+  // Search input handler
+  const searchInputEl = document.getElementById('sms-thread-search-input');
+  if (searchInputEl) {
+    searchInputEl.addEventListener('input', () => {
+      renderFilteredConversations();
+    });
+  }
+
+  let activeConversationDetails = null;
+
+  async function loadSMSMessages(conversationId, convDetails) {
+    try {
+      activeConversationDetails = convDetails;
+      const initialChar = (convDetails.customer_name ? convDetails.customer_name.charAt(0) : 'P').toUpperCase();
+      
+      const avatarEl = document.getElementById('chat-customer-avatar');
+      if (avatarEl) avatarEl.textContent = initialChar;
+
+      const nameEl = document.getElementById('chat-customer-name');
+      if (nameEl) nameEl.textContent = convDetails.customer_name || convDetails.customer_phone;
+
+      const phoneEl = document.getElementById('chat-customer-phone');
+      if (phoneEl) phoneEl.textContent = `Phone: ${convDetails.customer_phone}`;
+
+      const stateBadgeEl = document.getElementById('chat-state-badge');
+      if (stateBadgeEl) {
+        stateBadgeEl.textContent = convDetails.state || 'ACTIVE';
+        stateBadgeEl.className = `badge ${convDetails.state === 'HANDOFF_REQUIRED' ? 'danger' : convDetails.state === 'IN_PROGRESS' ? 'warning' : 'success'}`;
+      }
+      
+      const resolveBtn = document.getElementById('mark-resolved-btn');
+      if (resolveBtn) {
+        resolveBtn.style.display = 'inline-flex';
+        resolveBtn.onclick = async () => {
+          await fetch('/api/v1/portal/sms/resolve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ conversation_id: conversationId })
+          });
+          showToast('Thread marked as resolved.');
+          loadSMSConversations(document.getElementById('sms-thread-filter').value);
+        };
+      }
+
+      document.getElementById('sms-reply-input').disabled = false;
+      document.getElementById('send-sms-reply-btn').disabled = false;
+
+      // Setup Quick Reply Chips
+      document.querySelectorAll('#quick-reply-bar .quick-chip').forEach(chip => {
+        chip.onclick = () => {
+          const text = chip.dataset.text;
+          const replyInput = document.getElementById('sms-reply-input');
+          if (replyInput) {
+            replyInput.value = text;
+            replyInput.focus();
+          }
+        };
+      });
+
+      // Render Appointment Context Sidebar
+      const contextDiv = document.getElementById('sms-context-details');
+      if (contextDiv) {
+        const apptId = convDetails.context_appointment_id;
+        let actionButtonsHtml = '';
+        if (apptId) {
+          actionButtonsHtml = `
+            <div class="context-actions-group">
+              <button class="btn btn-sm btn-secondary sidebar-reschedule-btn" data-id="${apptId}" style="width: 100%;">📅 Reschedule Booking</button>
+              <button class="btn btn-sm btn-danger sidebar-cancel-btn" data-id="${apptId}" style="width: 100%;">❌ Cancel Booking</button>
+              <select class="form-input sidebar-reassign-select" data-id="${apptId}" style="font-size: 12px; padding: 6px; width: 100%;">
+                <option value="">👤 Reassign Staff Agent...</option>
+              </select>
+            </div>
+          `;
+        }
+
+        contextDiv.innerHTML = `
+          <div class="context-info-card">
+            <div class="context-info-row">
+              <span class="context-label">Customer:</span>
+              <span class="context-value">${convDetails.customer_name || 'N/A'}</span>
+            </div>
+            <div class="context-info-row">
+              <span class="context-label">Phone:</span>
+              <span class="context-value">${convDetails.customer_phone}</span>
+            </div>
+            <div class="context-info-row">
+              <span class="context-label">State:</span>
+              <span class="context-value">${convDetails.state || 'N/A'}</span>
+            </div>
+          </div>
+
+          <div class="context-info-card">
+            <div class="context-info-row">
+              <span class="context-label">Booking Ref:</span>
+              <span class="context-value">#${convDetails.context_appointment_id || 'N/A'}</span>
+            </div>
+            <div class="context-info-row">
+              <span class="context-label">Service:</span>
+              <span class="context-value">${convDetails.appointment_service_type || 'N/A'}</span>
+            </div>
+            <div class="context-info-row">
+              <span class="context-label">Time:</span>
+              <span class="context-value">${convDetails.appointment_time || 'N/A'}</span>
+            </div>
+            <div class="context-info-row">
+              <span class="context-label">Assigned:</span>
+              <span class="context-value">${convDetails.agent_name || 'Unassigned'}</span>
+            </div>
+          </div>
+          ${actionButtonsHtml}
+        `;
+
+        if (apptId) {
+          const rescheduleBtn = contextDiv.querySelector('.sidebar-reschedule-btn');
+          const cancelBtn = contextDiv.querySelector('.sidebar-cancel-btn');
+          const reassignSelect = contextDiv.querySelector('.sidebar-reassign-select');
+
+          if (rescheduleBtn) {
+            rescheduleBtn.addEventListener('click', async () => {
+              const newTime = prompt('Enter new date & time (e.g. 2026-06-12 14:00:00):');
+              if (!newTime) return;
+              try {
+                const res = await fetch(`/api/v1/portal/service-requests/${apptId}/reschedule`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ booking_time: newTime })
+                });
+                if (!res.ok) throw new Error('Reschedule failed');
+                showToast('Appointment rescheduled!');
+                loadSMSMessages(conversationId, convDetails);
+              } catch (e) {
+                showToast('Error rescheduling: ' + e.message, 'error');
+              }
+            });
+          }
+
+          if (cancelBtn) {
+            cancelBtn.addEventListener('click', async () => {
+              if (!confirm('Are you sure you want to cancel this appointment?')) return;
+              try {
+                const res = await fetch(`/api/v1/portal/service-requests/${apptId}/status`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ status: 'cancelled' })
+                });
+                if (!res.ok) throw new Error('Cancellation failed');
+                showToast('Appointment cancelled!');
+                loadSMSMessages(conversationId, convDetails);
+              } catch (e) {
+                showToast('Error cancelling: ' + e.message, 'error');
+              }
+            });
+          }
+
+          if (reassignSelect) {
+            fetch(`/api/v1/portal/service-requests/${apptId}/available-agents`).then(r => r.json()).then(data => {
+              const agents = data.agents || [];
+              let opts = '<option value="">👤 Reassign Staff Agent...</option>';
+              agents.forEach(a => {
+                opts += `<option value="${a.id}">${a.name}</option>`;
+              });
+              reassignSelect.innerHTML = opts;
+            }).catch(console.error);
+
+            reassignSelect.addEventListener('change', async (e) => {
+              const agentId = e.target.value;
+              if (!agentId) return;
+              try {
+                const res = await fetch(`/api/v1/portal/service-requests/${apptId}/assign-agent`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ staff_agent_id: parseInt(agentId) })
+                });
+                if (!res.ok) throw new Error('Reassignment failed');
+                showToast('Agent reassigned!');
+                loadSMSMessages(conversationId, convDetails);
+              } catch (e) {
+                showToast('Error reassigning agent: ' + e.message, 'error');
+              }
+            });
+          }
+        }
+      }
+
+      // Load Chat Messages
+      const res = await fetch(`/api/v1/portal/sms/conversations/${conversationId}/messages`);
+      if (!res.ok) return;
+      const msgs = await res.json();
+      const container = document.getElementById('chat-messages-container');
+      container.innerHTML = '';
+
+      if (msgs.length === 0) {
+        container.innerHTML = '<div class="chat-placeholder"><p class="text-muted">No messages recorded in this conversation.</p></div>';
+        return;
+      }
+
+      msgs.forEach(m => {
+        const msgDiv = document.createElement('div');
+        const isCustomer = m.direction === 'inbound';
+        const isSystem = m.sender_type === 'SYSTEM_BOT' || m.sender_name === 'System';
+        
+        let bubbleTypeClass = 'outbound';
+        if (isCustomer) bubbleTypeClass = 'inbound';
+        else if (isSystem) bubbleTypeClass = 'system';
+
+        msgDiv.className = `chat-bubble ${bubbleTypeClass}`;
+        
+        const senderDisplayName = m.sender_name || (isCustomer ? 'Customer' : isSystem ? '🤖 Bot Auto-Responder' : '👤 Human Agent');
+        const formattedTimeString = new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+
+        msgDiv.innerHTML = `
+          <div class="bubble-sender-name">${senderDisplayName}</div>
+          <div class="bubble-body-text">${m.body}</div>
+          <div class="bubble-time-stamp">${formattedTimeString} ${!isCustomer ? '✓✓' : ''}</div>
+        `;
+        container.appendChild(msgDiv);
+      });
+
+      container.scrollTop = container.scrollHeight;
+    } catch (err) {
+      console.error('Error loading SMS messages:', err);
+    }
+  }
+
+  // Send SMS Reply handler
+  const sendReplyBtn = document.getElementById('send-sms-reply-btn');
+  if (sendReplyBtn) {
+    sendReplyBtn.addEventListener('click', async () => {
+      const input = document.getElementById('sms-reply-input');
+      const message = input.value.trim();
+      if (!message || !activeConversationId) return;
+
+      await fetch('/api/v1/portal/sms/reply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversation_id: activeConversationId, message })
+      });
+      input.value = '';
+      showToast('SMS reply sent.');
+      loadSMSConversations(document.getElementById('sms-thread-filter').value);
+      if (activeConversationId && activeConversationDetails) {
+        await loadSMSMessages(activeConversationId, activeConversationDetails);
+      }
+    });
+  }
+
+  // SMS Thread Filter dropdown change
+  const smsThreadFilter = document.getElementById('sms-thread-filter');
+  if (smsThreadFilter) {
+    smsThreadFilter.addEventListener('change', (e) => {
+      loadSMSConversations(e.target.value);
+    });
+  }
+
+  // SMS Log Drawer
+  window.openSMSLogDrawer = async function(appointmentId) {
+    try {
+      document.getElementById('sms-log-drawer-subtitle').innerText = `Appointment #${appointmentId}`;
+      document.getElementById('sms-log-drawer-overlay').classList.add('active');
+      document.getElementById('sms-log-drawer').classList.add('active');
+
+      const res = await fetch(`/api/v1/portal/sms/logs/appointment/${appointmentId}`);
+      if (!res.ok) return;
+      const logs = await res.json();
+      const container = document.getElementById('sms-log-items-container');
+      container.innerHTML = '';
+
+      if (logs.length === 0) {
+        container.innerHTML = '<p class="text-muted">No SMS logs recorded for this appointment.</p>';
+        return;
+      }
+
+      logs.forEach(l => {
+        const item = document.createElement('div');
+        item.style.cssText = 'padding: 10px; border: 1px solid var(--border-card); border-radius: 6px; background: var(--bg-card); font-size: 13px;';
+        const isFailed = l.status === 'FAILED';
+        item.innerHTML = `
+          <div style="display: flex; justify-content: space-between;">
+            <strong>[${l.recipient_type.toUpperCase()}] ${l.template_type}</strong>
+            <span>${l.status === 'DELIVERED' ? '✅ Delivered' : l.status === 'FAILED' ? '❌ Failed' : l.status}</span>
+          </div>
+          <div style="color: var(--text-muted); font-size: 12px; margin-top: 4px;">Phone: ${l.recipient_phone}</div>
+          ${isFailed ? `<div style="color: red; font-size: 12px; margin-top: 4px;">Error: ${l.error_message || l.error_code || 'Unknown error'}</div><button class="btn btn-sm btn-primary retry-sms-btn" data-id="${l.id}" style="margin-top: 8px;">Retry SMS</button>` : ''}
+        `;
+        container.appendChild(item);
+      });
+
+      container.querySelectorAll('.retry-sms-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const logId = e.target.dataset.id;
+          await fetch(`/api/v1/portal/sms/retry/${logId}`, { method: 'POST' });
+          showToast('Retry SMS dispatched.');
+          window.openSMSLogDrawer(appointmentId);
+        });
+      });
+    } catch (err) {
+      console.error('Error opening SMS log drawer:', err);
+    }
+  };
+
+  const closeSMSLogBtn = document.getElementById('close-sms-log-drawer-btn');
+  const smsLogOverlay = document.getElementById('sms-log-drawer-overlay');
+  if (closeSMSLogBtn) {
+    closeSMSLogBtn.addEventListener('click', () => {
+      document.getElementById('sms-log-drawer').classList.remove('active');
+      smsLogOverlay.classList.remove('active');
+    });
+  }
+  if (smsLogOverlay) {
+    smsLogOverlay.addEventListener('click', () => {
+      document.getElementById('sms-log-drawer').classList.remove('active');
+      smsLogOverlay.classList.remove('active');
+    });
+  }
+
+
   // Global Refresh Action
   refreshBtn.addEventListener('click', () => {
     loadDashboardData();
     showToast('Refreshed statistics and calls log history.');
   });
 
-  // Initial Data Load
-  loadDashboardData();
-  
+  // Initial Data & URL Hash Router Load
+  handleUrlHash();
+  window.addEventListener('hashchange', () => handleUrlHash());
 });
+
