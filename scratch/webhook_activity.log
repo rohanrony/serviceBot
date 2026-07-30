@@ -222,3 +222,17 @@ Processing call conv_test_123 from +15559998888...
 CRM note created successfully for call conv_test_123!
 Extracted callback info: {'preferred_time': 'tomorrow morning at 8:00 AM', 'service_type': 'Brake repair', 'issue_description': 'Grinding noise'}
 Service request callback logged successfully!
+
+[2026-07-30T10:17:39.598536] --- Webhook Request Received ---
+Headers: {'host': 'testserver', 'accept': '*/*', 'accept-encoding': 'gzip, deflate, zstd', 'connection': 'keep-alive', 'user-agent': 'testclient', 'content-length': '359', 'content-type': 'application/json'}
+Body: {"type":"post_call_transcription","event_timestamp":1700000000,"data":{"conversation_id":"conv_test_123","agent_id":"agent_test_123","analysis":{"summary":"The customer requested a brake repair."},"metadata":{"from_number":"+15559998888"},"transcript":[{"role":"user","message":"I need to fix my brakes."},{"role":"agent","message":"I can help with that."}]}}
+Processing call conv_test_123 from +15559998888...
+CRM note created successfully for call conv_test_123!
+
+[2026-07-30T10:17:42.986860] --- Webhook Request Received ---
+Headers: {'host': 'testserver', 'accept': '*/*', 'accept-encoding': 'gzip, deflate, zstd', 'connection': 'keep-alive', 'user-agent': 'testclient', 'content-length': '329', 'content-type': 'application/json'}
+Body: {"type":"post_call_transcription","event_timestamp":1700000000,"data":{"conversation_id":"conv_test_123","agent_id":"agent_test_123","analysis":{"summary":"The customer requested a callback."},"metadata":{"from_number":"+15559998888"},"transcript":[{"role":"user","message":"Can you call me back tomorrow morning at 8:00 AM?"}]}}
+Processing call conv_test_123 from +15559998888...
+CRM note created successfully for call conv_test_123!
+Extracted callback info: {'preferred_time': 'tomorrow morning at 8:00 AM', 'service_type': 'Brake repair', 'issue_description': 'Grinding noise'}
+Service request callback logged successfully!

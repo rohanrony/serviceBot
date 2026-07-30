@@ -1,4 +1,5 @@
 import os
+import json
 from fastapi import APIRouter, Response, HTTPException, Request
 from pydantic import BaseModel
 from typing import Dict, Any, Optional
@@ -1177,5 +1178,42 @@ async def sms_status_callback_webhook(request: Request):
                     )
 
     return {"status": "recorded"}
+
+
+@router.post("/api/v1/render-logs")
+@router.post("/render-logs")
+async def receive_render_logs(request: Request):
+    """
+    Receives real-time HTTPS log stream payloads from Render
+    and saves log entries directly into Supabase render_logs table.
+    """
+    try:
+        data = await request.json()
+        entries = data if isinstance(data, list) else [data]
+        
+        from serviceBot.db.connection import get_db_connection
+        inserted_count = 0
+        
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                for item in entries:
+                    if isinstance(item, dict):
+                        log_text = item.get("text") or item.get("message") or str(item)
+                        service_id = item.get("serviceId") or item.get("service_id")
+                        instance_id = item.get("instanceId") or item.get("instance_id")
+                        
+                        cur.execute("""
+                            INSERT INTO render_logs (service_id, instance_id, log_text, payload)
+                            VALUES (%s, %s, %s, %s)
+                        """, (service_id, instance_id, log_text, json.dumps(item)))
+                        inserted_count += 1
+                conn.commit()
+                
+        logger.info(f"[render_logs] Saved {inserted_count} log lines into Supabase render_logs table.")
+        return {"status": "ok", "inserted": inserted_count}
+    except Exception as e:
+        logger.error(f"[render_logs] Error processing Render log payload: {e}", exc_info=e)
+        return {"status": "error", "detail": str(e)}
+
 
 

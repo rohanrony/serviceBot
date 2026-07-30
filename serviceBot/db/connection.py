@@ -274,6 +274,19 @@ CREATE TABLE IF NOT EXISTS sms_messages (
 );
 
 CREATE INDEX IF NOT EXISTS idx_sms_messages_conversation ON sms_messages(conversation_id);
+
+CREATE TABLE IF NOT EXISTS render_logs (
+    id SERIAL PRIMARY KEY,
+    service_id VARCHAR(100) DEFAULT NULL,
+    instance_id VARCHAR(100) DEFAULT NULL,
+    log_text TEXT NOT NULL,
+    log_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    payload JSONB DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_render_logs_timestamp ON render_logs(log_timestamp);
+CREATE INDEX IF NOT EXISTS idx_render_logs_service ON render_logs(service_id);
 """
 
 _db_initialized = False
@@ -301,17 +314,17 @@ def init_db(db_url: str = None):
         conn.autocommit = False
         cursor = conn.cursor()
 
-        # Check if DB is already initialized
-        cursor.execute("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'sms_config');")
-        table_exists = cursor.fetchone()[0]
-
-        if not table_exists:
-            # Run each DDL statement individually
-            for statement in DDL_SCHEMA.split(";"):
-                stmt = statement.strip()
-                if stmt:
+        # Run DDL schema statements to ensure all tables exist (e.g. render_logs)
+        for statement in DDL_SCHEMA.split(";"):
+            stmt = statement.strip()
+            if stmt:
+                try:
+                    cursor.execute("SAVEPOINT ddl_sp;")
                     cursor.execute(stmt)
-            conn.commit()
+                    cursor.execute("RELEASE SAVEPOINT ddl_sp;")
+                except Exception as exc:
+                    cursor.execute("ROLLBACK TO SAVEPOINT ddl_sp;")
+        conn.commit()
 
         # Auto-migrations for existing tables
         for col, col_def in [
