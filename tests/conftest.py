@@ -37,3 +37,26 @@ def setup_and_cleanup_test_db():
         except OSError:
             pass
 
+
+@pytest.fixture
+def dummy_appointment_id():
+    from serviceBot.db.connection import get_db_connection, dict_cursor
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("INSERT INTO customers (name, phone) VALUES ('Test Cust', '+15550199999') ON CONFLICT (phone) DO UPDATE SET name = EXCLUDED.name RETURNING id;")
+            cust_id = cursor.fetchone()["id"]
+            cursor.execute("SELECT id FROM vehicles WHERE customer_id = %s LIMIT 1;", (cust_id,))
+            row = cursor.fetchone()
+            if row:
+                veh_id = row["id"]
+            else:
+                cursor.execute("INSERT INTO vehicles (customer_id, make, model, year) VALUES (%s, 'Toyota', 'Camry', 2020) RETURNING id;", (cust_id,))
+                veh_id = cursor.fetchone()["id"]
+
+            cursor.execute(
+                "INSERT INTO service_requests (customer_id, vehicle_id, service_type, issue_description, status, booking_time) VALUES (%s, %s, 'Oil Change', 'Routine oil change', 'pending', '2026-10-25 14:00:00') RETURNING id;",
+                (cust_id, veh_id)
+            )
+            return cursor.fetchone()["id"]
+
+

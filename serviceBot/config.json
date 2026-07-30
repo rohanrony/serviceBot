@@ -15,11 +15,11 @@
   "gmail_smtp_server": "smtp.gmail.com",
   "gmail_smtp_port": 587,
   "gmail_auth_type": "oauth2",
-  "gmail_client_id": "a4PuwzPraIuFOwL+EAkMm22fJJh0m6v7EkaqtQC63wEEaVT8jeLxJ8hatTjsnyps+RCDlwmZgZep7htpZ3kxzZujVVvt6b30hK7+GM0SBwrO",
+  "gmail_client_id": "gNHw+4R278UJ8DmvmINRO4HR993AlTNKIwt+wGhz/oznL6V5KcbOxxP4ayT0n56By9fsJF/3+yZnUnXiaUUtpzNlhr26NUTxWb+r9tkoE4Zg",
   "gmail_client_secret": "",
-  "gmail_access_token": "t4OYqlWslnKLEJ1z20P90xlBW9AV7+kbCC1Q0/mL/XNG6SKVh0oGLMedAFWjh9BtJaCcbRu5NlI0FhpnknA9AUtsnqr7XBHDzlmN4B8UnFHmqlYA8PelKkWbZryX0cLbXDmh/Op7bbCKZAvRypX/1E7Q3+C7TyKsCgknNKJ0AB0gGABJwIltkcdR5N+zDTestz2c+Ccx7UrnwOHjnl/xbg0KKexmFT21nWMOYrdG4peVGn/fay4hAoU+I+MufnPxMChW0IWATfq4nxQKiIfOSgnICRIrjnBFNtK2FxJcyQilZpAwnUCAq3sp3vDXVrivBHY3gYRKvoumSRppyg4WU8GGdlE9",
+  "gmail_access_token": "Ib62hvr5hY7Zn5olSV7P0ppiCCtbdIvq9eeehc18qPGAhuR0XT13s1jPyO9Lhhkh/3iQ7uTyu69DVmdiRPOC292W3r75tT8YQ1hVQ2Omps13SblnLTN8cIysArvjSTzh9uGigLissLgDWAt0Ml3cts26WXeDMJGKjY5vL60BxiBOtrCQVkahSJ8Rs8BOmXJjJBQbgZBMmdONAmWSkX+udm/QYDZPi+wdOb7VPOJPqM8fvVvNEZ/J61OndRAG2tvHud1yKGABFHAQDS8KG5hV7RHykDx/rQKzgfUYg355JrHkUT70xHnnY34lvoL3DHtDdan3XbfAq9MQXtbX5bl6LPr6y4nkdA==",
   "gmail_refresh_token": "UTPppbCXAWHUXxNn3dubhEGAQL9DcfrrIlrC8+GDccTFmgQW3WLnE7gPH54vvY3O/xP7pWMCj5ziAL/LIkGbVXHcZ9pIdme7Vl+vHf+4d1F2qRPnSvBH9v75abA1uGCStk0jnaM2fg4oGpQ0dAG5",
-  "gmail_token_expires_at": 1784933881.148313,
+  "gmail_token_expires_at": 1785421132.4514,
   "business_hours_start": 7,
   "business_hours_end": 18,
   "business_hours": [
@@ -41,5 +41,6 @@
     2,
     3,
     4
-  ]
+  ],
+  "admin_phone_number": "+14242704893"
 }

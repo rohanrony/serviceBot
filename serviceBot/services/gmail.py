@@ -10,6 +10,9 @@ from email.mime.multipart import MIMEMultipart
 from serviceBot.api.portal import load_config, save_config
 from serviceBot.services.encryption import encrypt_key, decrypt_key
 from serviceBot.db.connection import get_db_connection
+from serviceBot.logger import get_logger
+
+logger = get_logger("services.gmail")
 
 def refresh_gmail_token() -> Optional[str]:
     """
@@ -32,7 +35,7 @@ def refresh_gmail_token() -> Optional[str]:
         client_secret = os.getenv("GOOGLE_CLIENT_SECRET") or os.getenv("GMAIL_CLIENT_SECRET")
 
     if not client_id or not client_secret or not refresh_token:
-        print("Gmail OAuth2 Error: Missing Client ID, Client Secret, or Refresh Token configurations.")
+        logger.warning("Gmail OAuth2 Error: Missing Client ID, Client Secret, or Refresh Token configurations.")
         return None
 
     try:
@@ -44,10 +47,10 @@ def refresh_gmail_token() -> Optional[str]:
             "grant_type": "refresh_token"
         }
         
-        print("Requesting fresh Google OAuth2 access token...")
+        logger.info("Requesting fresh Google OAuth2 access token...")
         response = httpx.post(url, data=payload, timeout=10.0)
         if response.status_code != 200:
-            print(f"Failed to refresh Google token (HTTP {response.status_code}): {response.text}")
+            logger.error(f"Failed to refresh Google token (HTTP {response.status_code}): {response.text}")
             return None
             
         data = response.json()
@@ -62,10 +65,10 @@ def refresh_gmail_token() -> Optional[str]:
         config["gmail_token_expires_at"] = expires_at
         save_config(config)
         
-        print("Google OAuth2 access token refreshed successfully!")
+        logger.info("Google OAuth2 access token refreshed successfully!")
         return new_access_token
     except Exception as e:
-        print(f"Gmail OAuth2 Refresh Exception: {str(e)}")
+        logger.error(f"Gmail OAuth2 Refresh Exception: {str(e)}", exc_info=e)
         return None
 
 def get_gmail_access_token() -> Optional[str]:

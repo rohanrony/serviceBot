@@ -33,3 +33,4 @@ AGENTS.md
 .venv/*
 .vscode/*
 .switchboard/README.md
+server.logs

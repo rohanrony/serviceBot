@@ -4,8 +4,13 @@ import psycopg2.pool
 import psycopg2.errors
 import os
 from contextlib import contextmanager
+import threading
 import sys
+
 from dotenv import load_dotenv
+from serviceBot.logger import get_logger
+
+logger = get_logger("db.connection")
 
 # Load environment variables from .env
 load_dotenv()
@@ -35,6 +40,7 @@ def _get_pool():
     if _pool is None:
         db_url = get_db_url()
         if not db_url or not (db_url.startswith("postgresql") or db_url.startswith("postgres")):
+            logger.error(f"Invalid DATABASE_URL configuration: {db_url!r}")
             raise RuntimeError(
                 "DATABASE_URL must be a PostgreSQL connection string "
                 "(e.g. postgresql://user:pass@host/dbname). "
@@ -44,7 +50,12 @@ def _get_pool():
             minconn=1,
             maxconn=10,
             dsn=db_url,
+            keepalives=1,
+            keepalives_idle=30,
+            keepalives_interval=10,
+            keepalives_count=5,
         )
+        logger.info("Initialized PostgreSQL connection pool (minconn=1, maxconn=10).")
     return _pool
 
 
@@ -65,6 +76,7 @@ CREATE TABLE IF NOT EXISTS staff_agents (
     name VARCHAR(255) NOT NULL,
     role VARCHAR(100) DEFAULT NULL,
     email VARCHAR(255) DEFAULT NULL,
+    phone_number VARCHAR(50) DEFAULT NULL,
     google_access_token TEXT DEFAULT NULL,
     google_refresh_token TEXT DEFAULT NULL,
     google_token_expires_at REAL DEFAULT NULL
@@ -175,20 +187,107 @@ CREATE TABLE IF NOT EXISTS outbox_notifications (
 );
 
 CREATE INDEX IF NOT EXISTS idx_outbox_status_next_retry ON outbox_notifications(status, next_retry_at);
+
+CREATE TABLE IF NOT EXISTS sms_config (
+    id SERIAL PRIMARY KEY,
+    quiet_hours_enabled BOOLEAN DEFAULT TRUE,
+    quiet_start_time TIME DEFAULT '21:00',
+    quiet_end_time TIME DEFAULT '08:00',
+    urgent_threshold_hours INTEGER DEFAULT 12,
+    support_phone_number VARCHAR(50) DEFAULT NULL,
+    admin_phone_number VARCHAR(50) DEFAULT NULL,
+    auto_responder_template TEXT DEFAULT 'Thank you! Our team has received your message. For urgent help, call {support_number}.',
+    auto_responder_debounce_seconds INTEGER DEFAULT 60,
+    environment VARCHAR(20) DEFAULT 'TEST',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS sms_matrix_rules (
+    id SERIAL PRIMARY KEY,
+    event_type VARCHAR(50) NOT NULL,
+    recipient_role VARCHAR(30) NOT NULL,
+    enabled BOOLEAN DEFAULT TRUE,
+    UNIQUE(event_type, recipient_role)
+);
+
+CREATE TABLE IF NOT EXISTS sms_whitelist (
+    id SERIAL PRIMARY KEY,
+    phone_number VARCHAR(50) NOT NULL UNIQUE,
+    friendly_name VARCHAR(255) DEFAULT NULL,
+    twilio_verified BOOLEAN DEFAULT FALSE,
+    whatsapp_onboarded BOOLEAN DEFAULT FALSE,
+    whatsapp_onboarded_at TIMESTAMP DEFAULT NULL,
+    recipient_role VARCHAR(50) DEFAULT 'CUSTOMER',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS sms_log (
+    id SERIAL PRIMARY KEY,
+    appointment_id INTEGER DEFAULT NULL REFERENCES service_requests(id) ON DELETE SET NULL,
+    recipient_type VARCHAR(20) NOT NULL,
+    recipient_phone VARCHAR(50) NOT NULL,
+    template_type VARCHAR(50) NOT NULL,
+    twilio_message_sid VARCHAR(50) DEFAULT NULL,
+    status VARCHAR(30) NOT NULL DEFAULT 'PENDING',
+    error_code VARCHAR(20) DEFAULT NULL,
+    error_message TEXT DEFAULT NULL,
+    retry_count INTEGER DEFAULT 0,
+    scheduled_send_at TIMESTAMP DEFAULT NULL,
+    sent_at TIMESTAMP DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS sms_reminders (
+    id SERIAL PRIMARY KEY,
+    appointment_id INTEGER NOT NULL REFERENCES service_requests(id) ON DELETE CASCADE,
+    recipient_type VARCHAR(20) NOT NULL,
+    recipient_phone VARCHAR(50) NOT NULL,
+    reminder_type VARCHAR(10) NOT NULL,
+    scheduled_at TIMESTAMP NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS sms_conversations (
+    id SERIAL PRIMARY KEY,
+    customer_phone VARCHAR(50) NOT NULL UNIQUE,
+    state VARCHAR(30) DEFAULT 'AUTOMATED' CHECK (state IN ('AUTOMATED', 'HANDOFF_REQUIRED', 'IN_PROGRESS', 'RESOLVED')),
+    last_auto_responder_at TIMESTAMP DEFAULT NULL,
+    context_appointment_id INTEGER DEFAULT NULL REFERENCES service_requests(id) ON DELETE SET NULL,
+    assigned_agent_id INTEGER DEFAULT NULL REFERENCES staff_agents(id) ON DELETE SET NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_sms_conversations_state ON sms_conversations(state);
+
+CREATE TABLE IF NOT EXISTS sms_messages (
+    id SERIAL PRIMARY KEY,
+    conversation_id INTEGER NOT NULL REFERENCES sms_conversations(id) ON DELETE CASCADE,
+    direction VARCHAR(10) NOT NULL CHECK (direction IN ('inbound', 'outbound')),
+    sender_type VARCHAR(20) NOT NULL CHECK (sender_type IN ('customer', 'system', 'agent')),
+    sender_name VARCHAR(255) DEFAULT NULL,
+    body TEXT NOT NULL,
+    twilio_message_sid VARCHAR(50) DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_sms_messages_conversation ON sms_messages(conversation_id);
 """
 
 _db_initialized = False
 
 
 def _safe_alter(cursor, conn, sql):
-    """Run an ALTER TABLE statement, rolling back on DuplicateColumn."""
+    """Run an ALTER TABLE statement cleanly using SAVEPOINT."""
     try:
+        cursor.execute("SAVEPOINT alter_sp;")
         cursor.execute(sql)
-    except psycopg2.errors.DuplicateColumn:
-        conn.rollback()
-    except Exception:
-        conn.rollback()
-        raise
+        cursor.execute("RELEASE SAVEPOINT alter_sp;")
+    except Exception as exc:
+        cursor.execute("ROLLBACK TO SAVEPOINT alter_sp;")
+        logger.debug(f"ALTER statement skipped or safe rollback: {exc}")
 
 
 def init_db(db_url: str = None):
@@ -197,19 +296,24 @@ def init_db(db_url: str = None):
     if db_url is None:
         db_url = get_db_url()
 
-    conn = psycopg2.connect(db_url)
     try:
+        conn = psycopg2.connect(db_url)
         conn.autocommit = False
         cursor = conn.cursor()
 
-        # Run each DDL statement individually
-        for statement in DDL_SCHEMA.split(";"):
-            stmt = statement.strip()
-            if stmt:
-                cursor.execute(stmt)
-        conn.commit()
+        # Check if DB is already initialized
+        cursor.execute("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'sms_config');")
+        table_exists = cursor.fetchone()[0]
 
-        # Auto-migration: add missing columns to services table
+        if not table_exists:
+            # Run each DDL statement individually
+            for statement in DDL_SCHEMA.split(";"):
+                stmt = statement.strip()
+                if stmt:
+                    cursor.execute(stmt)
+            conn.commit()
+
+        # Auto-migrations for existing tables
         for col, col_def in [
             ("req_customer_name", "BOOLEAN DEFAULT TRUE"),
             ("req_phone_number", "BOOLEAN DEFAULT TRUE"),
@@ -217,46 +321,116 @@ def init_db(db_url: str = None):
             ("req_issue_description", "BOOLEAN DEFAULT TRUE"),
             ("req_location", "BOOLEAN DEFAULT TRUE"),
         ]:
-            _safe_alter(cursor, conn, f"ALTER TABLE services ADD COLUMN {col} {col_def}")
+            _safe_alter(cursor, conn, f"ALTER TABLE services ADD COLUMN IF NOT EXISTS {col} {col_def}")
 
-        # Auto-migration: add missing columns to staff_agents table
         for col, col_type in [
             ("email", "VARCHAR(255) DEFAULT NULL"),
             ("google_access_token", "TEXT DEFAULT NULL"),
             ("google_refresh_token", "TEXT DEFAULT NULL"),
             ("google_token_expires_at", "REAL DEFAULT NULL"),
+            ("phone_number", "VARCHAR(50) DEFAULT NULL"),
         ]:
-            _safe_alter(cursor, conn, f"ALTER TABLE staff_agents ADD COLUMN {col} {col_type}")
+            _safe_alter(cursor, conn, f"ALTER TABLE staff_agents ADD COLUMN IF NOT EXISTS {col} {col_type}")
 
-        # Auto-migration: add missing columns to service_requests table
+        for col, col_type in [
+            ("sms_opt_in", "BOOLEAN DEFAULT TRUE"),
+        ]:
+            _safe_alter(cursor, conn, f"ALTER TABLE customers ADD COLUMN IF NOT EXISTS {col} {col_type}")
+
         for col, col_type in [
             ("time_slot", "VARCHAR(100) DEFAULT NULL"),
             ("booking_type", "VARCHAR(50) DEFAULT NULL CHECK (booking_type IN ('appointment', 'callback'))"),
             ("booking_time", "VARCHAR(100) DEFAULT NULL"),
             ("staff_agent_id", "INTEGER REFERENCES staff_agents(id) ON DELETE SET NULL"),
+            ("updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
         ]:
-            _safe_alter(cursor, conn, f"ALTER TABLE service_requests ADD COLUMN {col} {col_type}")
+            _safe_alter(cursor, conn, f"ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS {col} {col_type}")
+
+        for col, col_type in [
+            ("admin_phone_number", "VARCHAR(50) DEFAULT NULL"),
+        ]:
+            _safe_alter(cursor, conn, f"ALTER TABLE sms_config ADD COLUMN IF NOT EXISTS {col} {col_type}")
+
+        for col, col_type in [
+            ("whatsapp_onboarded", "BOOLEAN DEFAULT FALSE"),
+            ("whatsapp_onboarded_at", "TIMESTAMP DEFAULT NULL"),
+            ("recipient_role", "VARCHAR(50) DEFAULT 'CUSTOMER'"),
+        ]:
+            _safe_alter(cursor, conn, f"ALTER TABLE sms_whitelist ADD COLUMN IF NOT EXISTS {col} {col_type}")
+        conn.commit()
 
         # Drop legacy tables
         cursor.execute("DROP TABLE IF EXISTS appointments")
         cursor.execute("DROP TABLE IF EXISTS callback_requests")
 
-        # Auto-migration: update status check constraint to include rescheduled
         try:
             cursor.execute("ALTER TABLE service_requests DROP CONSTRAINT IF EXISTS service_requests_status_check;")
-            cursor.execute("ALTER TABLE service_requests ADD CONSTRAINT service_requests_status_check CHECK (status IN ('pending', 'in_progress', 'completed', 'cancelled', 'rescheduled'));")
+            cursor.execute("ALTER TABLE service_requests ADD CONSTRAINT service_requests_status_check CHECK (status IN ('pending', 'in_progress', 'completed', 'cancelled', 'rescheduled', 'confirmed', 'cancelled_by_customer'));")
             conn.commit()
         except Exception:
             conn.rollback()
 
+        # Seed default sms_config if empty
+        cursor.execute("SELECT COUNT(*) FROM sms_config;")
+        if cursor.fetchone()[0] == 0:
+            cursor.execute("""
+                INSERT INTO sms_config (quiet_hours_enabled, quiet_start_time, quiet_end_time, urgent_threshold_hours, support_phone_number, auto_responder_template, auto_responder_debounce_seconds, environment)
+                VALUES (TRUE, '21:00', '08:00', 12, '+18005550199', 'Thank you! Our team has received your message. For urgent help, call {support_number}.', 60, 'PRODUCTION');
+            """)
+
+        # Seed default sms_matrix_rules if empty
+        cursor.execute("SELECT COUNT(*) FROM sms_matrix_rules;")
+        if cursor.fetchone()[0] == 0:
+            default_rules = [
+                ('BOOKING', 'customer', True),
+                ('BOOKING', 'agent', True),
+                ('BOOKING', 'admin', False),
+                ('RESCHEDULED', 'customer', True),
+                ('RESCHEDULED', 'agent', True),
+                ('RESCHEDULED', 'admin', False),
+                ('REASSIGNED', 'customer', False),
+                ('REASSIGNED', 'agent', True),
+                ('REASSIGNED', 'previous_agent', True),
+                ('REASSIGNED', 'admin', False),
+                ('RESCHEDULED_REASSIGNED', 'customer', True),
+                ('RESCHEDULED_REASSIGNED', 'agent', True),
+                ('RESCHEDULED_REASSIGNED', 'previous_agent', True),
+                ('RESCHEDULED_REASSIGNED', 'admin', False),
+                ('CANCELLED_BY_CUSTOMER', 'customer', True),
+                ('CANCELLED_BY_CUSTOMER', 'agent', True),
+                ('CANCELLED_BY_CUSTOMER', 'admin', False),
+                ('CANCELLED_BY_ADMIN', 'customer', True),
+                ('CANCELLED_BY_ADMIN', 'agent', True),
+                ('CANCELLED_BY_ADMIN', 'admin', False),
+                ('REMINDER_24H', 'customer', True),
+                ('REMINDER_24H', 'admin', False),
+                ('REMINDER_2H', 'customer', True),
+                ('REMINDER_2H', 'agent', True),
+                ('REMINDER_2H', 'admin', False),
+            ]
+            for event_type, recipient_role, enabled in default_rules:
+                cursor.execute(
+                    "INSERT INTO sms_matrix_rules (event_type, recipient_role, enabled) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING;",
+                    (event_type, recipient_role, enabled)
+                )
+
         conn.commit()
         _db_initialized = True
-    except Exception:
-        conn.rollback()
+        logger.info("Database schema initialized successfully.")
+    except Exception as exc:
+        if 'conn' in locals() and conn:
+            conn.rollback()
+            conn.close()
+        logger.error(f"Failed to initialize database schema: {exc}", exc_info=exc)
         raise
     finally:
-        cursor.close()
-        conn.close()
+        if 'cursor' in locals() and cursor and not cursor.closed:
+            cursor.close()
+        if 'conn' in locals() and conn and not conn.closed:
+            conn.close()
+
+
+_init_lock = threading.Lock()
 
 
 @contextmanager
@@ -267,15 +441,35 @@ def get_db_connection():
     conn = None
     try:
         if not _db_initialized:
-            init_db(db_url)
+            with _init_lock:
+                if not _db_initialized:
+                    init_db(db_url)
 
         pool = _get_pool()
-        conn = pool.getconn()
-        if conn and conn.closed != 0:
+
+        # Validate connection liveness to handle Supabase pooler idle disconnects
+        for _ in range(3):
+            c = None
             try:
-                pool.putconn(conn, close=True)
-            except Exception:
-                pass
+                c = pool.getconn()
+                if c and c.closed == 0:
+                    c.autocommit = True
+                    with c.cursor() as cur:
+                        cur.execute("SELECT 1;")
+                    c.autocommit = False
+                    conn = c
+                    break
+                elif c:
+                    pool.putconn(c, close=True)
+            except Exception as test_err:
+                logger.warning(f"Discarding stale connection from pool: {test_err}")
+                if c:
+                    try:
+                        pool.putconn(c, close=True)
+                    except Exception:
+                        pass
+
+        if conn is None:
             conn = pool.getconn()
 
         conn.autocommit = False
@@ -298,7 +492,7 @@ def get_db_connection():
                 except Exception:
                     pass
     except Exception as err:
-        print(f"[get_db_connection] Database connection error: {err}")
+        logger.error(f"Database connection error: {err}", exc_info=err)
         raise
 
 

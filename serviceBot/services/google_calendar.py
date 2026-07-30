@@ -8,6 +8,9 @@ from typing import Optional
 from serviceBot.db.connection import get_db_connection
 from serviceBot.services.encryption import encrypt_key, decrypt_key
 from serviceBot.api.portal import load_config
+from serviceBot.logger import get_logger
+
+logger = get_logger("services.google_calendar")
 
 class GoogleAuthException(Exception):
     """Custom exception for expired, invalid, revoked, or insufficient Google credentials."""

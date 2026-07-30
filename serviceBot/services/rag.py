@@ -4,6 +4,9 @@ os.environ["CHROMA_TELEMETRY_IMPL"] = "None"
 import chromadb
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
+from serviceBot.logger import get_logger
+
+logger = get_logger("services.rag")
 
 class FAQService:
     def __init__(self, collection=None):
