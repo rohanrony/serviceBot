@@ -76,8 +76,9 @@ def _generate_slot_strings(days: int = DEFAULT_DAYS, hours: List[int] = None) ->
         if day.weekday() not in valid_days:          # Skip non-operating business days
             continue
         for hour in hours:
-            dt = datetime.datetime.combine(day, datetime.time(hour, 0, 0))
-            slots.append(dt.strftime("%Y-%m-%d %H:%M:%S"))
+            for minute in (0, 30):
+                dt = datetime.datetime.combine(day, datetime.time(hour, minute, 0))
+                slots.append(dt.strftime("%Y-%m-%d %H:%M:%S"))
     return slots
 
 

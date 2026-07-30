@@ -6,6 +6,21 @@ from datetime import timedelta
 logger = get_logger("db.queries")
 
 
+def normalize_e164_phone(phone: str) -> str:
+    """Normalizes phone number string to E.164 format (+1XXXXXXXXXX)."""
+    import re
+    if not phone:
+        return ""
+    digits = re.sub(r"\D", "", phone)
+    if len(digits) == 10:
+        return f"+1{digits}"
+    elif len(digits) == 11 and digits.startswith("1"):
+        return f"+{digits}"
+    elif phone.startswith("+"):
+        return phone
+    return phone
+
+
 def lookup_customer_by_phone(phone: str) -> dict:
     """
     Looks up a customer by phone number and returns their details,
@@ -16,6 +31,7 @@ def lookup_customer_by_phone(phone: str) -> dict:
     cleaned_phone = re.sub(r"\D", "", phone) if phone else ""
     if len(cleaned_phone) == 11 and cleaned_phone.startswith("1"):
         cleaned_phone = cleaned_phone[1:]
+    e164_phone = f"+1{cleaned_phone}" if len(cleaned_phone) == 10 else f"+{cleaned_phone}"
 
     query = """
     SELECT 
@@ -135,6 +151,71 @@ def create_service_request(
             return sr_id
 
 
+def parse_preferred_date_and_time(preferred_date_str: str) -> tuple:
+    """
+    Parses a user or tool supplied date/time string into a tuple:
+    (iso_date_str, time_window, start_timestamp_str)
+    """
+    import re
+    import datetime as dt_mod
+
+    if not preferred_date_str:
+        return None, None, "1970-01-01 00:00:00"
+
+    raw = str(preferred_date_str).strip()
+    low = raw.lower()
+
+    # 1. Determine time_window (afternoon, morning, evening)
+    time_window = None
+    if any(w in low for w in ["afternoon", "pm", "p.m.", "noon"]):
+        time_window = "afternoon"
+    elif any(w in low for w in ["morning", "am", "a.m."]):
+        time_window = "morning"
+    elif any(w in low for w in ["evening", "night"]):
+        time_window = "evening"
+
+    # 2. Extract ISO date (YYYY-MM-DD)
+    iso_date_match = re.search(r'\b(\d{4}-\d{2}-\d{2})\b', raw)
+    iso_date_str = None
+    if iso_date_match:
+        iso_date_str = iso_date_match.group(1)
+    else:
+        # Try parsing month names (e.g. "August 6", "Aug 6", "August 6th", "August 6, 2026")
+        months = {
+            "january": 1, "jan": 1, "february": 2, "feb": 2, "march": 3, "mar": 3,
+            "april": 4, "apr": 4, "may": 5, "june": 6, "jun": 6, "july": 7, "jul": 7,
+            "august": 8, "aug": 8, "september": 9, "sep": 9, "sept": 9, "october": 10, "oct": 10,
+            "november": 11, "nov": 11, "december": 12, "dec": 12
+        }
+        month_match = re.search(r'\b(january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sep|sept|october|oct|november|nov|december|dec)\b[\s,]*(\d{1,2})(?:st|nd|rd|th)?(?:\s*,?\s*(\d{4}))?', low)
+        if month_match:
+            m_str = month_match.group(1)
+            d_int = int(month_match.group(2))
+            y_str = month_match.group(3)
+            m_int = months[m_str]
+            year = int(y_str) if y_str else dt_mod.date.today().year
+            try:
+                dt_obj = dt_mod.date(year, m_int, d_int)
+                iso_date_str = dt_obj.strftime("%Y-%m-%d")
+            except ValueError:
+                pass
+
+    # 3. Construct start_timestamp_str (safe YYYY-MM-DD HH:MM:SS for SQL)
+    if iso_date_str:
+        if time_window == "afternoon":
+            start_timestamp_str = f"{iso_date_str} 12:00:00"
+        elif time_window == "evening":
+            start_timestamp_str = f"{iso_date_str} 15:00:00"
+        elif time_window == "morning":
+            start_timestamp_str = f"{iso_date_str} 07:00:00"
+        else:
+            start_timestamp_str = f"{iso_date_str} 00:00:00"
+    else:
+        start_timestamp_str = "1970-01-01 00:00:00"
+
+    return iso_date_str, time_window, start_timestamp_str
+
+
 def _generate_dynamic_slots(preferred_date_str: str, duration_minutes: int) -> list:
     """
     Generates candidate work-hour slots dynamically for the next 14 business days,
@@ -144,9 +225,11 @@ def _generate_dynamic_slots(preferred_date_str: str, duration_minutes: int) -> l
     import datetime as dt_mod
     from serviceBot.services.calendar_sync import get_configured_business_hours, get_configured_business_days
     
-    if preferred_date_str and len(preferred_date_str) >= 10:
+    iso_date_str, time_window, _ = parse_preferred_date_and_time(preferred_date_str)
+
+    if iso_date_str:
         try:
-            start_date = dt_mod.date.fromisoformat(preferred_date_str[:10])
+            start_date = dt_mod.date.fromisoformat(iso_date_str)
         except ValueError:
             start_date = dt_mod.date.today()
     else:
@@ -163,13 +246,22 @@ def _generate_dynamic_slots(preferred_date_str: str, duration_minutes: int) -> l
     now_dt = dt_mod.datetime.now()
     valid_hours = get_configured_business_hours()
     valid_days = get_configured_business_days()
+
+    if time_window == "afternoon":
+        valid_hours = [h for h in valid_hours if 12 <= h < 18]
+    elif time_window == "morning":
+        valid_hours = [h for h in valid_hours if 7 <= h < 12]
+    elif time_window == "evening":
+        valid_hours = [h for h in valid_hours if 15 <= h < 18]
+
     while len(slots) < 60 and day_offset < 30:
         candidate_day = start_date + dt_mod.timedelta(days=day_offset)
         if candidate_day.weekday() in valid_days:  # Configured operating days
             for hour in valid_hours:
-                slot_dt = dt_mod.datetime.combine(candidate_day, dt_mod.time(hour, 0, 0))
-                if slot_dt > now_dt:
-                    slots.append(slot_dt.strftime("%Y-%m-%d %H:%M:%S"))
+                for minute in (0, 30):
+                    slot_dt = dt_mod.datetime.combine(candidate_day, dt_mod.time(hour, minute, 0))
+                    if slot_dt > now_dt:
+                        slots.append(slot_dt.strftime("%Y-%m-%d %H:%M:%S"))
         day_offset += 1
     return slots
 
@@ -195,13 +287,7 @@ def check_availability(service_type: str = None, preferred_date: str = None) -> 
     from concurrent.futures import ThreadPoolExecutor, as_completed
     from serviceBot.services.google_calendar import fetch_agent_events, parse_google_datetime
 
-    if not preferred_date:
-        start_time = "1970-01-01 00:00:00"
-    else:
-        if len(preferred_date) == 10:
-            start_time = f"{preferred_date} 00:00:00"
-        else:
-            start_time = preferred_date
+    iso_date_str, time_window, start_time = parse_preferred_date_and_time(preferred_date)
 
     duration_minutes = 60
     if service_type:
@@ -225,14 +311,24 @@ def check_availability(service_type: str = None, preferred_date: str = None) -> 
     now_dt = dt_mod.datetime.now()
     all_agent_slots = {}
     candidate_rows = []
+    target_date_candidates = []
     if mock_rows:
         for r in mock_rows:
             val = r["slot_datetime"]
             dt_val = dt_mod.datetime.strptime(val, "%Y-%m-%d %H:%M:%S") if isinstance(val, str) else val
             all_agent_slots[(r["staff_agent_id"], dt_val)] = r["is_booked"]
             if dt_val > now_dt and not r["is_booked"]:
-                candidate_rows.append(r)
+                # Check time window
+                if time_window == "afternoon" and not (12 <= dt_val.hour < 18):
+                    continue
+                elif time_window == "morning" and not (7 <= dt_val.hour < 12):
+                    continue
+                elif time_window == "evening" and not (15 <= dt_val.hour < 18):
+                    continue
 
+                candidate_rows.append(r)
+                if iso_date_str and dt_val.strftime("%Y-%m-%d") == iso_date_str:
+                    target_date_candidates.append(r)
 
     # --- Get all Google Calendar connected agents ---
     with get_db_connection() as conn:
@@ -251,7 +347,9 @@ def check_availability(service_type: str = None, preferred_date: str = None) -> 
     # MODE 1: Mock slot mode — slots exist in mock_calendar_slots
     # ===========================================================
     if mock_rows:
-        limited_rows = candidate_rows[:100]
+        # Prioritize candidate rows on the explicitly requested target date if present
+        eval_rows = target_date_candidates if target_date_candidates else candidate_rows
+        limited_rows = eval_rows[:100]
 
         if connected_agent_ids and limited_rows:
             slot_dts = []

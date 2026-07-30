@@ -182,11 +182,12 @@ def seed_db(force: bool = False):
 
             if current_day.weekday() in valid_days:
                 for hour in hours:
-                    slot_dt = datetime.datetime.combine(current_day, datetime.time(hour, 0, 0))
-                    slot_str = slot_dt.strftime("%Y-%m-%d %H:%M:%S")
-                    for agent_id in [1, 2, 3]:
-                        is_booked = random.random() < 0.3
-                        slots.append((slot_str, is_booked, agent_id))
+                    for minute in (0, 30):
+                        slot_dt = datetime.datetime.combine(current_day, datetime.time(hour, minute, 0))
+                        slot_str = slot_dt.strftime("%Y-%m-%d %H:%M:%S")
+                        for agent_id in [1, 2, 3]:
+                            is_booked = random.random() < 0.3
+                            slots.append((slot_str, is_booked, agent_id))
                         
         cursor.executemany(
             "INSERT INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES (%s, %s, %s) ON CONFLICT (slot_datetime, staff_agent_id) DO NOTHING;",

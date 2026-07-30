@@ -173,8 +173,71 @@ def test_existing_customer_continuity():
     print("✔ Existing customer context lookup & name updating test PASSED!")
 
 
+def test_customer_identity_best_practices():
+    print("Testing E.164 phone normalization & verify_caller_identity voice tool...")
+    from serviceBot.db.queries import lookup_customer_by_phone, normalize_e164_phone
+
+    # Clean DB
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM customers WHERE phone LIKE '%5550001111%';")
+        conn.commit()
+
+    # Test normalization function
+    assert normalize_e164_phone("5550001111") == "+15550001111"
+    assert normalize_e164_phone("(555) 000-1111") == "+15550001111"
+    assert normalize_e164_phone("+15550001111") == "+15550001111"
+
+    # Pre-create customer
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO customers (name, phone) VALUES (%s, %s) RETURNING id;",
+            ("Alice Smith", "+15550001111")
+        )
+        c_id = cursor.fetchone()["id"]
+        conn.commit()
+
+    # Test tool endpoint matching name
+    payload_match = {
+        "name": "verify_caller_identity",
+        "arguments": {
+            "phone": "+15550001111",
+            "claimed_name": "Alice Smith"
+        }
+    }
+    res_match = client.post("/api/v1/voice/tools", json=payload_match)
+    assert res_match.status_code == 200
+    data_match = res_match.json()
+    assert data_match["success"] is True
+    assert data_match["is_verified_existing_customer"] is True
+
+    # Test tool endpoint mismatching name
+    payload_diff = {
+        "name": "verify_caller_identity",
+        "arguments": {
+            "phone": "+15550001111",
+            "claimed_name": "Bob Smith"
+        }
+    }
+    res_diff = client.post("/api/v1/voice/tools", json=payload_diff)
+    assert res_diff.status_code == 200
+    data_diff = res_diff.json()
+    assert data_diff["success"] is True
+    assert data_diff["is_verified_existing_customer"] is False
+
+    # Clean DB
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM customers WHERE id = %s;", (c_id,))
+        conn.commit()
+
+    print("✔ E.164 phone normalization & verify_caller_identity voice tool test PASSED!")
+
+
 if __name__ == "__main__":
     test_post_call_webhook_prevents_duplicate_if_booking_exists()
     test_twilio_sms_clean_formatting()
     test_existing_customer_continuity()
-    print("\n🎉 ALL NOTIFICATION, SMS, AND CUSTOMER CONTINUITY TESTS PASSED SUCCESSFULLY!")
+    test_customer_identity_best_practices()
+    print("\n🎉 ALL NOTIFICATION, SMS, CONTINUITY, AND IDENTITY BEST PRACTICE TESTS PASSED SUCCESSFULLY!")
