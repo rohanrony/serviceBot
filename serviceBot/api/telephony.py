@@ -331,7 +331,7 @@ async def post_call_webhook(request: Request = None, payload: Dict[str, Any] = N
                 with dict_cursor(conn) as cursor:
                     cursor.execute("""
                         SELECT id FROM service_requests 
-                        WHERE customer_id = %s AND booking_type = 'callback' AND created_at >= NOW() - INTERVAL '5 minutes'
+                        WHERE customer_id = %s AND created_at >= NOW() - INTERVAL '5 minutes'
                     """, (customer_id,))
                     exists = cursor.fetchone()
                     if not exists:
