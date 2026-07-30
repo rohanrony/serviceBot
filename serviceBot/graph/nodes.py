@@ -6,6 +6,9 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import SystemMessage
 from serviceBot.graph.state import AgentState
 from serviceBot.api.portal import load_config
+from serviceBot.logger import get_logger
+
+logger = get_logger("graph.nodes")
 
 class IntentClassification(BaseModel):
     intent: str = Field(

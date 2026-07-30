@@ -8,6 +8,9 @@ import threading
 import sys
 
 from dotenv import load_dotenv
+from serviceBot.logger import get_logger
+
+logger = get_logger("db.connection")
 
 # Load environment variables from .env
 load_dotenv()
@@ -37,6 +40,7 @@ def _get_pool():
     if _pool is None:
         db_url = get_db_url()
         if not db_url or not (db_url.startswith("postgresql") or db_url.startswith("postgres")):
+            logger.error(f"Invalid DATABASE_URL configuration: {db_url!r}")
             raise RuntimeError(
                 "DATABASE_URL must be a PostgreSQL connection string "
                 "(e.g. postgresql://user:pass@host/dbname). "
@@ -47,6 +51,7 @@ def _get_pool():
             maxconn=10,
             dsn=db_url,
         )
+        logger.info("Initialized PostgreSQL connection pool (minconn=1, maxconn=10).")
     return _pool
 
 
@@ -67,6 +72,7 @@ CREATE TABLE IF NOT EXISTS staff_agents (
     name VARCHAR(255) NOT NULL,
     role VARCHAR(100) DEFAULT NULL,
     email VARCHAR(255) DEFAULT NULL,
+    phone_number VARCHAR(50) DEFAULT NULL,
     google_access_token TEXT DEFAULT NULL,
     google_refresh_token TEXT DEFAULT NULL,
     google_token_expires_at REAL DEFAULT NULL
@@ -185,6 +191,7 @@ CREATE TABLE IF NOT EXISTS sms_config (
     quiet_end_time TIME DEFAULT '08:00',
     urgent_threshold_hours INTEGER DEFAULT 12,
     support_phone_number VARCHAR(50) DEFAULT NULL,
+    admin_phone_number VARCHAR(50) DEFAULT NULL,
     auto_responder_template TEXT DEFAULT 'Thank you! Our team has received your message. For urgent help, call {support_number}.',
     auto_responder_debounce_seconds INTEGER DEFAULT 60,
     environment VARCHAR(20) DEFAULT 'TEST',
@@ -271,8 +278,9 @@ def _safe_alter(cursor, conn, sql):
         cursor.execute("SAVEPOINT alter_sp;")
         cursor.execute(sql)
         cursor.execute("RELEASE SAVEPOINT alter_sp;")
-    except Exception:
+    except Exception as exc:
         cursor.execute("ROLLBACK TO SAVEPOINT alter_sp;")
+        logger.debug(f"ALTER statement skipped or safe rollback: {exc}")
 
 
 def init_db(db_url: str = None):
@@ -281,8 +289,8 @@ def init_db(db_url: str = None):
     if db_url is None:
         db_url = get_db_url()
 
-    conn = psycopg2.connect(db_url)
     try:
+        conn = psycopg2.connect(db_url)
         conn.autocommit = False
         cursor = conn.cursor()
 
@@ -291,6 +299,7 @@ def init_db(db_url: str = None):
         if cursor.fetchone()[0]:
             _db_initialized = True
             conn.close()
+            logger.info("Database schema already initialized (fast-path).")
             return
 
         # Run each DDL statement individually
@@ -300,8 +309,7 @@ def init_db(db_url: str = None):
                 cursor.execute(stmt)
         conn.commit()
 
-
-        # Auto-migration: add missing columns to services table
+        # Auto-migrations
         for col, col_def in [
             ("req_customer_name", "BOOLEAN DEFAULT TRUE"),
             ("req_phone_number", "BOOLEAN DEFAULT TRUE"),
@@ -311,7 +319,6 @@ def init_db(db_url: str = None):
         ]:
             _safe_alter(cursor, conn, f"ALTER TABLE services ADD COLUMN IF NOT EXISTS {col} {col_def}")
 
-        # Auto-migration: add missing columns to staff_agents table
         for col, col_type in [
             ("email", "VARCHAR(255) DEFAULT NULL"),
             ("google_access_token", "TEXT DEFAULT NULL"),
@@ -321,13 +328,11 @@ def init_db(db_url: str = None):
         ]:
             _safe_alter(cursor, conn, f"ALTER TABLE staff_agents ADD COLUMN IF NOT EXISTS {col} {col_type}")
 
-        # Auto-migration: add missing columns to customers table
         for col, col_type in [
             ("sms_opt_in", "BOOLEAN DEFAULT TRUE"),
         ]:
             _safe_alter(cursor, conn, f"ALTER TABLE customers ADD COLUMN IF NOT EXISTS {col} {col_type}")
 
-        # Auto-migration: add missing columns to service_requests table
         for col, col_type in [
             ("time_slot", "VARCHAR(100) DEFAULT NULL"),
             ("booking_type", "VARCHAR(50) DEFAULT NULL CHECK (booking_type IN ('appointment', 'callback'))"),
@@ -335,14 +340,17 @@ def init_db(db_url: str = None):
             ("staff_agent_id", "INTEGER REFERENCES staff_agents(id) ON DELETE SET NULL"),
         ]:
             _safe_alter(cursor, conn, f"ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS {col} {col_type}")
-        conn.commit()
 
+        for col, col_type in [
+            ("admin_phone_number", "VARCHAR(50) DEFAULT NULL"),
+        ]:
+            _safe_alter(cursor, conn, f"ALTER TABLE sms_config ADD COLUMN IF NOT EXISTS {col} {col_type}")
+        conn.commit()
 
         # Drop legacy tables
         cursor.execute("DROP TABLE IF EXISTS appointments")
         cursor.execute("DROP TABLE IF EXISTS callback_requests")
 
-        # Auto-migration: update status check constraint to include rescheduled, confirmed, cancelled_by_customer
         try:
             cursor.execute("ALTER TABLE service_requests DROP CONSTRAINT IF EXISTS service_requests_status_check;")
             cursor.execute("ALTER TABLE service_requests ADD CONSTRAINT service_requests_status_check CHECK (status IN ('pending', 'in_progress', 'completed', 'cancelled', 'rescheduled', 'confirmed', 'cancelled_by_customer'));")
@@ -395,15 +403,19 @@ def init_db(db_url: str = None):
                 )
 
         conn.commit()
-
-        conn.commit()
         _db_initialized = True
-    except Exception:
-        conn.rollback()
+        logger.info("Database schema initialized successfully.")
+    except Exception as exc:
+        if 'conn' in locals() and conn:
+            conn.rollback()
+            conn.close()
+        logger.error(f"Failed to initialize database schema: {exc}", exc_info=exc)
         raise
     finally:
-        cursor.close()
-        conn.close()
+        if 'cursor' in locals() and cursor and not cursor.closed:
+            cursor.close()
+        if 'conn' in locals() and conn and not conn.closed:
+            conn.close()
 
 
 _init_lock = threading.Lock()
@@ -451,7 +463,7 @@ def get_db_connection():
                 except Exception:
                     pass
     except Exception as err:
-        print(f"[get_db_connection] Database connection error: {err}")
+        logger.error(f"Database connection error: {err}", exc_info=err)
         raise
 
 

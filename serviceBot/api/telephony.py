@@ -9,6 +9,9 @@ from datetime import datetime
 from serviceBot.db.queries import lookup_customer_by_phone, create_service_request, check_availability, book_appointment, get_service_required_fields, create_crm_note, create_callback_request, get_customer_appointments, reschedule_appointment
 from serviceBot.services.rag import FAQService
 from serviceBot.graph.nodes import handoff_node
+from serviceBot.logger import get_logger
+
+logger = get_logger("api.telephony")
 
 # Load env variables from .env file
 load_dotenv(override=False)

@@ -1,6 +1,9 @@
 import os
 import re
 from serviceBot.db.queries import get_sms_config, is_phone_whitelisted, log_sms_dispatch
+from serviceBot.logger import get_logger
+
+logger = get_logger("services.twilio_sms")
 
 class TwilioSMSClient:
     """
@@ -86,6 +89,7 @@ class TwilioSMSClient:
                 status="SENT",
                 twilio_message_sid=msg.sid
             )
+            logger.info(f"Twilio SMS dispatched successfully to {clean_to} (SID: {msg.sid}).")
             return {
                 "success": True,
                 "status": "SENT",
@@ -108,6 +112,7 @@ class TwilioSMSClient:
                 error_code=error_code,
                 error_message=error_str
             )
+            logger.error(f"Twilio SMS dispatch failed to {clean_to} (code {error_code}): {error_str}", exc_info=e)
             return {
                 "success": False,
                 "status": "FAILED",

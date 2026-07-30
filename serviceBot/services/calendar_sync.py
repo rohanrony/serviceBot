@@ -23,6 +23,9 @@ try:
     TZ = zoneinfo.ZoneInfo("America/New_York")
 except Exception:
     TZ = datetime.timezone(datetime.timedelta(hours=-4))
+from serviceBot.logger import get_logger
+
+logger = get_logger("services.calendar_sync")
 DEFAULT_DAYS  = 30
 
 
@@ -42,7 +45,7 @@ def get_configured_business_hours() -> List[int]:
         if start < end:
             return list(range(start, end))
     except Exception as e:
-        print(f"[calendar_sync] Error loading configured business hours: {e}")
+        logger.warning(f"Error loading configured business hours: {e}")
     return list(range(7, 18))
 
 
@@ -57,7 +60,7 @@ def get_configured_business_days() -> List[int]:
         if cfg.get("business_days") and isinstance(cfg["business_days"], list) and len(cfg["business_days"]) > 0:
             return [int(d) for d in cfg["business_days"]]
     except Exception as e:
-        print(f"[calendar_sync] Error loading configured business days: {e}")
+        logger.warning(f"Error loading configured business days: {e}")
     return [0, 1, 2, 3, 4]
 
 

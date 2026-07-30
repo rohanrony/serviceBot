@@ -1,0 +1,671 @@
+INFO:     Will watch for changes in these directories: ['/Users/rohanroy/Coding/voiceService']
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [78929] using WatchFiles
+Process SpawnProcess-1:
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/multiprocessing/process.py", line 313, in _bootstrap
+    self.run()
+    ~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/multiprocessing/process.py", line 108, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/rohanroy/Coding/voiceService/.venv/lib/python3.13/site-packages/uvicorn/_subprocess.py", line 80, in subprocess_started
+    target(sockets=sockets)
+    ~~~~~~^^^^^^^^^^^^^^^^^
+  File "/Users/rohanroy/Coding/voiceService/.venv/lib/python3.13/site-packages/uvicorn/server.py", line 74, in run
+    return asyncio_run(self.serve(sockets=sockets), loop_factory=self.config.get_loop_factory())
+  File "/opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "uvloop/loop.pyx", line 1518, in uvloop.loop.Loop.run_until_complete
+  File "/Users/rohanroy/Coding/voiceService/.venv/lib/python3.13/site-packages/uvicorn/server.py", line 78, in serve
+    await self._serve(sockets)
+  File "/Users/rohanroy/Coding/voiceService/.venv/lib/python3.13/site-packages/uvicorn/server.py", line 85, in _serve
+    config.load()
+    ~~~~~~~~~~~^^
+  File "/Users/rohanroy/Coding/voiceService/.venv/lib/python3.13/site-packages/uvicorn/config.py", line 493, in load
+    self.loaded_app = self.load_app()
+                      ~~~~~~~~~~~~~^^
+  File "/Users/rohanroy/Coding/voiceService/.venv/lib/python3.13/site-packages/uvicorn/config.py", line 427, in load_app
+    return import_from_string(self.app)
+  File "/Users/rohanroy/Coding/voiceService/.venv/lib/python3.13/site-packages/uvicorn/importer.py", line 19, in import_from_string
+    module = importlib.import_module(module_str)
+  File "/opt/homebrew/Cellar/python@3.13/3.13.3/Frameworks/Python.framework/Versions/3.13/lib/python3.13/importlib/__init__.py", line 88, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen importlib._bootstrap>", line 1387, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1360, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1331, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 935, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 1026, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/main.py", line 7, in <module>
+    from serviceBot.api.telephony import router as telephony_router, voice_router as voice_router
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/api/telephony.py", line 11, in <module>
+    from serviceBot.graph.nodes import handoff_node
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/graph/nodes.py", line 8, in <module>
+    from serviceBot.api.portal import load_config
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/api/portal.py", line 1601
+    return {"success": True}
+    ^^^^^^
+IndentationError: expected an indented block after 'except' statement on line 1600
+WARNING:  WatchFiles detected changes in 'serviceBot/api/portal.py'. Reloading...
+INFO:     Started server process [78968]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+[outbox_worker] Outbox processing background thread started.
+[outbox_worker] Outbox worker thread launched.
+INFO:     127.0.0.1:49368 - "GET /portal/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49368 - "GET /portal/style.css?v=18 HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:49367 - "GET /portal/app.js?v=22 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49367 - "GET /api/v1/portal/agents HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49367 - "GET /api/v1/portal/agents/10/google/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49367 - "GET /api/v1/portal/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49367 - "GET /api/v1/portal/agents/10/calendar HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'serviceBot/api/portal.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [78968]
+INFO:     Started server process [78984]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+[outbox_worker] Outbox processing background thread started.
+[outbox_worker] Outbox worker thread launched.
+INFO:     127.0.0.1:49405 - "GET /api/v1/portal/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49412 - "POST /api/v1/portal/sms/admin/test HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'serviceBot/api/portal.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [78984]
+INFO:     Started server process [79130]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'tests/test_portal_api.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [79130]
+INFO:     Started server process [79181]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'serviceBot/db/connection.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [79181]
+INFO:     Started server process [79191]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'serviceBot/db/connection.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [79191]
+INFO:     Started server process [79214]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+[outbox_worker] Outbox processing background thread started.
+[outbox_worker] Outbox worker thread launched.
+INFO:     127.0.0.1:49675 - "GET /portal/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49675 - "GET /portal/app.js?v=22 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49676 - "GET /portal/style.css?v=18 HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:49675 - "GET /api/v1/portal/agents HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49675 - "GET /api/v1/portal/agents/10/google/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49676 - "GET /api/v1/portal/stats?calls_timeframe=7d HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49675 - "GET /api/v1/portal/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49675 - "GET /api/v1/portal/calls HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49676 - "GET /api/v1/portal/agents/10/calendar HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49675 - "GET /api/v1/portal/service-requests HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49711 - "GET /portal/ HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:49711 - "GET /portal/app.js?v=22 HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:49711 - "GET /api/v1/portal/stats?calls_timeframe=7d HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49711 - "GET /api/v1/portal/calls HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49711 - "GET /api/v1/portal/service-requests HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49712 - "GET /api/v1/portal/stats?calls_timeframe=7d HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49712 - "GET /api/v1/portal/calls HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49712 - "GET /api/v1/portal/service-requests HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49712 - "GET /portal/ HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:49712 - "GET /portal/app.js?v=22 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49712 - "GET /api/v1/portal/stats?calls_timeframe=7d HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49712 - "GET /api/v1/portal/calls HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49712 - "GET /api/v1/portal/service-requests HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49712 - "GET /api/v1/portal/service-requests/1/available-agents HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49712 - "GET /api/v1/portal/sms/conversations?state=HANDOFF_REQUIRED HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49797 - "GET /api/v1/portal/sms/conversations?state=IN_PROGRESS HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49797 - "GET /api/v1/portal/sms/conversations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49824 - "GET /api/v1/portal/sms/conversations/1/messages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49824 - "GET /api/v1/portal/sms/conversations/3/messages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49824 - "GET /api/v1/portal/sms/conversations/3/messages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49824 - "GET /api/v1/portal/sms/conversations/2/messages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49824 - "GET /api/v1/portal/sms/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49826 - "GET /api/v1/portal/sms/matrix-rules HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49827 - "GET /api/v1/portal/sms/whitelist HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49827 - "GET /api/v1/portal/gmail-config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49853 - "GET /portal/ HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:49853 - "GET /portal/style.css?v=18 HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:49854 - "GET /portal/app.js?v=22 HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:49854 - "GET /api/v1/portal/gmail-config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49854 - "GET /api/v1/portal/stats?calls_timeframe=7d HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49854 - "GET /api/v1/portal/calls HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49854 - "GET /api/v1/portal/service-requests HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49854 - "GET /api/v1/portal/service-requests/1/available-agents HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49947 - "GET /api/v1/portal/services HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49947 - "GET /api/v1/portal/agents HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49947 - "GET /api/v1/portal/agents/10/google/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49947 - "GET /api/v1/portal/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49947 - "GET /api/v1/portal/agents/10/calendar HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49983 - "GET /api/v1/portal/stats?calls_timeframe=7d HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49983 - "GET /api/v1/portal/calls HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49983 - "GET /api/v1/portal/service-requests HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49983 - "GET /api/v1/portal/service-requests/1/available-agents HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49983 - "PATCH /api/v1/portal/service-requests/1/assign-agent HTTP/1.1" 200 OK
+Refreshing Google access token for agent 8...
+Google access token for agent 8 refreshed successfully.
+Pre-fetching Google Calendar events for agent 8 from 2026-07-23T13:55:00-04:00 to 2026-07-23T15:05:00-04:00...
+Cancelled Google Calendar event 9ko0t2o9ci0tl8o48epcrnkp90 for agent 8
+Cancelled Google Calendar event rgrj4qv0c22ll2benf8q37239s for agent 8
+Cancelled Google Calendar event b36r1jp4f8rvaagml0i6jb272k for agent 8
+Refreshing Google access token for agent 7...
+Google access token for agent 7 refreshed successfully.
+Google Calendar event created successfully for agent 7!
+Posting message to Gmail REST API for agent 7...
+Gmail REST API email sent successfully!
+Requesting fresh Google OAuth2 access token...
+Google OAuth2 access token refreshed successfully!
+Admin Google Calendar event created successfully!
+Posting message to Gmail REST API...
+Gmail REST API email sent successfully!
+[outbox] Event 1 (agent_reassignment) delivered successfully.
+INFO:     127.0.0.1:50054 - "GET /api/v1/portal/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50055 - "GET /api/v1/portal/calls HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50056 - "GET /api/v1/portal/service-requests HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50306 - "GET /portal/ HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:50307 - "GET /portal/style.css?v=18 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50306 - "GET /portal/app.js?v=22 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50306 - "GET /api/v1/portal/stats?calls_timeframe=7d HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50306 - "GET /api/v1/portal/calls HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50306 - "GET /api/v1/portal/service-requests HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50306 - "GET /api/v1/portal/service-requests/1/available-agents HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50392 - "GET /api/v1/portal/agents HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50392 - "GET /api/v1/portal/agents/10/google/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50392 - "GET /api/v1/portal/config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50392 - "GET /api/v1/portal/agents/10/calendar HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50392 - "GET /api/v1/portal/stats?calls_timeframe=7d HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50392 - "GET /api/v1/portal/calls HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50392 - "GET /api/v1/portal/service-requests HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50392 - "GET /api/v1/portal/service-requests/1/available-agents HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50717 - "GET /portal/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50717 - "GET /portal/style.css?v=18 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50718 - "GET /portal/app.js?v=22 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50718 - "GET /api/v1/portal/stats?calls_timeframe=7d HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50718 - "GET /api/v1/portal/calls HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50718 - "GET /api/v1/portal/service-requests HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50718 - "GET /api/v1/portal/service-requests/1/available-agents HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50718 - "PATCH /api/v1/portal/service-requests/1/assign-agent HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'serviceBot/logger.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [79214]
+INFO:     Started server process [80412]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'serviceBot/api/middleware.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [80412]
+INFO:     Started server process [80419]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'serviceBot/main.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [80419]
+INFO:     Started server process [80430]
+INFO:     Waiting for application startup.
+[outbox_worker] Outbox processing background thread started.
+[outbox_worker] Outbox worker thread launched.
+18:19:43 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+18:19:43 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+18:19:43 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'serviceBot/services/outbox_worker.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [80430]
+INFO:     Started server process [80437]
+INFO:     Waiting for application startup.
+18:19:49 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+18:19:49 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+18:19:49 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+18:19:49 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+18:19:49 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'serviceBot/services/sms_reminders.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [80437]
+INFO:     Started server process [80456]
+INFO:     Waiting for application startup.
+18:19:56 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+18:19:56 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+18:19:56 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+18:19:56 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+18:19:56 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+18:19:56 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'tests/test_logging.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [80456]
+INFO:     Started server process [80466]
+INFO:     Waiting for application startup.
+18:20:01 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+18:20:01 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+18:20:01 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+18:20:01 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+18:20:01 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+18:20:01 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'serviceBot/api/middleware.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [80466]
+INFO:     Started server process [80492]
+INFO:     Waiting for application startup.
+18:20:09 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+18:20:09 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+18:20:09 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+18:20:09 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+18:20:09 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+18:20:09 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+18:20:17 [0;32mINFO   [0m [serviceBot.middleware] [448bd91e] GET /api/v1/portal/stats - 200 (654.34ms) [127.0.0.1]
+18:20:17 [0;32mINFO   [0m [serviceBot.middleware] [8dc55d66] GET /api/v1/portal/calls - 200 (250.8ms) [127.0.0.1]
+18:20:17 [0;32mINFO   [0m [serviceBot.middleware] [aabb40a1] GET /api/v1/portal/service-requests - 200 (204.72ms) [127.0.0.1]
+WARNING:  WatchFiles detected changes in 'serviceBot/logger.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [80492]
+INFO:     Started server process [80695]
+INFO:     Waiting for application startup.
+18:24:03 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+18:24:03 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+18:24:03 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+18:24:03 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+18:24:03 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+18:24:03 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'serviceBot/db/connection.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [80695]
+INFO:     Started server process [80704]
+INFO:     Waiting for application startup.
+18:24:10 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+18:24:10 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+18:24:10 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+18:24:10 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+18:24:10 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+18:24:10 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+18:24:11 [0;32mINFO   [0m [serviceBot.db.connection] Database schema already initialized (fast-path).
+18:24:12 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:24:12 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:24:12 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+WARNING:  WatchFiles detected changes in 'serviceBot/db/queries.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [80704]
+INFO:     Started server process [80717]
+INFO:     Waiting for application startup.
+18:24:20 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+18:24:20 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+18:24:20 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+18:24:20 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+18:24:20 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+18:24:20 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+18:24:21 [0;32mINFO   [0m [serviceBot.db.connection] Database schema already initialized (fast-path).
+18:24:21 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:24:21 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:24:21 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+WARNING:  WatchFiles detected changes in 'serviceBot/db/queries.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [80717]
+INFO:     Started server process [80729]
+INFO:     Waiting for application startup.
+18:24:25 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+18:24:25 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+18:24:25 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+18:24:25 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+18:24:25 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+18:24:25 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+18:24:25 [0;32mINFO   [0m [serviceBot.db.connection] Database schema already initialized (fast-path).
+18:24:26 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:24:26 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:24:26 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+WARNING:  WatchFiles detected changes in 'serviceBot/services/gmail.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [80729]
+INFO:     Started server process [80743]
+INFO:     Waiting for application startup.
+18:24:39 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+18:24:39 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+18:24:39 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+18:24:39 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+18:24:39 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+18:24:39 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+18:24:39 [0;32mINFO   [0m [serviceBot.db.connection] Database schema already initialized (fast-path).
+18:24:40 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:24:40 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:24:40 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+WARNING:  WatchFiles detected changes in 'serviceBot/services/gmail.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [80743]
+INFO:     Started server process [80751]
+INFO:     Waiting for application startup.
+18:24:41 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+18:24:41 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+18:24:41 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+18:24:41 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+18:24:41 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+18:24:41 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+18:24:42 [0;32mINFO   [0m [serviceBot.db.connection] Database schema already initialized (fast-path).
+18:24:42 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:24:42 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:24:42 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+WARNING:  WatchFiles detected changes in 'serviceBot/services/google_calendar.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [80751]
+INFO:     Started server process [80762]
+INFO:     Waiting for application startup.
+18:24:48 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+18:24:48 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+18:24:48 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+18:24:48 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+18:24:48 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+18:24:48 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+18:24:48 [0;32mINFO   [0m [serviceBot.db.connection] Database schema already initialized (fast-path).
+18:24:49 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:24:49 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:24:49 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+WARNING:  WatchFiles detected changes in 'serviceBot/services/calendar_sync.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [80762]
+INFO:     Started server process [80785]
+INFO:     Waiting for application startup.
+18:24:55 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+18:24:55 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+18:24:55 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+18:24:55 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+18:24:55 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+18:24:55 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+18:24:55 [0;32mINFO   [0m [serviceBot.db.connection] Database schema already initialized (fast-path).
+18:24:56 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:24:56 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:24:56 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+WARNING:  WatchFiles detected changes in 'serviceBot/services/calendar_sync.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [80785]
+INFO:     Started server process [80796]
+INFO:     Waiting for application startup.
+18:24:58 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+18:24:58 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+18:24:58 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+18:24:58 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+18:24:58 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+18:24:58 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+18:24:58 [0;32mINFO   [0m [serviceBot.db.connection] Database schema already initialized (fast-path).
+18:24:59 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:24:59 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:24:59 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+WARNING:  WatchFiles detected changes in 'serviceBot/services/calendar_sync.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [80796]
+INFO:     Started server process [80802]
+INFO:     Waiting for application startup.
+18:25:00 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+18:25:00 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+18:25:00 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+18:25:00 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+18:25:00 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+18:25:00 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+18:25:01 [0;32mINFO   [0m [serviceBot.db.connection] Database schema already initialized (fast-path).
+18:25:01 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:25:01 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:25:01 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+WARNING:  WatchFiles detected changes in 'serviceBot/services/twilio_sms.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [80802]
+INFO:     Started server process [80809]
+INFO:     Waiting for application startup.
+18:25:06 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+18:25:06 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+18:25:06 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+18:25:06 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+18:25:06 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+18:25:06 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+18:25:07 [0;32mINFO   [0m [serviceBot.db.connection] Database schema already initialized (fast-path).
+18:25:07 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:25:08 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:25:08 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+WARNING:  WatchFiles detected changes in 'serviceBot/services/twilio_sms.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [80809]
+INFO:     Started server process [80811]
+INFO:     Waiting for application startup.
+18:25:09 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+18:25:09 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+18:25:09 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+18:25:09 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+18:25:09 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+18:25:09 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+18:25:10 [0;32mINFO   [0m [serviceBot.db.connection] Database schema already initialized (fast-path).
+18:25:10 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:25:10 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:25:10 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+WARNING:  WatchFiles detected changes in 'serviceBot/services/twilio_sms.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [80811]
+INFO:     Started server process [80820]
+INFO:     Waiting for application startup.
+18:25:12 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+18:25:12 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+18:25:12 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+18:25:12 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+18:25:12 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+18:25:12 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+18:25:13 [0;32mINFO   [0m [serviceBot.db.connection] Database schema already initialized (fast-path).
+18:25:14 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:25:14 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:25:14 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+WARNING:  WatchFiles detected changes in 'serviceBot/services/encryption.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [80820]
+INFO:     Started server process [80828]
+INFO:     Waiting for application startup.
+18:25:18 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+18:25:18 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+18:25:18 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+18:25:18 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+18:25:18 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+18:25:18 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+18:25:19 [0;32mINFO   [0m [serviceBot.db.connection] Database schema already initialized (fast-path).
+18:25:19 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:25:19 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:25:19 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+WARNING:  WatchFiles detected changes in 'serviceBot/services/rag.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [80828]
+INFO:     Started server process [80848]
+INFO:     Waiting for application startup.
+18:25:23 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+18:25:23 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+18:25:23 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+18:25:23 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+18:25:23 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+18:25:23 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+18:25:24 [0;32mINFO   [0m [serviceBot.db.connection] Database schema already initialized (fast-path).
+18:25:24 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:25:24 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:25:24 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+WARNING:  WatchFiles detected changes in 'serviceBot/graph/nodes.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [80848]
+INFO:     Started server process [80857]
+INFO:     Waiting for application startup.
+18:25:28 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+18:25:28 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+18:25:28 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+18:25:28 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+18:25:28 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+18:25:28 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+18:25:28 [0;32mINFO   [0m [serviceBot.db.connection] Database schema already initialized (fast-path).
+18:25:29 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:25:29 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:25:29 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+WARNING:  WatchFiles detected changes in 'serviceBot/api/telephony.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [80857]
+INFO:     Started server process [80867]
+INFO:     Waiting for application startup.
+18:25:31 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+18:25:31 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+18:25:31 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+18:25:31 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+18:25:31 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+18:25:31 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+18:25:32 [0;32mINFO   [0m [serviceBot.db.connection] Database schema already initialized (fast-path).
+18:25:32 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:25:32 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:25:32 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+WARNING:  WatchFiles detected changes in 'serviceBot/api/portal.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [80867]
+INFO:     Started server process [80874]
+INFO:     Waiting for application startup.
+18:25:36 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+18:25:36 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+18:25:36 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+18:25:36 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+18:25:36 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+18:25:36 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+18:25:37 [0;32mINFO   [0m [serviceBot.db.connection] Database schema already initialized (fast-path).
+18:25:37 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:25:37 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:25:37 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+WARNING:  WatchFiles detected changes in 'tests/test_codebase_logging_coverage.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [80874]
+INFO:     Started server process [80876]
+INFO:     Waiting for application startup.
+18:25:39 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+18:25:39 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+18:25:39 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+18:25:39 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+18:25:39 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+18:25:39 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+18:25:40 [0;32mINFO   [0m [serviceBot.db.connection] Database schema already initialized (fast-path).
+18:25:40 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:25:40 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:25:40 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+WARNING:  WatchFiles detected changes in 'tests/test_codebase_logging_coverage.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [80876]
+INFO:     Started server process [80888]
+INFO:     Waiting for application startup.
+18:25:44 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+18:25:44 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+18:25:44 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+18:25:44 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+18:25:44 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+18:25:44 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+18:25:45 [0;32mINFO   [0m [serviceBot.db.connection] Database schema already initialized (fast-path).
+18:25:45 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:25:45 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:25:45 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+WARNING:  WatchFiles detected changes in 'serviceBot/services/quiet_hours.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [80888]
+INFO:     Started server process [80908]
+INFO:     Waiting for application startup.
+18:25:56 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+18:25:56 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+18:25:56 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+18:25:56 [0;32mINFO   [0m [serviceBot.services.quiet_hours] Quiet hours queue release worker thread started.
+18:25:56 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+18:25:56 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+18:25:56 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+18:25:56 [0;32mINFO   [0m [serviceBot.db.connection] Database schema already initialized (fast-path).
+18:25:57 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:25:57 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+18:25:57 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).

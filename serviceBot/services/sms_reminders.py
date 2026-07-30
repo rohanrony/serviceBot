@@ -1,6 +1,7 @@
 import datetime as dt_mod
 import threading
 import time
+from serviceBot.logger import get_logger
 from serviceBot.db.queries import (
     schedule_sms_reminder,
     cancel_pending_sms_reminders,
@@ -9,6 +10,8 @@ from serviceBot.db.queries import (
     get_customer_opt_in
 )
 from serviceBot.services.twilio_sms import TwilioSMSClient
+
+logger = get_logger("sms_reminders")
 
 
 def parse_booking_datetime(dt_str: str) -> dt_mod.datetime:
@@ -67,7 +70,12 @@ def update_or_cancel_appointment_reminders(appointment_id: int, new_booking_time
         schedule_appointment_reminders(appointment_id, new_booking_time_str, customer_phone, agent_phone)
 
 
-def run_reminder_polling_worker_cycle():
+def check_and_send_due_reminders() -> int:
+    """Alias for run_reminder_polling_worker_cycle for cron execution."""
+    return run_reminder_polling_worker_cycle()
+
+
+def run_reminder_polling_worker_cycle() -> int:
     """Polls due reminders in sms_reminders and dispatches SMS."""
     due_reminders = get_due_sms_reminders()
     if not due_reminders:
@@ -83,6 +91,7 @@ def run_reminder_polling_worker_cycle():
 
         if rec_type == "customer" and not get_customer_opt_in(phone):
             mark_sms_reminder_status(rem["id"], "SKIPPED_OPT_OUT")
+            logger.info(f"Skipped SMS reminder {rem['id']} due to customer opt-out for {phone}.")
             continue
 
         body = (
@@ -99,6 +108,7 @@ def run_reminder_polling_worker_cycle():
         )
 
         mark_sms_reminder_status(rem["id"], res["status"])
+        logger.info(f"Dispatched SMS reminder {rem['id']} to {phone} ({res['status']}).")
         dispatched_count += 1
 
     return dispatched_count
@@ -113,11 +123,12 @@ def start_reminder_polling_worker(interval_seconds: int = 30):
     _reminder_worker_started = True
 
     def _loop():
+        logger.info("SMS reminder polling worker thread started.")
         while True:
             try:
                 run_reminder_polling_worker_cycle()
             except Exception as e:
-                print(f"[reminder_polling_worker] Error in cycle: {e}")
+                logger.error(f"Error in reminder worker cycle: {e}", exc_info=e)
             time.sleep(interval_seconds)
 
     t = threading.Thread(target=_loop, daemon=True, name="sms-reminder-polling")

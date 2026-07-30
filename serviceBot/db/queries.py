@@ -1,6 +1,9 @@
 from serviceBot.db.connection import get_db_connection, dict_cursor
+from serviceBot.logger import get_logger, log_execution
 import datetime as dt_mod
 from datetime import timedelta
+
+logger = get_logger("db.queries")
 
 
 def lookup_customer_by_phone(phone: str) -> dict:
@@ -113,8 +116,8 @@ def create_service_request(
                         """,
                         (b_start.strftime("%Y-%m-%d %H:%M:%S"), b_end.strftime("%Y-%m-%d %H:%M:%S"))
                     )
-                except Exception:
-                    pass
+                except Exception as slot_err:
+                    logger.warning(f"Could not update mock_calendar_slots: {slot_err}")
 
             return sr_id
 
@@ -1163,22 +1166,26 @@ def assign_staff_agent_to_service_request(request_id: int, staff_agent_id: int =
             old_agent_id = sr.get("staff_agent_id")
             old_agent_name = None
             old_agent_email = None
+            old_agent_phone = None
             if old_agent_id:
-                cursor.execute("SELECT name, email FROM staff_agents WHERE id = %s;", (old_agent_id,))
+                cursor.execute("SELECT name, email, phone_number FROM staff_agents WHERE id = %s;", (old_agent_id,))
                 oa_row = cursor.fetchone()
                 if oa_row:
                     old_agent_name = oa_row["name"]
                     old_agent_email = oa_row["email"]
+                    old_agent_phone = oa_row.get("phone_number")
 
             new_agent_name = None
             new_agent_email = None
+            new_agent_phone = None
             if staff_agent_id is not None:
-                cursor.execute("SELECT id, name, email FROM staff_agents WHERE id = %s;", (staff_agent_id,))
+                cursor.execute("SELECT id, name, email, phone_number FROM staff_agents WHERE id = %s;", (staff_agent_id,))
                 na_row = cursor.fetchone()
                 if not na_row:
                     raise ValueError(f"Staff agent with ID {staff_agent_id} does not exist.")
                 new_agent_name = na_row["name"]
                 new_agent_email = na_row["email"]
+                new_agent_phone = na_row.get("phone_number")
 
             # 2. Check if agent is being switched/reassigned
             is_agent_changed = (old_agent_id != staff_agent_id)
@@ -1234,6 +1241,8 @@ def assign_staff_agent_to_service_request(request_id: int, staff_agent_id: int =
                     "new_agent_id": staff_agent_id,
                     "new_agent_name": new_agent_name,
                     "new_agent_email": new_agent_email,
+                    "agent_phone": new_agent_phone,
+                    "previous_agent_phone": old_agent_phone,
                     "booking_time_str": str(booking_time_str)[:19] if booking_time_str else None,
                     "details": details
                 }
@@ -1269,7 +1278,7 @@ def get_available_agents_for_request(request_id: int) -> list:
             if not sr:
                 raise ValueError(f"Service request with ID {request_id} not found.")
 
-            cursor.execute("SELECT id, name, role, email FROM staff_agents ORDER BY id ASC;")
+            cursor.execute("SELECT id, name, role, email, phone_number FROM staff_agents ORDER BY id ASC;")
             agents = [dict(row) for row in cursor.fetchall()]
 
     b_time_str = sr.get("booking_time") or sr.get("time_slot")
@@ -1360,7 +1369,7 @@ def update_sms_config(data: dict) -> dict:
     """Updates SMS configuration settings."""
     allowed = {
         "quiet_hours_enabled", "quiet_start_time", "quiet_end_time",
-        "urgent_threshold_hours", "support_phone_number",
+        "urgent_threshold_hours", "support_phone_number", "admin_phone_number",
         "auto_responder_template", "auto_responder_debounce_seconds", "environment"
     }
     updates = []

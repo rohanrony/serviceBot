@@ -27,6 +27,14 @@ document.addEventListener('DOMContentLoaded', () => {
     return window.innerWidth <= 1024;
   }
 
+  function updateSidebarButtonTitles() {
+    const isHidden = appContainer && appContainer.classList.contains('sidebar-hidden');
+    if (sidebarCollapseBtn) {
+      sidebarCollapseBtn.setAttribute('title', isHidden ? 'Expand Sidebar' : 'Minimize Sidebar');
+      sidebarCollapseBtn.setAttribute('aria-label', isHidden ? 'Expand Sidebar' : 'Minimize Sidebar');
+    }
+  }
+
   // On desktop: restore sidebar state from localStorage
   // On mobile: sidebar is always hidden by default (CSS handles this)
   if (!isMobileView()) {
@@ -34,6 +42,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (isSidebarHidden && appContainer) {
       appContainer.classList.add('sidebar-hidden');
     }
+    updateSidebarButtonTitles();
   }
 
   function toggleSidebar() {
@@ -48,10 +57,11 @@ document.addEventListener('DOMContentLoaded', () => {
         openMobileSidebar();
       }
     } else {
-      // Desktop: toggle sidebar-hidden class
+      // Desktop: toggle sidebar-hidden class (minimized rail sidebar)
       appContainer.classList.toggle('sidebar-hidden');
       const isHidden = appContainer.classList.contains('sidebar-hidden');
       localStorage.setItem('sidebarHidden', isHidden ? 'true' : 'false');
+      updateSidebarButtonTitles();
     }
   }
 
@@ -110,6 +120,26 @@ document.addEventListener('DOMContentLoaded', () => {
   const newAgentRoleInput = document.getElementById('new-agent-role');
   const newAgentEmailInput = document.getElementById('new-agent-email');
   const deleteAgentProfileBtn = document.getElementById('delete-agent-profile-btn');
+  const editAgentProfileBtn = document.getElementById('edit-agent-profile-btn');
+  const editAgentDrawer = document.getElementById('edit-agent-drawer');
+  const editAgentDrawerOverlay = document.getElementById('edit-agent-drawer-overlay');
+  const closeEditAgentDrawerBtn = document.getElementById('close-edit-agent-drawer-btn');
+  const cancelEditAgentBtn = document.getElementById('cancel-edit-agent-btn');
+  const editAgentForm = document.getElementById('edit-agent-form');
+
+  function openEditAgentDrawer() {
+    if (editAgentDrawer) editAgentDrawer.classList.add('active');
+    if (editAgentDrawerOverlay) editAgentDrawerOverlay.classList.add('active');
+  }
+
+  function closeEditAgentDrawer() {
+    if (editAgentDrawer) editAgentDrawer.classList.remove('active');
+    if (editAgentDrawerOverlay) editAgentDrawerOverlay.classList.remove('active');
+  }
+
+  if (closeEditAgentDrawerBtn) closeEditAgentDrawerBtn.addEventListener('click', closeEditAgentDrawer);
+  if (cancelEditAgentBtn) cancelEditAgentBtn.addEventListener('click', closeEditAgentDrawer);
+  if (editAgentDrawerOverlay) editAgentDrawerOverlay.addEventListener('click', closeEditAgentDrawer);
   
   // Document Drawer Elements
   const documentDrawer = document.getElementById('document-drawer');
@@ -295,6 +325,16 @@ document.addEventListener('DOMContentLoaded', () => {
     return `${month}/${day}/${year} ${hours}:${minutes}`;
   }
 
+  function formatPhoneNumber(phoneStr) {
+    if (!phoneStr) return '--';
+    const cleaned = ('' + phoneStr).replace(/\D/g, '');
+    const match11 = cleaned.match(/^1?(\d{3})(\d{3})(\d{4})$/);
+    if (match11) {
+      return `(${match11[1]}) ${match11[2]}-${match11[3]}`;
+    }
+    return phoneStr;
+  }
+
   async function updateAssignedAgent(requestId, staffAgentId) {
     try {
       const parsedId = staffAgentId ? parseInt(staffAgentId, 10) : null;
@@ -350,6 +390,11 @@ document.addEventListener('DOMContentLoaded', () => {
           if (stats) {
             const reqsStatEl = document.getElementById('stat-requests');
             if (reqsStatEl) reqsStatEl.textContent = stats.total_requests;
+            const reqsBadgeEl = document.getElementById('stat-requests-badge');
+            if (reqsBadgeEl && stats.pending_requests !== undefined) {
+              reqsBadgeEl.textContent = `${stats.pending_requests} pending triage`;
+              reqsBadgeEl.className = stats.pending_requests === 0 ? 'metric-badge success' : 'metric-badge warning';
+            }
             const callbacksStatEl = document.getElementById('stat-callbacks');
             if (callbacksStatEl) callbacksStatEl.textContent = stats.total_callbacks;
             const apptsStatEl = document.getElementById('stat-appointments');
@@ -493,7 +538,7 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
 
         const statusSelectHtml = `
-          <select class="status-select-badge ${statusBadgeClass}" data-id="${req.id}">
+          <select class="status-select-badge ${statusBadgeClass}" data-id="${req.id}" data-status="${currentStatus}">
             <option value="pending" ${currentStatus === 'pending' ? 'selected' : ''}>pending</option>
             <option value="confirmed" ${currentStatus === 'confirmed' ? 'selected' : ''}>confirmed</option>
             <option value="in_progress" ${currentStatus === 'in_progress' ? 'selected' : ''}>in progress</option>
@@ -504,22 +549,22 @@ document.addEventListener('DOMContentLoaded', () => {
           </select>
         `;
 
-        const hasFailedSms = !!req.has_failed_sms;
-        const failedIndicator = hasFailedSms ? `<span class="badge danger" style="margin-right: 4px;" title="SMS Delivery Failed">⚠️ SMS Failed</span>` : '';
+        const formattedPhone = formatPhoneNumber(req.phone);
+        const failedIndicator = req.has_failed_sms ? '<span class="badge danger" style="padding: 2px 6px; font-size: 11px; font-weight: 600; margin-right: 4px;" title="SMS delivery failed">⚠️ Failed SMS</span>' : '';
         const actionsHtml = `
-          <div style="display: flex; align-items: center; gap: 4px;">
+          <div style="display: flex; align-items: center; justify-content: center; gap: 4px;">
             ${failedIndicator}
             <button type="button" class="btn btn-secondary btn-sm details-sms-log-btn" data-id="${req.id}">Details</button>
           </div>
         `;
 
         tr.innerHTML = `
-          <td>${formattedDate}</td>
+          <td class="text-muted" style="font-size: 12px; white-space: nowrap;">${formattedDate}</td>
           <td><strong>${req.customer_name || 'Unknown Customer'}</strong></td>
-          <td class="text-muted">${req.phone || '--'}</td>
+          <td class="text-muted" style="font-size: 12.5px; white-space: nowrap;">${formattedPhone}</td>
           <td>${vehicleStr}</td>
-          <td>${reqTypeBadge}</td>
-          <td>${displayTime}</td>
+          <td style="text-align: center;">${reqTypeBadge}</td>
+          <td style="font-size: 12px; white-space: nowrap;">${displayTime}</td>
           <td>${agentSelectHtml}</td>
           <td>
             <div class="tooltip-container">
@@ -527,8 +572,8 @@ document.addEventListener('DOMContentLoaded', () => {
               <div class="tooltip-popup">${req.issue_description}</div>
             </div>
           </td>
-          <td>${statusSelectHtml}</td>
-          <td>${actionsHtml}</td>
+          <td style="text-align: center;">${statusSelectHtml}</td>
+          <td style="text-align: center;">${actionsHtml}</td>
         `;
 
         const detailsBtn = tr.querySelector('.details-sms-log-btn');
@@ -543,20 +588,18 @@ document.addEventListener('DOMContentLoaded', () => {
           const loadAgentOptions = async () => {
             try {
               const res = await fetch(`/api/v1/portal/service-requests/${req.id}/available-agents`);
-              if (res.ok) {
-                const data = await res.json();
-                const agents = data.agents || [];
-                let html = '<option value="">Unassigned</option>';
-                agents.forEach(a => {
-                  const isSel = a.id === req.staff_agent_id ? 'selected' : '';
-                  const statusText = a.is_available ? '(Available)' : `(Busy - ${a.reason})`;
-                  const emailSuffix = a.email ? ` - ${a.email}` : '';
-                  html += `<option value="${a.id}" ${isSel}>${a.name}${emailSuffix} ${statusText}</option>`;
+              if (!res.ok) return;
+              const data = await res.json();
+              if (data.agents && data.agents.length > 0) {
+                let optionsHtml = `<option value="">Select Agent</option>`;
+                data.agents.forEach(a => {
+                  const isSel = (req.assigned_staff_id && Number(req.assigned_staff_id) === Number(a.id)) || (req.staff_agent_name === a.name);
+                  optionsHtml += `<option value="${a.id}" ${isSel ? 'selected' : ''}>${a.name} - ${a.role}</option>`;
                 });
-                agentSelect.innerHTML = html;
+                agentSelect.innerHTML = optionsHtml;
               }
             } catch (err) {
-              console.error('Failed to load available agents', err);
+              console.error('Failed to fetch available agents:', err);
             }
           };
 
@@ -571,6 +614,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (statusSelect) {
           statusSelect.addEventListener('change', (e) => {
             const newStatus = e.target.value;
+            statusSelect.setAttribute('data-status', newStatus);
+            let badgeClass = 'warning';
+            if (newStatus === 'completed' || newStatus === 'done' || newStatus === 'confirmed') badgeClass = 'success';
+            else if (newStatus === 'cancelled' || newStatus === 'cancelled_by_customer') badgeClass = 'danger';
+            else if (newStatus === 'in_progress') badgeClass = 'info';
+            else if (newStatus === 'rescheduled') badgeClass = 'purple';
+            statusSelect.className = `status-select-badge ${badgeClass}`;
             updateRequestStatus(req.id, newStatus);
           });
         }
@@ -754,6 +804,11 @@ document.addEventListener('DOMContentLoaded', () => {
       
       const reqsStatEl = document.getElementById('stat-requests');
       if (reqsStatEl) reqsStatEl.textContent = stats.total_requests;
+      const reqsBadgeEl = document.getElementById('stat-requests-badge');
+      if (reqsBadgeEl && stats.pending_requests !== undefined) {
+        reqsBadgeEl.textContent = `${stats.pending_requests} pending triage`;
+        reqsBadgeEl.className = stats.pending_requests === 0 ? 'metric-badge success' : 'metric-badge warning';
+      }
       
       const calFreeEl = document.getElementById('stat-calendar-free');
       if (calFreeEl) calFreeEl.textContent = `${stats.open_slots} slots open`;
@@ -1515,6 +1570,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const emailSuffix = agent.email ? ` - ${agent.email}` : '';
         opt.textContent = `${agent.name} (${agent.role || 'Service Agent'})${emailSuffix}`;
         opt.dataset.email = agent.email || '';
+        opt.dataset.dbEmail = agent.db_email || agent.email || '';
+        opt.dataset.name = agent.name || '';
+        opt.dataset.role = agent.role || '';
+        opt.dataset.phone = agent.phone_number || '';
         staffAgentSelector.appendChild(opt);
       });
       
@@ -1780,6 +1839,122 @@ document.addEventListener('DOMContentLoaded', () => {
               showToast(`Phone number ${phone} submitted to Twilio Verified Caller IDs!`);
             } catch (err) {
               showToast('Twilio verification error: ' + err.message, 'error');
+            }
+          });
+        }
+
+        // Edit Profile click handler
+        if (editAgentProfileBtn) {
+          editAgentProfileBtn.addEventListener('click', async () => {
+            const agentId = staffAgentSelector.value;
+            if (!agentId) {
+              showToast('Please select a staff member to edit.', 'error');
+              return;
+            }
+
+            const selectedOpt = staffAgentSelector.options[staffAgentSelector.selectedIndex];
+            let name = selectedOpt ? selectedOpt.dataset.name : '';
+            let role = selectedOpt ? selectedOpt.dataset.role : '';
+            let email = selectedOpt ? (selectedOpt.dataset.dbEmail || selectedOpt.dataset.email) : '';
+            let phone = selectedOpt ? selectedOpt.dataset.phone : '';
+
+            try {
+              const res = await fetch(`/api/v1/portal/agents/${agentId}`);
+              if (res.ok) {
+                const agent = await res.json();
+                name = agent.name || name;
+                role = agent.role || role;
+                email = agent.db_email || agent.email || email;
+                phone = agent.phone_number || phone;
+              }
+            } catch (err) {
+              console.warn('Endpoint fetch fallback to dataset:', err);
+            }
+
+            document.getElementById('edit-agent-id').value = agentId;
+            document.getElementById('edit-agent-name').value = name || '';
+            document.getElementById('edit-agent-role').value = role || 'Service Advisor';
+            document.getElementById('edit-agent-email').value = email || '';
+            document.getElementById('edit-agent-phone').value = phone || '';
+
+            openEditAgentDrawer();
+          });
+        }
+
+        // Verify edit agent phone with Twilio Caller ID
+        const verifyEditAgentTwilioBtn = document.getElementById('verify-edit-agent-twilio-btn');
+        if (verifyEditAgentTwilioBtn) {
+          verifyEditAgentTwilioBtn.addEventListener('click', async () => {
+            const phoneInput = document.getElementById('edit-agent-phone');
+            const nameInput = document.getElementById('edit-agent-name');
+            const phone = phoneInput ? phoneInput.value.trim() : '';
+            if (!phone) {
+              showToast('Please enter a phone number first.', 'error');
+              return;
+            }
+            try {
+              const name = nameInput ? nameInput.value.trim() : 'Staff Member';
+              const res = await fetch('/api/v1/portal/twilio/verify-caller-id', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone_number: phone, friendly_name: name })
+              });
+              if (!res.ok) throw new Error('Verification request failed');
+              showToast(`Phone number ${phone} submitted to Twilio Verified Caller IDs!`);
+            } catch (err) {
+              showToast('Twilio verification error: ' + err.message, 'error');
+            }
+          });
+        }
+
+        // Edit Staff Member Form submission handler
+        if (editAgentForm) {
+          editAgentForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const agentId = document.getElementById('edit-agent-id').value;
+            const name = document.getElementById('edit-agent-name').value.trim();
+            const role = document.getElementById('edit-agent-role').value.trim() || 'Service Advisor';
+            const email = document.getElementById('edit-agent-email').value.trim() || null;
+            const phone_number = document.getElementById('edit-agent-phone').value.trim() || null;
+
+            if (!agentId || !name) return;
+
+            try {
+              const response = await fetch(`/api/v1/portal/agents/${agentId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, role, email, phone_number })
+              });
+
+              if (!response.ok) {
+                const data = await response.json();
+                throw new Error(data.detail || 'Failed to update staff member');
+              }
+
+              const data = await response.json();
+
+              // Auto-trigger Twilio Verified Caller ID if phone_number is provided
+              if (phone_number) {
+                try {
+                  await fetch('/api/v1/portal/twilio/verify-caller-id', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone_number, friendly_name: name })
+                  });
+                } catch (e) {
+                  console.error('Auto caller-id verify error:', e);
+                }
+              }
+
+              const syncInfo = data.calendar_sync ? ` (${data.calendar_sync.total || 0} slots synced)` : '';
+              showToast(`Staff member "${name}" updated & calendar synced successfully!${syncInfo}`);
+              closeEditAgentDrawer();
+
+              // Reload staff view and re-select updated agent
+              await loadStaffView(agentId);
+            } catch (err) {
+              console.error(err);
+              showToast('Error updating staff member: ' + err.message, 'error');
             }
           });
         }
@@ -2050,6 +2225,10 @@ document.addEventListener('DOMContentLoaded', () => {
         redirectUriDisplay.textContent = window.location.origin + '/api/v1/portal/gmail/oauth/callback';
       }
 
+      if (document.getElementById('admin-sms-phone')) {
+        document.getElementById('admin-sms-phone').value = config.admin_phone_number || '';
+      }
+
       // Populate OAuth Connection status
       const statusBadge = document.getElementById('gmail-oauth-status-badge');
       const connectBtn = document.getElementById('connect-gmail-btn');
@@ -2086,6 +2265,7 @@ document.addEventListener('DOMContentLoaded', () => {
         gmail_sender: document.getElementById('gmail-sender').value.trim(),
         gmail_password: document.getElementById('gmail-password').value,
         gmail_recipient: document.getElementById('gmail-recipient').value.trim(),
+        admin_phone_number: document.getElementById('admin-sms-phone') ? document.getElementById('admin-sms-phone').value.trim() : null,
         gmail_smtp_server: document.getElementById('gmail-smtp-server').value.trim() || 'smtp.gmail.com',
         gmail_smtp_port: parseInt(document.getElementById('gmail-smtp-port').value, 10) || 587,
         gmail_client_id: document.getElementById('gmail-client-id').value.trim(),
@@ -2160,6 +2340,44 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Handle Test Admin SMS button
+  const testAdminSmsBtn = document.getElementById('test-admin-sms-btn');
+  if (testAdminSmsBtn) {
+    testAdminSmsBtn.addEventListener('click', async () => {
+      const adminPhoneInput = document.getElementById('admin-sms-phone');
+      const admin_phone_number = adminPhoneInput ? adminPhoneInput.value.trim() : '';
+
+      if (!admin_phone_number) {
+        showToast('Please enter an Admin Contact Phone Number first.', 'error');
+        return;
+      }
+
+      showToast('Sending test SMS to Admin...', 'info');
+      testAdminSmsBtn.disabled = true;
+
+      try {
+        const response = await fetch('/api/v1/portal/sms/admin/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admin_phone_number })
+        });
+
+        testAdminSmsBtn.disabled = false;
+
+        if (!response.ok) {
+          const errData = await response.json();
+          throw new Error(errData.detail || 'Failed to send Admin Test SMS');
+        }
+
+        showToast('Admin Test SMS sent successfully!');
+      } catch (err) {
+        testAdminSmsBtn.disabled = false;
+        console.error(err);
+        showToast('Admin SMS Test Failed: ' + err.message, 'error');
+      }
+    });
+  }
+
   // Handle Connect Google Account popup redirection
   const connectGmailBtn = document.getElementById('connect-gmail-btn');
   if (connectGmailBtn) {
@@ -2212,6 +2430,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!config) return;
 
       document.getElementById('sms-config-support-phone').value = config.support_phone_number || '';
+      if (document.getElementById('sms-config-admin-phone')) {
+        document.getElementById('sms-config-admin-phone').value = config.admin_phone_number || '';
+      }
       const envVal = (config.environment === 'TESTING' || config.environment === 'TEST') ? 'TEST' : (config.environment || 'TEST');
       document.getElementById('sms-config-environment').value = envVal;
       document.getElementById('sms-config-quiet-start').value = config.quiet_start_time || '21:00';
@@ -2327,6 +2548,7 @@ document.addEventListener('DOMContentLoaded', () => {
       e.preventDefault();
       const payload = {
         support_phone_number: document.getElementById('sms-config-support-phone').value,
+        admin_phone_number: document.getElementById('sms-config-admin-phone') ? document.getElementById('sms-config-admin-phone').value.trim() : null,
         environment: document.getElementById('sms-config-environment').value,
         quiet_start_time: document.getElementById('sms-config-quiet-start').value,
         quiet_end_time: document.getElementById('sms-config-quiet-end').value,
@@ -2379,9 +2601,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const statAttentionEl = document.getElementById('stat-sms-attention');
       const statProgressEl = document.getElementById('stat-sms-progress');
       const statResolvedEl = document.getElementById('stat-sms-resolved');
-      if (statAttentionEl) statAttentionEl.textContent = `🔴 ${countAttention} Handoffs`;
-      if (statProgressEl) statProgressEl.textContent = `🟡 ${countProgress} In Progress`;
-      if (statResolvedEl) statResolvedEl.textContent = `🟢 ${countResolved} Resolved`;
+      if (statAttentionEl) statAttentionEl.innerHTML = `<span class="stat-dot attention"></span> ${countAttention} Handoffs`;
+      if (statProgressEl) statProgressEl.innerHTML = `<span class="stat-dot progress"></span> ${countProgress} In Progress`;
+      if (statResolvedEl) statResolvedEl.innerHTML = `<span class="stat-dot resolved"></span> ${countResolved} Resolved`;
 
       renderFilteredConversations();
     } catch (err) {

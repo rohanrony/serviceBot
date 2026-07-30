@@ -128,20 +128,31 @@ def aes_256_ctr(data: bytes, key: bytes, nonce: bytes) -> bytes:
 # Deterministic key generation from system secret (fallback to standard key)
 SECRET_KEY = hashlib.sha256(os.getenv("ENCRYPTION_KEY", "default-system-secret-key-32bytes-length").encode()).digest()
 
+from serviceBot.logger import get_logger
+logger = get_logger("services.encryption")
+
 def encrypt_key(raw_key: str) -> str:
     if not raw_key:
         return ""
-    # Generate random 8-byte nonce
-    nonce = os.urandom(8)
-    encrypted_bytes = aes_256_ctr(raw_key.encode('utf-8'), SECRET_KEY, nonce)
-    # Pack as base64: nonce + encrypted_bytes
-    return base64.b64encode(nonce + encrypted_bytes).decode('utf-8')
+    try:
+        # Generate random 8-byte nonce
+        nonce = os.urandom(8)
+        encrypted_bytes = aes_256_ctr(raw_key.encode('utf-8'), SECRET_KEY, nonce)
+        # Pack as base64: nonce + encrypted_bytes
+        return base64.b64encode(nonce + encrypted_bytes).decode('utf-8')
+    except Exception as e:
+        logger.error(f"Failed to encrypt key: {e}", exc_info=e)
+        return ""
 
 def decrypt_key(encrypted_str: str) -> str:
     if not encrypted_str:
         return ""
-    data = base64.b64decode(encrypted_str.encode('utf-8'))
-    nonce = data[:8]
-    encrypted_bytes = data[8:]
-    decrypted_bytes = aes_256_ctr(encrypted_bytes, SECRET_KEY, nonce)
-    return decrypted_bytes.decode('utf-8')
+    try:
+        data = base64.b64decode(encrypted_str.encode('utf-8'))
+        nonce = data[:8]
+        encrypted_bytes = data[8:]
+        decrypted_bytes = aes_256_ctr(encrypted_bytes, SECRET_KEY, nonce)
+        return decrypted_bytes.decode('utf-8')
+    except Exception as e:
+        logger.error(f"Failed to decrypt encrypted key token: {e}", exc_info=e)
+        return ""

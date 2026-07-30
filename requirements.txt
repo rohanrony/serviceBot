@@ -11,3 +11,5 @@ openai
 twilio
 python-multipart
 tzdata
+python-json-logger
+logtail-python

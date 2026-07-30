@@ -120,6 +120,10 @@ def run_quiet_hours_queue_worker_cycle():
     return dispatched_count
 
 
+from serviceBot.logger import get_logger
+
+logger = get_logger("services.quiet_hours")
+
 def start_quiet_hours_queue_worker(interval_seconds: int = 30):
     global _worker_started
     if _worker_started:
@@ -127,11 +131,12 @@ def start_quiet_hours_queue_worker(interval_seconds: int = 30):
     _worker_started = True
 
     def _loop():
+        logger.info("Quiet hours queue release worker thread started.")
         while True:
             try:
                 run_quiet_hours_queue_worker_cycle()
             except Exception as e:
-                print(f"[quiet_hours_queue_worker] Error in polling cycle: {e}")
+                logger.error(f"Error in quiet hours polling cycle: {e}", exc_info=e)
             time.sleep(interval_seconds)
 
     t = threading.Thread(target=_loop, daemon=True, name="quiet-hours-queue-release")

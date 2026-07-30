@@ -159,12 +159,12 @@ def seed_db(force: bool = False):
 
         # Insert Staff Agents
         agents = [
-            (1, 'John Doe', 'Service Advisor', 'john.doe@example.com'),
-            (2, 'Jane Smith', 'Technician', 'jane.smith@example.com'),
-            (3, 'Bob Johnson', 'Technician', 'bob.johnson@example.com')
+            (1, 'John Doe', 'Service Advisor', 'john.doe@example.com', '+14242704893'),
+            (2, 'Jane Smith', 'Technician', 'jane.smith@example.com', '+14242704893'),
+            (3, 'Bob Johnson', 'Technician', 'bob.johnson@example.com', '+14242704893')
         ]
         cursor.executemany(
-            "INSERT INTO staff_agents (id, name, role, email) VALUES (%s, %s, %s, %s);",
+            "INSERT INTO staff_agents (id, name, role, email, phone_number) VALUES (%s, %s, %s, %s, %s);",
             agents
         )
         
@@ -197,8 +197,8 @@ def seed_db(force: bool = False):
         cursor.execute("SELECT COUNT(*) FROM sms_config;")
         if cursor.fetchone()[0] == 0:
             cursor.execute("""
-                INSERT INTO sms_config (quiet_hours_enabled, quiet_start_time, quiet_end_time, urgent_threshold_hours, support_phone_number, auto_responder_template, auto_responder_debounce_seconds, environment)
-                VALUES (TRUE, '21:00', '08:00', 12, '+18005550199', 'Thank you! Our team has received your message. For urgent help, call {support_number}.', 60, 'TEST');
+                INSERT INTO sms_config (quiet_hours_enabled, quiet_start_time, quiet_end_time, urgent_threshold_hours, support_phone_number, admin_phone_number, auto_responder_template, auto_responder_debounce_seconds, environment)
+                VALUES (TRUE, '21:00', '08:00', 12, '+18005550199', '+14242704893', 'Thank you! Our team has received your message. For urgent help, call {support_number}.', 60, 'TEST');
             """)
 
         # Seed default sms_matrix_rules if empty

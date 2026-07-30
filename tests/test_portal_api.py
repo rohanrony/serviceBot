@@ -251,6 +251,7 @@ def test_get_stats_endpoint():
     assert "total_calls" in stats
     assert "total_appointments" in stats
     assert "total_requests" in stats
+    assert "pending_requests" in stats
     assert "open_slots" in stats
     assert "total_callbacks" in stats
     assert stats.get("timeframe") == "7d"

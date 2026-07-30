@@ -5,6 +5,7 @@ import threading
 from datetime import datetime, timedelta
 from typing import Optional
 
+from serviceBot.logger import get_logger
 from serviceBot.db.connection import get_db_connection, dict_cursor
 from serviceBot.services.gmail import (
     send_booking_notification,
@@ -15,6 +16,8 @@ from serviceBot.services.google_calendar import (
     create_agent_calendar_event,
     delete_agent_calendar_event
 )
+
+logger = get_logger("outbox_worker")
 
 
 def enqueue_outbox_event(cursor, event_type: str, request_id: Optional[int], payload: dict):
@@ -31,10 +34,12 @@ def enqueue_outbox_event(cursor, event_type: str, request_id: Optional[int], pay
     )
 
 
-def process_outbox_batch(batch_size: int = 10):
+def process_outbox_batch(batch_size: int = 10) -> int:
     """
     Processes pending outbox items with exponential backoff retries and 7-failure automated revert.
+    Returns the number of processed outbox events.
     """
+    processed_count = 0
     try:
         with get_db_connection() as conn:
             with dict_cursor(conn) as cursor:
@@ -52,9 +57,10 @@ def process_outbox_batch(batch_size: int = 10):
                 items = cursor.fetchall()
 
             if not items:
-                return
+                return 0
 
             for item in items:
+                processed_count += 1
                 item_id = item["id"]
                 event_type = item["event_type"]
                 request_id = item["request_id"]
@@ -79,7 +85,10 @@ def process_outbox_batch(batch_size: int = 10):
                             (item_id,)
                         )
                     conn.commit()
-                    print(f"[outbox] Event {item_id} ({event_type}) delivered successfully.")
+                    logger.info(
+                        f"Event {item_id} ({event_type}) delivered successfully.",
+                        extra={"extra_payload": {"item_id": item_id, "event_type": event_type, "request_id": request_id}}
+                    )
 
                 except Exception as err:
                     err_msg = f"{type(err).__name__}: {str(err)}\n{traceback.format_exc()}"
@@ -90,7 +99,17 @@ def process_outbox_batch(batch_size: int = 10):
 
                     if new_attempts >= max_attempts or is_hard_failure:
                         # --- REVERT & COMPENSATION ON FAILURES ---
-                        print(f"[OUTBOX CRITICAL] Event {item_id} ({event_type}) failed! Hard Failure: {is_hard_failure}. Executing compensating transaction...")
+                        logger.error(
+                            f"CRITICAL: Outbox event {item_id} ({event_type}) failed maximum retries or hard error! Hard Failure: {is_hard_failure}. Executing compensating transaction...",
+                            exc_info=err,
+                            extra={"extra_payload": {
+                                "item_id": item_id,
+                                "event_type": event_type,
+                                "request_id": request_id,
+                                "attempts": new_attempts,
+                                "is_hard_failure": is_hard_failure
+                            }}
+                        )
                         _execute_revert_compensation(conn, event_type, request_id, payload, err_msg)
                         with dict_cursor(conn) as cursor:
                             cursor.execute(
@@ -110,7 +129,16 @@ def process_outbox_batch(batch_size: int = 10):
                         else:
                             delay_seconds = 2 ** new_attempts  # 2s, 4s, 8s, 16s, 32s, 64s, 128s
 
-                        print(f"[outbox] Event {item_id} failed attempt {new_attempts}/{max_attempts}. Retrying in {delay_seconds}s. Error: {err}")
+                        logger.warning(
+                            f"Outbox event {item_id} ({event_type}) failed attempt {new_attempts}/{max_attempts}. Retrying in {delay_seconds}s. Error: {err}",
+                            extra={"extra_payload": {
+                                "item_id": item_id,
+                                "event_type": event_type,
+                                "attempts": new_attempts,
+                                "next_retry_delay": delay_seconds,
+                                "error": str(err)
+                            }}
+                        )
                         with dict_cursor(conn) as cursor:
                             cursor.execute(
                                 """
@@ -126,9 +154,10 @@ def process_outbox_batch(batch_size: int = 10):
                             )
                         conn.commit()
 
-
     except Exception as outer_err:
-        print(f"[outbox_worker] Batch processing exception: {outer_err}")
+        logger.error(f"Outbox batch processing exception: {outer_err}", exc_info=outer_err)
+
+    return processed_count
 
 
 def _dispatch_outbox_event(event_type: str, request_id: Optional[int], payload: dict):
@@ -210,7 +239,6 @@ def _dispatch_outbox_event(event_type: str, request_id: Optional[int], payload: 
         )
 
 
-
 def _execute_revert_compensation(conn, event_type: str, request_id: Optional[int], payload: dict, err_log: str):
     """
     Executes a compensating database transaction when an outbox event fails 7 consecutive times.
@@ -226,17 +254,17 @@ def _execute_revert_compensation(conn, event_type: str, request_id: Optional[int
                 "UPDATE service_requests SET staff_agent_id = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s;",
                 (old_agent_id, request_id)
             )
-        print(f"[OUTBOX REVERT SUCCESS] Service request {request_id} staff assignment reverted back to agent_id={old_agent_id} ({old_agent_name}).")
+        logger.info(f"[OUTBOX REVERT SUCCESS] Service request {request_id} staff assignment reverted back to agent_id={old_agent_id} ({old_agent_name}).")
 
 
 def _worker_loop():
     """Background polling loop for outbox processing."""
-    print("[outbox_worker] Outbox processing background thread started.")
+    logger.info("Outbox processing background thread started.")
     while True:
         try:
             process_outbox_batch()
         except Exception as e:
-            print(f"[outbox_worker] Worker loop error: {e}")
+            logger.error(f"Worker loop error: {e}", exc_info=e)
         time.sleep(2.0)
 
 
@@ -249,4 +277,4 @@ def start_outbox_worker():
     if _worker_thread is None or not _worker_thread.is_alive():
         _worker_thread = threading.Thread(target=_worker_loop, daemon=True, name="OutboxWorkerThread")
         _worker_thread.start()
-        print("[outbox_worker] Outbox worker thread launched.")
+        logger.info("Outbox worker thread launched.")

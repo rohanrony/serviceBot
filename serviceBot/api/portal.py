@@ -1,11 +1,14 @@
 import os
 import httpx
+from datetime import datetime
+from typing import Optional
 from fastapi import APIRouter, HTTPException, UploadFile, File, Request
 from pydantic import BaseModel
-from typing import Optional
 from dotenv import load_dotenv
 
-load_dotenv(override=False)
+from serviceBot.logger import get_logger
+
+logger = get_logger("api.portal")
 
 router = APIRouter(prefix="/api/v1/portal", tags=["portal"])
 
@@ -85,6 +88,13 @@ async def update_elevenlabs_agent(payload: AgentUpdatePayload):
 class StaffAgentCreate(BaseModel):
     name: str
     role: Optional[str] = "Service Advisor"
+    email: Optional[str] = None
+    phone_number: Optional[str] = None
+
+
+class StaffAgentUpdate(BaseModel):
+    name: Optional[str] = None
+    role: Optional[str] = None
     email: Optional[str] = None
     phone_number: Optional[str] = None
 
@@ -521,6 +531,88 @@ async def get_staff_agents():
                 }
                 agents.append(d)
             return agents
+
+@router.get("/agents/{agent_id}")
+async def get_staff_agent(agent_id: int):
+    from serviceBot.db.connection import get_db_connection, dict_cursor
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("""
+                SELECT sa.id, sa.name, sa.role, sa.email AS db_email, sa.phone_number, uga.email AS google_email
+                FROM staff_agents sa
+                LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id
+                WHERE sa.id = %s;
+            """, (agent_id,))
+            row = cursor.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Agent not found")
+            config = load_config()
+            system_email = config.get("gmail_sender") or os.getenv("GMAIL_SENDER") or None
+            resolved_email = row["google_email"] or row["db_email"] or system_email
+            return {
+                "id": row["id"],
+                "name": row["name"],
+                "role": row["role"],
+                "email": resolved_email,
+                "db_email": row["db_email"],
+                "phone_number": row["phone_number"],
+                "is_connected": bool(row["google_email"])
+            }
+
+@router.put("/agents/{agent_id}")
+@router.patch("/agents/{agent_id}")
+async def update_staff_agent(agent_id: int, payload: StaffAgentUpdate):
+    from serviceBot.db.connection import get_db_connection, dict_cursor
+    from serviceBot.services.calendar_sync import sync_agent_slots
+
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT id, name, role, email, phone_number FROM staff_agents WHERE id = %s;", (agent_id,))
+            agent = cursor.fetchone()
+            if not agent:
+                raise HTTPException(status_code=404, detail="Agent not found")
+
+            updates = []
+            params = []
+            if payload.name is not None:
+                updates.append("name = %s")
+                params.append(payload.name)
+            if payload.role is not None:
+                updates.append("role = %s")
+                params.append(payload.role)
+            if payload.email is not None:
+                updates.append("email = %s")
+                params.append(payload.email)
+            if payload.phone_number is not None:
+                updates.append("phone_number = %s")
+                params.append(payload.phone_number)
+
+            if updates:
+                query = f"UPDATE staff_agents SET {', '.join(updates)} WHERE id = %s RETURNING id, name, role, email, phone_number;"
+                params.append(agent_id)
+                cursor.execute(query, tuple(params))
+                updated_agent = dict(cursor.fetchone())
+
+                # If email changed, update connected user_google_accounts if present
+                if payload.email is not None:
+                    cursor.execute("UPDATE user_google_accounts SET email = %s WHERE agent_id = %s;", (payload.email, agent_id))
+
+                conn.commit()
+            else:
+                updated_agent = dict(agent)
+
+    # Immediately trigger calendar sync so live free/busy slots are updated to reflect the agent changes
+    sync_result = {}
+    try:
+        sync_result = sync_agent_slots(agent_id)
+    except Exception as e:
+        print(f"[update_staff_agent] Calendar sync notice for agent {agent_id}: {e}")
+
+    return {
+        "success": True,
+        "agent": updated_agent,
+        "calendar_sync": sync_result
+    }
 
 @router.post("/agents", status_code=201)
 async def create_staff_agent(payload: StaffAgentCreate):
@@ -1015,6 +1107,10 @@ async def get_stats(timeframe: Optional[str] = "7d", calls_timeframe: Optional[s
             cursor.execute("SELECT COUNT(*) AS count FROM service_requests")
             total_requests = cursor.fetchone()["count"]
             
+            # Pending Requests (Pending Triage)
+            cursor.execute("SELECT COUNT(*) AS count FROM service_requests WHERE status = 'pending'")
+            pending_requests = cursor.fetchone()["count"]
+            
             # Open Slots
             cursor.execute("SELECT COUNT(*) AS count FROM mock_calendar_slots WHERE is_booked = FALSE")
             open_slots = cursor.fetchone()["count"]
@@ -1027,6 +1123,7 @@ async def get_stats(timeframe: Optional[str] = "7d", calls_timeframe: Optional[s
                 "total_calls": total_calls,
                 "total_appointments": total_appointments,
                 "total_requests": total_requests,
+                "pending_requests": pending_requests,
                 "open_slots": open_slots,
                 "total_callbacks": total_callbacks,
                 "timeframe": tf
@@ -1117,6 +1214,7 @@ class GmailConfigPayload(BaseModel):
     gmail_sender: str
     gmail_password: Optional[str] = None
     gmail_recipient: str
+    admin_phone_number: Optional[str] = None
     gmail_smtp_server: Optional[str] = "smtp.gmail.com"
     gmail_smtp_port: Optional[int] = 587
     gmail_client_id: Optional[str] = None
@@ -1126,6 +1224,10 @@ class GmailConfigPayload(BaseModel):
 async def get_gmail_config():
     config = load_config()
     from serviceBot.services.encryption import decrypt_key
+    from serviceBot.db.queries import get_sms_config
+    
+    sms_cfg = get_sms_config()
+    admin_phone = sms_cfg.get("admin_phone_number") or config.get("admin_phone_number") or ""
     
     client_id_decrypted = decrypt_key(config.get("gmail_client_id", ""))
     if not client_id_decrypted:
@@ -1140,6 +1242,7 @@ async def get_gmail_config():
         "gmail_auth_type": config.get("gmail_auth_type", "app_password"),
         "gmail_sender": config.get("gmail_sender", ""),
         "gmail_recipient": config.get("gmail_recipient", ""),
+        "admin_phone_number": admin_phone,
         "gmail_smtp_server": config.get("gmail_smtp_server", "smtp.gmail.com"),
         "gmail_smtp_port": config.get("gmail_smtp_port", 587),
         "has_password": has_password,
@@ -1161,6 +1264,11 @@ async def update_gmail_config(payload: GmailConfigPayload):
     config["gmail_smtp_server"] = payload.gmail_smtp_server or "smtp.gmail.com"
     config["gmail_smtp_port"] = payload.gmail_smtp_port or 587
     
+    if payload.admin_phone_number is not None:
+        config["admin_phone_number"] = payload.admin_phone_number
+        from serviceBot.db.queries import update_sms_config
+        update_sms_config({"admin_phone_number": payload.admin_phone_number})
+        
     if payload.gmail_password and payload.gmail_password != "••••••••••••••••":
         config["gmail_password"] = encrypt_key(payload.gmail_password)
         
@@ -1502,6 +1610,42 @@ async def test_gmail_config(payload: GmailConfigPayload):
     return {"success": True}
 
 
+class AdminSMSTestPayload(BaseModel):
+    admin_phone_number: Optional[str] = None
+
+@router.post("/sms/admin/test")
+async def test_admin_sms(payload: AdminSMSTestPayload):
+    from serviceBot.services.twilio_sms import TwilioSMSClient
+    from serviceBot.db.queries import get_sms_config, update_sms_config
+
+    admin_phone = (payload.admin_phone_number or "").strip()
+    if not admin_phone:
+        cfg = get_sms_config()
+        admin_phone = cfg.get("admin_phone_number") or ""
+
+    if not admin_phone:
+        raise HTTPException(status_code=400, detail="Admin contact phone number is required to send a test SMS.")
+
+    # Save to DB if non-empty
+    if payload.admin_phone_number:
+        update_sms_config({"admin_phone_number": admin_phone})
+
+    twilio_client = TwilioSMSClient()
+    timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    body = f"[ServiceBot Admin Alert] Connection Test Successful! Your Admin SMS notification integration is working correctly. ({timestamp_str})"
+    res = twilio_client.send_sms(
+        to=admin_phone,
+        body=body,
+        template_type="admin_test"
+    )
+
+    if not res.get("success"):
+        error_msg = res.get("error_message") or "Failed to send Admin Test SMS."
+        raise HTTPException(status_code=400 if res.get("status") == "SKIPPED_NOT_WHITELISTED" else 500, detail=error_msg)
+
+    return {"success": True, "details": res}
+
+
 @router.post("/seed")
 async def trigger_seeding():
     from serviceBot.seed_cba_services import main as seed_main
@@ -1520,6 +1664,7 @@ class SMSConfigPayload(BaseModel):
     quiet_end_time: Optional[str] = None
     urgent_threshold_hours: Optional[int] = None
     support_phone_number: Optional[str] = None
+    admin_phone_number: Optional[str] = None
     auto_responder_template: Optional[str] = None
     auto_responder_debounce_seconds: Optional[int] = None
     environment: Optional[str] = None

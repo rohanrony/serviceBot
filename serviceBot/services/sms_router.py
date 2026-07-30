@@ -115,15 +115,21 @@ class SMSNotificationRouter:
             )
             dispatches.append({"recipient": "previous_agent", **res})
 
-        # 4. Admin Dispatch (Default Disabled)
-        if admin_phone and self._is_rule_enabled(event_type, "admin", rules):
-            body = f"Admin Alert for Appointment #{appointment_id}: Event {event_type}."
-            res = self.twilio_client.send_sms(
-                to=admin_phone,
-                body=body,
-                template_type=f"admin_{event_type.lower()}",
-                appointment_id=appointment_id
-            )
-            dispatches.append({"recipient": "admin", **res})
+        # 4. Admin Dispatch
+        if self._is_rule_enabled(event_type, "admin", rules):
+            target_admin_phone = admin_phone
+            if not target_admin_phone:
+                from serviceBot.db.queries import get_sms_config
+                cfg = get_sms_config()
+                target_admin_phone = cfg.get("admin_phone_number") or cfg.get("support_phone_number") or os.getenv("NOTIFICATION_PHONE_NUMBER") or os.getenv("ADMIN_PHONE_NUMBER")
+            if target_admin_phone:
+                body = f"Admin Alert for Appointment #{appointment_id}: Event {event_type}."
+                res = self.twilio_client.send_sms(
+                    to=target_admin_phone,
+                    body=body,
+                    template_type=f"admin_{event_type.lower()}",
+                    appointment_id=appointment_id
+                )
+                dispatches.append({"recipient": "admin", **res})
 
         return {"event_type": event_type, "appointment_id": appointment_id, "dispatches": dispatches}
