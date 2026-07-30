@@ -401,6 +401,18 @@ async def post_call_webhook(request: Request = None, payload: Dict[str, Any] = N
                             from serviceBot.services.gmail import send_booking_notification, send_admin_notification
                             send_booking_notification("callback", details, agent_email=agent_email)
                             send_admin_notification("callback", details, mechanic_name=agent_name, mechanic_email=agent_email)
+                            # SMS: notify customer + agent on callback booking
+                            try:
+                                from serviceBot.services.sms_router import SMSNotificationRouter
+                                SMSNotificationRouter().process_event(
+                                    event_type="BOOKING",
+                                    appointment_id=sr_id,
+                                    customer_phone=details.get("phone"),
+                                    agent_phone=None,
+                                    booking_time=details.get("time")
+                                )
+                            except Exception as sms_err:
+                                print(f"Error sending SMS notification (webhook callback): {sms_err}")
                         except Exception as email_err:
                             print(f"Error triggering webhook callback email: {email_err}")
 
@@ -606,6 +618,18 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                         from serviceBot.services.gmail import send_booking_notification, send_admin_notification
                         send_booking_notification("appointment", details, agent_email=agent_email)
                         send_admin_notification("appointment", details, mechanic_name=agent_name, mechanic_email=agent_email)
+                        # SMS: notify customer + agent on appointment booking
+                        try:
+                            from serviceBot.services.sms_router import SMSNotificationRouter
+                            SMSNotificationRouter().process_event(
+                                event_type="BOOKING",
+                                appointment_id=sr_id,
+                                customer_phone=details.get("phone"),
+                                agent_phone=None,
+                                booking_time=details.get("time")
+                            )
+                        except Exception as sms_err:
+                            print(f"Error sending SMS notification (create_service_request appointment): {sms_err}")
                     except Exception as email_err:
                         print(f"Error triggering service request appointment email: {email_err}")
                 elif booking_type == "callback":
@@ -638,6 +662,18 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                         from serviceBot.services.gmail import send_booking_notification, send_admin_notification
                         send_booking_notification("callback", details, agent_email=agent_email)
                         send_admin_notification("callback", details, mechanic_name=agent_name, mechanic_email=agent_email)
+                        # SMS: notify customer + agent on callback booking
+                        try:
+                            from serviceBot.services.sms_router import SMSNotificationRouter
+                            SMSNotificationRouter().process_event(
+                                event_type="BOOKING",
+                                appointment_id=sr_id,
+                                customer_phone=details.get("phone"),
+                                agent_phone=None,
+                                booking_time=details.get("time")
+                            )
+                        except Exception as sms_err:
+                            print(f"Error sending SMS notification (create_service_request callback): {sms_err}")
                     except Exception as email_err:
                         print(f"Error triggering service request callback email: {email_err}")
                 else:
@@ -754,6 +790,18 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                             from serviceBot.services.gmail import send_booking_notification, send_admin_notification
                             send_booking_notification("appointment", details, agent_email=agent_email)
                             send_admin_notification("appointment", details, mechanic_name=agent_name, mechanic_email=agent_email)
+                            # SMS: notify customer + agent on book_appointment
+                            try:
+                                from serviceBot.services.sms_router import SMSNotificationRouter
+                                SMSNotificationRouter().process_event(
+                                    event_type="BOOKING",
+                                    appointment_id=appt_id,
+                                    customer_phone=details.get("phone"),
+                                    agent_phone=None,
+                                    booking_time=details.get("time")
+                                )
+                            except Exception as sms_err:
+                                print(f"Error sending SMS notification (book_appointment): {sms_err}")
                         except Exception as email_err:
                             print(f"Error triggering book appointment email: {email_err}")
                     except ValueError as val_err:
@@ -873,6 +921,18 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                             from serviceBot.services.gmail import send_booking_notification, send_admin_notification
                             send_booking_notification("callback", details, agent_email=agent_email)
                             send_admin_notification("callback", details, mechanic_name=agent_name, mechanic_email=agent_email)
+                            # SMS: notify customer on callback request
+                            try:
+                                from serviceBot.services.sms_router import SMSNotificationRouter
+                                SMSNotificationRouter().process_event(
+                                    event_type="BOOKING",
+                                    appointment_id=cb_id,
+                                    customer_phone=details.get("phone"),
+                                    agent_phone=None,
+                                    booking_time=details.get("time")
+                                )
+                            except Exception as sms_err:
+                                print(f"Error sending SMS notification (request_callback): {sms_err}")
                         except Exception as email_err:
                             print(f"Error triggering callback email: {email_err}")
                     except ValueError as val_err:
@@ -961,6 +1021,18 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                                 from serviceBot.services.gmail import send_booking_notification, send_admin_notification
                                 send_booking_notification("reschedule", details, agent_email=agent_email)
                                 send_admin_notification("reschedule", details, mechanic_name=agent_name, mechanic_email=agent_email)
+                                # SMS: notify customer on reschedule
+                                try:
+                                    from serviceBot.services.sms_router import SMSNotificationRouter
+                                    SMSNotificationRouter().process_event(
+                                        event_type="RESCHEDULED",
+                                        appointment_id=appt_id,
+                                        customer_phone=details.get("phone"),
+                                        agent_phone=None,
+                                        booking_time=new_datetime
+                                    )
+                                except Exception as sms_err:
+                                    print(f"Error sending SMS notification (reschedule): {sms_err}")
                         except Exception as email_err:
                             print(f"Error triggering reschedule email: {email_err}")
                     except Exception as e:

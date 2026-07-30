@@ -669,3 +669,183 @@ INFO:     Application startup complete.
 18:25:57 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
 18:25:57 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
 18:25:57 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+WARNING:  WatchFiles detected changes in 'serviceBot/services/outbox_worker.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [80908]
+INFO:     Started server process [86123]
+INFO:     Waiting for application startup.
+20:21:26 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+20:21:26 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+20:21:26 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+20:21:26 [0;32mINFO   [0m [serviceBot.services.quiet_hours] Quiet hours queue release worker thread started.
+20:21:26 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+20:21:26 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+20:21:26 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+20:21:27 [0;32mINFO   [0m [serviceBot.db.connection] Database schema already initialized (fast-path).
+20:21:27 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+20:21:27 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+20:21:27 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+WARNING:  WatchFiles detected changes in 'serviceBot/api/telephony.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [86123]
+INFO:     Started server process [86150]
+INFO:     Waiting for application startup.
+20:21:54 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+20:21:54 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+20:21:54 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+20:21:54 [0;32mINFO   [0m [serviceBot.services.quiet_hours] Quiet hours queue release worker thread started.
+20:21:54 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+20:21:54 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+20:21:54 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+20:21:55 [0;32mINFO   [0m [serviceBot.db.connection] Database schema already initialized (fast-path).
+20:21:56 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+20:21:56 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+20:21:56 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+WARNING:  WatchFiles detected changes in 'tests/test_sms_notifications.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [86150]
+INFO:     Started server process [86247]
+INFO:     Waiting for application startup.
+20:24:51 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+20:24:51 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+20:24:51 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+20:24:51 [0;32mINFO   [0m [serviceBot.services.quiet_hours] Quiet hours queue release worker thread started.
+20:24:51 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+20:24:51 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+20:24:51 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+20:24:52 [0;32mINFO   [0m [serviceBot.db.connection] Database schema already initialized (fast-path).
+20:24:52 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+20:24:52 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+20:24:52 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+WARNING:  WatchFiles detected changes in 'tests/test_sms_notifications.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [86247]
+INFO:     Started server process [86286]
+INFO:     Waiting for application startup.
+20:25:14 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+20:25:14 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+20:25:14 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+20:25:14 [0;32mINFO   [0m [serviceBot.services.quiet_hours] Quiet hours queue release worker thread started.
+20:25:14 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+20:25:14 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+20:25:14 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+20:25:14 [0;32mINFO   [0m [serviceBot.db.connection] Database schema already initialized (fast-path).
+20:25:15 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+20:25:15 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+20:25:15 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+20:27:59 [0;32mINFO   [0m [serviceBot.middleware] [5a79ef3a] GET /portal/ - 304 (28.31ms) [127.0.0.1]
+20:27:59 [0;32mINFO   [0m [serviceBot.middleware] [6ab22aa0] GET /portal/style.css - 304 (1.49ms) [127.0.0.1]
+20:27:59 [0;32mINFO   [0m [serviceBot.middleware] [b4eea9f8] GET /portal/app.js - 304 (1.09ms) [127.0.0.1]
+20:28:00 [0;32mINFO   [0m [serviceBot.middleware] [f5e7c97e] GET /api/v1/portal/stats - 200 (628.45ms) [127.0.0.1]
+20:28:00 [0;32mINFO   [0m [serviceBot.middleware] [5c705d76] GET /api/v1/portal/calls - 200 (241.69ms) [127.0.0.1]
+20:28:00 [0;32mINFO   [0m [serviceBot.middleware] [a3e23b64] GET /api/v1/portal/service-requests - 200 (248.39ms) [127.0.0.1]
+20:28:01 [0;32mINFO   [0m [serviceBot.middleware] [0454de30] GET /api/v1/portal/service-requests/1/available-agents - 200 (685.64ms) [127.0.0.1]
+20:28:34 [0;32mINFO   [0m [serviceBot.middleware] [9e5e47d7] PATCH /api/v1/portal/service-requests/1/assign-agent - 200 (1009.24ms) [127.0.0.1]
+Refreshing Google access token for agent 8...
+Google access token for agent 8 refreshed successfully.
+Refreshing Google access token for agent 8...
+Google access token for agent 8 refreshed successfully.
+Pre-fetching Google Calendar events for agent 8 from 2026-07-23T13:55:00-04:00 to 2026-07-23T15:05:00-04:00...
+Cancelled Google Calendar event 8f9mkco6gi4sn8sh49bkuiu810 for agent 8
+Cancelled Google Calendar event 2ve12g8aorqkq5m2iee8nlvcas for agent 8
+Cancelled Google Calendar event b1pjgav41rmf45fpk4opi0ssj4 for agent 8
+Refreshing Google access token for agent 7...
+Google access token for agent 7 refreshed successfully.
+Google Calendar event created successfully for agent 7!
+Refreshing Google access token for agent 7...
+Google access token for agent 7 refreshed successfully.
+Posting message to Gmail REST API for agent 7...
+Gmail REST API email sent successfully!
+20:28:42 [0;32mINFO   [0m [serviceBot.services.gmail] Requesting fresh Google OAuth2 access token...
+20:28:43 [0;32mINFO   [0m [serviceBot.services.gmail] Google OAuth2 access token refreshed successfully!
+Admin Google Calendar event created successfully!
+Posting message to Gmail REST API...
+Gmail REST API email sent successfully!
+20:28:46 [0;32mINFO   [0m [serviceBot.services.twilio_sms] Twilio SMS dispatched successfully to +14242704893 (SID: SM2a61f5aff8b436970b7f96ad2780a1fa).
+20:28:47 [0;32mINFO   [0m [serviceBot.services.twilio_sms] Twilio SMS dispatched successfully to +14242704893 (SID: SMeed95b91619628f6d1e555ebd8a641f5).
+20:28:48 [0;32mINFO   [0m [serviceBot.outbox_worker] Event 3 (agent_reassignment) delivered successfully.
+20:28:59 [0;32mINFO   [0m [serviceBot.middleware] [202fcac8] GET /api/v1/portal/stats - 200 (503.92ms) [127.0.0.1]
+20:28:59 [0;32mINFO   [0m [serviceBot.middleware] [aef7a7f3] GET /api/v1/portal/calls - 200 (198.87ms) [127.0.0.1]
+20:28:59 [0;32mINFO   [0m [serviceBot.middleware] [7bfcd275] GET /api/v1/portal/service-requests - 200 (212.15ms) [127.0.0.1]
+20:29:00 [0;32mINFO   [0m [serviceBot.middleware] [53163a46] GET /api/v1/portal/service-requests/1/available-agents - 200 (590.33ms) [127.0.0.1]
+20:29:00 [0;32mINFO   [0m [serviceBot.middleware] [35889250] GET /portal/ - 304 (2.82ms) [127.0.0.1]
+20:29:00 [0;32mINFO   [0m [serviceBot.middleware] [83af15cc] GET /api/v1/portal/stats - 200 (632.33ms) [127.0.0.1]
+20:29:01 [0;32mINFO   [0m [serviceBot.middleware] [c542c26a] GET /api/v1/portal/calls - 200 (190.94ms) [127.0.0.1]
+20:29:01 [0;32mINFO   [0m [serviceBot.middleware] [bdd44352] GET /api/v1/portal/service-requests - 200 (235.2ms) [127.0.0.1]
+20:29:01 [0;32mINFO   [0m [serviceBot.middleware] [7326f653] GET /api/v1/portal/service-requests/1/available-agents - 200 (544.64ms) [127.0.0.1]
+20:43:37 [0;31mERROR  [0m [serviceBot.db.connection] Database connection error: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+Traceback (most recent call last):
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/db/connection.py", line 448, in get_db_connection
+    yield conn
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/services/outbox_worker.py", line 46, in process_outbox_batch
+    cursor.execute(
+    ~~~~~~~~~~~~~~^
+        """
+        ^^^
+    ...<7 lines>...
+        (batch_size,)
+        ^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/rohanroy/Coding/voiceService/.venv/lib/python3.13/site-packages/psycopg2/extras.py", line 236, in execute
+    return super().execute(query, vars)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.OperationalError: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+20:43:37 [0;31mERROR  [0m [serviceBot.outbox_worker] Outbox batch processing exception: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+Traceback (most recent call last):
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/services/outbox_worker.py", line 46, in process_outbox_batch
+    cursor.execute(
+    ~~~~~~~~~~~~~~^
+        """
+        ^^^
+    ...<7 lines>...
+        (batch_size,)
+        ^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/rohanroy/Coding/voiceService/.venv/lib/python3.13/site-packages/psycopg2/extras.py", line 236, in execute
+    return super().execute(query, vars)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.OperationalError: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+20:44:53 [0;32mINFO   [0m [serviceBot.middleware] [fe7cdcf5] GET /api/v1/portal/sms/conversations - 200 (220.21ms) [127.0.0.1]
+20:44:58 [0;32mINFO   [0m [serviceBot.middleware] [9e04380d] GET /api/v1/portal/sms/conversations - 200 (193.8ms) [127.0.0.1]
+20:45:01 [0;32mINFO   [0m [serviceBot.middleware] [5cca696a] GET /api/v1/portal/stats - 200 (1200.24ms) [127.0.0.1]
+20:45:01 [0;32mINFO   [0m [serviceBot.middleware] [d7e650b6] GET /api/v1/portal/calls - 200 (198.38ms) [127.0.0.1]
+20:45:01 [0;32mINFO   [0m [serviceBot.middleware] [42aa4e71] GET /api/v1/portal/service-requests - 200 (195.99ms) [127.0.0.1]
+20:45:02 [0;32mINFO   [0m [serviceBot.middleware] [f7366611] GET /api/v1/portal/service-requests/1/available-agents - 200 (588.76ms) [127.0.0.1]

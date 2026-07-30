@@ -203,6 +203,18 @@ def _dispatch_outbox_event(event_type: str, request_id: Optional[int], payload: 
 
         send_admin_notification("reassign", details, mechanic_name=new_agent_name, mechanic_email=new_agent_email)
 
+        # 5. SMS Notifications (customer, new agent, previous agent)
+        from serviceBot.services.sms_router import SMSNotificationRouter
+        sms_router = SMSNotificationRouter()
+        sms_router.process_event(
+            event_type="REASSIGNED",
+            appointment_id=request_id,
+            customer_phone=details.get("phone"),
+            agent_phone=payload.get("agent_phone"),
+            previous_agent_phone=payload.get("previous_agent_phone"),
+            booking_time=booking_time_str
+        )
+
     elif event_type == "booking_notification":
         booking_type = payload.get("booking_type", "appointment")
         details = payload.get("details", {})
@@ -223,6 +235,21 @@ def _dispatch_outbox_event(event_type: str, request_id: Optional[int], payload: 
             )
 
         send_admin_notification(booking_type, details, mechanic_name=agent_name, mechanic_email=agent_email)
+
+        # SMS Notification (customer + agent)
+        agent_phone = payload.get("agent_phone")
+        customer_phone = details.get("phone")
+        if customer_phone or agent_phone:
+            sms_event = "BOOKING" if booking_type in ("appointment", "callback") else "RESCHEDULED"
+            from serviceBot.services.sms_router import SMSNotificationRouter
+            sms_router = SMSNotificationRouter()
+            sms_router.process_event(
+                event_type=sms_event,
+                appointment_id=request_id,
+                customer_phone=customer_phone,
+                agent_phone=agent_phone,
+                booking_time=slot_datetime_str
+            )
 
     elif event_type.startswith("sms_"):
         from serviceBot.services.sms_router import SMSNotificationRouter
