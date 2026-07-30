@@ -4,10 +4,13 @@ from serviceBot.main import app
 from serviceBot.services.handoff_service import trigger_human_handoff, send_agent_reply, resolve_conversation
 from serviceBot.db.queries import get_or_create_sms_conversation, get_sms_conversations, get_sms_messages, update_customer_opt_in
 
+from unittest.mock import patch
+
 client = TestClient(app)
 
 
-def test_handoff_state_transitions_and_auto_responder():
+@patch("serviceBot.services.handoff_service.is_within_business_hours", return_value=True)
+def test_handoff_state_transitions_and_auto_responder(mock_biz):
     phone = "+15550195555"
     conv = get_or_create_sms_conversation(phone)
     conv_id = conv["id"]
@@ -24,7 +27,8 @@ def test_handoff_state_transitions_and_auto_responder():
     assert res_debounce["auto_responder_sent"] is False
 
 
-def test_agent_reply_and_resolve_flow():
+@patch("serviceBot.services.handoff_service.is_within_business_hours", return_value=True)
+def test_agent_reply_and_resolve_flow(mock_biz):
     phone = "+15550194444"
     conv = get_or_create_sms_conversation(phone)
     conv_id = conv["id"]

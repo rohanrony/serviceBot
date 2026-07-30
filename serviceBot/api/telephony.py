@@ -949,6 +949,64 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                             "message": f"Callback request failed: {str(val_err)}"
                         }
 
+        elif tool_name == "verify_caller_identity":
+            phone = args.get("phone")
+            claimed_name = args.get("claimed_name") or args.get("name") or args.get("customer_name")
+            validated_phone = clean_and_validate_phone(phone)
+            if not validated_phone:
+                result = {
+                    "success": False,
+                    "message": "Validation failed: Phone number must be a valid 10-digit number."
+                }
+            else:
+                from serviceBot.db.queries import lookup_customer_by_phone, update_customer_name
+                c_data = lookup_customer_by_phone(validated_phone)
+                if not c_data:
+                    result = {
+                        "success": True,
+                        "is_existing_customer": False,
+                        "is_verified_existing_customer": False,
+                        "message": f"No existing customer profile found for phone number {validated_phone}. A new profile will be created."
+                    }
+                else:
+                    existing_name = c_data.get("name", "")
+                    clean_existing = existing_name.lower().strip()
+                    clean_claimed = claimed_name.lower().strip() if claimed_name else ""
+
+                    if clean_existing == "unknown customer" and clean_claimed:
+                        update_customer_name(c_data["customer_id"], claimed_name)
+                        result = {
+                            "success": True,
+                            "is_existing_customer": True,
+                            "is_verified_existing_customer": True,
+                            "customer_id": c_data["customer_id"],
+                            "customer_name": claimed_name,
+                            "open_sr_id": c_data.get("open_sr_id"),
+                            "open_sr_type": c_data.get("open_sr_type"),
+                            "message": f"Profile updated for {claimed_name}."
+                        }
+                    elif clean_claimed and (clean_claimed in clean_existing or clean_existing in clean_claimed):
+                        result = {
+                            "success": True,
+                            "is_existing_customer": True,
+                            "is_verified_existing_customer": True,
+                            "customer_id": c_data["customer_id"],
+                            "customer_name": existing_name,
+                            "open_sr_id": c_data.get("open_sr_id"),
+                            "open_sr_type": c_data.get("open_sr_type"),
+                            "message": f"Verified caller as {existing_name}."
+                        }
+                    else:
+                        result = {
+                            "success": True,
+                            "is_existing_customer": True,
+                            "is_verified_existing_customer": False,
+                            "existing_profile_name": existing_name,
+                            "claimed_name": claimed_name,
+                            "customer_id": c_data["customer_id"],
+                            "message": f"Phone number is registered to {existing_name}, but caller identified as {claimed_name}."
+                        }
+
         elif tool_name == "get_customer_appointments":
             phone = args.get("phone")
             validated_phone = clean_and_validate_phone(phone)

@@ -7,15 +7,41 @@ from serviceBot.db.queries import (
     get_sms_conversations
 )
 from serviceBot.services.twilio_sms import TwilioSMSClient
+from serviceBot.api.telephony import is_within_business_hours
 
 
 def trigger_human_handoff(conversation_id: int, customer_phone: str, message_body: str) -> dict:
     """
     Transitions conversation to HANDOFF_REQUIRED, checks auto-responder debounce and opt-in status,
     and dispatches auto-responder SMS if eligible.
+    Enforces business hours (Mon-Fri 7am-6pm ET).
     """
     config = get_sms_config()
     support_number = config.get("support_phone_number") or "+18005550199"
+
+    # Business Hours Check
+    if not is_within_business_hours():
+        out_of_hours_text = f"Live agent support is only available during our business hours (Mon-Fri 7:00 AM - 6:00 PM ET). For urgent help, please call {support_number} or schedule an appointment."
+        convs = get_sms_conversations()
+        conv = next((c for c in convs if c["id"] == conversation_id), None)
+        now = dt_mod.datetime.utcnow()
+        should_send = get_customer_opt_in(customer_phone)
+
+        update_sms_conversation_state(conversation_id, "OUT_OF_BUSINESS_HOURS", last_auto_responder_at=now)
+
+        if should_send:
+            client = TwilioSMSClient()
+            client.send_sms(to=customer_phone, body=out_of_hours_text, template_type="auto_responder")
+            add_sms_message(conversation_id, "outbound", "system", "Auto-Responder", out_of_hours_text)
+
+        return {
+            "success": False,
+            "conversation_id": conversation_id,
+            "state": "OUT_OF_BUSINESS_HOURS",
+            "auto_responder_sent": should_send,
+            "message": "Human handoff is only available during business hours (Monday - Friday, 7:00 AM - 6:00 PM ET)."
+        }
+
     template_str = config.get(
         "auto_responder_template",
         "Thank you! Our team has received your message. For urgent help, call {support_number}."

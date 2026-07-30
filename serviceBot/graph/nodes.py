@@ -359,14 +359,19 @@ def handoff_node(state: AgentState) -> Dict[str, Any]:
     """
     Handoff node that compiles conversation context and generates
     a 3-5 bullet point transcript summary.
+    Enforces business hours awareness.
     """
     from langchain_core.messages import HumanMessage, AIMessage
+    from serviceBot.api.telephony import is_within_business_hours
 
     messages = state.get("messages", [])
     customer = state.get("customer") or {}
     customer_name = customer.get("name", "Unknown Customer")
     sr_id = state.get("service_request_id")
     appt_id = state.get("appointment_id")
+
+    within_hours = is_within_business_hours()
+    status_str = "OPEN" if within_hours else "CLOSED / OUTSIDE BUSINESS HOURS (Mon-Fri 7am-6pm ET)"
 
     # Determine urgency from messages
     urgency = "low"
@@ -383,13 +388,15 @@ def handoff_node(state: AgentState) -> Dict[str, Any]:
         f"- Customer Name: {customer_name}",
         f"- Active Service Request ID: {sr_id if sr_id else 'None'}",
         f"- Urgency Level: {urgency.upper()} (requires immediate assistance)",
+        f"- Business Hours Status: {status_str}",
         f"- Appointment Scheduled: {appt_id if appt_id else 'None'}"
     ]
     
     summary = "\n".join(bullet_points)
 
     return {
-        "handoff_summary": summary
+        "handoff_summary": summary,
+        "is_business_hours": within_hours
     }
 
 

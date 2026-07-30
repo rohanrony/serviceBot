@@ -16,6 +16,28 @@ CONFIRM_KEYWORDS = {"C", "CONFIRM", "YES"}
 CANCEL_KEYWORDS = {"X", "CANCEL", "NO"}
 
 
+HANDOFF_PROMPT_KEYWORDS = {
+    "HUMAN", "AGENT", "REPRESENTATIVE", "REP", "PERSON", "MANAGER", 
+    "OPERATOR", "LIVE SUPPORT", "HANDOFF", "TRANSFER"
+}
+HANDOFF_PROMPT_PHRASES = [
+    "SPEAK TO A", "TALK TO A", "SPEAK TO SOMEONE", "TALK TO SOMEONE", 
+    "REAL PERSON", "LIVE AGENT", "LIVE PERSON"
+]
+
+
+def is_explicit_handoff_request(body: str) -> bool:
+    if not body:
+        return False
+    upper_body = body.strip().upper()
+    tokens = set(upper_body.split())
+    if any(kw in tokens for kw in HANDOFF_PROMPT_KEYWORDS):
+        return True
+    if any(phrase in upper_body for phrase in HANDOFF_PROMPT_PHRASES):
+        return True
+    return False
+
+
 def classify_inbound_message(body: str) -> dict:
     """
     Classifies an inbound SMS body into:
@@ -24,10 +46,10 @@ def classify_inbound_message(body: str) -> dict:
     - 'help'
     - 'action_confirm'
     - 'action_cancel'
-    - 'free_text' (human handoff)
+    - 'free_text' (human handoff only if requested)
     """
     if not body:
-        return {"category": "free_text", "normalized": ""}
+        return {"category": "free_text", "normalized": "", "is_handoff_requested": False}
 
     normalized = body.strip().upper()
     tokens = normalized.split()
@@ -48,7 +70,8 @@ def classify_inbound_message(body: str) -> dict:
         if token in CANCEL_KEYWORDS:
             return {"category": "action_cancel", "token": token}
 
-    return {"category": "free_text", "raw": body, "normalized": normalized}
+    is_handoff_req = is_explicit_handoff_request(body)
+    return {"category": "free_text", "raw": body, "normalized": normalized, "is_handoff_requested": is_handoff_req}
 
 
 def process_inbound_sms(from_phone: str, body: str, twilio_message_sid: str = None) -> dict:
@@ -133,10 +156,13 @@ def process_inbound_sms(from_phone: str, body: str, twilio_message_sid: str = No
                         add_sms_message(conv_id, "outbound", "system", "System", reply_text)
                     return {"status": "processed", "category": category, "appointment_id": target_sr_id, "new_status": new_status}
 
-        # Fallback to handoff if no appointment found
+        # Fallback to free_text if no appointment found
         category = "free_text"
 
-    # Conversational message (Free-text -> Human Handoff)
-    from serviceBot.services.handoff_service import trigger_human_handoff
-    handoff_res = trigger_human_handoff(conv_id, from_phone, body)
-    return {"status": "handoff_triggered", "category": "free_text", "details": handoff_res}
+    # Conversational message (Free-text -> Human Handoff only if explicitly requested)
+    if result.get("is_handoff_requested"):
+        from serviceBot.services.handoff_service import trigger_human_handoff
+        handoff_res = trigger_human_handoff(conv_id, from_phone, body)
+        return {"status": "handoff_triggered", "category": "free_text", "details": handoff_res}
+    else:
+        return {"status": "processed", "category": "free_text", "message": "Message logged. Live handoff not requested."}
