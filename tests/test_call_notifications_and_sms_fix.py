@@ -43,14 +43,14 @@ def test_post_call_webhook_prevents_duplicate_if_booking_exists(
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO customers (name, phone) VALUES (?, ?) RETURNING id;",
+            "INSERT INTO customers (name, phone) VALUES (%s, %s) RETURNING id;",
             ("Test Customer", "+15558889999")
         )
         c_id = cursor.fetchone()["id"]
         cursor.execute(
             """
             INSERT INTO service_requests (customer_id, service_type, issue_description, status, booking_type, booking_time)
-            VALUES (?, 'Oil Change', 'Regular maintenance', 'pending', 'appointment', 'tomorrow at 10:00 AM') RETURNING id;
+            VALUES (%s, 'Oil Change', 'Regular maintenance', 'pending', 'appointment', 'tomorrow at 10:00 AM') RETURNING id;
             """,
             (c_id,)
         )
@@ -79,11 +79,11 @@ def test_post_call_webhook_prevents_duplicate_if_booking_exists(
     # 3. Verify only 1 service_request exists for this customer (no duplicate callback created)
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) AS total FROM service_requests WHERE customer_id = ?;", (c_id,))
+        cursor.execute("SELECT COUNT(*) AS total FROM service_requests WHERE customer_id = %s;", (c_id,))
         count = cursor.fetchone()["total"]
         assert count == 1, f"Expected 1 service request, found {count}"
 
-        cursor.execute("SELECT booking_type FROM service_requests WHERE id = ?;", (sr_id,))
+        cursor.execute("SELECT booking_type FROM service_requests WHERE id = %s;", (sr_id,))
         sr_row = cursor.fetchone()
         assert sr_row["booking_type"] == "appointment", "Existing appointment booking_type should remain untouched"
 

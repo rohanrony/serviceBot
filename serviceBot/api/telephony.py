@@ -140,9 +140,23 @@ router = APIRouter(prefix="/api/v1/telephony", tags=["telephony"])
 
 @router.post("/inbound")
 @router.get("/inbound")
-async def inbound_call():
+async def inbound_call(request: Request = None):
     # Dynamically resolve agentId from environment settings (.env)
     agent_id = os.getenv("ELEVENLABS_AGENT_ID", "default-agent-id")
+    
+    caller_phone = None
+    if request:
+        try:
+            form_data = await request.form()
+            caller_phone = form_data.get("From") or form_data.get("Caller") or request.query_params.get("From")
+        except Exception:
+            pass
+
+    if caller_phone:
+        from serviceBot.db.queries import lookup_customer_by_phone
+        c_data = lookup_customer_by_phone(caller_phone)
+        if c_data:
+            print(f"Inbound call from existing customer #{c_data.get('customer_id')} ({c_data.get('name')}). Active SR: {c_data.get('open_sr_type')}")
     
     twiml_response = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -553,13 +567,9 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                 c_data = lookup_customer_by_phone(phone_to_lookup)
                 if c_data:
                     customer_id = c_data["customer_id"]
-                    # If existing customer name is "Unknown Customer" but we got a real name, update it!
-                    if c_data.get("name") == "Unknown Customer" and customer_name and customer_name != "Unknown Customer":
-                        from serviceBot.db.connection import get_db_connection, dict_cursor
-                        with get_db_connection() as conn:
-                            with dict_cursor(conn) as cursor:
-                                cursor.execute("UPDATE customers SET name = %s WHERE id = %s;", (customer_name, customer_id))
-                                conn.commit()
+                    if customer_name and customer_name not in ("Unknown Customer", "Unknown"):
+                        from serviceBot.db.queries import update_customer_name
+                        update_customer_name(customer_id, customer_name)
                 
                 if not customer_id:
                     # Insert customer
@@ -729,12 +739,9 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                     if c_data:
                         customer_id = c_data["customer_id"]
                         sr_id = c_data.get("open_sr_id")
-                        if c_data.get("name") == "Unknown Customer" and customer_name != "Unknown Customer":
-                            from serviceBot.db.connection import get_db_connection, dict_cursor
-                            with get_db_connection() as conn:
-                                with dict_cursor(conn) as cursor:
-                                    cursor.execute("UPDATE customers SET name = %s WHERE id = %s;", (customer_name, customer_id))
-                                    conn.commit()
+                        if customer_name and customer_name not in ("Unknown Customer", "Unknown"):
+                            from serviceBot.db.queries import update_customer_name
+                            update_customer_name(customer_id, customer_name)
 
                     if not customer_id:
                         from serviceBot.db.connection import get_db_connection, dict_cursor

@@ -2,7 +2,7 @@ services:
   - type: web
     name: voice-service-bot
     env: python
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt && pytest
     startCommand: uvicorn serviceBot.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: DATABASE_URL

@@ -31,10 +31,11 @@ def lookup_customer_by_phone(phone: str) -> dict:
         sr.status AS open_sr_status
     FROM customers c
     LEFT JOIN vehicles v ON c.id = v.customer_id
-    LEFT JOIN service_requests sr ON c.id = sr.customer_id AND sr.status = 'pending' AND sr.booking_type IS NULL
+    LEFT JOIN service_requests sr ON c.id = sr.customer_id AND sr.status = 'pending'
     WHERE c.phone = %s 
        OR c.phone = %s 
-       OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(c.phone, '-', ''), ' ', ''), '(', ''), ')', ''), '+1', '') = %s;
+       OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(c.phone, '-', ''), ' ', ''), '(', ''), ')', ''), '+1', '') = %s
+    ORDER BY sr.id DESC LIMIT 1;
     """
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
@@ -43,6 +44,18 @@ def lookup_customer_by_phone(phone: str) -> dict:
             if row is None or row['customer_id'] is None:
                 return None
             return dict(row)
+
+
+def update_customer_name(customer_id: int, new_name: str) -> bool:
+    """Updates customer's name if a valid new name is provided."""
+    if not customer_id or not new_name or new_name in ("Unknown Customer", "Unknown"):
+        return False
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("UPDATE customers SET name = %s WHERE id = %s;", (new_name, customer_id))
+            conn.commit()
+            return cursor.rowcount > 0
+
 
 def create_service_request(
     customer_id: int,
