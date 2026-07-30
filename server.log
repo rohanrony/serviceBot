@@ -1632,3 +1632,88 @@ INFO:     Application startup complete.
 21:26:51 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
 21:26:51 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
 21:26:51 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+21:27:10 [0;32mINFO   [0m [serviceBot.middleware] [10467dc7] GET /portal/ - 304 (25.04ms) [127.0.0.1]
+21:27:11 [0;32mINFO   [0m [serviceBot.middleware] [a365eff6] GET /portal/style.css - 304 (1.54ms) [127.0.0.1]
+21:27:11 [0;32mINFO   [0m [serviceBot.middleware] [d4ed7cdb] GET /portal/app.js - 200 (1.28ms) [127.0.0.1]
+21:27:11 [0;32mINFO   [0m [serviceBot.middleware] [3a9942f7] GET /api/v1/portal/stats - 200 (522.91ms) [127.0.0.1]
+21:27:11 [0;32mINFO   [0m [serviceBot.middleware] [72a26e51] GET /api/v1/portal/calls - 200 (194.07ms) [127.0.0.1]
+21:27:11 [0;32mINFO   [0m [serviceBot.middleware] [b57d08df] GET /api/v1/portal/service-requests - 200 (179.6ms) [127.0.0.1]
+21:27:12 [0;32mINFO   [0m [serviceBot.middleware] [0b5813e4] GET /api/v1/portal/service-requests/1/available-agents - 200 (599.02ms) [127.0.0.1]
+21:27:13 [0;32mINFO   [0m [serviceBot.middleware] [f91acb72] GET /api/v1/portal/sms/logs/appointment/1 - 200 (451.95ms) [127.0.0.1]
+WARNING:  WatchFiles detected changes in 'tests/test_sms_dom_ui.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [89225]
+INFO:     Started server process [89407]
+INFO:     Waiting for application startup.
+21:28:21 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+21:28:21 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+21:28:21 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+21:28:21 [0;32mINFO   [0m [serviceBot.services.quiet_hours] Quiet hours queue release worker thread started.
+21:28:21 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+21:28:21 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+21:28:21 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+21:28:29 [0;32mINFO   [0m [serviceBot.db.connection] Database schema initialized successfully.
+21:28:30 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+21:28:30 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+21:28:30 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+21:38:18 [0;31mERROR  [0m [serviceBot.db.connection] Database connection error: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+Traceback (most recent call last):
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/db/connection.py", line 445, in get_db_connection
+    yield conn
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/services/outbox_worker.py", line 46, in process_outbox_batch
+    cursor.execute(
+    ~~~~~~~~~~~~~~^
+        """
+        ^^^
+    ...<7 lines>...
+        (batch_size,)
+        ^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/rohanroy/Coding/voiceService/.venv/lib/python3.13/site-packages/psycopg2/extras.py", line 236, in execute
+    return super().execute(query, vars)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.OperationalError: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+21:38:18 [0;31mERROR  [0m [serviceBot.outbox_worker] Outbox batch processing exception: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+Traceback (most recent call last):
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/services/outbox_worker.py", line 46, in process_outbox_batch
+    cursor.execute(
+    ~~~~~~~~~~~~~~^
+        """
+        ^^^
+    ...<7 lines>...
+        (batch_size,)
+        ^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/rohanroy/Coding/voiceService/.venv/lib/python3.13/site-packages/psycopg2/extras.py", line 236, in execute
+    return super().execute(query, vars)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.OperationalError: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+

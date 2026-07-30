@@ -139,8 +139,7 @@ def test_comprehensive_sms_log_drawer_details():
 
     assert "Appointment Details" in js_content
     assert "Booking Confirmation" in js_content
-    assert "getRecipientTag" in js_content
-    assert "getStatusTag" in js_content
+    assert "getStatusBadgeHtml" in js_content
     assert "Skip Reason" in js_content
     assert "Error Details" in js_content
 

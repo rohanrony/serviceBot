@@ -2932,7 +2932,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // SMS Log Drawer - Comprehensive Appointment & Dispatch Detail Viewer
+  // SMS Log Drawer - Minimalist, Theme-Matched Detail Viewer
   window.openSMSLogDrawer = async function(appointmentId) {
     try {
       document.getElementById('sms-log-drawer-subtitle').innerText = `Appointment #${appointmentId}`;
@@ -2949,39 +2949,41 @@ document.addEventListener('DOMContentLoaded', () => {
       const container = document.getElementById('sms-log-items-container');
       container.innerHTML = '';
 
-      // 1. Appointment Overview Context Header
+      // 1. Appointment Overview Context Header (Sleek & Minimal)
       if (app) {
         const appCard = document.createElement('div');
-        appCard.style.cssText = 'background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 8px; padding: 14px 16px; margin-bottom: 14px;';
+        appCard.style.cssText = 'background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px;';
         
         const vehicleStr = [app.vehicle_year, app.vehicle_make, app.vehicle_model].filter(Boolean).join(' ');
         const statusUpper = (app.status || 'PENDING').toUpperCase();
+        const statusClass = statusUpper === 'CONFIRMED' || statusUpper === 'DONE' || statusUpper === 'COMPLETED' ? 'success' : 'warning';
         
         appCard.innerHTML = `
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px solid var(--border-card); padding-bottom: 8px;">
-            <strong style="color: #fff; font-size: 14px;">Appointment Details</strong>
-            <span style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); padding: 2px 8px; border-radius: 12px; font-weight: 600; font-size: 11px;">${statusUpper}</span>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <strong style="color: #fff; font-size: 13px; font-weight: 600;">Appointment Details</strong>
+            <span class="badge ${statusClass}">${statusUpper}</span>
           </div>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px;">
-            <div><span style="color: var(--text-muted);">Customer:</span> <strong style="color: var(--text-main);">${app.customer_name || 'N/A'}</strong></div>
-            <div><span style="color: var(--text-muted);">Phone:</span> <strong style="color: var(--text-main);">${app.customer_phone || 'N/A'}</strong></div>
-            <div><span style="color: var(--text-muted);">Assigned Agent:</span> <strong style="color: var(--text-main);">${app.staff_agent_name || 'Unassigned'}</strong></div>
-            <div><span style="color: var(--text-muted);">Service:</span> <strong style="color: var(--text-main);">${app.service_type || 'N/A'} ${vehicleStr ? `(${vehicleStr})` : ''}</strong></div>
-            <div style="grid-column: span 2;"><span style="color: var(--text-muted);">Date & Time:</span> <strong style="color: var(--text-main);">${app.booking_time || app.time_slot || 'N/A'}</strong></div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; font-size: 12px;">
+            <div><span style="color: var(--text-muted);">Customer:</span> <span style="color: var(--text-main); font-weight: 500;">${app.customer_name || 'N/A'}</span></div>
+            <div><span style="color: var(--text-muted);">Phone:</span> <span style="color: var(--text-main); font-weight: 500;">${app.customer_phone || 'N/A'}</span></div>
+            <div><span style="color: var(--text-muted);">Agent:</span> <span style="color: var(--text-main); font-weight: 500;">${app.staff_agent_name || 'Unassigned'}</span></div>
+            <div><span style="color: var(--text-muted);">Service:</span> <span style="color: var(--text-main); font-weight: 500;">${app.service_type || 'N/A'} ${vehicleStr ? `(${vehicleStr})` : ''}</span></div>
+            <div style="grid-column: span 2;"><span style="color: var(--text-muted);">Date & Time:</span> <span style="color: var(--text-main); font-weight: 500;">${app.booking_time || app.time_slot || 'N/A'}</span></div>
           </div>
         `;
         container.appendChild(appCard);
       }
 
-      // Section Title
+      // 2. Section Header
       const logsHeader = document.createElement('div');
-      logsHeader.style.cssText = 'font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.5px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;';
-      logsHeader.innerHTML = `<span>SMS Dispatch Logs</span><span style="background: rgba(255,255,255,0.08); padding: 2px 8px; border-radius: 10px; color: var(--text-main);">${logs.length} Log${logs.length === 1 ? '' : 's'}</span>`;
+      logsHeader.style.cssText = 'font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.8px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;';
+      logsHeader.innerHTML = `<span>SMS Dispatch Logs</span><span>${logs.length} ${logs.length === 1 ? 'LOG' : 'LOGS'}</span>`;
       container.appendChild(logsHeader);
 
       if (logs.length === 0) {
         const emptyMsg = document.createElement('p');
         emptyMsg.className = 'text-muted';
+        emptyMsg.style.fontSize = '13px';
         emptyMsg.innerText = 'No SMS logs recorded for this appointment.';
         container.appendChild(emptyMsg);
         return;
@@ -2997,8 +2999,8 @@ document.addEventListener('DOMContentLoaded', () => {
         'unassignment': 'Previous Agent Unassigned Notice',
         'reschedule': 'Reschedule Confirmation',
         'cancellation': 'Cancellation Notice',
-        'reminder_24h': '24-Hour Pre-Appointment Reminder',
-        'reminder_2h': '2-Hour Pre-Appointment Reminder'
+        'reminder_24h': '24h Pre-Appointment Reminder',
+        'reminder_2h': '2h Pre-Appointment Reminder'
       };
 
       const getTemplateTitle = (raw) => {
@@ -3007,91 +3009,79 @@ document.addEventListener('DOMContentLoaded', () => {
         return raw.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
       };
 
-      const getRecipientTag = (type) => {
-        const t = (type || 'CUSTOMER').toUpperCase();
-        let bg = 'rgba(59, 130, 246, 0.15)';
-        let color = '#60a5fa';
-        if (t === 'AGENT') {
-          bg = 'rgba(168, 85, 247, 0.15)';
-          color = '#c084fc';
-        } else if (t.includes('PREVIOUS')) {
-          bg = 'rgba(236, 72, 153, 0.15)';
-          color = '#f472b6';
-        } else if (t === 'ADMIN') {
-          bg = 'rgba(234, 179, 8, 0.15)';
-          color = '#facc15';
-        }
-        return `<span style="background: ${bg}; color: ${color}; padding: 2px 6px; border-radius: 4px; font-weight: 700; font-size: 10px; letter-spacing: 0.5px;">[${t}]</span>`;
-      };
-
-      const getStatusTag = (status) => {
+      const getStatusBadgeHtml = (status) => {
         const s = (status || '').toUpperCase();
-        if (s === 'DELIVERED') {
-          return `<span style="background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.3); padding: 3px 8px; border-radius: 12px; font-weight: 600; font-size: 11px;">✅ Delivered</span>`;
-        }
-        if (s === 'SENT') {
-          return `<span style="background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.3); padding: 3px 8px; border-radius: 12px; font-weight: 600; font-size: 11px;">✓ Sent</span>`;
-        }
-        if (s === 'FAILED') {
-          return `<span style="background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); padding: 3px 8px; border-radius: 12px; font-weight: 600; font-size: 11px;">❌ Failed</span>`;
-        }
-        if (s === 'SKIPPED_NOT_WHITELISTED') {
-          return `<span style="background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); padding: 3px 8px; border-radius: 12px; font-weight: 600; font-size: 11px;">⚠️ Skipped (Not Whitelisted)</span>`;
-        }
-        if (s === 'SKIPPED_OPT_OUT') {
-          return `<span style="background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); padding: 3px 8px; border-radius: 12px; font-weight: 600; font-size: 11px;">⚠️ Skipped (Opt-out)</span>`;
-        }
-        if (s === 'QUEUED') {
-          return `<span style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); padding: 3px 8px; border-radius: 12px; font-weight: 600; font-size: 11px;">⏳ Queued</span>`;
-        }
-        return `<span style="background: rgba(148, 163, 184, 0.15); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.3); padding: 3px 8px; border-radius: 12px; font-weight: 600; font-size: 11px;">${s || 'PENDING'}</span>`;
+        if (s === 'DELIVERED') return `<span class="badge success">✅ Delivered</span>`;
+        if (s === 'SENT') return `<span class="badge success">✓ Sent</span>`;
+        if (s === 'FAILED') return `<span class="badge" style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2); color: #f87171;">❌ Failed</span>`;
+        if (s === 'SKIPPED_NOT_WHITELISTED') return `<span class="badge warning">⚠️ Skipped (Not Whitelisted)</span>`;
+        if (s === 'SKIPPED_OPT_OUT') return `<span class="badge warning">⚠️ Skipped (Opt-out)</span>`;
+        if (s === 'QUEUED') return `<span class="badge" style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.2); color: #60a5fa;">⏳ Queued</span>`;
+        return `<span class="badge" style="background: rgba(255,255,255,0.05); color: var(--text-muted); border: 1px solid var(--border-card);">${s || 'PENDING'}</span>`;
       };
 
       logs.forEach(l => {
         const item = document.createElement('div');
-        item.style.cssText = 'padding: 12px 14px; border: 1px solid var(--border-card); border-radius: 8px; background: var(--bg-card); display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px;';
+        item.style.cssText = 'padding: 12px 14px; border: 1px solid var(--border-card); border-radius: 8px; background: var(--bg-card); display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px;';
         
+        const recipientRole = (l.recipient_type || 'CUSTOMER').toUpperCase();
         const isFailed = l.status === 'FAILED';
         const isNotWhitelisted = l.status === 'SKIPPED_NOT_WHITELISTED';
         const isOptOut = l.status === 'SKIPPED_OPT_OUT';
         const isQueued = l.status === 'QUEUED';
-        
-        let reasonBox = '';
+
+        let reasonHtml = '';
         if (isNotWhitelisted) {
-          reasonBox = `<div style="font-size: 11px; color: #fbbf24; background: rgba(245, 158, 11, 0.08); padding: 8px 10px; border-radius: 6px; border: 1px dashed rgba(245, 158, 11, 0.25);">⚠️ <strong>Skip Reason:</strong> Recipient phone number is not on the staging whitelist. Add number to SMS Config Whitelist to enable delivery.</div>`;
+          reasonHtml = `<div style="font-size: 12px; color: var(--text-muted); border-left: 2px solid #fbbf24; padding-left: 8px; margin-top: 4px; line-height: 1.4;"><strong style="color: #fbbf24;">Skip Reason:</strong> Recipient phone number is not on the staging whitelist. Add number to SMS Config Whitelist to enable delivery.</div>`;
         } else if (isOptOut) {
-          reasonBox = `<div style="font-size: 11px; color: #fbbf24; background: rgba(245, 158, 11, 0.08); padding: 8px 10px; border-radius: 6px; border: 1px dashed rgba(245, 158, 11, 0.25);">⚠️ <strong>Skip Reason:</strong> Customer has opted out of receiving automated SMS alerts.</div>`;
+          reasonHtml = `<div style="font-size: 12px; color: var(--text-muted); border-left: 2px solid #fbbf24; padding-left: 8px; margin-top: 4px; line-height: 1.4;"><strong style="color: #fbbf24;">Skip Reason:</strong> Customer has opted out of receiving automated SMS alerts.</div>`;
         } else if (isFailed) {
-          reasonBox = `<div style="font-size: 11px; color: #f87171; background: rgba(239, 68, 68, 0.08); padding: 8px 10px; border-radius: 6px; border: 1px dashed rgba(239, 68, 68, 0.25);">❌ <strong>Error Details:</strong> ${l.error_message || l.error_code || 'Twilio delivery failed.'}</div>`;
+          reasonHtml = `<div style="font-size: 12px; color: var(--text-muted); border-left: 2px solid #f87171; padding-left: 8px; margin-top: 4px; line-height: 1.4;"><strong style="color: #f87171;">Error Details:</strong> ${l.error_message || l.error_code || 'Twilio delivery failed.'}</div>`;
         } else if (isQueued && l.scheduled_send_at) {
-          reasonBox = `<div style="font-size: 11px; color: #60a5fa; background: rgba(59, 130, 246, 0.08); padding: 8px 10px; border-radius: 6px;">⏳ <strong>Quiet Hours Queue:</strong> Scheduled to dispatch at ${l.scheduled_send_at}</div>`;
+          reasonHtml = `<div style="font-size: 12px; color: var(--text-muted); border-left: 2px solid #60a5fa; padding-left: 8px; margin-top: 4px; line-height: 1.4;"><strong style="color: #60a5fa;">Quiet Hours Queue:</strong> Scheduled for release at ${l.scheduled_send_at}</div>`;
         }
 
         const canRetry = isFailed || isNotWhitelisted || isOptOut;
 
+        const metaParts = [];
+        metaParts.push(`Recipient: <span style="color: var(--text-main);">${l.recipient_phone}</span>`);
+        metaParts.push(`Logged: <span style="color: var(--text-main);">${l.created_at || 'N/A'}</span>`);
+        if (l.sent_at) metaParts.push(`Sent: <span style="color: var(--text-main);">${l.sent_at}</span>`);
+        if (l.twilio_message_sid) metaParts.push(`SID: <code style="font-size: 10.5px; color: var(--text-main);">${l.twilio_message_sid}</code>`);
+        if (l.retry_count > 0) metaParts.push(`Retries: <span style="color: var(--text-main);">${l.retry_count}</span>`);
+
         item.innerHTML = `
           <div style="display: flex; justify-content: space-between; align-items: center;">
-            <div style="display: flex; align-items: center; gap: 6px;">
-              ${getRecipientTag(l.recipient_type)}
-              <strong style="color: #fff; font-size: 13px;">${getTemplateTitle(l.template_type)}</strong>
+            <div>
+              <span style="font-size: 11px; font-weight: 600; color: var(--text-muted); margin-right: 6px; letter-spacing: 0.5px;">[${recipientRole}]</span>
+              <strong style="color: #fff; font-size: 13px; font-weight: 500;">${getTemplateTitle(l.template_type)}</strong>
             </div>
-            <div>${getStatusTag(l.status)}</div>
+            <div>${getStatusBadgeHtml(l.status)}</div>
           </div>
 
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 11px; color: var(--text-muted); background: rgba(0,0,0,0.15); padding: 8px 10px; border-radius: 6px;">
-            <div><strong>Recipient:</strong> ${l.recipient_phone}</div>
-            <div><strong>Logged At:</strong> ${l.created_at || 'N/A'}</div>
-            ${l.sent_at ? `<div><strong>Sent At:</strong> ${l.sent_at}</div>` : ''}
-            ${l.twilio_message_sid ? `<div><strong>SID:</strong> <code style="font-size: 10px;">${l.twilio_message_sid}</code></div>` : ''}
-            ${l.retry_count > 0 ? `<div><strong>Retry Count:</strong> ${l.retry_count}</div>` : ''}
+          <div style="font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-top: 2px;">
+            ${metaParts.join(' &nbsp;•&nbsp; ')}
           </div>
 
-          ${reasonBox}
+          ${reasonHtml}
 
-          ${canRetry ? `<button class="btn btn-sm btn-primary retry-sms-btn" data-id="${l.id}" style="align-self: flex-start; margin-top: 2px;">Retry SMS Dispatch</button>` : ''}
+          ${canRetry ? `<button class="btn btn-secondary btn-sm retry-sms-btn" data-id="${l.id}" style="align-self: flex-start; margin-top: 6px; font-size: 11.5px; padding: 4px 10px;">Retry SMS Dispatch</button>` : ''}
         `;
         container.appendChild(item);
       });
+
+      container.querySelectorAll('.retry-sms-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const logId = e.target.dataset.id;
+          await fetch(`/api/v1/portal/sms/retry/${logId}`, { method: 'POST' });
+          showToast('Retry SMS dispatched.');
+          window.openSMSLogDrawer(appointmentId);
+        });
+      });
+    } catch (err) {
+      console.error('Error opening SMS log drawer:', err);
+    }
+  };
 
       container.querySelectorAll('.retry-sms-btn').forEach(btn => {
         btn.addEventListener('click', async (e) => {
