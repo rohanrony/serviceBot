@@ -50,6 +50,10 @@ def _get_pool():
             minconn=1,
             maxconn=10,
             dsn=db_url,
+            keepalives=1,
+            keepalives_idle=30,
+            keepalives_interval=10,
+            keepalives_count=5,
         )
         logger.info("Initialized PostgreSQL connection pool (minconn=1, maxconn=10).")
     return _pool
@@ -212,6 +216,9 @@ CREATE TABLE IF NOT EXISTS sms_whitelist (
     phone_number VARCHAR(50) NOT NULL UNIQUE,
     friendly_name VARCHAR(255) DEFAULT NULL,
     twilio_verified BOOLEAN DEFAULT FALSE,
+    whatsapp_onboarded BOOLEAN DEFAULT FALSE,
+    whatsapp_onboarded_at TIMESTAMP DEFAULT NULL,
+    recipient_role VARCHAR(50) DEFAULT 'CUSTOMER',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -335,6 +342,7 @@ def init_db(db_url: str = None):
             ("booking_type", "VARCHAR(50) DEFAULT NULL CHECK (booking_type IN ('appointment', 'callback'))"),
             ("booking_time", "VARCHAR(100) DEFAULT NULL"),
             ("staff_agent_id", "INTEGER REFERENCES staff_agents(id) ON DELETE SET NULL"),
+            ("updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
         ]:
             _safe_alter(cursor, conn, f"ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS {col} {col_type}")
 
@@ -342,6 +350,13 @@ def init_db(db_url: str = None):
             ("admin_phone_number", "VARCHAR(50) DEFAULT NULL"),
         ]:
             _safe_alter(cursor, conn, f"ALTER TABLE sms_config ADD COLUMN IF NOT EXISTS {col} {col_type}")
+
+        for col, col_type in [
+            ("whatsapp_onboarded", "BOOLEAN DEFAULT FALSE"),
+            ("whatsapp_onboarded_at", "TIMESTAMP DEFAULT NULL"),
+            ("recipient_role", "VARCHAR(50) DEFAULT 'CUSTOMER'"),
+        ]:
+            _safe_alter(cursor, conn, f"ALTER TABLE sms_whitelist ADD COLUMN IF NOT EXISTS {col} {col_type}")
         conn.commit()
 
         # Drop legacy tables
@@ -432,12 +447,29 @@ def get_db_connection():
 
         pool = _get_pool()
 
-        conn = pool.getconn()
-        if conn and conn.closed != 0:
+        # Validate connection liveness to handle Supabase pooler idle disconnects
+        for _ in range(3):
+            c = None
             try:
-                pool.putconn(conn, close=True)
-            except Exception:
-                pass
+                c = pool.getconn()
+                if c and c.closed == 0:
+                    c.autocommit = True
+                    with c.cursor() as cur:
+                        cur.execute("SELECT 1;")
+                    c.autocommit = False
+                    conn = c
+                    break
+                elif c:
+                    pool.putconn(c, close=True)
+            except Exception as test_err:
+                logger.warning(f"Discarding stale connection from pool: {test_err}")
+                if c:
+                    try:
+                        pool.putconn(c, close=True)
+                    except Exception:
+                        pass
+
+        if conn is None:
             conn = pool.getconn()
 
         conn.autocommit = False

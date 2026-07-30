@@ -1428,20 +1428,57 @@ def get_sms_whitelist() -> list:
             return [dict(r) for r in cursor.fetchall()]
 
 
-def add_sms_whitelist(phone_number: str, friendly_name: str = None, twilio_verified: bool = False) -> dict:
-    """Adds a phone number to the SMS test whitelist."""
+def add_sms_whitelist(
+    phone_number: str,
+    friendly_name: str = None,
+    twilio_verified: bool = False,
+    whatsapp_onboarded: bool = False,
+    recipient_role: str = "CUSTOMER"
+) -> dict:
+    """Adds or updates a phone number in the SMS test whitelist."""
+    from datetime import datetime
+    whatsapp_onboarded_at = datetime.utcnow() if whatsapp_onboarded else None
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             cursor.execute(
                 """
-                INSERT INTO sms_whitelist (phone_number, friendly_name, twilio_verified)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (phone_number) DO UPDATE SET friendly_name = EXCLUDED.friendly_name, twilio_verified = EXCLUDED.twilio_verified
+                INSERT INTO sms_whitelist (phone_number, friendly_name, twilio_verified, whatsapp_onboarded, whatsapp_onboarded_at, recipient_role)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (phone_number) DO UPDATE SET
+                    friendly_name = COALESCE(EXCLUDED.friendly_name, sms_whitelist.friendly_name),
+                    twilio_verified = EXCLUDED.twilio_verified,
+                    whatsapp_onboarded = CASE WHEN EXCLUDED.whatsapp_onboarded THEN TRUE ELSE sms_whitelist.whatsapp_onboarded END,
+                    whatsapp_onboarded_at = CASE WHEN EXCLUDED.whatsapp_onboarded THEN EXCLUDED.whatsapp_onboarded_at ELSE sms_whitelist.whatsapp_onboarded_at END,
+                    recipient_role = EXCLUDED.recipient_role
                 RETURNING *;
                 """,
-                (phone_number, friendly_name, twilio_verified)
+                (phone_number, friendly_name, twilio_verified, whatsapp_onboarded, whatsapp_onboarded_at, recipient_role)
             )
             return dict(cursor.fetchone())
+
+
+def update_whatsapp_onboarding_status(phone_number: str, whatsapp_onboarded: bool = True, recipient_role: str = "CUSTOMER") -> dict:
+    """Updates the WhatsApp onboarding status for a whitelisted phone number."""
+    from datetime import datetime
+    whatsapp_onboarded_at = datetime.utcnow() if whatsapp_onboarded else None
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                """
+                UPDATE sms_whitelist
+                SET whatsapp_onboarded = %s,
+                    whatsapp_onboarded_at = %s,
+                    recipient_role = COALESCE(%s, recipient_role)
+                WHERE phone_number = %s
+                RETURNING *;
+                """,
+                (whatsapp_onboarded, whatsapp_onboarded_at, recipient_role, phone_number)
+            )
+            res = cursor.fetchone()
+            if res:
+                return dict(res)
+            # If not yet in whitelist, insert it
+            return add_sms_whitelist(phone_number, friendly_name=phone_number, twilio_verified=True, whatsapp_onboarded=whatsapp_onboarded, recipient_role=recipient_role)
 
 
 def delete_sms_whitelist(whitelist_id: int) -> bool:

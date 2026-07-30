@@ -96,9 +96,27 @@ _worker_started = False
 
 def run_quiet_hours_queue_worker_cycle():
     """Polls queued SMS logs and dispatches those whose release time has arrived."""
-    due_logs = get_due_queued_sms_logs()
-    if not due_logs:
-        return 0
+    from serviceBot.db.connection import get_db_connection, dict_cursor
+    due_logs = []
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                """
+                SELECT * FROM sms_log
+                WHERE status = 'QUEUED' AND scheduled_send_at <= CURRENT_TIMESTAMP
+                ORDER BY scheduled_send_at ASC
+                FOR UPDATE SKIP LOCKED;
+                """
+            )
+            due_logs = [dict(r) for r in cursor.fetchall()]
+            if not due_logs:
+                return 0
+            for item in due_logs:
+                cursor.execute(
+                    "UPDATE sms_log SET status = 'PROCESSING' WHERE id = %s AND status = 'QUEUED';",
+                    (item["id"],)
+                )
+            conn.commit()
 
     client = TwilioSMSClient()
     dispatched_count = 0

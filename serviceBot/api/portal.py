@@ -1002,7 +1002,7 @@ async def get_service_requests(limit: Optional[int] = None, offset: Optional[int
                 LEFT JOIN customers c ON sr.customer_id = c.id
                 LEFT JOIN vehicles v ON sr.vehicle_id = v.id
                 LEFT JOIN staff_agents sa ON sr.staff_agent_id = sa.id
-                ORDER BY sr.updated_at DESC
+                ORDER BY COALESCE(sr.updated_at, sr.created_at) DESC, sr.id DESC
             """
             params = []
             if limit is not None:
@@ -1266,8 +1266,15 @@ async def update_gmail_config(payload: GmailConfigPayload):
     
     if payload.admin_phone_number is not None:
         config["admin_phone_number"] = payload.admin_phone_number
-        from serviceBot.db.queries import update_sms_config
+        from serviceBot.db.queries import update_sms_config, add_sms_whitelist
         update_sms_config({"admin_phone_number": payload.admin_phone_number})
+        if payload.admin_phone_number.strip():
+            add_sms_whitelist(
+                phone_number=payload.admin_phone_number.strip(),
+                friendly_name="Admin Notification Contact",
+                twilio_verified=True,
+                recipient_role="ADMIN"
+            )
         
     if payload.gmail_password and payload.gmail_password != "••••••••••••••••":
         config["gmail_password"] = encrypt_key(payload.gmail_password)
@@ -1626,9 +1633,18 @@ async def test_admin_sms(payload: AdminSMSTestPayload):
     if not admin_phone:
         raise HTTPException(status_code=400, detail="Admin contact phone number is required to send a test SMS.")
 
-    # Save to DB if non-empty
+    # Save to DB and whitelist if non-empty
     if payload.admin_phone_number:
         update_sms_config({"admin_phone_number": admin_phone})
+    
+    if admin_phone:
+        from serviceBot.db.queries import add_sms_whitelist
+        add_sms_whitelist(
+            phone_number=admin_phone,
+            friendly_name="Admin Notification Contact",
+            twilio_verified=True,
+            recipient_role="ADMIN"
+        )
 
     twilio_client = TwilioSMSClient()
     timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1833,6 +1849,65 @@ async def send_sms_reply_endpoint(payload: SMSReplyPayload):
 async def resolve_sms_conversation_endpoint(payload: SMSResolvePayload):
     from serviceBot.services.handoff_service import resolve_conversation
     return resolve_conversation(payload.conversation_id)
+
+
+class CustomerOnboardPayload(BaseModel):
+    phone_number: str
+    friendly_name: Optional[str] = None
+    recipient_role: Optional[str] = "CUSTOMER"
+
+
+class WhatsAppTestPingPayload(BaseModel):
+    phone_number: str
+    recipient_name: Optional[str] = None
+    recipient_role: Optional[str] = "CUSTOMER"
+
+
+@router.get("/twilio/sandbox-info")
+async def get_twilio_sandbox_info():
+    from serviceBot.services.twilio_sms import TwilioSMSClient
+    client = TwilioSMSClient()
+    return client.get_sandbox_credentials()
+
+
+@router.post("/twilio/customer-onboard")
+async def customer_onboard_endpoint(payload: CustomerOnboardPayload):
+    from serviceBot.db.queries import add_sms_whitelist
+    record = add_sms_whitelist(
+        phone_number=payload.phone_number,
+        friendly_name=payload.friendly_name or payload.phone_number,
+        twilio_verified=True,
+        whatsapp_onboarded=False,
+        recipient_role=payload.recipient_role or "CUSTOMER"
+    )
+    return {"success": True, "record": record}
+
+
+@router.post("/twilio/whatsapp-test-ping")
+async def whatsapp_test_ping_endpoint(payload: WhatsAppTestPingPayload):
+    from serviceBot.db.queries import update_whatsapp_onboarding_status
+    from serviceBot.services.twilio_sms import TwilioSMSClient
+
+    clean_phone = payload.phone_number.strip()
+    name = payload.recipient_name or "Test User"
+    body = f"serviceBot WhatsApp Verification: Success! Hello {name}, your phone number ({clean_phone}) is successfully onboarded to receive notifications."
+
+    client = TwilioSMSClient()
+    dispatch_res = client.send_whatsapp(to=clean_phone, body=body)
+
+    updated_record = update_whatsapp_onboarding_status(
+        phone_number=clean_phone,
+        whatsapp_onboarded=True,
+        recipient_role=payload.recipient_role or "CUSTOMER"
+    )
+
+    return {
+        "success": dispatch_res.get("success", False),
+        "status": dispatch_res.get("status"),
+        "sid": dispatch_res.get("sid"),
+        "error_message": dispatch_res.get("error_message"),
+        "record": updated_record
+    }
 
 
 

@@ -1717,3 +1717,1087 @@ server closed the connection unexpectedly
 	This probably means the server terminated abnormally
 	before or while processing the request.
 
+21:39:24 [0;32mINFO   [0m [serviceBot.middleware] [93746d47] GET /portal/ - 304 (24.69ms) [127.0.0.1]
+21:39:24 [0;32mINFO   [0m [serviceBot.middleware] [edbb5689] GET /portal/app.js - 200 (0.56ms) [127.0.0.1]
+22:14:57 [0;31mERROR  [0m [serviceBot.db.connection] Database connection error: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+Traceback (most recent call last):
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/db/connection.py", line 445, in get_db_connection
+    yield conn
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/services/outbox_worker.py", line 46, in process_outbox_batch
+    cursor.execute(
+    ~~~~~~~~~~~~~~^
+        """
+        ^^^
+    ...<7 lines>...
+        (batch_size,)
+        ^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/rohanroy/Coding/voiceService/.venv/lib/python3.13/site-packages/psycopg2/extras.py", line 236, in execute
+    return super().execute(query, vars)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.OperationalError: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+22:14:57 [0;31mERROR  [0m [serviceBot.outbox_worker] Outbox batch processing exception: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+Traceback (most recent call last):
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/services/outbox_worker.py", line 46, in process_outbox_batch
+    cursor.execute(
+    ~~~~~~~~~~~~~~^
+        """
+        ^^^
+    ...<7 lines>...
+        (batch_size,)
+        ^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/rohanroy/Coding/voiceService/.venv/lib/python3.13/site-packages/psycopg2/extras.py", line 236, in execute
+    return super().execute(query, vars)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.OperationalError: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+22:14:59 [0;31mERROR  [0m [serviceBot.db.connection] Database connection error: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+Traceback (most recent call last):
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/db/connection.py", line 445, in get_db_connection
+    yield conn
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/services/outbox_worker.py", line 46, in process_outbox_batch
+    cursor.execute(
+    ~~~~~~~~~~~~~~^
+        """
+        ^^^
+    ...<7 lines>...
+        (batch_size,)
+        ^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/rohanroy/Coding/voiceService/.venv/lib/python3.13/site-packages/psycopg2/extras.py", line 236, in execute
+    return super().execute(query, vars)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.DatabaseError: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+22:14:59 [0;31mERROR  [0m [serviceBot.outbox_worker] Outbox batch processing exception: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+Traceback (most recent call last):
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/services/outbox_worker.py", line 46, in process_outbox_batch
+    cursor.execute(
+    ~~~~~~~~~~~~~~^
+        """
+        ^^^
+    ...<7 lines>...
+        (batch_size,)
+        ^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/rohanroy/Coding/voiceService/.venv/lib/python3.13/site-packages/psycopg2/extras.py", line 236, in execute
+    return super().execute(query, vars)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.DatabaseError: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+22:15:01 [0;31mERROR  [0m [serviceBot.db.connection] Database connection error: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+Traceback (most recent call last):
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/db/connection.py", line 445, in get_db_connection
+    yield conn
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/services/outbox_worker.py", line 46, in process_outbox_batch
+    cursor.execute(
+    ~~~~~~~~~~~~~~^
+        """
+        ^^^
+    ...<7 lines>...
+        (batch_size,)
+        ^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/rohanroy/Coding/voiceService/.venv/lib/python3.13/site-packages/psycopg2/extras.py", line 236, in execute
+    return super().execute(query, vars)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.OperationalError: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+22:15:01 [0;31mERROR  [0m [serviceBot.outbox_worker] Outbox batch processing exception: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+Traceback (most recent call last):
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/services/outbox_worker.py", line 46, in process_outbox_batch
+    cursor.execute(
+    ~~~~~~~~~~~~~~^
+        """
+        ^^^
+    ...<7 lines>...
+        (batch_size,)
+        ^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/rohanroy/Coding/voiceService/.venv/lib/python3.13/site-packages/psycopg2/extras.py", line 236, in execute
+    return super().execute(query, vars)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.OperationalError: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+22:23:02 [0;31mERROR  [0m [serviceBot.db.connection] Database connection error: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+Traceback (most recent call last):
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/db/connection.py", line 445, in get_db_connection
+    yield conn
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/services/outbox_worker.py", line 46, in process_outbox_batch
+    cursor.execute(
+    ~~~~~~~~~~~~~~^
+        """
+        ^^^
+    ...<7 lines>...
+        (batch_size,)
+        ^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/rohanroy/Coding/voiceService/.venv/lib/python3.13/site-packages/psycopg2/extras.py", line 236, in execute
+    return super().execute(query, vars)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.OperationalError: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+22:23:02 [0;31mERROR  [0m [serviceBot.outbox_worker] Outbox batch processing exception: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+Traceback (most recent call last):
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/services/outbox_worker.py", line 46, in process_outbox_batch
+    cursor.execute(
+    ~~~~~~~~~~~~~~^
+        """
+        ^^^
+    ...<7 lines>...
+        (batch_size,)
+        ^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/rohanroy/Coding/voiceService/.venv/lib/python3.13/site-packages/psycopg2/extras.py", line 236, in execute
+    return super().execute(query, vars)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.OperationalError: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+22:32:01 [0;31mERROR  [0m [serviceBot.db.connection] Database connection error: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+Traceback (most recent call last):
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/db/connection.py", line 445, in get_db_connection
+    yield conn
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/services/outbox_worker.py", line 46, in process_outbox_batch
+    cursor.execute(
+    ~~~~~~~~~~~~~~^
+        """
+        ^^^
+    ...<7 lines>...
+        (batch_size,)
+        ^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/rohanroy/Coding/voiceService/.venv/lib/python3.13/site-packages/psycopg2/extras.py", line 236, in execute
+    return super().execute(query, vars)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.OperationalError: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+22:32:01 [0;31mERROR  [0m [serviceBot.outbox_worker] Outbox batch processing exception: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+Traceback (most recent call last):
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/services/outbox_worker.py", line 46, in process_outbox_batch
+    cursor.execute(
+    ~~~~~~~~~~~~~~^
+        """
+        ^^^
+    ...<7 lines>...
+        (batch_size,)
+        ^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/rohanroy/Coding/voiceService/.venv/lib/python3.13/site-packages/psycopg2/extras.py", line 236, in execute
+    return super().execute(query, vars)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.OperationalError: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+22:48:00 [0;31mERROR  [0m [serviceBot.db.connection] Database connection error: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+Traceback (most recent call last):
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/db/connection.py", line 445, in get_db_connection
+    yield conn
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/services/outbox_worker.py", line 46, in process_outbox_batch
+    cursor.execute(
+    ~~~~~~~~~~~~~~^
+        """
+        ^^^
+    ...<7 lines>...
+        (batch_size,)
+        ^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/rohanroy/Coding/voiceService/.venv/lib/python3.13/site-packages/psycopg2/extras.py", line 236, in execute
+    return super().execute(query, vars)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.OperationalError: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+22:48:00 [0;31mERROR  [0m [serviceBot.outbox_worker] Outbox batch processing exception: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+Traceback (most recent call last):
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/services/outbox_worker.py", line 46, in process_outbox_batch
+    cursor.execute(
+    ~~~~~~~~~~~~~~^
+        """
+        ^^^
+    ...<7 lines>...
+        (batch_size,)
+        ^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/rohanroy/Coding/voiceService/.venv/lib/python3.13/site-packages/psycopg2/extras.py", line 236, in execute
+    return super().execute(query, vars)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.OperationalError: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+23:05:35 [0;31mERROR  [0m [serviceBot.db.connection] Database connection error: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+Traceback (most recent call last):
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/db/connection.py", line 445, in get_db_connection
+    yield conn
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/services/outbox_worker.py", line 46, in process_outbox_batch
+    cursor.execute(
+    ~~~~~~~~~~~~~~^
+        """
+        ^^^
+    ...<7 lines>...
+        (batch_size,)
+        ^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/rohanroy/Coding/voiceService/.venv/lib/python3.13/site-packages/psycopg2/extras.py", line 236, in execute
+    return super().execute(query, vars)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.OperationalError: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+23:05:35 [0;31mERROR  [0m [serviceBot.outbox_worker] Outbox batch processing exception: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+Traceback (most recent call last):
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/services/outbox_worker.py", line 46, in process_outbox_batch
+    cursor.execute(
+    ~~~~~~~~~~~~~~^
+        """
+        ^^^
+    ...<7 lines>...
+        (batch_size,)
+        ^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/rohanroy/Coding/voiceService/.venv/lib/python3.13/site-packages/psycopg2/extras.py", line 236, in execute
+    return super().execute(query, vars)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.OperationalError: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+23:17:45 [0;31mERROR  [0m [serviceBot.db.connection] Database connection error: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+Traceback (most recent call last):
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/db/connection.py", line 445, in get_db_connection
+    yield conn
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/services/outbox_worker.py", line 46, in process_outbox_batch
+    cursor.execute(
+    ~~~~~~~~~~~~~~^
+        """
+        ^^^
+    ...<7 lines>...
+        (batch_size,)
+        ^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/rohanroy/Coding/voiceService/.venv/lib/python3.13/site-packages/psycopg2/extras.py", line 236, in execute
+    return super().execute(query, vars)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.OperationalError: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+23:17:45 [0;31mERROR  [0m [serviceBot.outbox_worker] Outbox batch processing exception: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+Traceback (most recent call last):
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/services/outbox_worker.py", line 46, in process_outbox_batch
+    cursor.execute(
+    ~~~~~~~~~~~~~~^
+        """
+        ^^^
+    ...<7 lines>...
+        (batch_size,)
+        ^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/rohanroy/Coding/voiceService/.venv/lib/python3.13/site-packages/psycopg2/extras.py", line 236, in execute
+    return super().execute(query, vars)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+psycopg2.OperationalError: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+23:23:05 [0;32mINFO   [0m [serviceBot.middleware] [325a9de7] GET /portal/ - 304 (3.09ms) [127.0.0.1]
+23:23:05 [0;32mINFO   [0m [serviceBot.middleware] [be1aec71] GET /portal/app.js - 304 (0.87ms) [127.0.0.1]
+23:23:05 [0;32mINFO   [0m [serviceBot.middleware] [c54c899c] GET /portal/style.css - 304 (1.85ms) [127.0.0.1]
+23:23:27 [0;32mINFO   [0m [serviceBot.middleware] [a318afa6] GET /portal/ - 304 (3.24ms) [127.0.0.1]
+23:23:50 [0;32mINFO   [0m [serviceBot.middleware] [ecff173d] GET /portal/ - 304 (9.19ms) [127.0.0.1]
+08:35:11 [0;32mINFO   [0m [serviceBot.middleware] [8d795b94] GET /portal/ - 304 (7.1ms) [127.0.0.1]
+08:35:11 [0;32mINFO   [0m [serviceBot.middleware] [d8fda7c7] GET /portal/style.css - 304 (1.47ms) [127.0.0.1]
+08:35:11 [0;32mINFO   [0m [serviceBot.middleware] [46924313] GET /portal/app.js - 304 (1.32ms) [127.0.0.1]
+08:35:40 [0;32mINFO   [0m [serviceBot.middleware] [9e64d328] GET /portal/ - 304 (1.39ms) [127.0.0.1]
+WARNING:  WatchFiles detected changes in 'serviceBot/db/connection.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [89407]
+INFO:     Started server process [6551]
+INFO:     Waiting for application startup.
+08:36:42 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+08:36:42 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+08:36:42 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+08:36:42 [0;32mINFO   [0m [serviceBot.services.quiet_hours] Quiet hours queue release worker thread started.
+08:36:42 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+08:36:42 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+08:36:42 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+08:36:51 [0;32mINFO   [0m [serviceBot.db.connection] Database schema initialized successfully.
+08:36:51 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+08:36:51 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+08:36:51 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+08:37:16 [0;32mINFO   [0m [serviceBot.middleware] [9974d975] GET /portal/ - 304 (31.51ms) [127.0.0.1]
+08:39:11 [0;32mINFO   [0m [serviceBot.middleware] [91d785f3] GET /portal/ - 304 (3.34ms) [127.0.0.1]
+WARNING:  WatchFiles detected changes in 'serviceBot/db/connection.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [6551]
+INFO:     Started server process [6963]
+INFO:     Waiting for application startup.
+08:48:25 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+08:48:25 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+08:48:25 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+08:48:25 [0;32mINFO   [0m [serviceBot.services.quiet_hours] Quiet hours queue release worker thread started.
+08:48:25 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+08:48:25 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+08:48:25 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+08:48:34 [0;32mINFO   [0m [serviceBot.db.connection] Database schema initialized successfully.
+08:48:34 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+08:48:34 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+08:48:34 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+WARNING:  WatchFiles detected changes in 'serviceBot/api/portal.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [6963]
+INFO:     Started server process [7023]
+INFO:     Waiting for application startup.
+08:49:18 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+08:49:18 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+08:49:18 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+08:49:18 [0;32mINFO   [0m [serviceBot.services.quiet_hours] Quiet hours queue release worker thread started.
+08:49:18 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+08:49:18 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+08:49:18 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+08:49:28 [0;32mINFO   [0m [serviceBot.db.connection] Database schema initialized successfully.
+08:49:29 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+08:49:29 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+08:49:29 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+08:49:36 [0;32mINFO   [0m [serviceBot.middleware] [9e88ddd2] GET /portal/ - 200 (34.8ms) [127.0.0.1]
+08:49:36 [0;32mINFO   [0m [serviceBot.middleware] [23b56b59] GET /portal/app.js - 200 (1.01ms) [127.0.0.1]
+08:49:40 [0;32mINFO   [0m [serviceBot.middleware] [846b321c] GET /portal/ - 200 (1.97ms) [127.0.0.1]
+08:49:40 [0;32mINFO   [0m [serviceBot.middleware] [6ea3a45a] GET /portal/app.js - 200 (1.53ms) [127.0.0.1]
+08:49:40 [0;32mINFO   [0m [serviceBot.middleware] [da2057a9] GET /portal/style.css - 200 (1.35ms) [127.0.0.1]
+08:49:41 [0;32mINFO   [0m [serviceBot.middleware] [61130718] GET /favicon.ico - 404 (2.05ms) [127.0.0.1]
+08:50:58 [0;32mINFO   [0m [serviceBot.middleware] [cf079f29] GET /portal/ - 200 (5.13ms) [127.0.0.1]
+08:50:58 [0;32mINFO   [0m [serviceBot.middleware] [869be3b1] GET /portal/app.js - 200 (1.38ms) [127.0.0.1]
+08:50:59 [0;32mINFO   [0m [serviceBot.middleware] [d56fffd1] GET /portal/ - 200 (1.82ms) [127.0.0.1]
+08:50:59 [0;32mINFO   [0m [serviceBot.middleware] [eb15131a] GET /portal/style.css - 200 (2.42ms) [127.0.0.1]
+08:50:59 [0;32mINFO   [0m [serviceBot.middleware] [cafd8265] GET /portal/app.js - 200 (2.74ms) [127.0.0.1]
+08:51:00 [0;32mINFO   [0m [serviceBot.middleware] [ba1eb770] GET /favicon.ico - 404 (1.43ms) [127.0.0.1]
+08:51:06 [0;32mINFO   [0m [serviceBot.middleware] [bee0f2be] GET /portal/ - 304 (1.87ms) [127.0.0.1]
+08:51:06 [0;32mINFO   [0m [serviceBot.middleware] [db89a296] GET /portal/app.js - 304 (0.77ms) [127.0.0.1]
+08:51:08 [0;32mINFO   [0m [serviceBot.middleware] [35199afd] GET /portal/ - 304 (1.55ms) [127.0.0.1]
+08:51:08 [0;32mINFO   [0m [serviceBot.middleware] [0dde3a7d] GET /portal/ - 304 (1.31ms) [127.0.0.1]
+08:54:30 [0;32mINFO   [0m [serviceBot.middleware] [6ab1d241] GET /portal/ - 200 (5.39ms) [127.0.0.1]
+08:54:30 [0;32mINFO   [0m [serviceBot.middleware] [dc208182] GET /portal/style.css - 200 (3.34ms) [127.0.0.1]
+08:54:30 [0;32mINFO   [0m [serviceBot.middleware] [d5e4e383] GET /portal/app.js - 200 (3.52ms) [127.0.0.1]
+08:54:30 [0;32mINFO   [0m [serviceBot.middleware] [17c905c0] GET /favicon.ico - 404 (57.26ms) [127.0.0.1]
+08:55:21 [0;32mINFO   [0m [serviceBot.middleware] [b08decc3] GET /api/v1/portal/stats - 200 (989.78ms) [127.0.0.1]
+08:56:35 [0;32mINFO   [0m [serviceBot.middleware] [0cc4d822] GET /portal/app.js - 304 (1.73ms) [127.0.0.1]
+08:57:51 [0;32mINFO   [0m [serviceBot.middleware] [240158dc] GET /portal/app.js - 304 (1.42ms) [127.0.0.1]
+08:58:32 [0;32mINFO   [0m [serviceBot.middleware] [3c2a9f59] GET /portal/ - 304 (6.31ms) [127.0.0.1]
+09:00:06 [0;32mINFO   [0m [serviceBot.middleware] [d49c11dd] GET /portal/ - 304 (3.1ms) [127.0.0.1]
+09:00:06 [0;32mINFO   [0m [serviceBot.middleware] [f4210703] GET /portal/app.js - 200 (3.02ms) [127.0.0.1]
+09:00:07 [0;32mINFO   [0m [serviceBot.middleware] [df962ef6] GET /api/v1/portal/stats - 200 (792.44ms) [127.0.0.1]
+09:00:07 [0;32mINFO   [0m [serviceBot.middleware] [042158bd] GET /api/v1/portal/calls - 200 (318.2ms) [127.0.0.1]
+09:00:07 [0;32mINFO   [0m [serviceBot.middleware] [44ae8725] GET /api/v1/portal/service-requests - 200 (297.19ms) [127.0.0.1]
+09:00:08 [0;32mINFO   [0m [serviceBot.middleware] [bbd6a1b6] GET /api/v1/portal/service-requests/1/available-agents - 200 (632.3ms) [127.0.0.1]
+09:00:58 [0;32mINFO   [0m [serviceBot.middleware] [27f45127] GET /portal/ - 200 (2.02ms) [127.0.0.1]
+09:00:58 [0;32mINFO   [0m [serviceBot.middleware] [c19e7d63] GET /portal/app.js - 304 (1.97ms) [127.0.0.1]
+09:00:59 [0;32mINFO   [0m [serviceBot.middleware] [80f74efc] GET /api/v1/portal/stats - 200 (673.89ms) [127.0.0.1]
+09:00:59 [0;32mINFO   [0m [serviceBot.middleware] [5e32a683] GET /api/v1/portal/calls - 200 (280.51ms) [127.0.0.1]
+09:00:59 [0;32mINFO   [0m [serviceBot.middleware] [9728c92f] GET /api/v1/portal/service-requests - 200 (240.39ms) [127.0.0.1]
+09:01:01 [0;32mINFO   [0m [serviceBot.middleware] [4527ae4c] GET /api/v1/portal/service-requests/1/available-agents - 200 (1615.29ms) [127.0.0.1]
+09:01:57 [0;32mINFO   [0m [serviceBot.middleware] [f119632c] GET /portal/app.js - 200 (1.54ms) [127.0.0.1]
+09:02:20 [0;32mINFO   [0m [serviceBot.middleware] [28a22fbd] GET /portal/ - 304 (3.04ms) [127.0.0.1]
+09:02:20 [0;32mINFO   [0m [serviceBot.middleware] [2b66baba] GET /portal/app.js - 304 (1.55ms) [127.0.0.1]
+09:02:21 [0;32mINFO   [0m [serviceBot.middleware] [9fbf7145] GET /api/v1/portal/stats - 200 (915.98ms) [127.0.0.1]
+09:02:22 [0;32mINFO   [0m [serviceBot.middleware] [ce05e162] GET /api/v1/portal/calls - 200 (253.18ms) [127.0.0.1]
+09:02:22 [0;32mINFO   [0m [serviceBot.middleware] [d144123f] GET /api/v1/portal/service-requests - 200 (229.37ms) [127.0.0.1]
+09:02:22 [0;32mINFO   [0m [serviceBot.middleware] [e8e079a4] GET /api/v1/portal/service-requests/1/available-agents - 200 (598.56ms) [127.0.0.1]
+09:02:32 [0;32mINFO   [0m [serviceBot.middleware] [ff7665af] GET /api/v1/portal/gmail-config - 200 (250.6ms) [127.0.0.1]
+09:02:42 [0;32mINFO   [0m [serviceBot.middleware] [75fd2417] GET /api/v1/portal/agents - 200 (760.07ms) [127.0.0.1]
+09:02:42 [0;32mINFO   [0m [serviceBot.middleware] [6ab7b680] GET /api/v1/portal/agents/10/google/status - 200 (305.07ms) [127.0.0.1]
+09:02:42 [0;32mINFO   [0m [serviceBot.middleware] [f2b783b7] GET /api/v1/portal/config - 200 (0.53ms) [127.0.0.1]
+09:02:43 [0;32mINFO   [0m [serviceBot.middleware] [3940ef48] GET /api/v1/portal/agents/10/calendar - 200 (704.71ms) [127.0.0.1]
+09:04:20 [0;32mINFO   [0m [serviceBot.middleware] [cd806ff8] GET /portal/app.js - 200 (1.39ms) [127.0.0.1]
+09:05:46 [0;32mINFO   [0m [serviceBot.middleware] [383c8ed9] GET /portal/ - 304 (4.73ms) [127.0.0.1]
+09:05:46 [0;32mINFO   [0m [serviceBot.middleware] [b5f5140e] GET /portal/app.js - 304 (2.31ms) [127.0.0.1]
+09:05:47 [0;32mINFO   [0m [serviceBot.middleware] [8aa270c7] GET /api/v1/portal/stats - 200 (1063.64ms) [127.0.0.1]
+09:05:48 [0;32mINFO   [0m [serviceBot.middleware] [ffd521b8] GET /api/v1/portal/calls - 200 (239.5ms) [127.0.0.1]
+09:05:48 [0;32mINFO   [0m [serviceBot.middleware] [f9d6ee50] GET /api/v1/portal/service-requests - 200 (350.99ms) [127.0.0.1]
+09:05:49 [0;32mINFO   [0m [serviceBot.middleware] [aee00021] GET /api/v1/portal/service-requests/1/available-agents - 200 (637.29ms) [127.0.0.1]
+09:13:03 [0;32mINFO   [0m [serviceBot.middleware] [a401ef6e] GET /api/v1/portal/config - 200 (5.48ms) [127.0.0.1]
+09:13:04 [0;32mINFO   [0m [serviceBot.middleware] [1c0714bf] GET /api/v1/portal/sms/config - 200 (272.21ms) [127.0.0.1]
+09:13:05 [0;32mINFO   [0m [serviceBot.middleware] [1b672442] GET /api/v1/portal/sms/matrix-rules - 200 (514.78ms) [127.0.0.1]
+09:13:05 [0;32mINFO   [0m [serviceBot.middleware] [cccd6a43] GET /api/v1/portal/sms/whitelist - 200 (259.9ms) [127.0.0.1]
+09:13:06 [0;32mINFO   [0m [serviceBot.middleware] [fd70f8ad] GET /api/v1/portal/sms/config - 200 (734.12ms) [127.0.0.1]
+09:13:06 [0;32mINFO   [0m [serviceBot.middleware] [6f2cc754] GET /api/v1/portal/sms/matrix-rules - 200 (502.66ms) [127.0.0.1]
+09:13:06 [0;32mINFO   [0m [serviceBot.middleware] [31f36350] GET /api/v1/portal/sms/whitelist - 200 (502.59ms) [127.0.0.1]
+09:13:07 [0;32mINFO   [0m [serviceBot.middleware] [dfb5539a] GET /api/v1/portal/gmail-config - 200 (234.41ms) [127.0.0.1]
+09:13:09 [0;32mINFO   [0m [serviceBot.middleware] [acd46e48] GET /api/v1/portal/sms/config - 200 (1153.39ms) [127.0.0.1]
+09:13:09 [0;32mINFO   [0m [serviceBot.middleware] [d9a8b327] GET /api/v1/portal/sms/matrix-rules - 200 (530.27ms) [127.0.0.1]
+09:13:09 [0;32mINFO   [0m [serviceBot.middleware] [3942e251] GET /api/v1/portal/sms/whitelist - 200 (254.3ms) [127.0.0.1]
+09:13:13 [0;32mINFO   [0m [serviceBot.middleware] [0f054b9c] GET /api/v1/portal/stats - 200 (546.56ms) [127.0.0.1]
+09:13:14 [0;32mINFO   [0m [serviceBot.middleware] [6a1e1873] GET /api/v1/portal/calls - 200 (295.22ms) [127.0.0.1]
+09:13:14 [0;32mINFO   [0m [serviceBot.middleware] [76660f0f] GET /api/v1/portal/service-requests - 200 (276.58ms) [127.0.0.1]
+09:13:15 [0;32mINFO   [0m [serviceBot.middleware] [6407bc77] GET /api/v1/portal/service-requests/1/available-agents - 200 (611.89ms) [127.0.0.1]
+WARNING:  WatchFiles detected changes in 'serviceBot/db/connection.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [7023]
+INFO:     Started server process [8548]
+INFO:     Waiting for application startup.
+09:16:46 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+09:16:46 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+09:16:46 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+09:16:46 [0;32mINFO   [0m [serviceBot.services.quiet_hours] Quiet hours queue release worker thread started.
+09:16:46 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+09:16:46 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+09:16:46 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+09:16:50 [0;32mINFO   [0m [serviceBot.db.connection] Database schema initialized successfully.
+09:16:51 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+09:16:51 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+09:16:51 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+WARNING:  WatchFiles detected changes in 'serviceBot/db/connection.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [8548]
+INFO:     Started server process [8573]
+INFO:     Waiting for application startup.
+09:17:12 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+09:17:12 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+09:17:12 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+09:17:12 [0;32mINFO   [0m [serviceBot.services.quiet_hours] Quiet hours queue release worker thread started.
+09:17:12 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+09:17:12 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+09:17:12 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+09:17:17 [0;32mINFO   [0m [serviceBot.db.connection] Database schema initialized successfully.
+09:17:18 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+09:17:18 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+09:17:18 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+WARNING:  WatchFiles detected changes in 'serviceBot/db/queries.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [8573]
+INFO:     Started server process [8589]
+INFO:     Waiting for application startup.
+09:17:23 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+09:17:23 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+09:17:23 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+09:17:23 [0;32mINFO   [0m [serviceBot.services.quiet_hours] Quiet hours queue release worker thread started.
+09:17:23 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+09:17:23 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+09:17:23 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'serviceBot/services/twilio_sms.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [8589]
+INFO:     Started server process [8613]
+INFO:     Waiting for application startup.
+09:17:29 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+09:17:29 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+09:17:29 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+09:17:29 [0;32mINFO   [0m [serviceBot.services.quiet_hours] Quiet hours queue release worker thread started.
+09:17:29 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+09:17:29 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+09:17:29 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+09:17:37 [0;32mINFO   [0m [serviceBot.db.connection] Database schema initialized successfully.
+09:17:38 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+09:17:38 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+09:17:38 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+WARNING:  WatchFiles detected changes in 'serviceBot/api/portal.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [8613]
+INFO:     Started server process [8651]
+INFO:     Waiting for application startup.
+09:18:09 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+09:18:09 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+09:18:09 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+09:18:09 [0;32mINFO   [0m [serviceBot.services.quiet_hours] Quiet hours queue release worker thread started.
+09:18:09 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+09:18:09 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+09:18:09 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+09:18:19 [0;32mINFO   [0m [serviceBot.db.connection] Database schema initialized successfully.
+09:18:20 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+09:18:20 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+09:18:20 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+09:19:51 [0;32mINFO   [0m [serviceBot.middleware] [75f03b4a] GET /api/v1/portal/stats - 200 (990.98ms) [127.0.0.1]
+09:19:51 [0;32mINFO   [0m [serviceBot.middleware] [e0b5f454] GET /api/v1/portal/calls - 200 (294.69ms) [127.0.0.1]
+09:19:52 [0;32mINFO   [0m [serviceBot.middleware] [42453d58] GET /api/v1/portal/service-requests - 200 (329.75ms) [127.0.0.1]
+WARNING:  WatchFiles detected changes in 'tests/test_twilio_whatsapp_onboarding.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [8651]
+INFO:     Started server process [9583]
+INFO:     Waiting for application startup.
+09:20:36 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+09:20:36 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+09:20:36 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+09:20:36 [0;32mINFO   [0m [serviceBot.services.quiet_hours] Quiet hours queue release worker thread started.
+09:20:36 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+09:20:36 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+09:20:36 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'tests/test_twilio_whatsapp_onboarding.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [9583]
+INFO:     Started server process [9616]
+INFO:     Waiting for application startup.
+09:20:48 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+09:20:48 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+09:20:48 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+09:20:48 [0;32mINFO   [0m [serviceBot.services.quiet_hours] Quiet hours queue release worker thread started.
+09:20:48 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+09:20:48 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+09:20:48 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'tests/test_twilio_whatsapp_onboarding.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [9616]
+INFO:     Started server process [9626]
+INFO:     Waiting for application startup.
+09:20:53 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+09:20:53 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+09:20:53 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+09:20:53 [0;32mINFO   [0m [serviceBot.services.quiet_hours] Quiet hours queue release worker thread started.
+09:20:53 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+09:20:53 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+09:20:53 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+09:20:58 [0;32mINFO   [0m [serviceBot.db.connection] Database schema initialized successfully.
+09:20:59 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+09:20:59 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+09:20:59 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+09:21:17 [0;32mINFO   [0m [serviceBot.middleware] [16b4d34a] GET /portal/ - 200 (31.91ms) [127.0.0.1]
+09:21:17 [0;32mINFO   [0m [serviceBot.middleware] [6d3adfdb] GET /portal/app.js - 200 (1.72ms) [127.0.0.1]
+09:21:18 [0;32mINFO   [0m [serviceBot.middleware] [ae0ef538] GET /api/v1/portal/twilio/sandbox-info - 200 (691.1ms) [127.0.0.1]
+09:21:18 [0;32mINFO   [0m [serviceBot.middleware] [3a438061] GET /api/v1/portal/stats - 200 (691.2ms) [127.0.0.1]
+09:21:18 [0;32mINFO   [0m [serviceBot.middleware] [49f30195] GET /api/v1/portal/calls - 200 (313.72ms) [127.0.0.1]
+09:21:18 [0;32mINFO   [0m [serviceBot.middleware] [99752253] GET /api/v1/portal/service-requests - 200 (297.18ms) [127.0.0.1]
+09:21:19 [0;32mINFO   [0m [serviceBot.middleware] [28ab5982] GET /api/v1/portal/service-requests/1/available-agents - 200 (784.43ms) [127.0.0.1]
+09:21:20 [0;32mINFO   [0m [serviceBot.middleware] [5cf058c7] GET /api/v1/portal/sms/config - 200 (626.62ms) [127.0.0.1]
+09:21:20 [0;32mINFO   [0m [serviceBot.middleware] [fc42b142] GET /api/v1/portal/sms/matrix-rules - 200 (625.91ms) [127.0.0.1]
+09:21:20 [0;32mINFO   [0m [serviceBot.middleware] [e3096cc8] GET /api/v1/portal/sms/whitelist - 200 (314.32ms) [127.0.0.1]
+09:21:20 [0;32mINFO   [0m [serviceBot.middleware] [4f8c7fb1] GET /api/v1/portal/gmail-config - 200 (314.33ms) [127.0.0.1]
+09:21:22 [0;32mINFO   [0m [serviceBot.middleware] [d4d0ee44] GET /portal/ - 304 (1.23ms) [127.0.0.1]
+09:21:23 [0;32mINFO   [0m [serviceBot.middleware] [0d07359a] GET /api/v1/portal/twilio/sandbox-info - 200 (291.19ms) [127.0.0.1]
+09:21:23 [0;32mINFO   [0m [serviceBot.middleware] [22d9085c] GET /api/v1/portal/gmail-config - 200 (291.31ms) [127.0.0.1]
+09:21:25 [0;32mINFO   [0m [serviceBot.middleware] [007af751] GET /api/v1/portal/twilio/sandbox-info - 200 (316.87ms) [127.0.0.1]
+09:21:25 [0;32mINFO   [0m [serviceBot.middleware] [6cccfee4] GET /api/v1/portal/sms/whitelist - 200 (316.78ms) [127.0.0.1]
+09:21:29 [0;32mINFO   [0m [serviceBot.middleware] [e48d9463] GET /api/v1/portal/stats - 200 (702.98ms) [127.0.0.1]
+09:21:29 [0;32mINFO   [0m [serviceBot.middleware] [e12c86ee] GET /api/v1/portal/calls - 200 (313.64ms) [127.0.0.1]
+09:21:30 [0;32mINFO   [0m [serviceBot.middleware] [345bc0b2] GET /api/v1/portal/service-requests - 200 (310.58ms) [127.0.0.1]
+09:21:30 [0;32mINFO   [0m [serviceBot.middleware] [5c728ecb] GET /api/v1/portal/service-requests/1/available-agents - 200 (639.2ms) [127.0.0.1]
+09:21:30 [0;32mINFO   [0m [serviceBot.middleware] [8b235ad2] GET /api/v1/portal/twilio/sandbox-info - 200 (2.17ms) [127.0.0.1]
+09:21:31 [0;32mINFO   [0m [serviceBot.middleware] [d7402387] GET /api/v1/portal/sms/whitelist - 200 (314.2ms) [127.0.0.1]
+09:23:46 [0;32mINFO   [0m [serviceBot.middleware] [e3dabfac] GET /portal/ - 200 (3.61ms) [127.0.0.1]
+09:23:46 [0;32mINFO   [0m [serviceBot.middleware] [ef151e5d] GET /portal/app.js - 200 (1.7ms) [127.0.0.1]
+09:23:47 [0;32mINFO   [0m [serviceBot.middleware] [fdbd6dbc] GET /api/v1/portal/twilio/sandbox-info - 200 (613.84ms) [127.0.0.1]
+09:23:47 [0;32mINFO   [0m [serviceBot.middleware] [068b246e] GET /api/v1/portal/stats - 200 (614.12ms) [127.0.0.1]
+09:23:47 [0;32mINFO   [0m [serviceBot.middleware] [1cde39d6] GET /api/v1/portal/calls - 200 (251.57ms) [127.0.0.1]
+09:23:47 [0;32mINFO   [0m [serviceBot.middleware] [133ebcdb] GET /api/v1/portal/service-requests - 200 (264.15ms) [127.0.0.1]
+09:23:48 [0;32mINFO   [0m [serviceBot.middleware] [c1a5ee15] GET /api/v1/portal/service-requests/1/available-agents - 200 (630.48ms) [127.0.0.1]
+09:23:48 [0;32mINFO   [0m [serviceBot.middleware] [7e250912] GET /api/v1/portal/twilio/sandbox-info - 200 (241.94ms) [127.0.0.1]
+09:23:48 [0;32mINFO   [0m [serviceBot.middleware] [81b37fc8] GET /api/v1/portal/sms/whitelist - 200 (242.97ms) [127.0.0.1]
+09:24:02 [0;32mINFO   [0m [serviceBot.middleware] [56fe21d3] GET /api/v1/portal/sms/config - 200 (961.73ms) [127.0.0.1]
+09:24:02 [0;32mINFO   [0m [serviceBot.middleware] [f4648cb6] GET /api/v1/portal/sms/matrix-rules - 200 (642.86ms) [127.0.0.1]
+09:24:02 [0;32mINFO   [0m [serviceBot.middleware] [946ed653] GET /api/v1/portal/sms/whitelist - 200 (644.06ms) [127.0.0.1]
+09:24:06 [0;32mINFO   [0m [serviceBot.middleware] [4d323c83] GET /api/v1/portal/stats - 200 (1182.26ms) [127.0.0.1]
+09:24:06 [0;32mINFO   [0m [serviceBot.middleware] [fdd9bb3f] GET /api/v1/portal/calls - 200 (305.66ms) [127.0.0.1]
+09:24:06 [0;32mINFO   [0m [serviceBot.middleware] [ef9e17a2] GET /api/v1/portal/service-requests - 200 (316.54ms) [127.0.0.1]
+09:24:07 [0;32mINFO   [0m [serviceBot.middleware] [843911ce] GET /api/v1/portal/service-requests/1/available-agents - 200 (744.94ms) [127.0.0.1]
+09:24:38 [0;32mINFO   [0m [serviceBot.middleware] [40dcc543] GET /api/v1/portal/sms/logs/appointment/1 - 200 (634.66ms) [127.0.0.1]
+09:25:32 [0;32mINFO   [0m [serviceBot.middleware] [595698d1] GET /portal/ - 304 (3.54ms) [127.0.0.1]
+09:25:32 [0;32mINFO   [0m [serviceBot.middleware] [111fda0c] GET /portal/app.js - 200 (1.82ms) [127.0.0.1]
+09:25:33 [0;32mINFO   [0m [serviceBot.middleware] [d658768b] GET /api/v1/portal/twilio/sandbox-info - 200 (765.75ms) [127.0.0.1]
+09:25:33 [0;32mINFO   [0m [serviceBot.middleware] [6b57df9e] GET /api/v1/portal/stats - 200 (765.5ms) [127.0.0.1]
+09:25:33 [0;32mINFO   [0m [serviceBot.middleware] [a4bea34e] GET /api/v1/portal/calls - 200 (315.2ms) [127.0.0.1]
+09:25:33 [0;32mINFO   [0m [serviceBot.middleware] [feb4c0e5] GET /api/v1/portal/service-requests - 200 (321.05ms) [127.0.0.1]
+09:25:34 [0;32mINFO   [0m [serviceBot.middleware] [23dc77b9] GET /api/v1/portal/service-requests/1/available-agents - 200 (775.11ms) [127.0.0.1]
+09:26:00 [0;32mINFO   [0m [serviceBot.middleware] [f8f63bc8] GET /api/v1/portal/twilio/sandbox-info - 200 (316.55ms) [127.0.0.1]
+09:26:00 [0;32mINFO   [0m [serviceBot.middleware] [99207fe3] GET /api/v1/portal/sms/whitelist - 200 (316.85ms) [127.0.0.1]
+09:26:07 [0;32mINFO   [0m [serviceBot.services.twilio_sms] [8ed54b4e] Twilio SMS dispatched successfully to whatsapp:+14242704893 (SID: SM99b5849715a1873303e8c5cb8400badb).
+09:26:07 [0;32mINFO   [0m [serviceBot.middleware] [8ed54b4e] POST /api/v1/portal/twilio/whatsapp-test-ping - 200 (3278.83ms) [127.0.0.1]
+09:26:07 [0;32mINFO   [0m [serviceBot.middleware] [30be99af] GET /api/v1/portal/sms/whitelist - 200 (302.31ms) [127.0.0.1]
+09:26:08 [0;32mINFO   [0m [serviceBot.middleware] [dfd04c78] GET /api/v1/portal/sms/whitelist - 200 (537.05ms) [127.0.0.1]
+09:26:38 [0;32mINFO   [0m [serviceBot.middleware] [5847b20c] POST /api/v1/portal/twilio/customer-onboard - 200 (309.43ms) [127.0.0.1]
+09:26:38 [0;32mINFO   [0m [serviceBot.middleware] [f55e22af] GET /api/v1/portal/sms/whitelist - 200 (293.85ms) [127.0.0.1]
+09:26:39 [0;32mINFO   [0m [serviceBot.middleware] [60cad2a5] GET /api/v1/portal/sms/whitelist - 200 (315.45ms) [127.0.0.1]
+09:26:44 [0;32mINFO   [0m [serviceBot.services.twilio_sms] [7299d6ff] Twilio SMS dispatched successfully to whatsapp:+14242704893 (SID: SM6b1f30c6f0492c6f8777047551a2bf1a).
+09:26:45 [0;32mINFO   [0m [serviceBot.middleware] [7299d6ff] POST /api/v1/portal/twilio/whatsapp-test-ping - 200 (2334.39ms) [127.0.0.1]
+09:26:45 [0;32mINFO   [0m [serviceBot.middleware] [28f0caa8] GET /api/v1/portal/sms/whitelist - 200 (287.89ms) [127.0.0.1]
+09:26:45 [0;32mINFO   [0m [serviceBot.middleware] [5956ee41] GET /api/v1/portal/sms/whitelist - 200 (293.22ms) [127.0.0.1]
+09:26:51 [0;32mINFO   [0m [serviceBot.middleware] [15ff0d47] GET /api/v1/portal/sms/config - 200 (620.92ms) [127.0.0.1]
+09:26:51 [0;32mINFO   [0m [serviceBot.middleware] [4f8056ae] GET /api/v1/portal/sms/matrix-rules - 200 (642.49ms) [127.0.0.1]
+09:26:51 [0;32mINFO   [0m [serviceBot.middleware] [43ccc845] GET /api/v1/portal/sms/whitelist - 200 (327.42ms) [127.0.0.1]
+09:26:59 [0;32mINFO   [0m [serviceBot.middleware] [f8664256] GET /api/v1/portal/gmail-config - 200 (296.87ms) [127.0.0.1]
+09:27:16 [0;32mINFO   [0m [serviceBot.middleware] [a764a247] POST /api/v1/portal/sms/admin/test - 400 (1736.86ms) [127.0.0.1]
+09:27:21 [0;32mINFO   [0m [serviceBot.middleware] [b258fd15] GET /api/v1/portal/config - 200 (2.52ms) [127.0.0.1]
+09:27:22 [0;32mINFO   [0m [serviceBot.middleware] [131f425e] GET /api/v1/portal/kb - 200 (1.29ms) [127.0.0.1]
+09:27:25 [0;32mINFO   [0m [serviceBot.middleware] [59b46d4c] GET /api/v1/portal/agents - 200 (319.88ms) [127.0.0.1]
+09:27:25 [0;32mINFO   [0m [serviceBot.middleware] [eb273cea] GET /api/v1/portal/agents/10/google/status - 200 (393.9ms) [127.0.0.1]
+09:27:25 [0;32mINFO   [0m [serviceBot.middleware] [d9204438] GET /api/v1/portal/config - 200 (1.49ms) [127.0.0.1]
+09:27:26 [0;32mINFO   [0m [serviceBot.middleware] [09531438] GET /api/v1/portal/agents/10/calendar - 200 (454.41ms) [127.0.0.1]
+09:27:26 [0;32mINFO   [0m [serviceBot.middleware] [643e0710] GET /api/v1/portal/config - 200 (1.44ms) [127.0.0.1]
+09:27:40 [0;32mINFO   [0m [serviceBot.middleware] [77e143ed] GET /api/v1/portal/agents - 200 (319.36ms) [127.0.0.1]
+09:27:41 [0;32mINFO   [0m [serviceBot.middleware] [91d8b7c4] GET /api/v1/portal/agents/10/google/status - 200 (393.27ms) [127.0.0.1]
+09:27:41 [0;32mINFO   [0m [serviceBot.middleware] [d5d4cf84] GET /api/v1/portal/config - 200 (0.44ms) [127.0.0.1]
+09:27:41 [0;32mINFO   [0m [serviceBot.middleware] [9f8f545c] GET /api/v1/portal/agents/10/calendar - 200 (492.2ms) [127.0.0.1]
+09:28:03 [0;32mINFO   [0m [serviceBot.middleware] [5497842f] GET /api/v1/portal/gmail-config - 200 (290.05ms) [127.0.0.1]
+WARNING:  WatchFiles detected changes in 'serviceBot/api/portal.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [9626]
+INFO:     Started server process [11015]
+INFO:     Waiting for application startup.
+09:29:34 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+09:29:34 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+09:29:34 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+09:29:34 [0;32mINFO   [0m [serviceBot.services.quiet_hours] Quiet hours queue release worker thread started.
+09:29:34 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+09:29:34 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+09:29:34 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'serviceBot/api/portal.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [11015]
+INFO:     Started server process [11021]
+INFO:     Waiting for application startup.
+09:29:36 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+09:29:36 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+09:29:36 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+09:29:36 [0;32mINFO   [0m [serviceBot.services.quiet_hours] Quiet hours queue release worker thread started.
+09:29:36 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+09:29:36 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+09:29:36 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+09:29:47 [0;32mINFO   [0m [serviceBot.db.connection] Database schema initialized successfully.
+09:29:47 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+09:29:47 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+09:29:47 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+09:30:08 [0;32mINFO   [0m [serviceBot.middleware] [2c488c6c] GET /api/v1/portal/stats - 200 (583.57ms) [127.0.0.1]
+09:30:08 [0;32mINFO   [0m [serviceBot.middleware] [81b7e68e] GET /api/v1/portal/calls - 200 (272.58ms) [127.0.0.1]
+09:30:08 [0;32mINFO   [0m [serviceBot.middleware] [a92a874d] GET /api/v1/portal/service-requests - 200 (270.4ms) [127.0.0.1]
+09:30:09 [0;32mINFO   [0m [serviceBot.middleware] [df388d8f] GET /api/v1/portal/service-requests/1/available-agents - 200 (648.88ms) [127.0.0.1]
+09:30:13 [0;32mINFO   [0m [serviceBot.middleware] [b5bae0e1] GET /api/v1/portal/gmail-config - 200 (337.33ms) [127.0.0.1]
+09:30:27 [0;32mINFO   [0m [serviceBot.middleware] [2da7c1b0] GET /api/v1/portal/sms/config - 200 (844.72ms) [127.0.0.1]
+09:30:27 [0;32mINFO   [0m [serviceBot.middleware] [749ae3f1] GET /api/v1/portal/sms/matrix-rules - 200 (459.3ms) [127.0.0.1]
+09:30:27 [0;32mINFO   [0m [serviceBot.middleware] [8edbbca7] GET /api/v1/portal/sms/whitelist - 200 (241.51ms) [127.0.0.1]
+09:30:37 [0;32mINFO   [0m [serviceBot.middleware] [6503a2f4] GET /api/v1/portal/gmail-config - 200 (755.56ms) [127.0.0.1]
+09:32:31 [0;32mINFO   [0m [serviceBot.middleware] [303f1776] GET /portal/ - 200 (46.02ms) [127.0.0.1]
+09:32:31 [0;32mINFO   [0m [serviceBot.middleware] [471ed671] GET /portal/app.js - 200 (3.34ms) [127.0.0.1]
+09:32:32 [0;32mINFO   [0m [serviceBot.middleware] [cd961096] GET /api/v1/portal/twilio/sandbox-info - 200 (796.65ms) [127.0.0.1]
+09:32:32 [0;32mINFO   [0m [serviceBot.middleware] [eb6472a4] GET /api/v1/portal/gmail-config - 200 (796.62ms) [127.0.0.1]
+09:33:02 [0;32mINFO   [0m [serviceBot.middleware] [3adaf7c4] GET /api/v1/portal/agents - 200 (287.54ms) [127.0.0.1]
+09:33:03 [0;32mINFO   [0m [serviceBot.middleware] [1c8562dd] GET /api/v1/portal/agents/10/google/status - 200 (333.55ms) [127.0.0.1]
+09:33:03 [0;32mINFO   [0m [serviceBot.middleware] [7b039d9e] GET /api/v1/portal/config - 200 (0.49ms) [127.0.0.1]
+09:33:03 [0;32mINFO   [0m [serviceBot.middleware] [24439e58] GET /api/v1/portal/agents/10/calendar - 200 (470.57ms) [127.0.0.1]
+09:33:30 [0;32mINFO   [0m [serviceBot.middleware] [8217181e] GET /api/v1/portal/gmail-config - 200 (249.35ms) [127.0.0.1]
+09:35:19 [0;32mINFO   [0m [serviceBot.middleware] [e6bdb9ec] GET /portal/ - 200 (7.39ms) [127.0.0.1]
+09:35:19 [0;32mINFO   [0m [serviceBot.middleware] [2401e4ec] GET /portal/app.js - 304 (5.2ms) [127.0.0.1]
+09:35:20 [0;32mINFO   [0m [serviceBot.middleware] [9b233463] GET /api/v1/portal/twilio/sandbox-info - 200 (418.5ms) [127.0.0.1]
+09:35:20 [0;32mINFO   [0m [serviceBot.middleware] [3fabb819] GET /api/v1/portal/gmail-config - 200 (298.83ms) [127.0.0.1]
+09:36:52 [0;32mINFO   [0m [serviceBot.middleware] [504f8aee] GET /portal/ - 200 (3.93ms) [127.0.0.1]
+09:36:52 [0;32mINFO   [0m [serviceBot.middleware] [4fa05f0c] GET /portal/app.js - 304 (1.58ms) [127.0.0.1]
+09:36:52 [0;32mINFO   [0m [serviceBot.middleware] [c15f0cee] GET /api/v1/portal/twilio/sandbox-info - 200 (243.07ms) [127.0.0.1]
+09:36:52 [0;32mINFO   [0m [serviceBot.middleware] [a523bb7a] GET /api/v1/portal/agents - 200 (240.67ms) [127.0.0.1]
+09:36:52 [0;32mINFO   [0m [serviceBot.middleware] [66bcc789] GET /api/v1/portal/agents/10/google/status - 200 (315.78ms) [127.0.0.1]
+09:36:52 [0;32mINFO   [0m [serviceBot.middleware] [fc640cd7] GET /api/v1/portal/config - 200 (1.47ms) [127.0.0.1]
+09:36:53 [0;32mINFO   [0m [serviceBot.middleware] [d1646324] GET /api/v1/portal/agents/10/calendar - 200 (392.82ms) [127.0.0.1]
+09:38:26 [0;32mINFO   [0m [serviceBot.middleware] [3195bf96] GET /api/v1/portal/config - 200 (13.85ms) [127.0.0.1]
+09:38:28 [0;32mINFO   [0m [serviceBot.middleware] [083ff952] GET /api/v1/portal/services - 200 (515.97ms) [127.0.0.1]
+09:38:29 [0;32mINFO   [0m [serviceBot.middleware] [5b64691e] GET /api/v1/portal/agents - 200 (253.17ms) [127.0.0.1]
+09:38:29 [0;32mINFO   [0m [serviceBot.middleware] [d98197fd] GET /api/v1/portal/agents/10/google/status - 200 (299.07ms) [127.0.0.1]
+09:38:29 [0;32mINFO   [0m [serviceBot.middleware] [d7ebe4ad] GET /api/v1/portal/config - 200 (0.48ms) [127.0.0.1]
+09:38:30 [0;32mINFO   [0m [serviceBot.middleware] [c71ccfd9] GET /api/v1/portal/agents/10/calendar - 200 (360.86ms) [127.0.0.1]
+09:40:31 [0;32mINFO   [0m [serviceBot.middleware] [8702a094] GET /portal/ - 200 (8.89ms) [127.0.0.1]
+09:40:31 [0;32mINFO   [0m [serviceBot.middleware] [46bd98a9] GET /portal/app.js - 304 (32.97ms) [127.0.0.1]
+09:40:31 [0;32mINFO   [0m [serviceBot.middleware] [d634c5c1] GET /api/v1/portal/twilio/sandbox-info - 200 (321.51ms) [127.0.0.1]
+09:40:31 [0;32mINFO   [0m [serviceBot.middleware] [fee41c2b] GET /api/v1/portal/agents - 200 (321.38ms) [127.0.0.1]
+09:40:32 [0;32mINFO   [0m [serviceBot.middleware] [31cc0168] GET /api/v1/portal/agents/10/google/status - 200 (333.01ms) [127.0.0.1]
+09:40:32 [0;32mINFO   [0m [serviceBot.middleware] [d8687de1] GET /api/v1/portal/config - 200 (1.13ms) [127.0.0.1]
+09:40:32 [0;32mINFO   [0m [serviceBot.middleware] [00743457] GET /api/v1/portal/agents/10/calendar - 200 (402.46ms) [127.0.0.1]
+09:40:58 [0;32mINFO   [0m [serviceBot.middleware] [8fac834b] GET /api/v1/portal/twilio/sandbox-info - 200 (258.62ms) [127.0.0.1]
+09:40:58 [0;32mINFO   [0m [serviceBot.middleware] [411e5eec] GET /api/v1/portal/sms/whitelist - 200 (255.2ms) [127.0.0.1]
+09:40:59 [0;32mINFO   [0m [serviceBot.middleware] [39a769d5] GET /api/v1/portal/sms/config - 200 (271.44ms) [127.0.0.1]
+09:40:59 [0;32mINFO   [0m [serviceBot.middleware] [e2488f0e] GET /api/v1/portal/sms/matrix-rules - 200 (525.75ms) [127.0.0.1]
+09:40:59 [0;32mINFO   [0m [serviceBot.middleware] [9ceaca91] GET /api/v1/portal/sms/whitelist - 200 (261.86ms) [127.0.0.1]
+09:40:59 [0;32mINFO   [0m [serviceBot.middleware] [546972cf] GET /api/v1/portal/gmail-config - 200 (247.59ms) [127.0.0.1]
+09:41:01 [0;32mINFO   [0m [serviceBot.middleware] [55df660f] GET /api/v1/portal/sms/config - 200 (847.79ms) [127.0.0.1]
+09:41:01 [0;32mINFO   [0m [serviceBot.middleware] [0f076adf] GET /api/v1/portal/sms/matrix-rules - 200 (545.63ms) [127.0.0.1]
+09:41:01 [0;32mINFO   [0m [serviceBot.middleware] [7f26f6eb] GET /api/v1/portal/sms/whitelist - 200 (549.65ms) [127.0.0.1]
+09:41:11 [0;32mINFO   [0m [serviceBot.middleware] [38bfc5e2] GET /api/v1/portal/gmail-config - 200 (231.93ms) [127.0.0.1]
+09:42:22 [0;32mINFO   [0m [serviceBot.middleware] [a6820cab] GET /api/v1/portal/agents - 200 (273.4ms) [127.0.0.1]
+09:42:23 [0;32mINFO   [0m [serviceBot.middleware] [2ce07cdf] GET /api/v1/portal/agents/10/google/status - 200 (296.02ms) [127.0.0.1]
+09:42:23 [0;32mINFO   [0m [serviceBot.middleware] [a3cfde7e] GET /api/v1/portal/config - 200 (1.84ms) [127.0.0.1]
+09:42:23 [0;32mINFO   [0m [serviceBot.middleware] [8387651a] GET /api/v1/portal/agents/10/calendar - 200 (397.14ms) [127.0.0.1]
+09:44:25 [0;32mINFO   [0m [serviceBot.middleware] [2fbbbb85] GET /portal/ - 200 (1.75ms) [127.0.0.1]
+09:44:25 [0;32mINFO   [0m [serviceBot.middleware] [16f3690d] GET /portal/app.js - 200 (0.88ms) [127.0.0.1]
+09:44:25 [0;32mINFO   [0m [serviceBot.middleware] [4455c8ec] GET /api/v1/portal/twilio/sandbox-info - 200 (672.99ms) [127.0.0.1]
+09:44:25 [0;32mINFO   [0m [serviceBot.middleware] [2b0d98e9] GET /api/v1/portal/stats - 200 (659.5ms) [127.0.0.1]
+09:44:26 [0;32mINFO   [0m [serviceBot.middleware] [41c9cbb0] GET /api/v1/portal/calls - 200 (253.68ms) [127.0.0.1]
+09:44:26 [0;32mINFO   [0m [serviceBot.middleware] [fa554c40] GET /api/v1/portal/service-requests - 200 (260.55ms) [127.0.0.1]
+09:44:27 [0;32mINFO   [0m [serviceBot.middleware] [0701ed5e] GET /api/v1/portal/service-requests/1/available-agents - 200 (610.18ms) [127.0.0.1]
+09:44:31 [0;32mINFO   [0m [serviceBot.middleware] [53baf795] GET /api/v1/portal/agents - 200 (550.07ms) [127.0.0.1]
+09:44:31 [0;32mINFO   [0m [serviceBot.middleware] [c36c962e] GET /api/v1/portal/agents/10/google/status - 200 (412.11ms) [127.0.0.1]
+09:44:31 [0;32mINFO   [0m [serviceBot.middleware] [21d7eb9b] GET /api/v1/portal/config - 200 (0.68ms) [127.0.0.1]
+09:44:32 [0;32mINFO   [0m [serviceBot.middleware] [c1ac37e4] GET /api/v1/portal/agents/10/calendar - 200 (475.15ms) [127.0.0.1]
+09:44:40 [0;32mINFO   [0m [serviceBot.middleware] [3253db2e] GET /api/v1/portal/gmail-config - 200 (447.19ms) [127.0.0.1]
+09:44:47 [0;32mINFO   [0m [serviceBot.middleware] [9323de63] GET /api/v1/portal/sms/config - 200 (745.09ms) [127.0.0.1]
+09:44:47 [0;32mINFO   [0m [serviceBot.middleware] [e1beae72] GET /api/v1/portal/sms/matrix-rules - 200 (603.69ms) [127.0.0.1]
+09:44:47 [0;32mINFO   [0m [serviceBot.middleware] [ee00ea2a] GET /api/v1/portal/sms/whitelist - 200 (300.02ms) [127.0.0.1]
+09:44:54 [0;32mINFO   [0m [serviceBot.middleware] [935b3d10] GET /api/v1/portal/twilio/sandbox-info - 200 (883.38ms) [127.0.0.1]
+09:44:54 [0;32mINFO   [0m [serviceBot.middleware] [70046cfb] GET /api/v1/portal/sms/whitelist - 200 (883.45ms) [127.0.0.1]
+09:46:19 [0;32mINFO   [0m [serviceBot.middleware] [37a0da62] GET /portal/ - 304 (3.7ms) [127.0.0.1]
+09:46:19 [0;32mINFO   [0m [serviceBot.middleware] [93685d4a] GET /portal/app.js - 304 (1.5ms) [127.0.0.1]
+09:46:19 [0;32mINFO   [0m [serviceBot.middleware] [3ecf63d6] GET /api/v1/portal/twilio/sandbox-info - 200 (314.51ms) [127.0.0.1]
+09:46:19 [0;32mINFO   [0m [serviceBot.middleware] [c6432908] GET /api/v1/portal/sms/whitelist - 200 (294.14ms) [127.0.0.1]
+09:46:19 [0;32mINFO   [0m [serviceBot.middleware] [84ce7f1a] GET /api/v1/portal/twilio/sandbox-info - 200 (1.26ms) [127.0.0.1]
+09:46:26 [0;32mINFO   [0m [serviceBot.middleware] [7e819d59] GET /api/v1/portal/stats - 200 (667.42ms) [127.0.0.1]
+09:46:26 [0;32mINFO   [0m [serviceBot.middleware] [dcd90029] GET /api/v1/portal/calls - 200 (249.95ms) [127.0.0.1]
+09:46:26 [0;32mINFO   [0m [serviceBot.middleware] [bc56da75] GET /api/v1/portal/service-requests - 200 (262.07ms) [127.0.0.1]
+09:46:27 [0;32mINFO   [0m [serviceBot.middleware] [72c79e82] GET /api/v1/portal/service-requests/1/available-agents - 200 (647.34ms) [127.0.0.1]
+09:48:46 [0;32mINFO   [0m [serviceBot.middleware] [e660bcfb] GET /portal/ - 304 (3.3ms) [127.0.0.1]
+09:48:46 [0;32mINFO   [0m [serviceBot.middleware] [104fc574] GET /portal/app.js - 304 (3.51ms) [127.0.0.1]
+09:48:47 [0;32mINFO   [0m [serviceBot.middleware] [545fd3d9] GET /api/v1/portal/twilio/sandbox-info - 200 (568.43ms) [127.0.0.1]
+09:48:47 [0;32mINFO   [0m [serviceBot.middleware] [99f5e9d4] GET /api/v1/portal/stats - 200 (530.63ms) [127.0.0.1]
+09:48:47 [0;32mINFO   [0m [serviceBot.middleware] [b461eb42] GET /api/v1/portal/calls - 200 (255.85ms) [127.0.0.1]
+09:48:47 [0;32mINFO   [0m [serviceBot.middleware] [f3e59162] GET /api/v1/portal/service-requests - 200 (260.45ms) [127.0.0.1]
+09:48:48 [0;32mINFO   [0m [serviceBot.middleware] [f9729e94] GET /api/v1/portal/service-requests/1/available-agents - 200 (606.59ms) [127.0.0.1]
+09:48:54 [0;32mINFO   [0m [serviceBot.middleware] [a1b46720] GET /api/v1/portal/sms/conversations - 200 (321.13ms) [127.0.0.1]
+09:48:58 [0;32mINFO   [0m [serviceBot.middleware] [b26f1d7f] GET /api/v1/portal/sms/conversations - 200 (325.29ms) [127.0.0.1]
+09:49:02 [0;32mINFO   [0m [serviceBot.middleware] [6ce29b48] GET /api/v1/portal/services - 200 (881.65ms) [127.0.0.1]
+09:49:03 [0;32mINFO   [0m [serviceBot.middleware] [ffdd0149] GET /api/v1/portal/stats - 200 (684.89ms) [127.0.0.1]
+09:49:04 [0;32mINFO   [0m [serviceBot.middleware] [c52c2c05] GET /api/v1/portal/calls - 200 (309.63ms) [127.0.0.1]
+09:49:04 [0;32mINFO   [0m [serviceBot.middleware] [9de0f26a] GET /api/v1/portal/service-requests - 200 (647.02ms) [127.0.0.1]
+09:49:05 [0;32mINFO   [0m [serviceBot.middleware] [96e2a84a] GET /api/v1/portal/service-requests/1/available-agents - 200 (741.14ms) [127.0.0.1]
+09:49:07 [0;32mINFO   [0m [serviceBot.middleware] [aff52bd9] PATCH /api/v1/portal/service-requests/1/assign-agent - 200 (869.13ms) [127.0.0.1]
+Refreshing Google access token for agent 10...
+Exception cancelling calendar event for agent 10: Failed to refresh Google token (HTTP 400): Token has been expired or revoked.
+Refreshing Google access token for agent 7...
+Exception creating calendar event for agent 7: Failed to refresh Google token (HTTP 400): Token has been expired or revoked.
+Refreshing Google access token for agent 7...
+Gmail REST API Exception for agent 7: Failed to refresh Google token (HTTP 400): Token has been expired or revoked.
+Traceback (most recent call last):
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/services/gmail.py", line 147, in send_gmail_via_api
+    creds = get_user_google_credentials(agent_id)
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/services/google_calendar.py", line 86, in get_user_google_credentials
+    raise GoogleAuthException(f"Failed to refresh Google token (HTTP {response.status_code}): {err_desc}")
+serviceBot.services.google_calendar.GoogleAuthException: Failed to refresh Google token (HTTP 400): Token has been expired or revoked.
+
+Failed or missing credentials to send via agent 7 Google account. Falling back to system settings...
+Posting message to Gmail REST API...
+Gmail REST API email sent successfully!
+Admin Google Calendar event created successfully!
+Posting message to Gmail REST API...
+Gmail REST API email sent successfully!
+09:49:16 [0;32mINFO   [0m [serviceBot.services.twilio_sms] Twilio SMS dispatched successfully to +14242704893 (SID: SMb855e7893dd780ba0b712b63228e9d6d).
+09:49:17 [0;32mINFO   [0m [serviceBot.services.twilio_sms] Twilio SMS dispatched successfully to +14242704893 (SID: SMe1d09713b57a41d42709e864b875136e).
+09:49:18 [0;32mINFO   [0m [serviceBot.outbox_worker] Event 12 (agent_reassignment) delivered successfully.
+WARNING:  WatchFiles detected changes in 'serviceBot/services/outbox_worker.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [11021]
+INFO:     Started server process [14341]
+INFO:     Waiting for application startup.
+09:51:56 [0;33mWARNING[0m [serviceBot.main] [outbox_worker] Failed to launch outbox worker: expected 'except' or 'finally' block (outbox_worker.py, line 97)
+Traceback (most recent call last):
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/main.py", line 46, in lifespan
+    from serviceBot.services.outbox_worker import start_outbox_worker
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/services/outbox_worker.py", line 97
+    logger.info(
+    ^^^^^^
+SyntaxError: expected 'except' or 'finally' block
+09:51:56 [0;32mINFO   [0m [serviceBot.services.quiet_hours] Quiet hours queue release worker thread started.
+09:51:56 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+09:51:56 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+09:51:56 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'serviceBot/services/quiet_hours.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [14341]
+INFO:     Started server process [14355]
+INFO:     Waiting for application startup.
+09:52:03 [0;33mWARNING[0m [serviceBot.main] [outbox_worker] Failed to launch outbox worker: expected 'except' or 'finally' block (outbox_worker.py, line 97)
+Traceback (most recent call last):
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/main.py", line 46, in lifespan
+    from serviceBot.services.outbox_worker import start_outbox_worker
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/services/outbox_worker.py", line 97
+    logger.info(
+    ^^^^^^
+SyntaxError: expected 'except' or 'finally' block
+09:52:03 [0;32mINFO   [0m [serviceBot.services.quiet_hours] Quiet hours queue release worker thread started.
+09:52:03 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+09:52:03 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+09:52:03 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'serviceBot/services/sms_reminders.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [14355]
+INFO:     Started server process [14361]
+INFO:     Waiting for application startup.
+09:52:08 [0;33mWARNING[0m [serviceBot.main] [outbox_worker] Failed to launch outbox worker: expected 'except' or 'finally' block (outbox_worker.py, line 97)
+Traceback (most recent call last):
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/main.py", line 46, in lifespan
+    from serviceBot.services.outbox_worker import start_outbox_worker
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/services/outbox_worker.py", line 97
+    logger.info(
+    ^^^^^^
+SyntaxError: expected 'except' or 'finally' block
+09:52:08 [0;32mINFO   [0m [serviceBot.services.quiet_hours] Quiet hours queue release worker thread started.
+09:52:08 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+09:52:08 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+09:52:08 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+09:52:18 [0;32mINFO   [0m [serviceBot.db.connection] Database schema initialized successfully.
+09:52:18 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+09:52:18 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+09:52:21 [0;32mINFO   [0m [serviceBot.middleware] [20a03c38] GET /api/v1/portal/stats - 200 (749.41ms) [127.0.0.1]
+09:52:21 [0;32mINFO   [0m [serviceBot.middleware] [eb8f8f6c] GET /api/v1/portal/calls - 200 (312.98ms) [127.0.0.1]
+09:52:22 [0;32mINFO   [0m [serviceBot.middleware] [98b71886] GET /api/v1/portal/service-requests - 200 (331.58ms) [127.0.0.1]
+WARNING:  WatchFiles detected changes in 'serviceBot/services/outbox_worker.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [14361]
+INFO:     Started server process [14413]
+INFO:     Waiting for application startup.
+09:52:31 [0;33mWARNING[0m [serviceBot.main] [outbox_worker] Failed to launch outbox worker: expected an indented block after 'except' statement on line 101 (outbox_worker.py, line 102)
+Traceback (most recent call last):
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/main.py", line 46, in lifespan
+    from serviceBot.services.outbox_worker import start_outbox_worker
+  File "/Users/rohanroy/Coding/voiceService/serviceBot/services/outbox_worker.py", line 102
+    err_msg = f"{type(err).__name__}: {str(err)}\n{traceback.format_exc()}"
+    ^^^^^^^
+IndentationError: expected an indented block after 'except' statement on line 101
+09:52:31 [0;32mINFO   [0m [serviceBot.services.quiet_hours] Quiet hours queue release worker thread started.
+09:52:31 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+09:52:31 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+09:52:31 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+09:52:42 [0;32mINFO   [0m [serviceBot.db.connection] Database schema initialized successfully.
+09:52:43 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+09:52:43 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+WARNING:  WatchFiles detected changes in 'serviceBot/services/outbox_worker.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [14413]
+INFO:     Started server process [14551]
+INFO:     Waiting for application startup.
+09:53:26 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox processing background thread started.
+09:53:26 [0;32mINFO   [0m [serviceBot.outbox_worker] Outbox worker thread launched.
+09:53:26 [0;32mINFO   [0m [serviceBot.main] [outbox_worker] Started background outbox worker thread.
+09:53:26 [0;32mINFO   [0m [serviceBot.services.quiet_hours] Quiet hours queue release worker thread started.
+09:53:26 [0;32mINFO   [0m [serviceBot.main] [quiet_hours_worker] Started quiet hours queue worker thread.
+09:53:26 [0;32mINFO   [0m [serviceBot.sms_reminders] SMS reminder polling worker thread started.
+09:53:26 [0;32mINFO   [0m [serviceBot.main] [reminder_worker] Started SMS reminder polling worker thread.
+INFO:     Application startup complete.
+09:53:31 [0;32mINFO   [0m [serviceBot.db.connection] Database schema initialized successfully.
+09:53:32 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+09:53:32 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).
+09:53:32 [0;32mINFO   [0m [serviceBot.db.connection] Initialized PostgreSQL connection pool (minconn=1, maxconn=10).

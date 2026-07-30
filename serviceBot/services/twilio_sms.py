@@ -22,6 +22,30 @@ class TwilioSMSClient:
     def is_configured(self) -> bool:
         return bool(self.account_sid and self.auth_token and (self.messaging_service_sid or self.from_number))
 
+    def get_sandbox_credentials(self) -> dict:
+        """Returns configured Twilio WhatsApp Sandbox info and generated wa.me deep links."""
+        sandbox_number = os.getenv("TWILIO_WHATSAPP_SANDBOX_NUMBER", "+14155238886")
+        join_code = os.getenv("TWILIO_WHATSAPP_JOIN_CODE", "join service-bot")
+        
+        clean_num = re.sub(r"\D", "", sandbox_number)
+        encoded_join = join_code.replace(" ", "%20") if join_code else "join"
+        whatsapp_url = f"https://wa.me/{clean_num}?text={encoded_join}"
+        qr_code_url = f"https://chart.googleapis.com/chart?chs=200x200&cht=qr&chl={whatsapp_url}"
+        
+        return {
+            "sandbox_number": sandbox_number,
+            "join_code": join_code,
+            "whatsapp_url": whatsapp_url,
+            "qr_code_url": qr_code_url
+        }
+
+    def send_whatsapp(self, to: str, body: str, template_type: str = "whatsapp_verification", appointment_id: int = None) -> dict:
+        """Dispatches an explicit WhatsApp test/verification message."""
+        clean_to = to.strip() if to else ""
+        if not clean_to.startswith("whatsapp:"):
+            clean_to = f"whatsapp:{clean_to}"
+        return self.send_sms(to=clean_to, body=body, template_type=template_type, appointment_id=appointment_id)
+
     def send_sms(self, to: str, body: str, template_type: str = "notification", appointment_id: int = None) -> dict:
         config = get_sms_config()
         env_mode = (config.get("environment") or os.getenv("ENVIRONMENT") or "PRODUCTION").upper()

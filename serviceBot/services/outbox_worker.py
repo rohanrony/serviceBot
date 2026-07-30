@@ -47,112 +47,120 @@ def process_outbox_batch(batch_size: int = 10) -> int:
                     """
                     SELECT id, event_type, request_id, payload, attempts, max_attempts
                     FROM outbox_notifications
-                    WHERE status IN ('PENDING', 'PROCESSING')
-                      AND next_retry_at <= CURRENT_TIMESTAMP
+                    WHERE (status = 'PENDING' AND next_retry_at <= CURRENT_TIMESTAMP)
+                       OR (status = 'PROCESSING' AND updated_at < CURRENT_TIMESTAMP - INTERVAL '5 minutes')
                     ORDER BY id ASC
-                    LIMIT %s;
+                    LIMIT %s
+                    FOR UPDATE SKIP LOCKED;
                     """,
                     (batch_size,)
                 )
                 items = cursor.fetchall()
 
-            if not items:
-                return 0
+                if not items:
+                    return 0
 
-            for item in items:
-                processed_count += 1
-                item_id = item["id"]
-                event_type = item["event_type"]
-                request_id = item["request_id"]
-                payload = item["payload"] if isinstance(item["payload"], dict) else json.loads(item["payload"])
-                attempts = item["attempts"]
-                max_attempts = item.get("max_attempts", 7)
+                for item in items:
+                    item_id = item["id"]
+                    event_type = item["event_type"]
+                    request_id = item["request_id"]
+                    payload = item["payload"] if isinstance(item["payload"], dict) else json.loads(item["payload"])
+                    attempts = item["attempts"]
+                    max_attempts = item.get("max_attempts", 7)
 
-                # Mark status as PROCESSING
-                with dict_cursor(conn) as cursor:
+                    # Atomically claim status as PROCESSING and push next_retry_at into the future to prevent duplicate worker pickups
                     cursor.execute(
-                        "UPDATE outbox_notifications SET status = 'PROCESSING', updated_at = CURRENT_TIMESTAMP WHERE id = %s;",
+                        """
+                        UPDATE outbox_notifications
+                        SET status = 'PROCESSING',
+                            updated_at = CURRENT_TIMESTAMP,
+                            next_retry_at = CURRENT_TIMESTAMP + INTERVAL '5 minutes'
+                        WHERE id = %s AND (status = 'PENDING' OR (status = 'PROCESSING' AND updated_at < CURRENT_TIMESTAMP - INTERVAL '5 minutes'));
+                        """,
                         (item_id,)
                     )
-                conn.commit()
-
-                try:
-                    _dispatch_outbox_event(event_type, request_id, payload)
-                    # Success: Mark DELIVERED
-                    with dict_cursor(conn) as cursor:
-                        cursor.execute(
-                            "UPDATE outbox_notifications SET status = 'DELIVERED', updated_at = CURRENT_TIMESTAMP WHERE id = %s;",
-                            (item_id,)
-                        )
+                    if cursor.rowcount == 0:
+                        continue
                     conn.commit()
-                    logger.info(
-                        f"Event {item_id} ({event_type}) delivered successfully.",
-                        extra={"extra_payload": {"item_id": item_id, "event_type": event_type, "request_id": request_id}}
-                    )
 
-                except Exception as err:
-                    err_msg = f"{type(err).__name__}: {str(err)}\n{traceback.format_exc()}"
-                    new_attempts = attempts + 1
+                    processed_count += 1
 
-                    # Hard failure error codes (30003, 30005, 30006, 21610) terminate retry loop immediately
-                    is_hard_failure = any(code in str(err) for code in ["30003", "30005", "30006", "21610"])
-
-                    if new_attempts >= max_attempts or is_hard_failure:
-                        # --- REVERT & COMPENSATION ON FAILURES ---
-                        logger.error(
-                            f"CRITICAL: Outbox event {item_id} ({event_type}) failed maximum retries or hard error! Hard Failure: {is_hard_failure}. Executing compensating transaction...",
-                            exc_info=err,
-                            extra={"extra_payload": {
-                                "item_id": item_id,
-                                "event_type": event_type,
-                                "request_id": request_id,
-                                "attempts": new_attempts,
-                                "is_hard_failure": is_hard_failure
-                            }}
-                        )
-                        _execute_revert_compensation(conn, event_type, request_id, payload, err_msg)
+                    try:
+                        _dispatch_outbox_event(event_type, request_id, payload)
+                        # Success: Mark DELIVERED
                         with dict_cursor(conn) as cursor:
                             cursor.execute(
-                                """
-                                UPDATE outbox_notifications
-                                SET status = 'FAILED_REVERTED', attempts = %s, error_log = %s, updated_at = CURRENT_TIMESTAMP
-                                WHERE id = %s;
-                                """,
-                                (new_attempts, err_msg, item_id)
+                                "UPDATE outbox_notifications SET status = 'DELIVERED', updated_at = CURRENT_TIMESTAMP WHERE id = %s;",
+                                (item_id,)
                             )
                         conn.commit()
-                    else:
-                        # --- EXPONENTIAL / SMS BACKOFF RETRY ---
-                        if event_type.startswith("sms_"):
-                            sms_backoffs = {1: 30, 2: 120, 3: 600}
-                            delay_seconds = sms_backoffs.get(new_attempts, 600)
+                        logger.info(
+                            f"Event {item_id} ({event_type}) delivered successfully.",
+                            extra={"extra_payload": {"item_id": item_id, "event_type": event_type, "request_id": request_id}}
+                        )
+                    except Exception as err:
+                        err_msg = f"{type(err).__name__}: {str(err)}\n{traceback.format_exc()}"
+                        new_attempts = attempts + 1
+
+                        # Hard failure error codes (30003, 30005, 30006, 21610) terminate retry loop immediately
+                        is_hard_failure = any(code in str(err) for code in ["30003", "30005", "30006", "21610"])
+
+                        if new_attempts >= max_attempts or is_hard_failure:
+                            # --- REVERT & COMPENSATION ON FAILURES ---
+                            logger.error(
+                                f"CRITICAL: Outbox event {item_id} ({event_type}) failed maximum retries or hard error! Hard Failure: {is_hard_failure}. Executing compensating transaction...",
+                                exc_info=err,
+                                extra={"extra_payload": {
+                                    "item_id": item_id,
+                                    "event_type": event_type,
+                                    "request_id": request_id,
+                                    "attempts": new_attempts,
+                                    "is_hard_failure": is_hard_failure
+                                }}
+                            )
+                            _execute_revert_compensation(conn, event_type, request_id, payload, err_msg)
+                            with dict_cursor(conn) as cursor:
+                                cursor.execute(
+                                    """
+                                    UPDATE outbox_notifications
+                                    SET status = 'FAILED_REVERTED', attempts = %s, error_log = %s, updated_at = CURRENT_TIMESTAMP
+                                    WHERE id = %s;
+                                    """,
+                                    (new_attempts, err_msg, item_id)
+                                )
+                            conn.commit()
                         else:
-                            delay_seconds = 2 ** new_attempts  # 2s, 4s, 8s, 16s, 32s, 64s, 128s
+                            # --- EXPONENTIAL / SMS BACKOFF RETRY ---
+                            if event_type.startswith("sms_"):
+                                sms_backoffs = {1: 30, 2: 120, 3: 600}
+                                delay_seconds = sms_backoffs.get(new_attempts, 600)
+                            else:
+                                delay_seconds = 2 ** new_attempts  # 2s, 4s, 8s, 16s, 32s, 64s, 128s
 
-                        logger.warning(
-                            f"Outbox event {item_id} ({event_type}) failed attempt {new_attempts}/{max_attempts}. Retrying in {delay_seconds}s. Error: {err}",
-                            extra={"extra_payload": {
-                                "item_id": item_id,
-                                "event_type": event_type,
-                                "attempts": new_attempts,
-                                "next_retry_delay": delay_seconds,
-                                "error": str(err)
-                            }}
-                        )
-                        with dict_cursor(conn) as cursor:
-                            cursor.execute(
-                                """
-                                UPDATE outbox_notifications
-                                SET status = 'PENDING',
-                                    attempts = %s,
-                                    next_retry_at = CURRENT_TIMESTAMP + (%s || ' seconds')::INTERVAL,
-                                    error_log = %s,
-                                    updated_at = CURRENT_TIMESTAMP
-                                WHERE id = %s;
-                                """,
-                                (new_attempts, str(delay_seconds), err_msg, item_id)
+                            logger.warning(
+                                f"Outbox event {item_id} ({event_type}) failed attempt {new_attempts}/{max_attempts}. Retrying in {delay_seconds}s. Error: {err}",
+                                extra={"extra_payload": {
+                                    "item_id": item_id,
+                                    "event_type": event_type,
+                                    "attempts": new_attempts,
+                                    "next_retry_delay": delay_seconds,
+                                    "error": str(err)
+                                }}
                             )
-                        conn.commit()
+                            with dict_cursor(conn) as cursor:
+                                cursor.execute(
+                                    """
+                                    UPDATE outbox_notifications
+                                    SET status = 'PENDING',
+                                        attempts = %s,
+                                        next_retry_at = CURRENT_TIMESTAMP + (%s || ' seconds')::INTERVAL,
+                                        error_log = %s,
+                                        updated_at = CURRENT_TIMESTAMP
+                                    WHERE id = %s;
+                                    """,
+                                    (new_attempts, str(delay_seconds), err_msg, item_id)
+                                )
+                            conn.commit()
 
     except Exception as outer_err:
         logger.error(f"Outbox batch processing exception: {outer_err}", exc_info=outer_err)

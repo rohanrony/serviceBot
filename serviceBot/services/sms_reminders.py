@@ -77,9 +77,27 @@ def check_and_send_due_reminders() -> int:
 
 def run_reminder_polling_worker_cycle() -> int:
     """Polls due reminders in sms_reminders and dispatches SMS."""
-    due_reminders = get_due_sms_reminders()
-    if not due_reminders:
-        return 0
+    from serviceBot.db.connection import get_db_connection, dict_cursor
+    due_reminders = []
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                """
+                SELECT * FROM sms_reminders
+                WHERE status = 'PENDING' AND scheduled_at <= CURRENT_TIMESTAMP
+                ORDER BY scheduled_at ASC
+                FOR UPDATE SKIP LOCKED;
+                """
+            )
+            due_reminders = [dict(r) for r in cursor.fetchall()]
+            if not due_reminders:
+                return 0
+            for rem in due_reminders:
+                cursor.execute(
+                    "UPDATE sms_reminders SET status = 'PROCESSING' WHERE id = %s AND status = 'PENDING';",
+                    (rem["id"],)
+                )
+            conn.commit()
 
     client = TwilioSMSClient()
     dispatched_count = 0

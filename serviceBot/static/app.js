@@ -161,7 +161,7 @@ document.addEventListener('DOMContentLoaded', () => {
       subtitle: 'Real-time summaries, call metrics, and captured service request triage.'
     },
     'intents': {
-      title: 'Agent Configurations',
+      title: 'AI Agent Config',
       subtitle: 'Configure ElevenLabs system prompt instructions, greetings, and AI persona.'
     },
     'services': {
@@ -169,7 +169,7 @@ document.addEventListener('DOMContentLoaded', () => {
       subtitle: 'Automotive service catalog database, duration, pricing, and required intake fields.'
     },
     'staff': {
-      title: 'Staff Calendars',
+      title: 'Staff Calendar Config',
       subtitle: 'Technician calendars, working shifts, slot availability, and Google Calendar sync.'
     },
     'knowledge': {
@@ -181,7 +181,7 @@ document.addEventListener('DOMContentLoaded', () => {
       subtitle: 'Configure ElevenLabs voice IDs, LLM brains, and encrypted system API keys.'
     },
     'gmail': {
-      title: 'Admin Notification Settings',
+      title: 'Admin Config',
       subtitle: 'Configure admin booking email alerts, SMTP, and Google OAuth2 authorization.'
     },
     'sms-inbox': {
@@ -189,8 +189,12 @@ document.addEventListener('DOMContentLoaded', () => {
       subtitle: 'Real-time 2-way customer SMS dispatch, quick reply templates, and human handoff queue.'
     },
     'sms-config': {
-      title: 'SMS Telephony Configuration',
+      title: 'SMS Rules Config',
       subtitle: 'Global SMS support numbers, notification matrix rules, and test environment whitelist.'
+    },
+    'customer-onboarding': {
+      title: 'Customer Config',
+      subtitle: 'Onboard test customer numbers for Twilio WhatsApp message delivery and sandbox verification.'
     }
   };
 
@@ -251,6 +255,9 @@ document.addEventListener('DOMContentLoaded', () => {
     } else if (tabName === 'sms-inbox') {
       const filterEl = document.getElementById('sms-thread-filter');
       loadSMSConversations(filterEl ? filterEl.value : 'all');
+    } else if (tabName === 'customer-onboarding') {
+      loadTwilioSandboxInfo();
+      loadOnboardedTestCustomers();
     }
   }
 
@@ -550,9 +557,9 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
 
         const formattedPhone = formatPhoneNumber(req.phone);
-        const failedIndicator = req.has_failed_sms ? '<span class="badge danger" style="padding: 2px 6px; font-size: 11px; font-weight: 600; margin-right: 4px;" title="SMS delivery failed">⚠️ Failed SMS</span>' : '';
+        const failedIndicator = req.has_failed_sms ? '<span class="badge danger failed-sms-badge" title="SMS delivery failed">⚠️ Failed SMS</span>' : '';
         const actionsHtml = `
-          <div style="display: flex; align-items: center; justify-content: center; gap: 4px;">
+          <div class="actions-cell-container">
             ${failedIndicator}
             <button type="button" class="btn btn-secondary btn-sm details-sms-log-btn" data-id="${req.id}">Details</button>
           </div>
@@ -774,60 +781,71 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
   async function loadDashboardData() {
+    // 1. Fetch stats
     try {
-      // Fetch stats
       const statsResponse = await fetch(`/api/v1/portal/stats?calls_timeframe=${currentCallsTimeframe}`);
-      if (!statsResponse.ok) throw new Error('Failed to fetch stats');
-      const stats = await statsResponse.json();
-      
-      // Render counts safely
-      const totalCallsEl = document.getElementById('stat-total-calls');
-      if (totalCallsEl) totalCallsEl.textContent = stats.total_calls;
-      
-      const callsBadgeEl = document.getElementById('stat-calls-badge');
-      if (callsBadgeEl) {
-        const labels = {
-          '24h': 'Past 24 hours',
-          '7d': 'Past 7 days',
-          '30d': 'Past 30 days',
-          'all': 'All time'
-        };
-        const labelText = labels[currentCallsTimeframe] || 'Past 7 days';
-        callsBadgeEl.textContent = `${labelText} • 100% answer rate`;
+      if (statsResponse.ok) {
+        const stats = await statsResponse.json();
+        
+        const totalCallsEl = document.getElementById('stat-total-calls');
+        if (totalCallsEl) totalCallsEl.textContent = stats.total_calls;
+        
+        const callsBadgeEl = document.getElementById('stat-calls-badge');
+        if (callsBadgeEl) {
+          const labels = {
+            '24h': 'Past 24 hours',
+            '7d': 'Past 7 days',
+            '30d': 'Past 30 days',
+            'all': 'All time'
+          };
+          const labelText = labels[currentCallsTimeframe] || 'Past 7 days';
+          callsBadgeEl.textContent = `${labelText} • 100% answer rate`;
+        }
+        
+        const callbacksStatEl = document.getElementById('stat-callbacks');
+        if (callbacksStatEl) callbacksStatEl.textContent = stats.total_callbacks;
+        
+        const apptsStatEl = document.getElementById('stat-appointments');
+        if (apptsStatEl) apptsStatEl.textContent = stats.total_appointments;
+        
+        const reqsStatEl = document.getElementById('stat-requests');
+        if (reqsStatEl) reqsStatEl.textContent = stats.total_requests;
+        const reqsBadgeEl = document.getElementById('stat-requests-badge');
+        if (reqsBadgeEl && stats.pending_requests !== undefined) {
+          reqsBadgeEl.textContent = `${stats.pending_requests} pending triage`;
+          reqsBadgeEl.className = stats.pending_requests === 0 ? 'metric-badge success' : 'metric-badge warning';
+        }
+        
+        const calFreeEl = document.getElementById('stat-calendar-free');
+        if (calFreeEl) calFreeEl.textContent = `${stats.open_slots} slots open`;
       }
-      
-      const callbacksStatEl = document.getElementById('stat-callbacks');
-      if (callbacksStatEl) callbacksStatEl.textContent = stats.total_callbacks;
-      
-      const apptsStatEl = document.getElementById('stat-appointments');
-      if (apptsStatEl) apptsStatEl.textContent = stats.total_appointments;
-      
-      const reqsStatEl = document.getElementById('stat-requests');
-      if (reqsStatEl) reqsStatEl.textContent = stats.total_requests;
-      const reqsBadgeEl = document.getElementById('stat-requests-badge');
-      if (reqsBadgeEl && stats.pending_requests !== undefined) {
-        reqsBadgeEl.textContent = `${stats.pending_requests} pending triage`;
-        reqsBadgeEl.className = stats.pending_requests === 0 ? 'metric-badge success' : 'metric-badge warning';
-      }
-      
-      const calFreeEl = document.getElementById('stat-calendar-free');
-      if (calFreeEl) calFreeEl.textContent = `${stats.open_slots} slots open`;
+    } catch (statsErr) {
+      console.error('Error fetching stats:', statsErr);
+    }
 
-      // Fetch calls
+    // 2. Fetch calls
+    try {
       const callsResponse = await fetch('/api/v1/portal/calls');
-      if (!callsResponse.ok) throw new Error('Failed to fetch calls');
-      allCalls = await callsResponse.json();
-      applyCallsFilter();
+      if (callsResponse.ok) {
+        allCalls = await callsResponse.json();
+        applyCallsFilter();
+      }
+    } catch (callsErr) {
+      console.error('Error fetching calls:', callsErr);
+    }
 
-      // Fetch service requests
+    // 3. Fetch service requests
+    try {
       const reqsResponse = await fetch('/api/v1/portal/service-requests');
       if (!reqsResponse.ok) throw new Error('Failed to fetch service requests');
       allRequests = await reqsResponse.json();
       applyServiceRequestsFilter();
-      
-    } catch (err) {
-      console.error(err);
-      showToast('Error loading dashboard: ' + err.message, 'error');
+    } catch (reqsErr) {
+      console.error('Error fetching service requests:', reqsErr);
+      const requestsListBody = document.getElementById('service-requests-list');
+      if (requestsListBody) {
+        requestsListBody.innerHTML = `<tr><td colspan="10" class="text-center py-6 text-muted">Failed to load service requests. Please refresh.</td></tr>`;
+      }
     }
   }
 
@@ -3083,19 +3101,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
-      container.querySelectorAll('.retry-sms-btn').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-          const logId = e.target.dataset.id;
-          await fetch(`/api/v1/portal/sms/retry/${logId}`, { method: 'POST' });
-          showToast('Retry SMS dispatched.');
-          window.openSMSLogDrawer(appointmentId);
-        });
-      });
-    } catch (err) {
-      console.error('Error opening SMS log drawer:', err);
-    }
-  };
-
   const closeSMSLogBtn = document.getElementById('close-sms-log-drawer-btn');
   const smsLogOverlay = document.getElementById('sms-log-drawer-overlay');
   if (closeSMSLogBtn) {
@@ -3113,10 +3118,161 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
   // Global Refresh Action
-  refreshBtn.addEventListener('click', () => {
-    loadDashboardData();
-    showToast('Refreshed statistics and calls log history.');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => {
+      loadDashboardData();
+      showToast('Refreshed statistics and calls log history.');
+    });
+  }
+
+  // --- TWILIO WHATSAPP TEST ONBOARDING FLOW ---
+  async function loadTwilioSandboxInfo() {
+    try {
+      const res = await fetch('/api/v1/portal/twilio/sandbox-info');
+      if (!res.ok) return;
+      const info = await res.json();
+      
+      document.querySelectorAll('.sandbox-code-val').forEach(el => {
+        el.textContent = info.join_code || 'join service-bot';
+      });
+      document.querySelectorAll('.sandbox-num-val').forEach(el => {
+        el.textContent = info.sandbox_number || '+14155238886';
+      });
+      document.querySelectorAll('.sandbox-wa-link').forEach(el => {
+        el.href = info.whatsapp_url || '#';
+      });
+      
+      const qrImg = document.getElementById('customer-onboarding-qr');
+      if (qrImg && info.qr_code_url) {
+        qrImg.src = info.qr_code_url;
+      }
+    } catch (err) {
+      console.error('Error loading Twilio sandbox info:', err);
+    }
+  }
+
+  async function loadOnboardedTestCustomers() {
+    const tbody = document.getElementById('onboarded-customers-tbody');
+    if (!tbody) return;
+
+    try {
+      const res = await fetch('/api/v1/portal/sms/whitelist');
+      if (!res.ok) throw new Error('Failed to fetch whitelist');
+      const whitelist = await res.json();
+      
+      tbody.innerHTML = '';
+      if (!whitelist || whitelist.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="3" class="text-muted text-center py-4">No test customers onboarded yet.</td></tr>`;
+        return;
+      }
+
+      whitelist.forEach(item => {
+        const tr = document.createElement('tr');
+        const isWhatsApp = item.whatsapp_onboarded;
+        const statusBadge = isWhatsApp
+          ? `<span class="badge-whatsapp">WhatsApp Verified</span>`
+          : (item.twilio_verified ? `<span class="badge-verified">Whitelisted</span>` : `<span class="badge-unverified">Pending</span>`);
+
+        tr.innerHTML = `
+          <td>
+            <div style="font-weight: 500; color: #fff;">${item.friendly_name || 'Customer'}</div>
+            <div style="font-size: 11px; color: var(--text-muted);">${item.phone_number}</div>
+          </td>
+          <td>${statusBadge}</td>
+          <td>
+            <button class="btn btn-sm btn-secondary send-cust-ping-btn" data-phone="${item.phone_number}" data-name="${item.friendly_name || ''}" style="font-size: 11px; padding: 2px 8px;">
+              Ping WhatsApp
+            </button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      tbody.querySelectorAll('.send-cust-ping-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const phone = e.currentTarget.dataset.phone;
+          const name = e.currentTarget.dataset.name;
+          await sendWhatsAppTestPing(phone, name, 'CUSTOMER');
+        });
+      });
+    } catch (err) {
+      console.error('Error loading onboarded test customers:', err);
+      tbody.innerHTML = `<tr><td colspan="3" class="text-danger text-center py-3">Error loading test customers</td></tr>`;
+    }
+  }
+
+  async function sendWhatsAppTestPing(phone, name = '', role = 'CUSTOMER') {
+    if (!phone) {
+      showToast('Please enter a phone number first.', 'error');
+      return;
+    }
+    showToast(`Sending WhatsApp test ping to ${phone}...`);
+    try {
+      const res = await fetch('/api/v1/portal/twilio/whatsapp-test-ping', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone_number: phone, recipient_name: name, recipient_role: role })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(`WhatsApp test message sent successfully! SID: ${data.sid || 'mock'}`);
+      } else {
+        showToast(`WhatsApp ping notice: ${data.error_message || data.status || 'Dispatched in test mode'}`, 'warning');
+      }
+      loadOnboardedTestCustomers();
+      if (typeof loadSMSWhitelist === 'function') loadSMSWhitelist();
+    } catch (err) {
+      showToast('Failed to send WhatsApp test ping: ' + err.message, 'error');
+    }
+  }
+
+  document.querySelectorAll('.verify-whatsapp-ping-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const inputId = e.currentTarget.dataset.phoneInput;
+      const role = e.currentTarget.dataset.role || 'AGENT';
+      const inputEl = document.getElementById(inputId);
+      const phone = inputEl ? inputEl.value.trim() : '';
+      const name = role === 'ADMIN' ? 'Admin' : (role === 'CUSTOMER' ? 'Customer' : 'Staff Member');
+      await sendWhatsAppTestPing(phone, name, role);
+    });
   });
+
+  const customerOnboardForm = document.getElementById('customer-onboard-form');
+  if (customerOnboardForm) {
+    customerOnboardForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = document.getElementById('onboard-customer-name').value.trim();
+      const phone = document.getElementById('onboard-customer-phone').value.trim();
+      if (!phone) {
+        showToast('Please enter a phone number.', 'error');
+        return;
+      }
+      try {
+        const res = await fetch('/api/v1/portal/twilio/customer-onboard', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone_number: phone, friendly_name: name, recipient_role: 'CUSTOMER' })
+        });
+        if (!res.ok) throw new Error('Failed to onboard customer');
+        showToast(`Customer ${name || phone} added to test whitelist.`);
+        loadOnboardedTestCustomers();
+        if (typeof loadSMSWhitelist === 'function') loadSMSWhitelist();
+      } catch (err) {
+        showToast('Error onboarding customer: ' + err.message, 'error');
+      }
+    });
+  }
+
+  const triggerCustomerTestPingBtn = document.getElementById('trigger-customer-test-ping-btn');
+  if (triggerCustomerTestPingBtn) {
+    triggerCustomerTestPingBtn.addEventListener('click', async () => {
+      const phone = document.getElementById('onboard-customer-phone').value.trim();
+      const name = document.getElementById('onboard-customer-name').value.trim();
+      await sendWhatsAppTestPing(phone, name, 'CUSTOMER');
+    });
+  }
+
+  loadTwilioSandboxInfo();
 
   // Initial Data & URL Hash Router Load
   handleUrlHash();
