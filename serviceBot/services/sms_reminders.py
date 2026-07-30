@@ -107,6 +107,21 @@ def run_reminder_polling_worker_cycle() -> int:
             appointment_id=rem["appointment_id"]
         )
 
+        if res.get("success") and rec_type == "customer":
+            try:
+                from serviceBot.db.queries import get_or_create_sms_conversation, add_sms_message
+                conv = get_or_create_sms_conversation(phone, context_appointment_id=rem["appointment_id"])
+                add_sms_message(
+                    conversation_id=conv["id"],
+                    direction="outbound",
+                    sender_type="system",
+                    sender_name="System Reminder",
+                    body=body,
+                    twilio_message_sid=res.get("sid")
+                )
+            except Exception as e:
+                pass
+
         mark_sms_reminder_status(rem["id"], res["status"])
         logger.info(f"Dispatched SMS reminder {rem['id']} to {phone} ({res['status']}).")
         dispatched_count += 1

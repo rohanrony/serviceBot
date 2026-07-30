@@ -107,3 +107,41 @@ def test_api_bug_fixes_verification():
     assert res_convs.status_code == 200
     assert isinstance(res_convs.json(), list)
 
+
+def test_comprehensive_sms_log_drawer_details():
+    from fastapi.testclient import TestClient
+    from serviceBot.main import app
+    from serviceBot.db.seed import seed_db
+
+    seed_db(force=True)
+    client = TestClient(app)
+
+    # 1. Fetch appointment SMS log endpoint
+    res = client.get("/api/v1/portal/sms/logs/appointment/1")
+    assert res.status_code == 200
+    data = res.json()
+
+    assert "appointment" in data
+    assert "logs" in data
+    assert isinstance(data["logs"], list)
+
+    app_details = data["appointment"]
+    if app_details:
+        assert "customer_name" in app_details
+        assert "customer_phone" in app_details
+        assert "service_type" in app_details
+        assert "status" in app_details
+
+    # 2. Check JS content for comprehensive log drawer features
+    js_path = os.path.join(os.path.dirname(__file__), "..", "serviceBot", "static", "app.js")
+    with open(js_path, "r", encoding="utf-8") as f:
+        js_content = f.read()
+
+    assert "Appointment Details" in js_content
+    assert "Booking Confirmation" in js_content
+    assert "getRecipientTag" in js_content
+    assert "getStatusTag" in js_content
+    assert "Skip Reason" in js_content
+    assert "Error Details" in js_content
+
+

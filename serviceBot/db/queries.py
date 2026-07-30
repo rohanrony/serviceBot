@@ -1230,7 +1230,8 @@ def assign_staff_agent_to_service_request(request_id: int, staff_agent_id: int =
                     "service_type": sr.get("service_type") or "N/A",
                     "time": str(booking_time_str)[:19],
                     "issue": sr.get("issue_description") or "",
-                    "previous_agent_name": old_agent_name or "Unassigned"
+                    "previous_agent_name": old_agent_name or "Unassigned",
+                    "new_agent_name": new_agent_name or "Unassigned"
                 }
 
                 # Transactional Outbox Event: Atomically enqueue outbox record in same DB transaction
@@ -1537,7 +1538,44 @@ def get_sms_logs_by_appointment(appointment_id: int) -> list:
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             cursor.execute("SELECT * FROM sms_log WHERE appointment_id = %s ORDER BY created_at ASC;", (appointment_id,))
-            return [dict(r) for r in cursor.fetchall()]
+            rows = cursor.fetchall()
+            logs = []
+            for r in rows:
+                item = dict(r)
+                if item.get("created_at") and not isinstance(item["created_at"], str):
+                    item["created_at"] = item["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+                if item.get("sent_at") and not isinstance(item["sent_at"], str):
+                    item["sent_at"] = item["sent_at"].strftime("%Y-%m-%d %H:%M:%S")
+                if item.get("scheduled_send_at") and not isinstance(item["scheduled_send_at"], str):
+                    item["scheduled_send_at"] = item["scheduled_send_at"].strftime("%Y-%m-%d %H:%M:%S")
+                logs.append(item)
+            return logs
+
+
+def get_appointment_details_by_id(appointment_id: int) -> dict:
+    """Fetches full details of an appointment for SMS log popup context."""
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("""
+                SELECT sr.id, sr.service_type, sr.issue_description, sr.status, sr.time_slot, sr.booking_time, sr.created_at,
+                       c.name AS customer_name, c.phone AS customer_phone,
+                       v.make AS vehicle_make, v.model AS vehicle_model, v.year AS vehicle_year,
+                       sa.name AS staff_agent_name, sa.role AS staff_agent_role
+                FROM service_requests sr
+                LEFT JOIN customers c ON sr.customer_id = c.id
+                LEFT JOIN vehicles v ON sr.vehicle_id = v.id
+                LEFT JOIN staff_agents sa ON sr.staff_agent_id = sa.id
+                WHERE sr.id = %s;
+            """, (appointment_id,))
+            row = cursor.fetchone()
+            if row:
+                r = dict(row)
+                if r.get("created_at") and not isinstance(r["created_at"], str):
+                    r["created_at"] = r["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+                if r.get("booking_time") and not isinstance(r["booking_time"], str):
+                    r["booking_time"] = r["booking_time"].strftime("%Y-%m-%d %H:%M:%S")
+                return r
+            return None
 
 
 def get_sms_log_by_id(log_id: int) -> dict:

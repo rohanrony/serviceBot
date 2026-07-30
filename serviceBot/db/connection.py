@@ -294,22 +294,19 @@ def init_db(db_url: str = None):
         conn.autocommit = False
         cursor = conn.cursor()
 
-        # Fast-path check: skip schema DDL if sms_config already exists
+        # Check if DB is already initialized
         cursor.execute("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'sms_config');")
-        if cursor.fetchone()[0]:
-            _db_initialized = True
-            conn.close()
-            logger.info("Database schema already initialized (fast-path).")
-            return
+        table_exists = cursor.fetchone()[0]
 
-        # Run each DDL statement individually
-        for statement in DDL_SCHEMA.split(";"):
-            stmt = statement.strip()
-            if stmt:
-                cursor.execute(stmt)
-        conn.commit()
+        if not table_exists:
+            # Run each DDL statement individually
+            for statement in DDL_SCHEMA.split(";"):
+                stmt = statement.strip()
+                if stmt:
+                    cursor.execute(stmt)
+            conn.commit()
 
-        # Auto-migrations
+        # Auto-migrations for existing tables
         for col, col_def in [
             ("req_customer_name", "BOOLEAN DEFAULT TRUE"),
             ("req_phone_number", "BOOLEAN DEFAULT TRUE"),

@@ -1771,8 +1771,13 @@ async def verify_twilio_caller_id(payload: TwilioVerifyCallerIDPayload):
 
 @router.get("/sms/logs/appointment/{appointment_id}")
 async def get_appointment_sms_logs_endpoint(appointment_id: int):
-    from serviceBot.db.queries import get_sms_logs_by_appointment
-    return get_sms_logs_by_appointment(appointment_id)
+    from serviceBot.db.queries import get_sms_logs_by_appointment, get_appointment_details_by_id
+    logs = get_sms_logs_by_appointment(appointment_id)
+    appointment = get_appointment_details_by_id(appointment_id)
+    return {
+        "appointment": appointment,
+        "logs": logs
+    }
 
 
 @router.post("/sms/retry/{log_id}")

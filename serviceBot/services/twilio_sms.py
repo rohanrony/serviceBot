@@ -71,7 +71,12 @@ class TwilioSMSClient:
             from twilio.rest import Client
             client = Client(self.account_sid, self.auth_token)
 
-            kwargs = {"to": clean_to, "body": body}
+            # Handle WhatsApp channel matching
+            target_to = clean_to
+            if self.from_number and self.from_number.startswith("whatsapp:") and not target_to.startswith("whatsapp:"):
+                target_to = f"whatsapp:{target_to}"
+
+            kwargs = {"to": target_to, "body": body}
             if self.messaging_service_sid:
                 kwargs["messaging_service_sid"] = self.messaging_service_sid
             elif self.from_number:

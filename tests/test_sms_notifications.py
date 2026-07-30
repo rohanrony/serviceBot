@@ -37,6 +37,8 @@ class TestTwilioSMSClient:
 
     def test_send_sms_returns_mock_sid_in_test_env(self, dummy_appointment_id):
         from serviceBot.services.twilio_sms import TwilioSMSClient
+        from serviceBot.db.queries import add_sms_whitelist
+        add_sms_whitelist("+15550001111", "Test Number 1")
         sms = TwilioSMSClient()
         result = sms.send_sms(
             to="+15550001111",
@@ -50,7 +52,8 @@ class TestTwilioSMSClient:
 
     def test_send_sms_logs_dispatch_to_db(self, dummy_appointment_id):
         from serviceBot.services.twilio_sms import TwilioSMSClient
-        from serviceBot.db.queries import get_sms_logs_by_appointment
+        from serviceBot.db.queries import get_sms_logs_by_appointment, add_sms_whitelist
+        add_sms_whitelist("+15550001112", "Test Number 2")
         sms = TwilioSMSClient()
         sms.send_sms(
             to="+15550001112",
@@ -68,6 +71,8 @@ class TestTwilioSMSClient:
         """When credentials are wrong and we're NOT in test mode, real Twilio raises."""
         import os
         from serviceBot.services.twilio_sms import TwilioSMSClient
+        from serviceBot.db.queries import add_sms_whitelist
+        add_sms_whitelist("+15550001113", "Test Number 3")
 
         # Force real Twilio path by unsetting the test flag
         orig = os.environ.pop("PYTEST_CURRENT_TEST", None)

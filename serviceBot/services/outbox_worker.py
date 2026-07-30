@@ -172,6 +172,7 @@ def _dispatch_outbox_event(event_type: str, request_id: Optional[int], payload: 
         details = payload.get("details", {})
         new_agent_email = payload.get("new_agent_email")
         new_agent_name = payload.get("new_agent_name")
+        old_agent_name = payload.get("old_agent_name")
 
         # 1. Cancel old agent Google Calendar event
         if old_agent_id is not None and booking_time_str:
@@ -205,6 +206,12 @@ def _dispatch_outbox_event(event_type: str, request_id: Optional[int], payload: 
 
         # 5. SMS Notifications (customer, new agent, previous agent)
         from serviceBot.services.sms_router import SMSNotificationRouter
+        reassign_details = {
+            **(details or {}),
+            "new_agent_name": new_agent_name,
+            "old_agent_name": old_agent_name,
+            "previous_agent_name": old_agent_name
+        }
         sms_router = SMSNotificationRouter()
         sms_router.process_event(
             event_type="REASSIGNED",
@@ -212,7 +219,8 @@ def _dispatch_outbox_event(event_type: str, request_id: Optional[int], payload: 
             customer_phone=details.get("phone"),
             agent_phone=payload.get("agent_phone"),
             previous_agent_phone=payload.get("previous_agent_phone"),
-            booking_time=booking_time_str
+            booking_time=booking_time_str,
+            details=reassign_details
         )
 
     elif event_type == "booking_notification":
