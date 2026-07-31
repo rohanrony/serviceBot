@@ -1,6 +1,7 @@
 import os
 import sys
 import logging
+import logging.handlers
 import json
 import time
 import functools
@@ -108,6 +109,10 @@ def setup_logging(
 ) -> logging.Logger:
     """
     Configures and initializes root logger for serviceBot.
+
+    File logging is controlled by the LOG_FILE environment variable:
+      - Local dev:  set LOG_FILE=logs/local_server.log in .env
+      - Render:     leave LOG_FILE unset — Render captures stdout automatically
     """
     level_str = (level or os.getenv("LOG_LEVEL", "INFO")).upper()
     log_level = getattr(logging, level_str, logging.INFO)
@@ -119,7 +124,7 @@ def setup_logging(
     root_logger.setLevel(log_level)
     root_logger.handlers.clear()
 
-    # Console / stdout handler
+    # Console / stdout handler (always present — Render streams this)
     stream_handler = logging.StreamHandler(sys.stdout)
     stream_handler.setLevel(log_level)
 
@@ -129,6 +134,27 @@ def setup_logging(
         stream_handler.setFormatter(ConsoleFormatter())
 
     root_logger.addHandler(stream_handler)
+
+    # ── File handler (local dev only) ──────────────────────────────────────
+    # Set LOG_FILE in .env to enable.  Leave it unset on Render — the
+    # container filesystem is ephemeral and Render captures stdout instead.
+    log_file_path = os.getenv("LOG_FILE", "")
+    if log_file_path:
+        log_dir = os.path.dirname(log_file_path)
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
+        file_handler = logging.handlers.RotatingFileHandler(
+            log_file_path,
+            maxBytes=10 * 1024 * 1024,  # 10 MB per file
+            backupCount=5,
+            encoding="utf-8",
+        )
+        file_handler.setLevel(log_level)
+        # Always write the file in human-readable format for easy local tailing
+        file_handler.setFormatter(ConsoleFormatter())
+        root_logger.addHandler(file_handler)
+        root_logger.info(f"[logger] File logging enabled → {os.path.abspath(log_file_path)}")
+    # ──────────────────────────────────────────────────────────────────────
 
     # Optional Better Stack Logtail Handler
     if token:

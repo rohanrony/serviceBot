@@ -243,6 +243,11 @@ def test_get_service_requests_endpoint():
     assert response.status_code == 200
     requests = response.json()
     assert isinstance(requests, list)
+    if requests:
+        first = requests[0]
+        assert "duration_minutes" in first
+        assert "booking_start_time" in first
+        assert "booking_end_time" in first
 
 def test_get_stats_endpoint():
     response = client.get("/api/v1/portal/stats")

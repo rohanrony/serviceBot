@@ -211,10 +211,11 @@ def create_agent_calendar_event(
     service_type: str, 
     issue_description: str, 
     slot_datetime_str: str, 
-    duration_minutes: int = 60
+    duration_minutes: int = 60,
+    booking_type: str = "appointment"
 ) -> bool:
     """
-    Inserts a booked appointment event into the agent's connected Google Calendar.
+    Inserts a booked appointment or callback event into the agent's connected Google Calendar.
     Requires write scope 'https://www.googleapis.com/auth/calendar.events'.
     """
     try:
@@ -253,9 +254,17 @@ def create_agent_calendar_event(
         if admin_recipient:
             attendees.append({"email": admin_recipient})
 
+        is_cb = booking_type == "callback" or "callback" in str(service_type).lower()
+        event_summary = f"Callback - {customer_name} ({service_type})" if is_cb else f"serviceBot Appointment - {customer_name}"
+        event_desc = (
+            f"Booking Type: CALLBACK ({duration_minutes} Mins)\nService Type: {service_type}\nIssue: {issue_description}\nAutomatically booked by serviceBot."
+            if is_cb
+            else f"Service Type: {service_type}\nIssue: {issue_description}\nAutomatically booked by serviceBot."
+        )
+
         payload = {
-            "summary": f"serviceBot Appointment - {customer_name}",
-            "description": f"Service Type: {service_type}\nIssue: {issue_description}\nAutomatically booked by serviceBot.",
+            "summary": event_summary,
+            "description": event_desc,
             "start": {
                 "dateTime": start_iso,
                 "timeZone": "America/New_York"

@@ -34,3 +34,8 @@ AGENTS.md
 .vscode/*
 .switchboard/README.md
 server.logs
+server.log
+
+# Local-only file logs (see LOG_FILE in .env — never commit these)
+logs/
+*.log

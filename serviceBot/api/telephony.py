@@ -489,7 +489,8 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
         if tool_name == "check_availability":
             preferred_date = args.get("preferred_date") or args.get("preferredDate")
             service_type = args.get("service_type") or args.get("serviceType") or args.get("service") or args.get("issue_description") or args.get("issue")
-            slots = check_availability(service_type=service_type, preferred_date=preferred_date)
+            booking_type = args.get("booking_type") or args.get("bookingType") or "appointment"
+            slots = check_availability(service_type=service_type, preferred_date=preferred_date, booking_type=booking_type)
             result = {
                 "success": True,
                 "available_slots": slots,

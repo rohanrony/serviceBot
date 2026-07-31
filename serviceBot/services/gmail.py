@@ -657,7 +657,8 @@ def create_admin_calendar_event(
     issue_description: str,
     slot_datetime_str: str,
     mechanic_name: Optional[str] = None,
-    duration_minutes: int = 60
+    duration_minutes: int = 60,
+    booking_type: str = "appointment"
 ) -> bool:
     """
     Inserts a calendar event into the Admin's Google Calendar using system-level OAuth credentials.
@@ -693,9 +694,17 @@ def create_admin_calendar_event(
         if admin_recipient:
             attendees.append({"email": admin_recipient})
 
+        is_cb = booking_type == "callback" or "callback" in str(service_type).lower()
+        summary_title = f"Callback - {customer_name} ({mechanic_name or 'Assigned Staff'})" if is_cb else f"serviceBot Booking - {customer_name} ({mechanic_name or 'Assigned Staff'})"
+        desc_text = (
+            f"Booking Type: CALLBACK ({duration_minutes} Mins)\nAssigned Staff: {mechanic_name or 'Unassigned'}\nService Type: {service_type}\nIssue: {issue_description}\nAutomatically logged for Admin by serviceBot."
+            if is_cb
+            else f"Assigned Mechanic: {mechanic_name or 'Unassigned'}\nService Type: {service_type}\nIssue: {issue_description}\nAutomatically logged for Admin by serviceBot."
+        )
+
         payload = {
-            "summary": f"serviceBot Booking - {customer_name} ({mechanic_name or 'Assigned Staff'})",
-            "description": f"Assigned Mechanic: {mechanic_name or 'Unassigned'}\nService Type: {service_type}\nIssue: {issue_description}\nAutomatically logged for Admin by serviceBot.",
+            "summary": summary_title,
+            "description": desc_text,
             "start": {
                 "dateTime": start_iso,
                 "timeZone": "America/New_York"

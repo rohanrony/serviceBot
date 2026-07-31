@@ -371,6 +371,17 @@ SERVICES_DATA = [
         1,
         1,
         1
+    ),
+    (
+        "Callback / Phone Consultation",
+        "A 15-minute scheduled phone consultation or callback request with a service advisor or technician.",
+        "$0",
+        15,
+        1,
+        1,
+        1,
+        0,
+        1
     )
 ]
 

@@ -182,7 +182,7 @@ def seed_db(force: bool = False):
 
             if current_day.weekday() in valid_days:
                 for hour in hours:
-                    for minute in (0, 30):
+                    for minute in (0, 15, 30, 45):
                         slot_dt = datetime.datetime.combine(current_day, datetime.time(hour, minute, 0))
                         slot_str = slot_dt.strftime("%Y-%m-%d %H:%M:%S")
                         for agent_id in [1, 2, 3]:

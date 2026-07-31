@@ -966,10 +966,14 @@ async def get_calls(limit: Optional[int] = None, offset: Optional[int] = None):
 @router.get("/appointments")
 async def get_appointments():
     from serviceBot.db.connection import get_db_connection, dict_cursor
+    from serviceBot.db.queries import get_service_required_fields
+    from serviceBot.services.sms_reminders import parse_booking_datetime
+    import datetime as dt_mod
+
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             cursor.execute("""
-                SELECT sr.id, sr.booking_time AS appointment_datetime, sr.service_type, sr.status, sr.created_at, c.name AS customer_name, c.phone,
+                SELECT sr.id, sr.booking_time AS appointment_datetime, sr.service_type, sr.issue_description, sr.status, sr.created_at, c.name AS customer_name, c.phone,
                        v.make, v.model, v.year
                 FROM service_requests sr
                 LEFT JOIN customers c ON sr.customer_id = c.id
@@ -983,12 +987,36 @@ async def get_appointments():
                 r = dict(row)
                 if not isinstance(r["created_at"], str) and r["created_at"]:
                     r["created_at"] = r["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+
+                svc = r.get("service_type") or r.get("issue_description") or ""
+                svc_fields = get_service_required_fields(svc) if svc else None
+                duration = (svc_fields.get("duration_minutes") or 60) if svc_fields else 60
+                r["duration_minutes"] = duration
+
+                raw_time = r.get("appointment_datetime")
+                if raw_time:
+                    dt = parse_booking_datetime(str(raw_time))
+                    if dt:
+                        end_dt = dt + dt_mod.timedelta(minutes=duration)
+                        r["booking_start_time"] = dt.strftime("%Y-%m-%d %H:%M:%S")
+                        r["booking_end_time"] = end_dt.strftime("%Y-%m-%d %H:%M:%S")
+                    else:
+                        r["booking_start_time"] = str(raw_time)
+                        r["booking_end_time"] = None
+                else:
+                    r["booking_start_time"] = None
+                    r["booking_end_time"] = None
+
                 res.append(r)
             return res
 
 @router.get("/service-requests")
 async def get_service_requests(limit: Optional[int] = None, offset: Optional[int] = None):
     from serviceBot.db.connection import get_db_connection, dict_cursor
+    from serviceBot.db.queries import get_service_required_fields
+    from serviceBot.services.sms_reminders import parse_booking_datetime
+    import datetime as dt_mod
+
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             query = """
@@ -1018,6 +1046,36 @@ async def get_service_requests(limit: Optional[int] = None, offset: Optional[int
                 r = dict(row)
                 if not isinstance(r["created_at"], str) and r["created_at"]:
                     r["created_at"] = r["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+
+                svc = r.get("service_type") or r.get("issue_description") or ""
+                svc_fields = get_service_required_fields(svc) if svc else None
+                duration = (svc_fields.get("duration_minutes") or 60) if svc_fields else 60
+                r["duration_minutes"] = duration
+
+                raw_time = r.get("booking_time") or r.get("time_slot")
+                if raw_time:
+                    raw_str = str(raw_time).strip()
+                    if " to " in raw_str:
+                        parts = raw_str.split(" to ")
+                        r["booking_start_time"] = parts[0].strip()
+                        r["booking_end_time"] = parts[1].strip()
+                    elif " - " in raw_str and not raw_str.startswith("-"):
+                        parts = raw_str.split(" - ")
+                        r["booking_start_time"] = parts[0].strip()
+                        r["booking_end_time"] = parts[1].strip()
+                    else:
+                        dt = parse_booking_datetime(raw_str)
+                        if dt:
+                            end_dt = dt + dt_mod.timedelta(minutes=duration)
+                            r["booking_start_time"] = dt.strftime("%Y-%m-%d %H:%M:%S")
+                            r["booking_end_time"] = end_dt.strftime("%Y-%m-%d %H:%M:%S")
+                        else:
+                            r["booking_start_time"] = raw_str
+                            r["booking_end_time"] = None
+                else:
+                    r["booking_start_time"] = None
+                    r["booking_end_time"] = None
+
                 res.append(r)
             return res
 

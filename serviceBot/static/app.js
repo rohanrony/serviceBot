@@ -332,6 +332,78 @@ document.addEventListener('DOMContentLoaded', () => {
     return `${month}/${day}/${year} ${hours}:${minutes}`;
   }
 
+  function formatBookingTimeRange(req) {
+    if (req.booking_type === 'callback' && (!req.booking_time || req.booking_time.toUpperCase() === 'ASAP')) {
+      return '<span class="badge danger">ASAP</span>';
+    }
+
+    const rawTime = req.booking_time || req.time_slot;
+    if (!rawTime) {
+      return '<span class="text-muted">N/A</span>';
+    }
+
+    function formatTime12(d) {
+      if (isNaN(d.getTime())) return null;
+      let hours = d.getHours();
+      const minutes = String(d.getMinutes()).padStart(2, '0');
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12;
+      hours = hours ? hours : 12;
+      return `${hours}:${minutes} ${ampm}`;
+    }
+
+    function formatDateShort(d) {
+      if (isNaN(d.getTime())) return null;
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      const year = String(d.getFullYear()).slice(-2);
+      return `${month}/${day}/${year}`;
+    }
+
+    const durationMin = req.duration_minutes || 60;
+    let startDt = null;
+    let endDt = null;
+
+    if (req.booking_start_time) {
+      const cleanStart = req.booking_start_time.includes(' ') && !req.booking_start_time.includes('T') ? req.booking_start_time.replace(' ', 'T') : req.booking_start_time;
+      startDt = new Date(cleanStart);
+    } else {
+      const cleanRaw = String(rawTime).includes(' ') && !String(rawTime).includes('T') ? String(rawTime).replace(' ', 'T') : String(rawTime);
+      startDt = new Date(cleanRaw);
+    }
+
+    if (req.booking_end_time) {
+      const cleanEnd = req.booking_end_time.includes(' ') && !req.booking_end_time.includes('T') ? req.booking_end_time.replace(' ', 'T') : req.booking_end_time;
+      endDt = new Date(cleanEnd);
+    } else if (startDt && !isNaN(startDt.getTime())) {
+      endDt = new Date(startDt.getTime() + durationMin * 60000);
+    }
+
+    if (startDt && !isNaN(startDt.getTime()) && endDt && !isNaN(endDt.getTime())) {
+      const startDateStr = formatDateShort(startDt);
+      const startTimeStr = formatTime12(startDt);
+      const endDateStr = formatDateShort(endDt);
+      const endTimeStr = formatTime12(endDt);
+
+      const isSameDay = startDateStr === endDateStr;
+      const endDisplay = isSameDay ? endTimeStr : `${endDateStr} ${endTimeStr}`;
+
+      return `
+        <div class="appointment-time-range" style="display: flex; flex-direction: column; gap: 2px;">
+          <div class="time-start" style="font-size: 12px; font-weight: 600; color: var(--text-main);">
+            <span style="color: var(--color-primary); font-size: 10px; text-transform: uppercase; font-weight: 700; margin-right: 3px;">Start:</span>${startDateStr} ${startTimeStr}
+          </div>
+          <div class="time-end" style="font-size: 11.5px; color: var(--text-muted); display: flex; align-items: center; gap: 4px;">
+            <span style="color: #10b981; font-size: 10px; text-transform: uppercase; font-weight: 700;">End:</span>${endDisplay}
+            <span class="badge" style="font-size: 9px; padding: 1px 5px; background: rgba(255,255,255,0.06); border: 1px solid var(--border-card); font-weight: 500;">${durationMin}m</span>
+          </div>
+        </div>
+      `;
+    }
+
+    return `<strong>${formatShortDate(rawTime)}</strong>`;
+  }
+
   function formatPhoneNumber(phoneStr) {
     if (!phoneStr) return '--';
     const cleaned = ('' + phoneStr).replace(/\D/g, '');
@@ -528,15 +600,7 @@ document.addEventListener('DOMContentLoaded', () => {
           reqTypeBadge = '<span class="text-muted">None</span>';
         }
 
-        let displayTime = '';
-        if (req.booking_type === 'callback' && (!req.booking_time || req.booking_time.toUpperCase() === 'ASAP')) {
-          displayTime = '<span class="badge danger">ASAP</span>';
-        } else if (req.booking_time) {
-          const formattedBooking = formatShortDate(req.booking_time);
-          displayTime = `<strong>${formattedBooking}</strong>`;
-        } else {
-          displayTime = '<span class="text-muted">N/A</span>';
-        }
+        let displayTime = formatBookingTimeRange(req);
 
         const agentSelectHtml = `
           <select class="agent-select-badge" data-id="${req.id}">
@@ -2976,6 +3040,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const statusUpper = (app.status || 'PENDING').toUpperCase();
         const statusClass = statusUpper === 'CONFIRMED' || statusUpper === 'DONE' || statusUpper === 'COMPLETED' ? 'success' : 'warning';
         
+        let appTimeStr = app.booking_time || app.time_slot || 'N/A';
+        if (app.booking_start_time && app.booking_end_time) {
+          appTimeStr = `Start: ${formatShortDate(app.booking_start_time)} — End: ${formatShortDate(app.booking_end_time)} (${app.duration_minutes || 60} mins)`;
+        } else if (app.booking_time) {
+          appTimeStr = formatShortDate(app.booking_time);
+        }
+
         appCard.innerHTML = `
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
             <strong style="color: #fff; font-size: 13px; font-weight: 600;">Appointment Details</strong>
@@ -2986,7 +3057,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div><span style="color: var(--text-muted);">Phone:</span> <span style="color: var(--text-main); font-weight: 500;">${app.customer_phone || 'N/A'}</span></div>
             <div><span style="color: var(--text-muted);">Agent:</span> <span style="color: var(--text-main); font-weight: 500;">${app.staff_agent_name || 'Unassigned'}</span></div>
             <div><span style="color: var(--text-muted);">Service:</span> <span style="color: var(--text-main); font-weight: 500;">${app.service_type || 'N/A'} ${vehicleStr ? `(${vehicleStr})` : ''}</span></div>
-            <div style="grid-column: span 2;"><span style="color: var(--text-muted);">Date & Time:</span> <span style="color: var(--text-main); font-weight: 500;">${app.booking_time || app.time_slot || 'N/A'}</span></div>
+            <div style="grid-column: span 2;"><span style="color: var(--text-muted);">Start & End Time:</span> <span style="color: var(--text-main); font-weight: 500;">${appTimeStr}</span></div>
           </div>
         `;
         container.appendChild(appCard);
