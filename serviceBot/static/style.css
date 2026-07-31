@@ -824,7 +824,7 @@ textarea.form-input {
 #service-requests-table {
   table-layout: fixed;
   width: 100%;
-  min-width: 1240px;
+  min-width: 1380px;
 }
 
 #call-logs-table {
@@ -836,7 +836,7 @@ textarea.form-input {
 #service-requests-table td,
 #call-logs-table th,
 #call-logs-table td {
-  padding: 10px 8px;
+  padding: 10px 10px;
   font-size: 12.5px;
   vertical-align: middle;
 }
@@ -874,7 +874,7 @@ textarea.form-input {
 
 /* Service Requests Column Widths */
 #service-requests-table th:nth-child(1),
-#service-requests-table td:nth-child(1) { width: 115px; } /* Submitted At */
+#service-requests-table td:nth-child(1) { width: 110px; } /* Submitted At */
 #service-requests-table th:nth-child(2),
 #service-requests-table td:nth-child(2) { width: 125px; } /* Customer Name */
 #service-requests-table th:nth-child(3),
@@ -882,17 +882,17 @@ textarea.form-input {
 #service-requests-table th:nth-child(4),
 #service-requests-table td:nth-child(4) { width: 125px; } /* Vehicle */
 #service-requests-table th:nth-child(5),
-#service-requests-table td:nth-child(5) { width: 100px; text-align: center; } /* Type */
+#service-requests-table td:nth-child(5) { width: 105px; text-align: center; } /* Type */
 #service-requests-table th:nth-child(6),
-#service-requests-table td:nth-child(6) { width: 120px; } /* Time */
+#service-requests-table td:nth-child(6) { width: 145px; } /* Time */
 #service-requests-table th:nth-child(7),
-#service-requests-table td:nth-child(7) { width: 140px; } /* Assigned Agent */
+#service-requests-table td:nth-child(7) { width: 160px; } /* Assigned Agent */
 #service-requests-table th:nth-child(8),
-#service-requests-table td:nth-child(8) { width: 160px; } /* Description */
+#service-requests-table td:nth-child(8) { width: 185px; } /* Description */
 #service-requests-table th:nth-child(9),
-#service-requests-table td:nth-child(9) { width: 135px; text-align: center; } /* Status Select Badge */
+#service-requests-table td:nth-child(9) { width: 140px; text-align: center; } /* Status Select Badge */
 #service-requests-table th:nth-child(10),
-#service-requests-table td:nth-child(10) { width: 160px; text-align: center; } /* Actions */
+#service-requests-table td:nth-child(10) { width: 155px; text-align: center; } /* Actions */
 
 .actions-cell-container {
   display: flex;
@@ -1012,7 +1012,8 @@ textarea.form-input {
   background-position: right 4px center;
   background-size: 10px 10px;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%239ca3af'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
-  max-width: 120px;
+  max-width: 145px;
+  width: 100%;
   text-overflow: ellipsis;
   white-space: nowrap;
   overflow: hidden;

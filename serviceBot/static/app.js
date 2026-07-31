@@ -386,17 +386,14 @@ document.addEventListener('DOMContentLoaded', () => {
       const endTimeStr = formatTime12(endDt);
 
       const isSameDay = startDateStr === endDateStr;
-      const endDisplay = isSameDay ? endTimeStr : `${endDateStr} ${endTimeStr}`;
+      const rangeText = isSameDay 
+        ? `${startTimeStr} – ${endTimeStr}`
+        : `${startDateStr} ${startTimeStr} – ${endDateStr} ${endTimeStr}`;
 
       return `
-        <div class="appointment-time-range" style="display: flex; flex-direction: column; gap: 2px;">
-          <div class="time-start" style="font-size: 12px; font-weight: 600; color: var(--text-main);">
-            <span style="color: var(--color-primary); font-size: 10px; text-transform: uppercase; font-weight: 700; margin-right: 3px;">Start:</span>${startDateStr} ${startTimeStr}
-          </div>
-          <div class="time-end" style="font-size: 11.5px; color: var(--text-muted); display: flex; align-items: center; gap: 4px;">
-            <span style="color: #10b981; font-size: 10px; text-transform: uppercase; font-weight: 700;">End:</span>${endDisplay}
-            <span class="badge" style="font-size: 9px; padding: 1px 5px; background: rgba(255,255,255,0.06); border: 1px solid var(--border-card); font-weight: 500;">${durationMin}m</span>
-          </div>
+        <div class="appointment-time-clean" style="display: flex; flex-direction: column; gap: 1px; white-space: nowrap;">
+          <strong style="color: var(--text-main); font-size: 12px; font-weight: 600;">${startDateStr}</strong>
+          <span style="color: var(--text-muted); font-size: 11.5px;">${rangeText}</span>
         </div>
       `;
     }

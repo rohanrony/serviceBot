@@ -1246,15 +1246,29 @@ async def sms_status_callback_webhook(request: Request):
     return {"status": "recorded"}
 
 
+@router.get("/api/v1/render-logs")
+@router.get("/render-logs")
 @router.post("/api/v1/render-logs")
 @router.post("/render-logs")
 async def receive_render_logs(request: Request):
     """
     Receives real-time HTTPS log stream payloads from Render
     and saves log entries directly into Supabase render_logs table.
+    Also handles GET/empty-body pings from Render verification check.
     """
+    if request.method == "GET":
+        return {"status": "ok", "message": "Render log stream endpoint is active"}
+
     try:
-        data = await request.json()
+        raw_body = await request.body()
+        if not raw_body or not raw_body.strip():
+            return {"status": "ok", "inserted": 0}
+        
+        try:
+            data = json.loads(raw_body)
+        except Exception:
+            return {"status": "ok", "inserted": 0}
+
         entries = data if isinstance(data, list) else [data]
         
         from serviceBot.db.connection import get_db_connection

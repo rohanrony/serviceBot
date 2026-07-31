@@ -12,9 +12,12 @@ os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 
 # Redirect KB_DIR to writeable workspace scratch path
 import serviceBot.api.portal as portal_mod
-WORKSPACE_SCRATCH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "scratch", "test_kb_documents")
+WORKSPACE_SCRATCH = os.getenv("TEST_KB_DIR") or "/Users/rohanroy/.gemini/antigravity-ide/scratch/test_kb_documents"
 portal_mod.KB_DIR = WORKSPACE_SCRATCH
-os.makedirs(portal_mod.KB_DIR, exist_ok=True)
+try:
+    os.makedirs(portal_mod.KB_DIR, exist_ok=True)
+except Exception as e:
+    print(f"Warning: could not create KB_DIR {portal_mod.KB_DIR}: {e}")
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_and_cleanup_test_db():
