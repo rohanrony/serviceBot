@@ -67,6 +67,36 @@ class TestTwilioSMSClient:
             for log in logs
         )
 
+    def test_sms_logs_ordered_descending_by_time(self, dummy_appointment_id):
+        from serviceBot.services.twilio_sms import TwilioSMSClient
+        from serviceBot.db.queries import get_sms_logs_by_appointment, add_sms_whitelist
+        add_sms_whitelist("+15550001112", "Test Number 2")
+        sms = TwilioSMSClient()
+        sms.send_sms(
+            to="+15550001112",
+            body="First log message",
+            template_type="booking",
+            appointment_id=dummy_appointment_id
+        )
+        sms.send_sms(
+            to="+15550001112",
+            body="Second log message",
+            template_type="reminder_24h",
+            appointment_id=dummy_appointment_id
+        )
+        sms.send_sms(
+            to="+15550001112",
+            body="Third log message (latest)",
+            template_type="reminder_2h",
+            appointment_id=dummy_appointment_id
+        )
+        logs = get_sms_logs_by_appointment(dummy_appointment_id)
+        assert len(logs) >= 3
+        # Ensure latest log is first
+        assert logs[0]["template_type"] == "reminder_2h"
+        assert logs[-1]["template_type"] == "booking" or logs[0]["created_at"] >= logs[1]["created_at"] >= logs[2]["created_at"]
+
+
     def test_send_sms_returns_failure_on_bad_credentials(self):
         """When credentials are wrong and we're NOT in test mode, real Twilio raises."""
         import os

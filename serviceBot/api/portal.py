@@ -508,29 +508,34 @@ class CalendarSlotUpdate(BaseModel):
 @router.get("/agents")
 async def get_staff_agents():
     from serviceBot.db.connection import get_db_connection, dict_cursor
-    with get_db_connection() as conn:
-        with dict_cursor(conn) as cursor:
-            cursor.execute("""
-                SELECT sa.id, sa.name, sa.role, sa.email AS db_email, sa.phone_number, uga.email AS google_email
-                FROM staff_agents sa
-                LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id;
-            """)
-            rows = cursor.fetchall()
-            config = load_config()
-            system_email = config.get("gmail_sender") or os.getenv("GMAIL_SENDER") or None
-            agents = []
-            for row in rows:
-                resolved_email = row["google_email"] or row["db_email"] or system_email
-                d = {
-                    "id": row["id"],
-                    "name": row["name"],
-                    "role": row["role"],
-                    "email": resolved_email,
-                    "phone_number": row["phone_number"],
-                    "is_connected": bool(row["google_email"])
-                }
-                agents.append(d)
-            return agents
+    try:
+        with get_db_connection() as conn:
+            with dict_cursor(conn) as cursor:
+                cursor.execute("""
+                    SELECT sa.id, sa.name, sa.role, sa.email AS db_email, sa.phone_number, uga.email AS google_email
+                    FROM staff_agents sa
+                    LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id
+                    ORDER BY sa.id ASC;
+                """)
+                rows = cursor.fetchall()
+                config = load_config()
+                system_email = config.get("gmail_sender") or os.getenv("GMAIL_SENDER") or None
+                agents = []
+                for row in rows:
+                    resolved_email = row["google_email"] or row["db_email"] or system_email
+                    d = {
+                        "id": row["id"],
+                        "name": row["name"],
+                        "role": row["role"],
+                        "email": resolved_email,
+                        "phone_number": row["phone_number"],
+                        "is_connected": bool(row["google_email"])
+                    }
+                    agents.append(d)
+                return agents
+    except Exception as e:
+        logger.error(f"Error fetching staff agents: {e}")
+        return []
 
 @router.get("/agents/{agent_id}")
 async def get_staff_agent(agent_id: int):
@@ -770,27 +775,34 @@ async def disconnect_agent_calendar(agent_id: int):
 @router.get("/agents/{agent_id}/calendar")
 async def get_agent_calendar(agent_id: int):
     from serviceBot.db.connection import get_db_connection, dict_cursor
-    with get_db_connection() as conn:
-        with dict_cursor(conn) as cursor:
-            # Verify agent exists
-            cursor.execute("SELECT id FROM staff_agents WHERE id = %s", (agent_id,))
-            if not cursor.fetchone():
-                raise HTTPException(status_code=404, detail="Agent not found")
-            
-            cursor.execute(
-                "SELECT id, slot_datetime, is_booked, staff_agent_id FROM mock_calendar_slots "
-                "WHERE staff_agent_id = %s ORDER BY slot_datetime ASC",
-                (agent_id,)
-            )
-            rows = cursor.fetchall()
-            # PostgreSQL returns datetime objects for slot_datetime, serialize to string for JSON API
-            res = []
-            for row in rows:
-                r = dict(row)
-                if not isinstance(r["slot_datetime"], str):
-                    r["slot_datetime"] = r["slot_datetime"].strftime("%Y-%m-%d %H:%M:%S")
-                res.append(r)
-            return res
+    try:
+        with get_db_connection() as conn:
+            with dict_cursor(conn) as cursor:
+                # Verify agent exists
+                cursor.execute("SELECT id FROM staff_agents WHERE id = %s", (agent_id,))
+                if not cursor.fetchone():
+                    raise HTTPException(status_code=404, detail="Agent not found")
+                
+                cursor.execute(
+                    "SELECT id, slot_datetime, is_booked, staff_agent_id FROM mock_calendar_slots "
+                    "WHERE staff_agent_id = %s ORDER BY slot_datetime ASC",
+                    (agent_id,)
+                )
+                rows = cursor.fetchall()
+                res = []
+                for row in rows:
+                    r = dict(row)
+                    if r.get("slot_datetime") is not None and not isinstance(r["slot_datetime"], str):
+                        r["slot_datetime"] = r["slot_datetime"].strftime("%Y-%m-%d %H:%M:%S")
+                    elif r.get("slot_datetime") is None:
+                        r["slot_datetime"] = ""
+                    res.append(r)
+                return res
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching calendar for agent {agent_id}: {e}")
+        return []
 
 @router.post("/agents/{agent_id}/calendar", status_code=201)
 async def create_agent_slot(agent_id: int, payload: CalendarSlotCreate):

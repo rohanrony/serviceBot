@@ -343,6 +343,26 @@ def test_agent_availability_and_assignment_endpoints():
                 assert matched[0]["staff_agent_id"] == target_agent_id
 
 
+def test_cannot_assign_agent_for_completed_service_request():
+    from serviceBot.db.connection import get_db_connection, dict_cursor
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("INSERT INTO customers (name, phone) VALUES ('Completed Cust', '555-9999') RETURNING id;")
+            cust_id = cursor.fetchone()["id"]
+            cursor.execute("INSERT INTO staff_agents (name, role) VALUES ('Target Agent', 'Tech') RETURNING id;")
+            agent_id = cursor.fetchone()["id"]
+            cursor.execute("INSERT INTO service_requests (customer_id, status, booking_type) VALUES (%s, 'completed', 'appointment') RETURNING id;", (cust_id,))
+            req_id1 = cursor.fetchone()["id"]
+            cursor.execute("INSERT INTO service_requests (customer_id, status, booking_type) VALUES (%s, 'cancelled', 'appointment') RETURNING id;", (cust_id,))
+            req_id2 = cursor.fetchone()["id"]
+
+    res1 = client.patch(f"/api/v1/portal/service-requests/{req_id1}/assign-agent", json={"staff_agent_id": agent_id})
+    assert res1.status_code == 400
+
+    res2 = client.patch(f"/api/v1/portal/service-requests/{req_id2}/assign-agent", json={"staff_agent_id": agent_id})
+    assert res2.status_code == 400
+
+
 def test_agent_switch_triggers_slot_invite_and_admin_mail():
     from serviceBot.db.queries import assign_staff_agent_to_service_request
     from serviceBot.db.connection import get_db_connection, dict_cursor

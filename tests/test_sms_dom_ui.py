@@ -142,5 +142,7 @@ def test_comprehensive_sms_log_drawer_details():
     assert "getStatusBadgeHtml" in js_content
     assert "Skip Reason" in js_content
     assert "Error Details" in js_content
+    assert "function formatLocalTimestamp" in js_content
+    assert "formatLocalTimestamp(l.created_at)" in js_content
 
 

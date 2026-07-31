@@ -10,7 +10,8 @@ from serviceBot.db.connection import get_db_connection, dict_cursor
 from serviceBot.services.gmail import (
     send_booking_notification,
     send_admin_notification,
-    create_admin_calendar_event
+    create_admin_calendar_event,
+    delete_admin_calendar_event
 )
 from serviceBot.services.google_calendar import (
     create_agent_calendar_event,
@@ -202,6 +203,7 @@ def _dispatch_outbox_event(event_type: str, request_id: Optional[int], payload: 
 
         # 4. Admin Calendar & Admin Notification Email
         if booking_time_str:
+            delete_admin_calendar_event(str(booking_time_str)[:19])
             create_admin_calendar_event(
                 customer_name=details.get("customer_name") or "Customer",
                 service_type=details.get("service_type") or "Service Request",
@@ -242,11 +244,13 @@ def _dispatch_outbox_event(event_type: str, request_id: Optional[int], payload: 
             send_booking_notification(booking_type, details, agent_email=agent_email)
 
         if slot_datetime_str:
+            clean_slot_str = str(slot_datetime_str)[:19]
+            delete_admin_calendar_event(clean_slot_str)
             create_admin_calendar_event(
                 customer_name=details.get("customer_name") or "Customer",
                 service_type=details.get("service_type") or "Service Request",
                 issue_description=details.get("issue") or "",
-                slot_datetime_str=str(slot_datetime_str)[:19],
+                slot_datetime_str=clean_slot_str,
                 mechanic_name=agent_name
             )
 

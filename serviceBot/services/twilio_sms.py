@@ -99,8 +99,11 @@ class TwilioSMSClient:
             target_to = clean_to
             from_num = self.from_number.strip() if self.from_number else ""
 
-            if target_to.startswith("whatsapp:"):
-                if from_num and not from_num.startswith("whatsapp:"):
+            is_whatsapp_sender = from_num.startswith("whatsapp:") or "4155238886" in from_num
+            if is_whatsapp_sender or target_to.startswith("whatsapp:"):
+                if not target_to.startswith("whatsapp:"):
+                    target_to = f"whatsapp:{target_to}"
+                if not from_num.startswith("whatsapp:"):
                     from_num = f"whatsapp:{from_num}"
             else:
                 from_num = from_num.replace("whatsapp:", "").strip()

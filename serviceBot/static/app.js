@@ -317,19 +317,40 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // --- VIEW 1: DASHBOARD RETRIEVAL ---
-  function formatShortDate(dateStr) {
+  function formatLocalTimestamp(dateStr, options = {}) {
     if (!dateStr) return 'N/A';
-    // Handle standard database spaces to ISO format conversion
-    const cleanStr = dateStr.includes(' ') && !dateStr.includes('T') ? dateStr.replace(' ', 'T') : dateStr;
+    if (typeof dateStr !== 'string') dateStr = String(dateStr);
+
+    let cleanStr = dateStr.trim();
+    if (cleanStr.includes(' ') && !cleanStr.includes('T')) {
+      cleanStr = cleanStr.replace(' ', 'T');
+    }
+    if (!cleanStr.endsWith('Z') && !/[+-]\d{2}:?\d{2}$/.test(cleanStr)) {
+      cleanStr += 'Z';
+    }
+
     const d = new Date(cleanStr);
     if (isNaN(d.getTime())) return dateStr;
-    
+
+    if (options && options.timeOnly) {
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
     const month = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
     const year = String(d.getFullYear()).slice(-2);
-    const hours = String(d.getHours()).padStart(2, '0');
+
+    let hours = d.getHours();
     const minutes = String(d.getMinutes()).padStart(2, '0');
-    return `${month}/${day}/${year} ${hours}:${minutes}`;
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12 || 12;
+    const hoursStr = String(hours).padStart(2, '0');
+
+    return `${month}/${day}/${year} ${hoursStr}:${minutes} ${ampm}`;
+  }
+
+  function formatShortDate(dateStr) {
+    return formatLocalTimestamp(dateStr);
   }
 
   function formatBookingTimeRange(req) {
@@ -599,8 +620,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let displayTime = formatBookingTimeRange(req);
 
+        const isDone = ['completed', 'done', 'cancelled', 'cancelled_by_customer'].includes(currentStatus);
+
         const agentSelectHtml = `
-          <select class="agent-select-badge" data-id="${req.id}">
+          <select class="agent-select-badge" data-id="${req.id}" ${isDone ? 'disabled title="Agent cannot be changed for completed or cancelled tasks"' : ''}>
             <option value="">${req.staff_agent_name || 'Select Agent'}</option>
           </select>
         `;
@@ -665,6 +688,10 @@ document.addEventListener('DOMContentLoaded', () => {
                   optionsHtml += `<option value="${a.id}" ${isSel ? 'selected' : ''}>${a.name} - ${a.role}</option>`;
                 });
                 agentSelect.innerHTML = optionsHtml;
+                if (isDone) {
+                  agentSelect.disabled = true;
+                  agentSelect.title = "Agent cannot be changed for completed or cancelled tasks";
+                }
               }
             } catch (err) {
               console.error('Failed to fetch available agents:', err);
@@ -689,6 +716,13 @@ document.addEventListener('DOMContentLoaded', () => {
             else if (newStatus === 'in_progress') badgeClass = 'info';
             else if (newStatus === 'rescheduled') badgeClass = 'purple';
             statusSelect.className = `status-select-badge ${badgeClass}`;
+
+            if (agentSelect) {
+              const isNowDone = ['completed', 'done', 'cancelled', 'cancelled_by_customer'].includes(newStatus);
+              agentSelect.disabled = isNowDone;
+              agentSelect.title = isNowDone ? "Agent cannot be changed for completed or cancelled tasks" : "";
+            }
+
             updateRequestStatus(req.id, newStatus);
           });
         }
@@ -1626,23 +1660,28 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function loadStaffView(selectedId = null) {
+    if (!staffAgentSelector || !staffSlotsListBody) return;
     try {
       const response = await fetch('/api/v1/portal/agents');
       if (!response.ok) throw new Error('Failed to fetch staff agents');
       const agents = await response.json();
       
-      const prevValue = selectedId || staffAgentSelector.value;
-      
-      staffAgentSelector.innerHTML = '';
-      if (agents.length === 0) {
+      if (!Array.isArray(agents) || agents.length === 0) {
         staffAgentSelector.innerHTML = '<option value="">No agents available</option>';
-        staffSlotsListBody.innerHTML = '<tr><td colspan="3" class="text-center py-6 text-muted">No staff agents found.</td></tr>';
+        staffSlotsListBody.innerHTML = '<tr><td colspan="2" class="text-center py-6 text-muted">No staff agents found.</td></tr>';
         
         // Update connection status and disable buttons
-        await updateAgentConnectionUI();
+        try {
+          await updateAgentConnectionUI();
+        } catch (e) {
+          console.error('Error updating connection UI:', e);
+        }
         return;
       }
       
+      const prevValue = selectedId || staffAgentSelector.value;
+      
+      staffAgentSelector.innerHTML = '';
       agents.forEach(agent => {
         const opt = document.createElement('option');
         opt.value = agent.id;
@@ -1664,7 +1703,11 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       
       // Update the connection status UI
-      await updateAgentConnectionUI();
+      try {
+        await updateAgentConnectionUI();
+      } catch (e) {
+        console.error('Error updating connection UI:', e);
+      }
 
       // Populate Business Hours & Workdays config in Staff view
       try {
@@ -1699,7 +1742,7 @@ document.addEventListener('DOMContentLoaded', () => {
           if (e.target.value) {
             loadAgentCalendar(e.target.value);
           } else {
-            staffSlotsListBody.innerHTML = '<tr><td colspan="3" class="text-center py-6 text-muted">Select an agent to load calendar slots.</td></tr>';
+            staffSlotsListBody.innerHTML = '<tr><td colspan="2" class="text-center py-6 text-muted">Select an agent to load calendar slots.</td></tr>';
           }
         });
         
@@ -2119,6 +2162,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function loadAgentCalendar(agentId) {
+    if (!staffSlotsListBody) return;
     try {
       const response = await fetch(`/api/v1/portal/agents/${agentId}/calendar`);
       if (!response.ok) throw new Error('Failed to fetch calendar slots');
@@ -2126,14 +2170,17 @@ document.addEventListener('DOMContentLoaded', () => {
       
       staffSlotsListBody.innerHTML = '';
       
-      if (slots.length === 0) {
-        staffSlotsListBody.innerHTML = '<tr><td colspan="3" class="text-center py-6 text-muted">No availability slots scheduled.</td></tr>';
+      if (!Array.isArray(slots) || slots.length === 0) {
+        staffSlotsListBody.innerHTML = '<tr><td colspan="2" class="text-center py-6 text-muted">No availability slots scheduled.</td></tr>';
         return;
       }
       
       slots.forEach(slot => {
+        if (!slot || !slot.slot_datetime) return;
         const tr = document.createElement('tr');
-        const startDate = new Date(slot.slot_datetime.replace(' ', 'T'));
+        const rawDt = String(slot.slot_datetime).replace(' ', 'T');
+        const startDate = new Date(rawDt);
+        if (isNaN(startDate.getTime())) return;
         const endDate = new Date(startDate.getTime() + 30 * 60 * 1000);
         
         const dateOptions = { year: 'numeric', month: '2-digit', day: '2-digit' };
@@ -2148,52 +2195,7 @@ document.addEventListener('DOMContentLoaded', () => {
         tr.innerHTML = `
           <td><strong>${timeWindowStr}</strong></td>
           <td><span class="badge ${slot.is_booked ? 'warning' : 'success'}">${slot.is_booked ? 'Booked' : 'Available'}</span></td>
-          <td>
-            <div class="actions-cell" style="display: flex; gap: 8px; align-items: center; white-space: nowrap;">
-              <button class="btn btn-secondary btn-sm toggle-slot-btn">
-                ${slot.is_booked ? 'Mark Available' : 'Mark Booked'}
-              </button>
-              <button class="btn btn-secondary btn-sm delete-slot-btn" style="border-color: var(--color-danger); color: var(--color-danger);">
-                Delete
-              </button>
-            </div>
-          </td>
         `;
-        
-        // Toggle Booking Status click handler
-        tr.querySelector('.toggle-slot-btn').addEventListener('click', async () => {
-          try {
-            const res = await fetch(`/api/v1/portal/calendar/${slot.id}`, {
-              method: 'PATCH',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ is_booked: !slot.is_booked })
-            });
-            if (!res.ok) throw new Error('Failed to toggle status');
-            
-            showToast(`Slot marked ${!slot.is_booked ? 'booked' : 'available'} successfully.`);
-            loadAgentCalendar(agentId);
-          } catch (err) {
-            console.error(err);
-            showToast('Error updating status: ' + err.message, 'error');
-          }
-        });
-        
-        // Delete Slot click handler
-        tr.querySelector('.delete-slot-btn').addEventListener('click', async () => {
-          if (!confirm('Are you sure you want to delete this availability slot?')) return;
-          try {
-            const res = await fetch(`/api/v1/portal/calendar/${slot.id}`, {
-              method: 'DELETE'
-            });
-            if (!res.ok) throw new Error('Failed to delete slot');
-            
-            showToast('Time slot removed successfully.');
-            loadAgentCalendar(agentId);
-          } catch (err) {
-            console.error(err);
-            showToast('Error deleting slot: ' + err.message, 'error');
-          }
-        });
         
         staffSlotsListBody.appendChild(tr);
       });
@@ -2912,31 +2914,37 @@ document.addEventListener('DOMContentLoaded', () => {
           }
 
           if (reassignSelect) {
-            fetch(`/api/v1/portal/service-requests/${apptId}/available-agents`).then(r => r.json()).then(data => {
-              const agents = data.agents || [];
-              let opts = '<option value="">👤 Reassign Staff Agent...</option>';
-              agents.forEach(a => {
-                opts += `<option value="${a.id}">${a.name}</option>`;
-              });
-              reassignSelect.innerHTML = opts;
-            }).catch(console.error);
-
-            reassignSelect.addEventListener('change', async (e) => {
-              const agentId = e.target.value;
-              if (!agentId) return;
-              try {
-                const res = await fetch(`/api/v1/portal/service-requests/${apptId}/assign-agent`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ staff_agent_id: parseInt(agentId) })
+            const isApptDone = ['completed', 'done', 'cancelled', 'cancelled_by_customer'].includes(convDetails.appointment_status);
+            if (isApptDone) {
+              reassignSelect.disabled = true;
+              reassignSelect.title = "Cannot reassign agent for completed or cancelled tasks";
+            } else {
+              fetch(`/api/v1/portal/service-requests/${apptId}/available-agents`).then(r => r.json()).then(data => {
+                const agents = data.agents || [];
+                let opts = '<option value="">👤 Reassign Staff Agent...</option>';
+                agents.forEach(a => {
+                  opts += `<option value="${a.id}">${a.name}</option>`;
                 });
-                if (!res.ok) throw new Error('Reassignment failed');
-                showToast('Agent reassigned!');
-                loadSMSMessages(conversationId, convDetails);
-              } catch (e) {
-                showToast('Error reassigning agent: ' + e.message, 'error');
-              }
-            });
+                reassignSelect.innerHTML = opts;
+              }).catch(console.error);
+
+              reassignSelect.addEventListener('change', async (e) => {
+                const agentId = e.target.value;
+                if (!agentId) return;
+                try {
+                  const res = await fetch(`/api/v1/portal/service-requests/${apptId}/assign-agent`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ staff_agent_id: parseInt(agentId) })
+                  });
+                  if (!res.ok) throw new Error('Reassignment failed');
+                  showToast('Agent reassigned!');
+                  loadSMSMessages(conversationId, convDetails);
+                } catch (e) {
+                  showToast('Error reassigning agent: ' + e.message, 'error');
+                }
+              });
+            }
           }
         }
       }
@@ -2965,7 +2973,7 @@ document.addEventListener('DOMContentLoaded', () => {
         msgDiv.className = `chat-bubble ${bubbleTypeClass}`;
         
         const senderDisplayName = m.sender_name || (isCustomer ? 'Customer' : isSystem ? '🤖 Bot Auto-Responder' : '👤 Human Agent');
-        const formattedTimeString = new Date(m.created_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+        const formattedTimeString = formatLocalTimestamp(m.created_at, { timeOnly: true });
 
         msgDiv.innerHTML = `
           <div class="bubble-sender-name">${senderDisplayName}</div>
@@ -3124,15 +3132,15 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (isFailed) {
           reasonHtml = `<div style="font-size: 12px; color: var(--text-muted); border-left: 2px solid #f87171; padding-left: 8px; margin-top: 4px; line-height: 1.4;"><strong style="color: #f87171;">Error Details:</strong> ${l.error_message || l.error_code || 'Twilio delivery failed.'}</div>`;
         } else if (isQueued && l.scheduled_send_at) {
-          reasonHtml = `<div style="font-size: 12px; color: var(--text-muted); border-left: 2px solid #60a5fa; padding-left: 8px; margin-top: 4px; line-height: 1.4;"><strong style="color: #60a5fa;">Quiet Hours Queue:</strong> Scheduled for release at ${l.scheduled_send_at}</div>`;
+          reasonHtml = `<div style="font-size: 12px; color: var(--text-muted); border-left: 2px solid #60a5fa; padding-left: 8px; margin-top: 4px; line-height: 1.4;"><strong style="color: #60a5fa;">Quiet Hours Queue:</strong> Scheduled for release at ${formatLocalTimestamp(l.scheduled_send_at)}</div>`;
         }
 
         const canRetry = isFailed || isNotWhitelisted || isOptOut;
 
         const metaParts = [];
         metaParts.push(`Recipient: <span style="color: var(--text-main);">${l.recipient_phone}</span>`);
-        metaParts.push(`Logged: <span style="color: var(--text-main);">${l.created_at || 'N/A'}</span>`);
-        if (l.sent_at) metaParts.push(`Sent: <span style="color: var(--text-main);">${l.sent_at}</span>`);
+        metaParts.push(`Logged: <span style="color: var(--text-main);">${formatLocalTimestamp(l.created_at)}</span>`);
+        if (l.sent_at) metaParts.push(`Sent: <span style="color: var(--text-main);">${formatLocalTimestamp(l.sent_at)}</span>`);
         if (l.twilio_message_sid) metaParts.push(`SID: <code style="font-size: 10.5px; color: var(--text-main);">${l.twilio_message_sid}</code>`);
         if (l.retry_count > 0) metaParts.push(`Retries: <span style="color: var(--text-main);">${l.retry_count}</span>`);
 

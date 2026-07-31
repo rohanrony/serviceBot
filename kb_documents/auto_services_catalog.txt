@@ -163,3 +163,8 @@ Duration: 45 minutes
 Description: Diagnosis and repair of cooling system leaks, radiator replacement, thermostat replacement, and cooling fan repairs.
 Price Range: $299 - $699
 Duration: 120 minutes
+
+## Callback / Phone Consultation
+Description: A 15-minute scheduled phone consultation or callback request with a service advisor or technician.
+Price Range: $0
+Duration: 15 minutes

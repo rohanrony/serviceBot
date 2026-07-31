@@ -1307,7 +1307,7 @@ def reschedule_appointment(appointment_id: int, new_datetime: str) -> bool:
 
             # 4. Update service request
             cursor.execute(
-                "UPDATE service_requests SET booking_time = %s, staff_agent_id = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s;",
+                "UPDATE service_requests SET booking_time = %s, staff_agent_id = %s, status = 'rescheduled', updated_at = CURRENT_TIMESTAMP WHERE id = %s;",
                 (new_datetime, chosen_agent_id, appointment_id)
             )
             
@@ -1320,6 +1320,21 @@ def reschedule_appointment(appointment_id: int, new_datetime: str) -> bool:
             sr_desc_row = cursor.fetchone()
             issue_desc = sr_desc_row["issue_description"] if sr_desc_row else ""
             
+            # Cancel old events for old agent and admin if previous booking_time existed
+            if old_datetime:
+                old_dt_str = old_datetime.strftime("%Y-%m-%d %H:%M:%S") if isinstance(old_datetime, dt_mod.datetime) else str(old_datetime)[:19]
+                if old_agent_id:
+                    try:
+                        from serviceBot.services.google_calendar import delete_agent_calendar_event
+                        delete_agent_calendar_event(old_agent_id, old_dt_str, duration_minutes=old_duration)
+                    except Exception as del_err:
+                        logger.warning(f"Could not delete old agent calendar event for agent {old_agent_id} at {old_dt_str}: {del_err}")
+                try:
+                    from serviceBot.services.gmail import delete_admin_calendar_event
+                    delete_admin_calendar_event(old_dt_str, duration_minutes=old_duration)
+                except Exception as del_adm_err:
+                    logger.warning(f"Could not delete old admin calendar event at {old_dt_str}: {del_adm_err}")
+
             # Insert event into the new agent's Google Calendar if connected
             create_agent_calendar_event(
                 agent_id=chosen_agent_id,
@@ -1356,6 +1371,7 @@ def update_service_request_status(request_id: int, status: str) -> dict:
     Updates the status of a service request.
     Valid statuses: 'pending', 'in_progress', 'completed', 'cancelled', 'rescheduled'.
     Maps 'done' -> 'completed'.
+    Frees calendar slots if cancelling.
     """
     normalized_status = status.lower().strip()
     if normalized_status == 'done':
@@ -1367,6 +1383,52 @@ def update_service_request_status(request_id: int, status: str) -> dict:
 
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
+            # If cancelling, release the booked slots in mock_calendar_slots
+            if normalized_status in ('cancelled', 'cancelled_by_customer'):
+                cursor.execute(
+                    "SELECT booking_time, staff_agent_id, service_type, booking_type FROM service_requests WHERE id = %s;",
+                    (request_id,)
+                )
+                sr_row = cursor.fetchone()
+                if sr_row and sr_row.get("booking_time"):
+                    b_time = sr_row["booking_time"]
+                    agent_id = sr_row.get("staff_agent_id")
+                    b_type = sr_row.get("booking_type")
+                    svc_type = sr_row.get("service_type")
+
+                    duration_minutes = 15 if b_type == 'callback' else 60
+                    if svc_type and b_type != 'callback':
+                        fields = get_service_required_fields(svc_type)
+                        if fields and fields.get("duration_minutes"):
+                            duration_minutes = fields["duration_minutes"]
+
+                    b_start = dt_mod.datetime.strptime(b_time, "%Y-%m-%d %H:%M:%S") if isinstance(b_time, str) else b_time
+                    b_end = b_start + dt_mod.timedelta(minutes=duration_minutes)
+                    b_start_str = b_start.strftime("%Y-%m-%d %H:%M:%S")
+                    b_end_str = b_end.strftime("%Y-%m-%d %H:%M:%S")
+
+                    if agent_id:
+                        cursor.execute(
+                            """
+                            UPDATE mock_calendar_slots
+                            SET is_booked = FALSE
+                            WHERE staff_agent_id = %s
+                              AND slot_datetime >= CAST(%s AS TIMESTAMP)
+                              AND slot_datetime < CAST(%s AS TIMESTAMP);
+                            """,
+                            (agent_id, b_start_str, b_end_str)
+                        )
+                    else:
+                        cursor.execute(
+                            """
+                            UPDATE mock_calendar_slots
+                            SET is_booked = FALSE
+                            WHERE slot_datetime >= CAST(%s AS TIMESTAMP)
+                              AND slot_datetime < CAST(%s AS TIMESTAMP);
+                            """,
+                            (b_start_str, b_end_str)
+                        )
+
             cursor.execute(
                 "UPDATE service_requests SET status = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s RETURNING id, status, updated_at;",
                 (normalized_status, request_id)
@@ -1392,7 +1454,7 @@ def assign_staff_agent_to_service_request(request_id: int, staff_agent_id: int =
         with dict_cursor(conn) as cursor:
             # 1. Fetch current service request and related customer/vehicle details
             cursor.execute("""
-                SELECT sr.id, sr.staff_agent_id, sr.booking_time, sr.time_slot, sr.service_type, sr.issue_description,
+                SELECT sr.id, sr.status, sr.staff_agent_id, sr.booking_time, sr.time_slot, sr.service_type, sr.issue_description,
                        sr.customer_id, sr.vehicle_id,
                        c.name AS customer_name, c.phone AS customer_phone,
                        v.year AS vehicle_year, v.make AS vehicle_make, v.model AS vehicle_model
@@ -1404,6 +1466,10 @@ def assign_staff_agent_to_service_request(request_id: int, staff_agent_id: int =
             sr = cursor.fetchone()
             if not sr:
                 raise ValueError(f"Service request with ID {request_id} not found.")
+
+            sr_status = (sr.get("status") or "").lower()
+            if sr_status in ("completed", "done", "cancelled", "cancelled_by_customer"):
+                raise ValueError(f"Cannot reassign agent for service request #{request_id} as it is marked as {sr_status}.")
 
             old_agent_id = sr.get("staff_agent_id")
             old_agent_name = None
@@ -1812,21 +1878,35 @@ def update_sms_log_status(
             return dict(row) if row else None
 
 
+def _to_iso_utc_str(val):
+    """Converts a database timestamp value (datetime or string) to ISO 8601 UTC string with Z suffix."""
+    if not val:
+        return None
+    if isinstance(val, str):
+        val_str = val.strip()
+        if " " in val_str and "T" not in val_str:
+            val_str = val_str.replace(" ", "T")
+        if not val_str.endswith("Z") and "+" not in val_str and "-" not in val_str[10:]:
+            val_str += "Z"
+        return val_str
+    return val.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def get_sms_logs_by_appointment(appointment_id: int) -> list:
-    """Fetches all SMS dispatch logs for a given appointment."""
+    """Fetches all SMS dispatch logs for a given appointment, ordered descending by time (latest first)."""
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
-            cursor.execute("SELECT * FROM sms_log WHERE appointment_id = %s ORDER BY created_at ASC;", (appointment_id,))
+            cursor.execute("SELECT * FROM sms_log WHERE appointment_id = %s ORDER BY created_at DESC, id DESC;", (appointment_id,))
             rows = cursor.fetchall()
             logs = []
             for r in rows:
                 item = dict(r)
-                if item.get("created_at") and not isinstance(item["created_at"], str):
-                    item["created_at"] = item["created_at"].strftime("%Y-%m-%d %H:%M:%S")
-                if item.get("sent_at") and not isinstance(item["sent_at"], str):
-                    item["sent_at"] = item["sent_at"].strftime("%Y-%m-%d %H:%M:%S")
-                if item.get("scheduled_send_at") and not isinstance(item["scheduled_send_at"], str):
-                    item["scheduled_send_at"] = item["scheduled_send_at"].strftime("%Y-%m-%d %H:%M:%S")
+                if item.get("created_at"):
+                    item["created_at"] = _to_iso_utc_str(item["created_at"])
+                if item.get("sent_at"):
+                    item["sent_at"] = _to_iso_utc_str(item["sent_at"])
+                if item.get("scheduled_send_at"):
+                    item["scheduled_send_at"] = _to_iso_utc_str(item["scheduled_send_at"])
                 logs.append(item)
             return logs
 
@@ -2040,7 +2120,14 @@ def get_sms_messages(conversation_id: int) -> list:
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             cursor.execute("SELECT * FROM sms_messages WHERE conversation_id = %s ORDER BY created_at ASC;", (conversation_id,))
-            return [dict(r) for r in cursor.fetchall()]
+            rows = cursor.fetchall()
+            msgs = []
+            for r in rows:
+                item = dict(r)
+                if item.get("created_at"):
+                    item["created_at"] = _to_iso_utc_str(item["created_at"])
+                msgs.append(item)
+            return msgs
 
 
 def update_customer_opt_in(phone: str, opt_in: bool) -> bool:

@@ -485,13 +485,17 @@ def send_admin_notification(booking_type: str, details: dict, mechanic_name: Opt
         color = "#8b5cf6"  # Purple Reassigned
         type_title = "Admin Alert: Agent Switched / Appointment Reassigned"
         time_label = "Appointment Date & Time"
+    elif booking_type in ["cancelled", "cancelled_by_customer", "cancelled_by_admin"]:
+        color = "#ef4444"  # Red Alert
+        type_title = "Admin Alert: Appointment Cancelled"
+        time_label = "Cancelled Slot Time"
     else:
         color = "#f59e0b"  # Amber Warning
         type_title = "Admin Alert: New Callback Requested"
         time_label = "Preferred Callback Time"
 
     assigned_str = f"{mechanic_name or 'Staff Member'} ({mechanic_email})" if mechanic_email else (mechanic_name or "Assigned Staff")
-    subject = f"[Admin Copy] {type_title} - Reassigned to {mechanic_name or 'Staff'}"
+    subject = f"[Admin Copy] {type_title} - {mechanic_name or 'Staff'}"
 
 
     html_body = f"""
@@ -726,4 +730,70 @@ def create_admin_calendar_event(
     except Exception as e:
         print(f"Exception creating admin calendar event: {str(e)}")
         return False
+
+
+def delete_admin_calendar_event(
+    slot_datetime_str: str,
+    duration_minutes: int = 60
+) -> bool:
+    """
+    Finds and deletes matching Admin Google Calendar events for a specific slot time.
+    """
+    try:
+        access_token = get_gmail_access_token()
+        if not access_token:
+            print("Admin Calendar: No active Google OAuth access token available for system/admin to delete event.")
+            return False
+
+        import zoneinfo
+        from datetime import datetime, timedelta, timezone
+        try:
+            tz = zoneinfo.ZoneInfo("America/New_York")
+        except Exception:
+            tz = timezone(timedelta(hours=-4))
+
+        start_dt = datetime.strptime(slot_datetime_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=tz)
+        end_dt = start_dt + timedelta(minutes=duration_minutes)
+
+        start_iso = (start_dt - timedelta(minutes=5)).isoformat()
+        end_iso = (end_dt + timedelta(minutes=5)).isoformat()
+
+        url = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json"
+        }
+        params = {
+            "timeMin": start_iso,
+            "timeMax": end_iso,
+            "singleEvents": "true",
+            "maxResults": 10
+        }
+
+        response = httpx.get(url, headers=headers, params=params, timeout=10.0)
+        if response.status_code != 200:
+            print(f"Failed to fetch Admin calendar events (HTTP {response.status_code}): {response.text}")
+            return False
+
+        data = response.json()
+        events = data.get("items", [])
+        cancelled_any = False
+
+        for ev in events:
+            summary = ev.get("summary", "")
+            if "serviceBot" in summary or "Callback" in summary or "Booking" in summary:
+                event_id = ev.get("id")
+                if event_id:
+                    del_url = f"https://www.googleapis.com/calendar/v3/calendars/primary/events/{event_id}"
+                    del_res = httpx.delete(del_url, headers=headers, timeout=10.0)
+                    if del_res.status_code in [200, 204]:
+                        print(f"Cancelled Admin Google Calendar event {event_id} at {slot_datetime_str}")
+                        cancelled_any = True
+                    else:
+                        print(f"Failed to delete Admin event {event_id} (HTTP {del_res.status_code}): {del_res.text}")
+        return cancelled_any
+    except Exception as e:
+        print(f"Exception cancelling Admin calendar event: {str(e)}")
+        return False
+
 
