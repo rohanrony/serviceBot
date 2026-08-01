@@ -8,7 +8,7 @@ from serviceBot.services.calendar_sync import (
     get_configured_business_hours,
 )
 from serviceBot.db.queries import _generate_dynamic_slots
-from serviceBot.db.seed import seed_database
+from serviceBot.db.seed import seed_db
 from serviceBot.db.connection import get_db_connection, dict_cursor
 
 def test_generate_slot_strings_has_30min_intervals():

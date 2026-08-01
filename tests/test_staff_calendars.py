@@ -158,8 +158,8 @@ def test_reschedule_appointment_checks_google_calendar(monkeypatch):
             VALUES (999, 999, 999, 'Oil Change', 'Needs oil change', 'pending', 'appointment', '2026-06-12 10:00:00', 1);
         """)
         # Insert mock slots for agents for 2026-06-12 11:00:00
-        cursor.execute("INSERT OR IGNORE INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES ('2026-06-12 11:00:00', 0, 1);")
-        cursor.execute("INSERT OR IGNORE INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES ('2026-06-12 11:00:00', 0, 2);")
+        cursor.execute("INSERT INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES ('2026-06-12 11:00:00', FALSE, 1) ON CONFLICT DO NOTHING;")
+        cursor.execute("INSERT INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES ('2026-06-12 11:00:00', FALSE, 2) ON CONFLICT DO NOTHING;")
         conn.commit()
 
     # Mock google_calendar check: agent 1 is busy, agent 2 is free.

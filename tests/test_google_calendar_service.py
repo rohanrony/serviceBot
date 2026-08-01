@@ -45,11 +45,11 @@ def test_get_user_google_credentials_expired_refresh(mock_post, mock_load):
     with get_db_connection() as conn:
         cursor = conn.cursor()
         # Seed the foreign key reference staff_agent ID 999 first
-        cursor.execute("INSERT OR IGNORE INTO staff_agents (id, name, role, email) VALUES (999, 'Test Agent 999', 'Advisor', 'agent@test.com');")
+        cursor.execute("INSERT INTO staff_agents (id, name, role, email) VALUES (999, 'Test Agent 999', 'Advisor', 'agent@test.com') ON CONFLICT (id) DO NOTHING;")
         cursor.execute("DELETE FROM user_google_accounts WHERE agent_id = 999;")
         cursor.execute(
             "INSERT INTO user_google_accounts (agent_id, provider, email, refresh_token, access_token, expires_at) "
-            "VALUES (999, 'google', 'agent@test.com', ?, ?, ?);",
+            "VALUES (999, 'google', 'agent@test.com', %s, %s, %s);",
             (encrypt_key("my_refresh_token"), encrypt_key("old_access_token"), time.time() - 100) # already expired
         )
         conn.commit()

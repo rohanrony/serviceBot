@@ -9,27 +9,28 @@ client = TestClient(app)
 def test_create_callback_request_query():
     """Test that callback requests can be created in the database and queried."""
     from serviceBot.db.queries import create_callback_request
+    from serviceBot.db.connection import dict_cursor
     
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        # Ensure a customer exists for testing
-        cursor.execute("INSERT OR IGNORE INTO customers (id, name, phone) VALUES (10, 'Test Customer', '555-000-1111')")
-        cursor.execute("INSERT OR IGNORE INTO vehicles (id, customer_id, make, model, year) VALUES (20, 10, 'Toyota', 'Corolla', 2015)")
-        cursor.execute("INSERT OR IGNORE INTO service_requests (id, customer_id, vehicle_id, service_type, issue_description) VALUES (20, 10, 20, 'Oil Change', 'General service')")
-        conn.commit()
+        with dict_cursor(conn) as cursor:
+            # Ensure a customer exists for testing
+            cursor.execute("INSERT INTO customers (id, name, phone) VALUES (10, 'Test Customer', '555-000-1111') ON CONFLICT (id) DO NOTHING;")
+            cursor.execute("INSERT INTO vehicles (id, customer_id, make, model, year) VALUES (20, 10, 'Toyota', 'Corolla', 2015) ON CONFLICT (id) DO NOTHING;")
+            cursor.execute("INSERT INTO service_requests (id, customer_id, vehicle_id, service_type, issue_description) VALUES (20, 10, 20, 'Oil Change', 'General service') ON CONFLICT (id) DO NOTHING;")
+            conn.commit()
 
     # Create callback
     cb_id = create_callback_request(customer_id=10, service_request_id=20, preferred_time="Today at 4 PM")
     assert cb_id is not None
 
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM service_requests WHERE id = ?", (cb_id,))
-        row = cursor.fetchone()
-        assert row is not None
-        assert row["customer_id"] == 10
-        assert row["booking_type"] == "callback"
-        assert row["booking_time"] == "Today at 4 PM"
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT * FROM service_requests WHERE id = %s;", (cb_id,))
+            row = cursor.fetchone()
+            assert row is not None
+            assert row["customer_id"] == 10
+            assert row["booking_type"] == "callback"
+            assert row["booking_time"] == "Today at 4 PM"
 
 
 def test_get_callbacks_endpoint():

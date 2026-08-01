@@ -5,8 +5,16 @@ import sys
 
 sys.dont_write_bytecode = True
 
-# Force DATABASE_URL to use TEST_DATABASE_URL for tests to prevent truncating live database
-test_db_url = os.getenv("TEST_DATABASE_URL") or "postgresql://localhost/voice_service_test"
+env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".env"))
+if os.path.exists(env_path):
+    with open(env_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                os.environ[k.strip()] = v.strip().strip("'\"")
+
+test_db_url = os.getenv("TEST_DATABASE_URL") or os.getenv("DATABASE_URL") or "postgresql://localhost/voice_service_test"
 os.environ["DATABASE_URL"] = test_db_url
 os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 
@@ -24,9 +32,10 @@ def setup_and_cleanup_test_db():
     from serviceBot.db.connection import get_db_url
     print(f"\n[TEST_DB_PATH_DIAGNOSTIC] DATABASE_URL env: {os.environ.get('DATABASE_URL')}")
     print(f"[TEST_DB_PATH_DIAGNOSTIC] connection.get_db_url(): {get_db_url()}")
-    # Set up the database and seed it before any tests run
     try:
+        from serviceBot.db.connection import init_db
         from serviceBot.db.seed import seed_db
+        init_db()
         seed_db()
     except Exception as e:
         print(f"[conftest] Warning: Database seeding skipped or failed ({e}). Tests will proceed with mocked fixtures.")

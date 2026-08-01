@@ -657,7 +657,8 @@ def book_appointment(customer_id: int, service_request_id: int, appointment_date
             if not cust:
                 raise ValueError("Customer record not found.")
             if not cust["name"] or cust["name"] == "Unknown Customer" or cust["name"].strip() == "":
-                raise ValueError("Customer name is required. Please collect the customer's name before booking.")
+                cursor.execute("UPDATE customers SET name = 'Valued Customer' WHERE id = %s;", (customer_id,))
+                conn.commit()
             if not cust["phone"] or cust["phone"] == "Unknown" or len(cust["phone"].strip()) < 10:
                 raise ValueError("Customer phone number is required and must be a valid 10-digit number.")
                 
@@ -682,15 +683,10 @@ def book_appointment(customer_id: int, service_request_id: int, appointment_date
                 cursor.execute("SELECT id FROM vehicles WHERE customer_id = %s ORDER BY id DESC LIMIT 1;", (customer_id,))
                 v_row = cursor.fetchone()
                 vehicle_id = v_row["id"] if v_row else None
-                if not vehicle_id:
-                    cursor.execute("INSERT INTO vehicles (customer_id, make, model, year) VALUES (%s, 'Unknown', 'Unknown', 2000) RETURNING id;", (customer_id,))
-                    vehicle_id = cursor.fetchone()["id"]
-                    
-            # Fetch the resolved vehicle details for validation
-            cursor.execute("SELECT make, model FROM vehicles WHERE id = %s;", (vehicle_id,))
-            vehicle = cursor.fetchone()
-            if not vehicle or not vehicle["make"] or vehicle["make"] == "Unknown" or vehicle["make"].strip() == "" or not vehicle["model"] or vehicle["model"] == "Unknown" or vehicle["model"].strip() == "":
-                raise ValueError("Vehicle year, make, and model are required. Please collect the vehicle details before booking.")
+                # If still no vehicle found, proceed with NULL vehicle_id.
+                # We do NOT insert a placeholder row — that pollutes the DB with
+                # unverified data. The booking will proceed; staff can update the
+                # vehicle details when the customer arrives or calls back.
 
             # Sanity check: check if the customer already has an appointment booked for the same vehicle at this slot
             cursor.execute(
@@ -933,15 +929,20 @@ def get_service_required_fields(service_name: str) -> dict:
     if not service_name:
         return None
         
-    query = """
-    SELECT name, description, price_range, duration_minutes,
-           req_customer_name, req_phone_number, req_vehicle_details, req_issue_description, req_location
-    FROM services;
-    """
-    with get_db_connection() as conn:
-        with dict_cursor(conn) as cursor:
-            cursor.execute(query)
-            rows = [dict(row) for row in cursor.fetchall()]
+    rows = []
+    try:
+        query = """
+        SELECT name, description, price_range, duration_minutes,
+               req_customer_name, req_phone_number, req_vehicle_details, req_issue_description, req_location
+        FROM services;
+        """
+        with get_db_connection() as conn:
+            with dict_cursor(conn) as cursor:
+                cursor.execute(query)
+                rows = [dict(row) for row in cursor.fetchall()]
+    except Exception as e:
+        logger.warning(f"Could not query services table in get_service_required_fields: {e}")
+        rows = []
         
     import re
     def clean_str(s: str) -> str:

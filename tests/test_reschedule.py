@@ -33,10 +33,10 @@ def test_reschedule_appointment_query():
     with get_db_connection() as conn:
         cursor = conn.cursor()
         # Seed customer, appointment and slot
-        cursor.execute("INSERT OR IGNORE INTO customers (id, name, phone) VALUES (16, 'Resched Customer 2', '555-999-7777')")
-        cursor.execute("INSERT OR IGNORE INTO mock_calendar_slots (slot_datetime, is_booked) VALUES ('2026-06-15 14:00:00', 1)")
-        cursor.execute("INSERT OR IGNORE INTO mock_calendar_slots (slot_datetime, is_booked) VALUES ('2026-06-15 16:00:00', 0)")
-        cursor.execute("INSERT OR IGNORE INTO service_requests (id, customer_id, vehicle_id, service_type, issue_description, booking_type, booking_time) VALUES (51, 16, 1, 'Oil Change', 'General repair', 'appointment', '2026-06-15 14:00:00')")
+        cursor.execute("INSERT INTO customers (id, name, phone) VALUES (16, 'Resched Customer 2', '555-999-7777') ON CONFLICT (id) DO NOTHING;")
+        cursor.execute("INSERT INTO mock_calendar_slots (slot_datetime, is_booked) VALUES ('2026-06-15 14:00:00', TRUE) ON CONFLICT DO NOTHING;")
+        cursor.execute("INSERT INTO mock_calendar_slots (slot_datetime, is_booked) VALUES ('2026-06-15 16:00:00', FALSE) ON CONFLICT DO NOTHING;")
+        cursor.execute("INSERT INTO service_requests (id, customer_id, vehicle_id, service_type, issue_description, booking_type, booking_time) VALUES (51, 16, 1, 'Oil Change', 'General repair', 'appointment', '2026-06-15 14:00:00') ON CONFLICT (id) DO NOTHING;")
         conn.commit()
 
     # Reschedule

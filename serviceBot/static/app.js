@@ -589,7 +589,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (nextBtn) nextBtn.disabled = srCurrentPage >= totalPages;
     
     if (paginatedReqs.length === 0) {
-      requestsListBody.innerHTML = `<tr><td colspan="10" class="text-center py-6 text-muted">No matching service requests found.</td></tr>`;
+      requestsListBody.innerHTML = `<tr><td colspan="9" class="text-center py-6 text-muted">No matching service requests found.</td></tr>`;
     } else {
       requestsListBody.innerHTML = '';
       paginatedReqs.forEach(req => {
@@ -607,15 +607,6 @@ document.addEventListener('DOMContentLoaded', () => {
           statusBadgeClass = 'info';
         } else if (currentStatus === 'rescheduled') {
           statusBadgeClass = 'purple';
-        }
-
-        let reqTypeBadge = '';
-        if (req.booking_type === 'appointment') {
-          reqTypeBadge = '<span class="badge success">Appointment</span>';
-        } else if (req.booking_type === 'callback') {
-          reqTypeBadge = '<span class="badge info">Callback</span>';
-        } else {
-          reqTypeBadge = '<span class="text-muted">None</span>';
         }
 
         let displayTime = formatBookingTimeRange(req);
@@ -654,7 +645,6 @@ document.addEventListener('DOMContentLoaded', () => {
           <td><strong>${req.customer_name || 'Unknown Customer'}</strong></td>
           <td class="text-muted" style="font-size: 12.5px; white-space: nowrap;">${formattedPhone}</td>
           <td>${vehicleStr}</td>
-          <td style="text-align: center;">${reqTypeBadge}</td>
           <td style="font-size: 12px; white-space: nowrap;">${displayTime}</td>
           <td>${agentSelectHtml}</td>
           <td>

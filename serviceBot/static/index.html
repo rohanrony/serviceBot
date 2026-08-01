@@ -152,11 +152,6 @@
               <div class="table-filters">
 
                 <input type="text" id="filter-sr-search" class="form-input filter-search" placeholder="Search requests...">
-                <select id="filter-sr-type" class="form-input filter-type">
-                  <option value="all">All Types</option>
-                  <option value="appointment">Appointments</option>
-                  <option value="callback">Callbacks</option>
-                </select>
                 <select id="filter-sr-status" class="form-input filter-status">
                   <option value="all">All Statuses</option>
                   <option value="pending">Pending</option>
@@ -197,12 +192,6 @@
                         <div class="tooltip-popup">Vehicle Details</div>
                       </div>
                     </th>
-                    <th style="text-align: center;">
-                      <div class="tooltip-container">
-                        <span>Type</span>
-                        <div class="tooltip-popup">Request Type (Appointment / Callback)</div>
-                      </div>
-                    </th>
                     <th>
                       <div class="tooltip-container">
                         <span>Time</span>
@@ -237,7 +226,7 @@
                 </thead>
                 <tbody id="service-requests-list">
                   <tr>
-                    <td colspan="10" class="text-center py-6 text-muted">Loading service requests...</td>
+                    <td colspan="9" class="text-center py-6 text-muted">Loading service requests...</td>
                   </tr>
                 </tbody>
               </table>

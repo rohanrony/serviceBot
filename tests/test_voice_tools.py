@@ -228,8 +228,6 @@ def test_voice_tools_flat_book_appointment(mock_book, mock_lookup):
     response = client.post("/api/v1/voice/tools", json=payload)
     assert response.status_code == 200
     data = response.json()
-    assert data["success"] is True
-    assert data["appointment_id"] == 303
     assert data["result"]["success"] is True
     assert data["result"]["appointment_id"] == 303
 
@@ -243,8 +241,8 @@ def test_voice_tools_flat_check_availability(mock_check):
     response = client.post("/api/v1/voice/tools", json=payload)
     assert response.status_code == 200
     data = response.json()
-    assert data["success"] is True
-    assert "2026-06-11 10:00:00" in data["available_slots"]
+    assert data["result"]["success"] is True
+    assert "2026-06-11 10:00:00" in data["result"]["available_slots"]
 
 
 @patch("serviceBot.api.telephony.get_service_required_fields")
@@ -294,14 +292,14 @@ def test_voice_tools_get_service_fields_flat(mock_get_fields):
     response = client.post("/api/v1/voice/tools", json=payload)
     assert response.status_code == 200
     data = response.json()
-    assert data["success"] is True
-    assert data["service_found"] is True
-    assert data["service_name"] == "Brake Repair"
-    assert data["required_fields"]["customer_name"] is True
+    assert data["result"]["success"] is True
+    assert data["result"]["service_found"] is True
+    assert data["result"]["service_name"] == "Brake Repair"
+    assert data["result"]["required_fields"]["customer_name"] is True
 
+@patch("serviceBot.api.telephony.load_config")
 @patch("serviceBot.api.telephony.get_service_required_fields")
-@patch("serviceBot.api.portal.load_config")
-def test_voice_tools_get_service_fields_fallback(mock_load_config, mock_get_fields):
+def test_voice_tools_get_service_fields_fallback(mock_get_fields, mock_load_config):
     mock_get_fields.return_value = None
     mock_load_config.return_value = {
         "required_fields": {
@@ -318,10 +316,10 @@ def test_voice_tools_get_service_fields_fallback(mock_load_config, mock_get_fiel
     response = client.post("/api/v1/voice/tools", json=payload)
     assert response.status_code == 200
     data = response.json()
-    assert data["success"] is True
-    assert data["service_found"] is False
-    assert data["required_fields"]["customer_name"] is True
-    assert data["required_fields"]["phone_number"] is False
+    assert data["result"]["success"] is True
+    assert data["result"]["service_found"] is False
+    assert data["result"]["required_fields"]["customer_name"] is True
+    assert data["result"]["required_fields"]["phone_number"] is False
 
 
 def test_create_service_request_phone_validation_failure():
@@ -375,7 +373,9 @@ def test_create_service_request_phone_validation_success(mock_create, mock_looku
         vehicle_details={"make": "Honda", "model": "Civic", "year": 2020},
         issue="Grinding noise",
         service_type="Oil Change (Full Synthetic)",
-        time_slot=None
+        time_slot=None,
+        booking_type=None,
+        booking_time=None
     )
 
 
@@ -490,7 +490,9 @@ def test_voice_tools_create_service_request_multiple_issues(mock_create, mock_lo
         vehicle_details={"make": "Ford", "model": "F-150", "year": 2022},
         issue="Oil Change and Brake Inspection & Repair",
         service_type="Oil Change & Brake Inspection",
-        time_slot=None
+        time_slot=None,
+        booking_type=None,
+        booking_time=None
     )
 
 

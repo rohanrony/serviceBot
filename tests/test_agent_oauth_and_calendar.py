@@ -26,12 +26,12 @@ def clean_db_agent():
         # Also insert a connected google account for the test agent so tests can mock calls!
         cursor.execute(
             "INSERT INTO user_google_accounts (agent_id, provider, email, refresh_token, access_token, granted_scopes, expires_at) "
-            "VALUES (100, 'google', 'test.agent@example.com', ?, ?, ?, ?);",
+            "VALUES (100, 'google', 'test.agent@example.com', %s, %s, %s, %s) ON CONFLICT (agent_id) DO NOTHING;",
             (encrypt_key("dummy_refresh_token"), encrypt_key("dummy_access_token"), "https://www.googleapis.com/auth/calendar.events", time.time() + 3600)
         )
         cursor.execute(
-            "INSERT OR IGNORE INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) "
-            "VALUES ('2026-06-25 11:00:00', 0, 100);"
+            "INSERT INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) "
+            "VALUES ('2026-06-25 11:00:00', FALSE, 100) ON CONFLICT DO NOTHING;"
         )
         conn.commit()
     yield

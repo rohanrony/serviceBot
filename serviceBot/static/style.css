@@ -859,15 +859,14 @@ textarea.form-input {
 }
 
 /* Service Requests Columns: Badge, Fluid, and Action columns (no overflow dots) */
-#service-requests-table td:nth-child(5), /* Type badge */
-#service-requests-table td:nth-child(6), /* Booking Time */
-#service-requests-table td:nth-child(7), /* Assigned Agent */
-#service-requests-table td:nth-child(9) /* Status badge */ {
+#service-requests-table td:nth-child(5), /* Booking Time */
+#service-requests-table td:nth-child(6), /* Assigned Agent */
+#service-requests-table td:nth-child(8) /* Status badge */ {
   overflow: visible;
   white-space: nowrap;
 }
 
-#service-requests-table td:nth-child(8) { /* Description */
+#service-requests-table td:nth-child(7) { /* Description */
   white-space: normal;
   overflow: visible;
 }
@@ -882,17 +881,15 @@ textarea.form-input {
 #service-requests-table th:nth-child(4),
 #service-requests-table td:nth-child(4) { width: 125px; } /* Vehicle */
 #service-requests-table th:nth-child(5),
-#service-requests-table td:nth-child(5) { width: 105px; text-align: center; } /* Type */
+#service-requests-table td:nth-child(5) { width: 145px; } /* Time */
 #service-requests-table th:nth-child(6),
-#service-requests-table td:nth-child(6) { width: 145px; } /* Time */
+#service-requests-table td:nth-child(6) { width: 160px; } /* Assigned Agent */
 #service-requests-table th:nth-child(7),
-#service-requests-table td:nth-child(7) { width: 160px; } /* Assigned Agent */
+#service-requests-table td:nth-child(7) { width: 185px; } /* Description */
 #service-requests-table th:nth-child(8),
-#service-requests-table td:nth-child(8) { width: 185px; } /* Description */
+#service-requests-table td:nth-child(8) { width: 140px; text-align: center; } /* Status Select Badge */
 #service-requests-table th:nth-child(9),
-#service-requests-table td:nth-child(9) { width: 140px; text-align: center; } /* Status Select Badge */
-#service-requests-table th:nth-child(10),
-#service-requests-table td:nth-child(10) { width: 155px; text-align: center; } /* Actions */
+#service-requests-table td:nth-child(9) { width: 155px; text-align: center; } /* Actions */
 
 .actions-cell-container {
   display: flex;

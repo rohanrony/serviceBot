@@ -7,10 +7,15 @@ from dotenv import load_dotenv
 import zoneinfo
 from datetime import datetime
 
-from serviceBot.db.queries import lookup_customer_by_phone, create_service_request, check_availability, book_appointment, get_service_required_fields, create_crm_note, create_callback_request, get_customer_appointments, reschedule_appointment
+from serviceBot.db.queries import lookup_customer_by_phone, create_service_request, check_availability, book_appointment, get_service_required_fields, create_crm_note, create_callback_request, get_customer_appointments, reschedule_appointment, update_customer_name
+from serviceBot.db.connection import get_db_connection, dict_cursor
 from serviceBot.services.rag import FAQService
+from serviceBot.services.gmail import send_booking_notification, send_admin_notification
+from serviceBot.services.sms_router import SMSNotificationRouter
 from serviceBot.graph.nodes import handoff_node
 from serviceBot.logger import get_logger
+from serviceBot.api.portal import load_config
+from langchain_core.messages import HumanMessage
 
 logger = get_logger("api.telephony")
 
@@ -312,7 +317,6 @@ async def post_call_webhook(request: Request = None, payload: Dict[str, Any] = N
         customer = lookup_customer_by_phone(from_number_to_use)
             
         if not customer:
-            from serviceBot.db.connection import get_db_connection, dict_cursor
             with get_db_connection() as conn:
                 with dict_cursor(conn) as cursor:
                     cursor.execute(
@@ -340,7 +344,6 @@ async def post_call_webhook(request: Request = None, payload: Dict[str, Any] = N
         if callback_info:
             print("Extracted callback info from transcript, updating/creating service request...")
             log_to_file(f"Extracted callback info: {callback_info}\n")
-            from serviceBot.db.connection import get_db_connection, dict_cursor
             with get_db_connection() as conn:
                 with dict_cursor(conn) as cursor:
                     cursor.execute("""
@@ -413,12 +416,10 @@ async def post_call_webhook(request: Request = None, payload: Dict[str, Any] = N
                                 
                             details = get_booking_details(customer_id, sr_id)
                             details["time"] = callback_info.get("preferred_time") or "ASAP"
-                            from serviceBot.services.gmail import send_booking_notification, send_admin_notification
                             send_booking_notification("callback", details, agent_email=agent_email)
                             send_admin_notification("callback", details, mechanic_name=agent_name, mechanic_email=agent_email)
                             # SMS: notify customer + agent on callback booking
                             try:
-                                from serviceBot.services.sms_router import SMSNotificationRouter
                                 SMSNotificationRouter().process_event(
                                     event_type="BOOKING",
                                     appointment_id=sr_id,
@@ -516,7 +517,6 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                     }
 
                 # Gather summary
-                from langchain_core.messages import HumanMessage
                 issue_description = args.get("issue_description") or "Not specified"
                 state = {
                     "messages": [HumanMessage(content=f"I have an issue: {issue_description}")],
@@ -526,7 +526,6 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                 }
                 handoff_result = handoff_node(state)
                 summary = handoff_result.get("handoff_summary", "Handoff initiated.")
-                from serviceBot.api.portal import load_config
                 config = load_config()
                 handoff_number = config.get("handoff_phone_number", "+14242704893")
                 result = {
@@ -569,12 +568,10 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                 if c_data:
                     customer_id = c_data["customer_id"]
                     if customer_name and customer_name not in ("Unknown Customer", "Unknown"):
-                        from serviceBot.db.queries import update_customer_name
                         update_customer_name(customer_id, customer_name)
                 
                 if not customer_id:
                     # Insert customer
-                    from serviceBot.db.connection import get_db_connection, dict_cursor
                     with get_db_connection() as conn:
                         with dict_cursor(conn) as cursor:
                             cursor.execute(
@@ -609,7 +606,6 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                     try:
                         agent_email = None
                         agent_name = None
-                        from serviceBot.db.connection import get_db_connection, dict_cursor
                         with get_db_connection() as conn:
                             with dict_cursor(conn) as cursor:
                                 cursor.execute("""
@@ -627,12 +623,10 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                         details = get_booking_details(customer_id, sr_id)
                         details["time"] = booking_time or "Scheduled"
                         details["service_type"] = service_type
-                        from serviceBot.services.gmail import send_booking_notification, send_admin_notification
                         send_booking_notification("appointment", details, agent_email=agent_email)
                         send_admin_notification("appointment", details, mechanic_name=agent_name, mechanic_email=agent_email)
                         # SMS: notify customer + agent on appointment booking
                         try:
-                            from serviceBot.services.sms_router import SMSNotificationRouter
                             SMSNotificationRouter().process_event(
                                 event_type="BOOKING",
                                 appointment_id=sr_id,
@@ -654,7 +648,6 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                     try:
                         agent_email = None
                         agent_name = None
-                        from serviceBot.db.connection import get_db_connection, dict_cursor
                         with get_db_connection() as conn:
                             with dict_cursor(conn) as cursor:
                                 cursor.execute("""
@@ -671,12 +664,10 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
 
                         details = get_booking_details(customer_id, sr_id)
                         details["time"] = booking_time or "ASAP"
-                        from serviceBot.services.gmail import send_booking_notification, send_admin_notification
                         send_booking_notification("callback", details, agent_email=agent_email)
                         send_admin_notification("callback", details, mechanic_name=agent_name, mechanic_email=agent_email)
                         # SMS: notify customer + agent on callback booking
                         try:
-                            from serviceBot.services.sms_router import SMSNotificationRouter
                             SMSNotificationRouter().process_event(
                                 event_type="BOOKING",
                                 appointment_id=sr_id,
@@ -724,100 +715,95 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                     if not year or year == 2000 or str(year) == "2000":
                         year = c_data.get("year")
                 
-                if not customer_name or customer_name == "Unknown Customer" or customer_name.strip() == "":
-                    result = {
-                        "success": False,
-                        "message": "Validation failed: Customer name is required to book an appointment. Please ask the customer for their full name."
-                    }
-                elif not make or make == "Unknown" or make.strip() == "" or not model or model == "Unknown" or model.strip() == "" or not year or year == 2000 or str(year) == "2000":
-                    result = {
-                        "success": False,
-                        "message": "Validation failed: Vehicle year, make, and model are required to book an appointment. Please ask the customer for their vehicle's year, make, and model."
-                    }
-                else:
-                    customer_id = None
-                    sr_id = None
-                    if c_data:
-                        customer_id = c_data["customer_id"]
-                        sr_id = c_data.get("open_sr_id")
-                        if customer_name and customer_name not in ("Unknown Customer", "Unknown"):
-                            from serviceBot.db.queries import update_customer_name
-                            update_customer_name(customer_id, customer_name)
+                if not customer_name or customer_name in ("Unknown Customer", "Unknown", ""):
+                    if c_data and c_data.get("name") and c_data["name"] not in ("Unknown Customer", "Unknown", ""):
+                        customer_name = c_data["name"]
+                    else:
+                        customer_name = "Valued Customer"
 
-                    if not customer_id:
-                        from serviceBot.db.connection import get_db_connection, dict_cursor
+                if not make or make in ("Unknown", ""):
+                    make = (c_data.get("make") if c_data else None) or "Vehicle"
+                if not model or model in ("Unknown", ""):
+                    model = (c_data.get("model") if c_data else None) or "Standard"
+                if not year or year == 2000 or str(year) == "2000":
+                    year = (c_data.get("year") if c_data else None) or 2020
+
+                customer_id = None
+                sr_id = None
+                if c_data:
+                    customer_id = c_data["customer_id"]
+                    sr_id = c_data.get("open_sr_id")
+                    if customer_name and customer_name not in ("Unknown Customer", "Unknown"):
+                        update_customer_name(customer_id, customer_name)
+
+                if not customer_id:
+                    with get_db_connection() as conn:
+                        with dict_cursor(conn) as cursor:
+                            cursor.execute(
+                                "INSERT INTO customers (name, phone) VALUES (%s, %s) RETURNING id;",
+                                (customer_name, phone)
+                            )
+                            conn.commit()
+                            customer_id = cursor.fetchone()["id"]
+
+                try:
+                    vehicle_details = {"make": make, "model": model, "year": year}
+                    appt_id = book_appointment(
+                        customer_id=customer_id,
+                        service_request_id=sr_id,
+                        appointment_datetime=appointment_datetime,
+                        service_type=service_type,
+                        vehicle_details=vehicle_details
+                    )
+                    fields = get_service_required_fields(service_type)
+                    price_range = fields["price_range"] if fields else "Varies"
+
+                    result = {
+                        "success": True,
+                        "appointment_id": appt_id,
+                        "message": f"Appointment booked successfully. The estimated rate for this service is {price_range}. Please inform the customer of this rate."
+                    }
+
+                    # Trigger email + SMS notification (non-fatal: errors are logged, not raised)
+                    try:
+                        agent_email = None
+                        agent_name = None
                         with get_db_connection() as conn:
                             with dict_cursor(conn) as cursor:
-                                cursor.execute(
-                                    "INSERT INTO customers (name, phone) VALUES (%s, %s) RETURNING id;",
-                                    (customer_name, phone)
-                                )
-                                conn.commit()
-                                customer_id = cursor.fetchone()["id"]
+                                cursor.execute("""
+                                    SELECT sa.name, COALESCE(uga.email, sa.email) AS email
+                                    FROM service_requests sr
+                                    JOIN staff_agents sa ON sr.staff_agent_id = sa.id
+                                    LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id
+                                    WHERE sr.id = %s;
+                                """, (appt_id,))
+                                a_row = cursor.fetchone()
+                                if a_row:
+                                    agent_name = a_row["name"]
+                                    agent_email = a_row["email"]
 
-                    try:
-                        vehicle_details = {"make": make, "model": model, "year": year}
-                        appt_id = book_appointment(
-                            customer_id=customer_id,
-                            service_request_id=sr_id,
-                            appointment_datetime=appointment_datetime,
-                            service_type=service_type,
-                            vehicle_details=vehicle_details
-                        )
-                        fields = get_service_required_fields(service_type)
-                        price_range = fields["price_range"] if fields else "Varies"
-                        
-                        result = {
-                            "success": True,
-                            "appointment_id": appt_id,
-                            "message": f"Appointment booked successfully. The estimated rate for this service is {price_range}. Please inform the customer of this rate."
-                        }
-                        
-                        # Trigger email notification
+                        details = get_booking_details(customer_id, appt_id)
+                        details["time"] = appointment_datetime
+                        details["service_type"] = service_type
+                        send_booking_notification("appointment", details, agent_email=agent_email)
+                        send_admin_notification("appointment", details, mechanic_name=agent_name, mechanic_email=agent_email)
                         try:
-                            agent_email = None
-                            agent_name = None
-                            from serviceBot.db.connection import get_db_connection, dict_cursor
-                            with get_db_connection() as conn:
-                                with dict_cursor(conn) as cursor:
-                                    cursor.execute("""
-                                        SELECT sa.name, COALESCE(uga.email, sa.email) AS email
-                                        FROM service_requests sr
-                                        JOIN staff_agents sa ON sr.staff_agent_id = sa.id
-                                        LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id
-                                        WHERE sr.id = %s;
-                                    """, (appt_id,))
-
-                                    a_row = cursor.fetchone()
-                                    if a_row:
-                                        agent_name = a_row["name"]
-                                        agent_email = a_row["email"]
-
-                            details = get_booking_details(customer_id, appt_id)
-                            details["time"] = appointment_datetime
-                            details["service_type"] = service_type
-                            from serviceBot.services.gmail import send_booking_notification, send_admin_notification
-                            send_booking_notification("appointment", details, agent_email=agent_email)
-                            send_admin_notification("appointment", details, mechanic_name=agent_name, mechanic_email=agent_email)
-                            # SMS: notify customer + agent on book_appointment
-                            try:
-                                from serviceBot.services.sms_router import SMSNotificationRouter
-                                SMSNotificationRouter().process_event(
-                                    event_type="BOOKING",
-                                    appointment_id=appt_id,
-                                    customer_phone=details.get("phone"),
-                                    agent_phone=None,
-                                    booking_time=details.get("time")
-                                )
-                            except Exception as sms_err:
-                                print(f"Error sending SMS notification (book_appointment): {sms_err}")
-                        except Exception as email_err:
-                            print(f"Error triggering book appointment email: {email_err}")
-                    except ValueError as val_err:
-                        result = {
-                            "success": False,
-                            "message": f"Booking failed: {str(val_err)}"
-                        }
+                            SMSNotificationRouter().process_event(
+                                event_type="BOOKING",
+                                appointment_id=appt_id,
+                                customer_phone=details.get("phone"),
+                                agent_phone=None,
+                                booking_time=details.get("time")
+                            )
+                        except Exception as sms_err:
+                            logger.warning(f"SMS notification failed (book_appointment): {sms_err}")
+                    except Exception as email_err:
+                        logger.warning(f"Email notification failed (book_appointment): {email_err}")
+                except ValueError as val_err:
+                    result = {
+                        "success": False,
+                        "message": f"Booking failed: {str(val_err)}"
+                    }
 
         elif tool_name == "request_callback":
             phone = args.get("phone")
@@ -863,14 +849,12 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                         if not sr_id:
                             sr_id = c_data.get("open_sr_id")
                         if c_data.get("name") == "Unknown Customer" and customer_name != "Unknown Customer":
-                            from serviceBot.db.connection import get_db_connection, dict_cursor
                             with get_db_connection() as conn:
                                 with dict_cursor(conn) as cursor:
                                     cursor.execute("UPDATE customers SET name = %s WHERE id = %s;", (customer_name, customer_id))
                                     conn.commit()
                     
                     if not customer_id:
-                        from serviceBot.db.connection import get_db_connection, dict_cursor
                         with get_db_connection() as conn:
                             with dict_cursor(conn) as cursor:
                                 cursor.execute(
@@ -910,7 +894,6 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                         try:
                             agent_email = None
                             agent_name = None
-                            from serviceBot.db.connection import get_db_connection, dict_cursor
                             with get_db_connection() as conn:
                                 with dict_cursor(conn) as cursor:
                                     cursor.execute("""
@@ -927,12 +910,10 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
 
                             details = get_booking_details(customer_id, cb_id)
                             details["time"] = preferred_time or "ASAP"
-                            from serviceBot.services.gmail import send_booking_notification, send_admin_notification
                             send_booking_notification("callback", details, agent_email=agent_email)
                             send_admin_notification("callback", details, mechanic_name=agent_name, mechanic_email=agent_email)
                             # SMS: notify customer on callback request
                             try:
-                                from serviceBot.services.sms_router import SMSNotificationRouter
                                 SMSNotificationRouter().process_event(
                                     event_type="BOOKING",
                                     appointment_id=cb_id,
@@ -960,7 +941,6 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                     "message": "Validation failed: Phone number must be a valid 10-digit number."
                 }
             else:
-                from serviceBot.db.queries import lookup_customer_by_phone, update_customer_name
                 c_data = lookup_customer_by_phone(validated_phone)
                 if not c_data:
                     result = {
@@ -1067,7 +1047,6 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                             if cust_id:
                                 agent_email = None
                                 agent_name = None
-                                from serviceBot.db.connection import get_db_connection, dict_cursor
                                 with get_db_connection() as conn:
                                     with dict_cursor(conn) as cursor:
                                         cursor.execute("""
@@ -1085,12 +1064,10 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
 
                                 details = get_booking_details(cust_id, appt_id)
                                 details["time"] = new_datetime
-                                from serviceBot.services.gmail import send_booking_notification, send_admin_notification
                                 send_booking_notification("reschedule", details, agent_email=agent_email)
                                 send_admin_notification("reschedule", details, mechanic_name=agent_name, mechanic_email=agent_email)
                                 # SMS: notify customer on reschedule
                                 try:
-                                    from serviceBot.services.sms_router import SMSNotificationRouter
                                     SMSNotificationRouter().process_event(
                                         event_type="RESCHEDULED",
                                         appointment_id=appt_id,
@@ -1118,7 +1095,6 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
             }
 
         elif tool_name in ["get_service_fields", "get_required_fields"]:
-            from serviceBot.api.portal import load_config
             service_name = args.get("service_name") or args.get("serviceName") or args.get("service") or ""
             fields_data = get_service_required_fields(service_name)
             if fields_data:

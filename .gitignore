@@ -39,3 +39,15 @@ server.log
 # Local-only file logs (see LOG_FILE in .env — never commit these)
 logs/
 *.log
+
+# Python cache & artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Databases & local stores
+*.db
+*.sqlite3
+chroma_db/

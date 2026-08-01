@@ -111,7 +111,7 @@ case "$1" in
         ;;
     --all|"")
         echo -e "${BLUE}${BOLD}Running entire test suite...${NC}"
-        PYTHONDONTWRITEBYTECODE=1 "$PYTEST_BIN" -o cache_dir="$CACHE_DIR"
+        PYTHONDONTWRITEBYTECODE=1 "$PYTEST_BIN" tests/ -o cache_dir="$CACHE_DIR"
         ;;
     *)
         echo -e "${RED}${BOLD}Error:${NC} Unknown option: $1"
