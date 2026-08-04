@@ -192,34 +192,49 @@ def _dispatch_outbox_event(event_type: str, request_id: Optional[int], payload: 
 
         # 1. Cancel old agent Google Calendar event
         if old_agent_id is not None and booking_time_str:
-            delete_agent_calendar_event(old_agent_id, str(booking_time_str)[:19])
+            try:
+                delete_agent_calendar_event(old_agent_id, str(booking_time_str)[:19])
+            except Exception as cal_err:
+                logger.warning(f"[OUTBOX CALENDAR WARNING] Failed to delete old agent calendar event for agent {old_agent_id}: {cal_err}")
 
         # 2. Create new agent Google Calendar event
         if new_agent_id is not None and booking_time_str:
-            create_agent_calendar_event(
-                agent_id=new_agent_id,
-                customer_name=details.get("customer_name") or "Customer",
-                service_type=details.get("service_type") or "Service Request",
-                issue_description=details.get("issue") or "",
-                slot_datetime_str=str(booking_time_str)[:19]
-            )
+            try:
+                create_agent_calendar_event(
+                    agent_id=new_agent_id,
+                    customer_name=details.get("customer_name") or "Customer",
+                    service_type=details.get("service_type") or "Service Request",
+                    issue_description=details.get("issue") or "",
+                    slot_datetime_str=str(booking_time_str)[:19]
+                )
+            except Exception as cal_err:
+                logger.warning(f"[OUTBOX CALENDAR WARNING] Failed to create new agent calendar event for agent {new_agent_id}: {cal_err}")
 
         # 3. Send email to new agent if present
         if new_agent_email:
-            send_booking_notification("appointment", details, agent_email=new_agent_email)
+            try:
+                send_booking_notification("appointment", details, agent_email=new_agent_email)
+            except Exception as email_err:
+                logger.warning(f"[OUTBOX EMAIL WARNING] Failed to send email to new agent {new_agent_email}: {email_err}")
 
         # 4. Admin Calendar & Admin Notification Email
         if booking_time_str:
-            delete_admin_calendar_event(str(booking_time_str)[:19])
-            create_admin_calendar_event(
-                customer_name=details.get("customer_name") or "Customer",
-                service_type=details.get("service_type") or "Service Request",
-                issue_description=details.get("issue") or "",
-                slot_datetime_str=str(booking_time_str)[:19],
-                mechanic_name=new_agent_name
-            )
+            try:
+                delete_admin_calendar_event(str(booking_time_str)[:19])
+                create_admin_calendar_event(
+                    customer_name=details.get("customer_name") or "Customer",
+                    service_type=details.get("service_type") or "Service Request",
+                    issue_description=details.get("issue") or "",
+                    slot_datetime_str=str(booking_time_str)[:19],
+                    mechanic_name=new_agent_name
+                )
+            except Exception as admin_cal_err:
+                logger.warning(f"[OUTBOX CALENDAR WARNING] Failed to update admin calendar event: {admin_cal_err}")
 
-        send_admin_notification("reassign", details, mechanic_name=new_agent_name, mechanic_email=new_agent_email)
+        try:
+            send_admin_notification("reassign", details, mechanic_name=new_agent_name, mechanic_email=new_agent_email)
+        except Exception as admin_email_err:
+            logger.warning(f"[OUTBOX EMAIL WARNING] Failed to send admin notification: {admin_email_err}")
 
         # 5. SMS Notifications (customer, new agent, previous agent)
         from serviceBot.services.sms_router import SMSNotificationRouter
@@ -255,20 +270,29 @@ def _dispatch_outbox_event(event_type: str, request_id: Optional[int], payload: 
                     cursor.execute("UPDATE service_requests SET notification_dispatched_at = CURRENT_TIMESTAMP WHERE id = %s;", (request_id,))
 
         if agent_email:
-            send_booking_notification(booking_type, details, agent_email=agent_email)
+            try:
+                send_booking_notification(booking_type, details, agent_email=agent_email)
+            except Exception as email_err:
+                logger.warning(f"[OUTBOX EMAIL WARNING] Failed to send booking notification email: {email_err}")
 
         if slot_datetime_str:
-            clean_slot_str = str(slot_datetime_str)[:19]
-            delete_admin_calendar_event(clean_slot_str)
-            create_admin_calendar_event(
-                customer_name=details.get("customer_name") or "Customer",
-                service_type=details.get("service_type") or "Service Request",
-                issue_description=details.get("issue") or "",
-                slot_datetime_str=clean_slot_str,
-                mechanic_name=agent_name
-            )
+            try:
+                clean_slot_str = str(slot_datetime_str)[:19]
+                delete_admin_calendar_event(clean_slot_str)
+                create_admin_calendar_event(
+                    customer_name=details.get("customer_name") or "Customer",
+                    service_type=details.get("service_type") or "Service Request",
+                    issue_description=details.get("issue") or "",
+                    slot_datetime_str=clean_slot_str,
+                    mechanic_name=agent_name
+                )
+            except Exception as cal_err:
+                logger.warning(f"[OUTBOX CALENDAR WARNING] Failed to update admin calendar event: {cal_err}")
 
-        send_admin_notification(booking_type, details, mechanic_name=agent_name, mechanic_email=agent_email)
+        try:
+            send_admin_notification(booking_type, details, mechanic_name=agent_name, mechanic_email=agent_email)
+        except Exception as admin_email_err:
+            logger.warning(f"[OUTBOX EMAIL WARNING] Failed to send admin notification: {admin_email_err}")
 
         # SMS Notification (customer + agent)
         agent_phone = payload.get("agent_phone")

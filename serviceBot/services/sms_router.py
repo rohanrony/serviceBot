@@ -169,7 +169,7 @@ class SMSNotificationRouter:
                     f"Assigned Advisor: {new_ag}\n"
                     f"Vehicle: {veh}"
                 )
-                res = self.twilio_client.send_sms(
+                res = self.twilio_client.send_whatsapp(
                     to=customer_phone,
                     body=body,
                     template_type=event_type.lower(),
@@ -207,7 +207,7 @@ class SMSNotificationRouter:
             if event_type == "REASSIGNED":
                 body += f"\nReassigned from: {old_ag}"
 
-            res = self.twilio_client.send_sms(
+            res = self.twilio_client.send_whatsapp(
                 to=agent_phone,
                 body=body,
                 template_type=f"agent_{event_type.lower()}",
@@ -223,7 +223,7 @@ class SMSNotificationRouter:
                 f"has been reassigned to {new_ag}.\n"
                 f"Slot: {slot_range_str}"
             )
-            res = self.twilio_client.send_sms(
+            res = self.twilio_client.send_whatsapp(
                 to=previous_agent_phone,
                 body=body,
                 template_type="unassignment",
@@ -246,7 +246,7 @@ class SMSNotificationRouter:
                     f"Vehicle: {veh} | Service: {srv}\n"
                     f"Slot: {slot_range_str}"
                 )
-                res = self.twilio_client.send_sms(
+                res = self.twilio_client.send_whatsapp(
                     to=target_admin_phone,
                     body=body,
                     template_type=f"admin_{event_type.lower()}",

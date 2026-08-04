@@ -136,12 +136,12 @@ If a specific service is requested (such as an oil change, brake inspection, or 
 
 Once all mandatory details are collected, ask:
 "Would you like to book an appointment for this service now, or would you prefer to arrange a callback?"
-- If they prefer a callback: Ask for their preferred day and time window, then call `create_service_request` (or `request_callback`). MANDATORY: Always include complete details in `issue_description` (or `issue`), combining all reported vehicle issues/services, vehicle Year/Make/Model, preferred callback time window, and caller notes.
+- If they prefer a callback: Ask for their preferred day and time window, then call `create_service_request` (or `request_callback`). MANDATORY: Keep `issue_description` (or `issue`) concise and focused ONLY on the requested services or reported symptoms (e.g., "Windshield repair", "Oil change"). Do NOT repeat caller name, phone, vehicle details, or preferred time inside `issue_description`, as those are tracked in separate fields.
 - If they want to book an appointment: Proceed to the Appointment Booking steps below.
 
 ### 3. APPOINTMENT BOOKING & RESCHEDULING
 - **Checking Availability:** Always check open calendar slots first by calling `check_availability` with their preferred date or time window. Suggest the best available slots clearly.
-- **Mandatory Price & Duration Quote Before Booking:** BEFORE calling `create_service_request` or `book_appointment`, you MUST look up the service's estimated cost and time duration in our knowledge base (using `query_knowledge_base` if needed). Quote both clearly to the caller (for example: *"An oil change is typically $79 to $119 and takes about 45 minutes"*). Ask for their explicit confirmation to proceed at that rate. Only call the booking tool after they explicitly confirm. MANDATORY: Always include complete details in `issue_description` (or `issue`), combining all reported vehicle issues/services, vehicle Year/Make/Model, quoted estimated price and duration, and confirmed appointment date/time slot. Never leave the description generic or empty.
+- **Mandatory Price & Duration Quote Before Booking:** BEFORE calling `create_service_request` or `book_appointment`, you MUST look up the service's estimated cost and time duration in our knowledge base (using `query_knowledge_base` if needed). Quote both clearly to the caller (for example: *"An oil change is typically $79 to $119 and takes about 45 minutes"*). Ask for their explicit confirmation to proceed at that rate. Only call the booking tool after they explicitly confirm. MANDATORY: Keep `issue_description` (or `issue`) concise and focused ONLY on the requested services or reported symptoms. Do NOT repeat caller name, phone, vehicle details, or appointment date/time in `issue_description`, as those are tracked in separate fields. Never leave the description generic or empty.
 - **Rescheduling:** First call `get_customer_appointments` using their phone number to check current bookings. State their existing appointment time, then call `check_availability` for their preferred new date/time. Once confirmed, call `reschedule_appointment`.
 
 ### 4. FAQ & KNOWLEDGE BASE
@@ -736,11 +736,22 @@ async def get_agent_google_status(agent_id: int):
 
     db_email = sa_row["email"] if sa_row else None
     if not row:
-        return {"is_connected": False, "email": db_email or system_email, "scopes": []}
+        return {"is_connected": False, "is_expired": False, "email": db_email or system_email, "scopes": []}
         
     scopes = row["granted_scopes"].split() if row["granted_scopes"] else []
+    
+    is_expired = False
+    try:
+        from serviceBot.services.google_calendar import get_user_google_credentials, GoogleAuthException
+        # Verify and refresh token if needed
+        get_user_google_credentials(agent_id, force_refresh=False)
+    except Exception as e:
+        logger.warning(f"Google credentials for agent {agent_id} are expired or invalid: {e}")
+        is_expired = True
+
     return {
         "is_connected": True,
+        "is_expired": is_expired,
         "email": row["email"] or db_email or system_email,
         "scopes": scopes
     }
@@ -798,15 +809,13 @@ class ServiceRequestEdit(BaseModel):
 @router.get("/calls")
 async def get_calls(limit: Optional[int] = None, offset: Optional[int] = None):
     from serviceBot.db.connection import get_db_connection, dict_cursor
+    import re
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             query = """
-                SELECT cn.id, cn.call_id, c.name AS customer_name, c.phone, cn.summary, cn.transcript, cn.created_at,
-                       STRING_AGG(CONCAT(v.year, ' ', v.make, ' ', v.model), ', ') AS vehicle
+                SELECT cn.id, cn.call_id, c.name AS customer_name, c.phone, cn.summary, cn.transcript, cn.created_at
                 FROM crm_notes cn
                 JOIN customers c ON cn.customer_id = c.id
-                LEFT JOIN vehicles v ON v.customer_id = c.id
-                GROUP BY cn.id, c.name, c.phone, cn.call_id, cn.summary, cn.transcript, cn.created_at
                 ORDER BY cn.created_at DESC
             """
             params = []
@@ -823,6 +832,18 @@ async def get_calls(limit: Optional[int] = None, offset: Optional[int] = None):
                 r = dict(row)
                 if not isinstance(r["created_at"], str) and r["created_at"]:
                     r["created_at"] = r["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+                
+                # Extract vehicle from AI summary instead of listing all registered vehicles
+                vehicle_match = re.search(r"Vehicle(?: details)?:\s*([^\n\r]+)", r.get("summary", ""), re.IGNORECASE)
+                if vehicle_match:
+                    vehicle = vehicle_match.group(1).strip(" .")
+                    if vehicle.lower() in ["none", "n/a", "not mentioned", "unknown"]:
+                        r["vehicle"] = ""
+                    else:
+                        r["vehicle"] = vehicle
+                else:
+                    r["vehicle"] = ""
+                    
                 res.append(r)
             return res
 
@@ -891,7 +912,8 @@ async def get_service_requests(limit: Optional[int] = None, offset: Optional[int
                        c.name AS customer_name, c.phone,
                        v.make, v.model, v.year,
                        sa.name AS staff_agent_name, sa.role AS staff_agent_role,
-                       (SELECT EXISTS(SELECT 1 FROM sms_log WHERE appointment_id = sr.id AND status = 'FAILED')) AS has_failed_sms
+                       (SELECT EXISTS(SELECT 1 FROM sms_log WHERE appointment_id = sr.id AND status = 'FAILED')) AS has_failed_sms,
+                       (SELECT EXISTS(SELECT 1 FROM outbox_notifications WHERE request_id = sr.id AND status = 'FAILED_REVERTED')) AS has_failed_email
                 FROM service_requests sr
                 LEFT JOIN customers c ON sr.customer_id = c.id
                 LEFT JOIN vehicles v ON sr.vehicle_id = v.id

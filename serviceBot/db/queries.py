@@ -699,14 +699,7 @@ def book_appointment(customer_id: int, service_request_id: int, appointment_date
                 if sr_row:
                     service_request_id = sr_row["id"]
                 else:
-                    cursor.execute("SELECT make, model, year FROM vehicles WHERE id = %s;", (vehicle_id,))
-                    v_row = cursor.fetchone()
-                    v_str = f" ({v_row['year']} {v_row['make']} {v_row['model']})" if (v_row and v_row.get("make")) else ""
-                    fallback_desc = (
-                        f"Callback requested: {matched_service_name}{v_str}. Preferred time: {appointment_datetime}"
-                        if is_cb else
-                        f"Appointment booked: {matched_service_name}{v_str} scheduled for {appointment_datetime}"
-                    )
+                    fallback_desc = matched_service_name if matched_service_name else ("Callback requested" if is_cb else "Appointment booked")
                     cursor.execute(
                         "INSERT INTO service_requests (customer_id, vehicle_id, service_type, issue_description, status, duration_minutes) VALUES (%s, %s, %s, %s, 'pending', %s) RETURNING id;",
                         (customer_id, vehicle_id, matched_service_name, fallback_desc, duration_minutes)
@@ -726,11 +719,8 @@ def book_appointment(customer_id: int, service_request_id: int, appointment_date
             cursor.execute("SELECT issue_description FROM service_requests WHERE id = %s;", (service_request_id,))
             sr_desc_row = cursor.fetchone()
             raw_desc = sr_desc_row["issue_description"] if sr_desc_row else ""
-            if not raw_desc or raw_desc in ("Appointment booking.", "Callback booking.", "Not specified", ""):
-                cursor.execute("SELECT make, model, year FROM vehicles WHERE id = %s;", (vehicle_id,))
-                v_row = cursor.fetchone()
-                v_str = f" ({v_row['year']} {v_row['make']} {v_row['model']})" if (v_row and v_row.get("make")) else ""
-                issue_desc = f"Appointment booked: {matched_service_name}{v_str} scheduled for {appointment_datetime}" if not is_cb else f"Callback requested: {matched_service_name}{v_str}. Preferred time: {appointment_datetime}"
+            if not raw_desc or raw_desc in ("Appointment booking.", "Callback booking.", "Not specified", "", "Callback requested."):
+                issue_desc = matched_service_name if matched_service_name else ("Callback requested" if is_cb else "Appointment booked")
             else:
                 issue_desc = raw_desc
 
@@ -1003,10 +993,7 @@ def create_callback_request(customer_id: int, service_request_id: int = None, pr
                 if sr_row:
                     service_request_id = sr_row["id"]
                 else:
-                    cursor.execute("SELECT make, model, year FROM vehicles WHERE id = %s;", (vehicle_id,))
-                    v_row = cursor.fetchone()
-                    v_str = f" ({v_row['year']} {v_row['make']} {v_row['model']})" if (v_row and v_row.get("make")) else ""
-                    cb_fallback = f"Callback requested: Phone consultation{v_str}. Preferred time: {cleaned_time or preferred_time or 'ASAP'}"
+                    cb_fallback = "Phone consultation"
                     cursor.execute(
                         "INSERT INTO service_requests (customer_id, vehicle_id, service_type, issue_description, status) VALUES (%s, %s, 'Callback / Phone Consultation', %s, 'pending') RETURNING id;",
                         (customer_id, vehicle_id, cb_fallback)

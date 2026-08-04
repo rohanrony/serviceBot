@@ -589,6 +589,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const nextBtn = document.getElementById('sr-next-page');
     if (nextBtn) nextBtn.disabled = srCurrentPage >= totalPages;
     
+  function formatIssueDescription(rawDesc) {
+    if (!rawDesc) return "Not specified";
+    let desc = rawDesc;
+    desc = desc.replace(/^(Appointment booked|Callback requested):\s*/i, '');
+    desc = desc.replace(/\.?\s*Preferred time:.*$/i, '');
+    desc = desc.replace(/\s*scheduled for.*$/i, '');
+    desc = desc.replace(/\s*\(\d{4}\s+[a-zA-Z0-9\s-]+\)/g, '');
+    return desc.trim() || rawDesc;
+  }
+
     if (paginatedReqs.length === 0) {
       requestsListBody.innerHTML = `<tr><td colspan="8" class="text-center py-6 text-muted">No matching service requests found.</td></tr>`;
     } else {
@@ -597,6 +607,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const tr = document.createElement('tr');
         
         const vehicleStr = `${req.year} ${req.make} ${req.model}`;
+        const cleanDesc = formatIssueDescription(req.issue_description);
         
         let currentStatus = req.status;
         let statusBadgeClass = 'warning';
@@ -669,7 +680,7 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
 
         const formattedPhone = formatPhoneNumber(req.phone);
-        const failedIndicator = req.has_failed_sms ? '<span class="badge danger failed-sms-badge" title="SMS delivery failed">⚠️ Failed SMS</span>' : '';
+        const failedIndicator = (req.has_failed_sms || req.has_failed_email) ? '<span class="badge danger failed-sms-badge" title="Delivery failed">⚠️ Failed SMS or Email</span>' : '';
         const actionsHtml = `
           <div class="actions-cell-container">
             ${failedIndicator}
@@ -686,8 +697,8 @@ document.addEventListener('DOMContentLoaded', () => {
           <td>${agentSelectHtml}</td>
           <td>
             <div class="tooltip-container">
-              <div class="issue-desc-text">${req.issue_description}</div>
-              <div class="tooltip-popup">${req.issue_description}</div>
+              <div class="issue-desc-text">${cleanDesc}</div>
+              <div class="tooltip-popup">${cleanDesc}</div>
             </div>
           </td>
           <td style="text-align: center;">${statusSelectHtml}</td>
@@ -1715,13 +1726,23 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       
       if (calendarConnected) {
-        calendarBadge.className = 'badge success';
-        calendarBadge.textContent = 'Connected';
-        connectCalendarBtn.textContent = 'Disconnect';
-        connectCalendarBtn.classList.add('btn-secondary');
-        connectCalendarBtn.style.borderColor = 'var(--color-danger)';
-        connectCalendarBtn.style.color = 'var(--color-danger)';
-        connectCalendarBtn.dataset.isConnected = 'true';
+        if (status.is_expired) {
+          calendarBadge.className = 'badge warning';
+          calendarBadge.textContent = 'Expired';
+          connectCalendarBtn.textContent = 'Reconnect';
+          connectCalendarBtn.classList.add('btn-secondary');
+          connectCalendarBtn.style.borderColor = 'var(--color-primary)';
+          connectCalendarBtn.style.color = '#fff';
+          connectCalendarBtn.dataset.isConnected = 'false';
+        } else {
+          calendarBadge.className = 'badge success';
+          calendarBadge.textContent = 'Connected';
+          connectCalendarBtn.textContent = 'Disconnect';
+          connectCalendarBtn.classList.add('btn-secondary');
+          connectCalendarBtn.style.borderColor = 'var(--color-danger)';
+          connectCalendarBtn.style.color = 'var(--color-danger)';
+          connectCalendarBtn.dataset.isConnected = 'true';
+        }
       } else {
         calendarBadge.className = 'badge danger';
         calendarBadge.textContent = 'Disconnected';
@@ -1733,13 +1754,23 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       
       if (gmailConnected) {
-        gmailBadge.className = 'badge success';
-        gmailBadge.textContent = 'Connected';
-        connectGmailBtn.textContent = 'Disconnect';
-        connectGmailBtn.classList.add('btn-secondary');
-        connectGmailBtn.style.borderColor = 'var(--color-danger)';
-        connectGmailBtn.style.color = 'var(--color-danger)';
-        connectGmailBtn.dataset.isConnected = 'true';
+        if (status.is_expired) {
+          gmailBadge.className = 'badge warning';
+          gmailBadge.textContent = 'Expired';
+          connectGmailBtn.textContent = 'Reconnect';
+          connectGmailBtn.classList.add('btn-secondary');
+          connectGmailBtn.style.borderColor = 'var(--color-primary)';
+          connectGmailBtn.style.color = '#fff';
+          connectGmailBtn.dataset.isConnected = 'false';
+        } else {
+          gmailBadge.className = 'badge success';
+          gmailBadge.textContent = 'Connected';
+          connectGmailBtn.textContent = 'Disconnect';
+          connectGmailBtn.classList.add('btn-secondary');
+          connectGmailBtn.style.borderColor = 'var(--color-danger)';
+          connectGmailBtn.style.color = 'var(--color-danger)';
+          connectGmailBtn.dataset.isConnected = 'true';
+        }
       } else {
         gmailBadge.className = 'badge danger';
         gmailBadge.textContent = 'Disconnected';
@@ -1758,7 +1789,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function loadStaffView(selectedId = null) {
-    if (!staffAgentSelector || !staffSlotsListBody) return;
+    if (!staffAgentSelector) return;
     try {
       const response = await fetch('/api/v1/portal/agents');
       if (!response.ok) throw new Error('Failed to fetch staff agents');
@@ -1766,7 +1797,7 @@ document.addEventListener('DOMContentLoaded', () => {
       
       if (!Array.isArray(agents) || agents.length === 0) {
         staffAgentSelector.innerHTML = '<option value="">No agents available</option>';
-        staffSlotsListBody.innerHTML = '<tr><td colspan="2" class="text-center py-6 text-muted">No staff agents found.</td></tr>';
+        if (staffSlotsListBody) staffSlotsListBody.innerHTML = '<tr><td colspan="2" class="text-center py-6 text-muted">No staff agents found.</td></tr>';
         
         // Update connection status and disable buttons
         try {
@@ -1840,7 +1871,7 @@ document.addEventListener('DOMContentLoaded', () => {
           if (e.target.value) {
             loadAgentCalendar(e.target.value);
           } else {
-            staffSlotsListBody.innerHTML = '<tr><td colspan="2" class="text-center py-6 text-muted">Select an agent to load calendar slots.</td></tr>';
+            if (staffSlotsListBody) staffSlotsListBody.innerHTML = '<tr><td colspan="2" class="text-center py-6 text-muted">Select an agent to load calendar slots.</td></tr>';
           }
         });
         

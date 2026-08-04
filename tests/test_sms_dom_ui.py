@@ -81,6 +81,7 @@ def test_api_bug_fixes_verification():
     reqs = res.json()
     assert len(reqs) > 0
     assert "has_failed_sms" in reqs[0]
+    assert "has_failed_email" in reqs[0]
 
     # Verify status update for confirmed and cancelled_by_customer
     req_id = reqs[0]["id"]

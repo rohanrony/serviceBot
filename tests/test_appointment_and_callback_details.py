@@ -18,7 +18,7 @@ def test_system_prompts_mandate_detailed_descriptions():
         txt_content = f.read()
     assert "MANDATORY" in txt_content
     assert "issue_description" in txt_content
-    assert "Never leave the description generic or empty" in txt_content or "rich, complete details" in txt_content
+    assert "Never leave the description generic or empty" in txt_content or "Keep `issue_description` (or `issue`) concise" in txt_content
 
     # 2. config.json
     cfg_path = os.path.join(base_dir, "serviceBot", "config.json")
@@ -34,7 +34,7 @@ def test_system_prompts_mandate_detailed_descriptions():
     with open(portal_py, "r", encoding="utf-8") as f:
         portal_code = f.read()
     assert "issue_description" in portal_code
-    assert "combining all reported vehicle issues/services" in portal_code
+    assert "focused ONLY on the requested services" in portal_code
 
 
 @patch("serviceBot.services.google_calendar.create_agent_calendar_event")
@@ -74,8 +74,6 @@ def test_book_appointment_fallback_generates_detailed_description(mock_free, moc
 
             assert desc != "Appointment booking."
             assert "Oil Change" in desc
-            assert "Kia" in desc or "2018" in desc
-            assert appt_datetime in desc
 
 
 @patch("serviceBot.services.gmail.send_booking_notification")
@@ -106,5 +104,3 @@ def test_create_callback_request_fallback_generates_detailed_description(mock_ad
             assert b_type == "callback"
             assert desc != "Callback requested."
             assert "Callback requested" in desc or "Phone consultation" in desc
-            assert "Honda" in desc or "Civic" in desc or "2021" in desc
-            assert "Tomorrow at 10 AM" in desc
