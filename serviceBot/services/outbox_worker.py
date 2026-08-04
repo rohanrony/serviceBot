@@ -183,6 +183,13 @@ def _dispatch_outbox_event(event_type: str, request_id: Optional[int], payload: 
         new_agent_name = payload.get("new_agent_name")
         old_agent_name = payload.get("old_agent_name")
 
+        # Update notification_dispatched_at
+        if request_id:
+            from serviceBot.db.connection import get_db_connection, dict_cursor
+            with get_db_connection() as conn:
+                with dict_cursor(conn) as cursor:
+                    cursor.execute("UPDATE service_requests SET notification_dispatched_at = CURRENT_TIMESTAMP WHERE id = %s;", (request_id,))
+
         # 1. Cancel old agent Google Calendar event
         if old_agent_id is not None and booking_time_str:
             delete_agent_calendar_event(old_agent_id, str(booking_time_str)[:19])
@@ -239,6 +246,13 @@ def _dispatch_outbox_event(event_type: str, request_id: Optional[int], payload: 
         agent_email = payload.get("agent_email")
         agent_name = payload.get("agent_name")
         slot_datetime_str = payload.get("booking_time_str")
+
+        # Update notification_dispatched_at
+        if request_id:
+            from serviceBot.db.connection import get_db_connection, dict_cursor
+            with get_db_connection() as conn:
+                with dict_cursor(conn) as cursor:
+                    cursor.execute("UPDATE service_requests SET notification_dispatched_at = CURRENT_TIMESTAMP WHERE id = %s;", (request_id,))
 
         if agent_email:
             send_booking_notification(booking_type, details, agent_email=agent_email)

@@ -60,7 +60,7 @@ class SMSNotificationRouter:
             with get_db_connection() as conn:
                 with dict_cursor(conn) as cursor:
                     cursor.execute("""
-                        SELECT sr.id, sr.service_type, sr.issue_description, sr.booking_time, sr.time_slot,
+                        SELECT sr.id, sr.service_type, sr.issue_description, sr.booking_time, sr.time_slot, sr.duration_minutes,
                                c.name AS customer_name, c.phone AS customer_phone,
                                v.year AS vehicle_year, v.make AS vehicle_make, v.model AS vehicle_model,
                                sa.name AS agent_name
@@ -82,6 +82,7 @@ class SMSNotificationRouter:
                         "vehicle": v_str,
                         "service_type": sr.get("service_type") or "Service",
                         "time": str(b_time)[:19],
+                        "duration_minutes": sr.get("duration_minutes"),
                         "issue": sr.get("issue_description") or "N/A",
                         "new_agent_name": sr.get("agent_name") or "Assigned Advisor"
                     }
@@ -110,7 +111,17 @@ class SMSNotificationRouter:
         veh = info.get("vehicle") or "N/A"
         srv = info.get("service_type") or "Service"
         raw_t_str = booking_time or info.get("time") or "N/A"
-        slot_range_str = format_time_slot_range(raw_t_str)
+        
+        # Resolve duration for accurate time range
+        dur_min = info.get("duration_minutes") or (details.get("duration_minutes") if details else None)
+        if not dur_min and srv:
+            from serviceBot.db.queries import get_service_required_fields
+            svc_fields = get_service_required_fields(srv)
+            if svc_fields and svc_fields.get("duration_minutes"):
+                dur_min = svc_fields["duration_minutes"]
+        dur_min = dur_min or 60
+
+        slot_range_str = format_time_slot_range(raw_t_str, duration_minutes=dur_min)
         iss = info.get("issue") or "N/A"
         new_ag = info.get("new_agent_name") or info.get("agent_name") or "Assigned Advisor"
         old_ag = info.get("previous_agent_name") or info.get("old_agent_name") or "Previous Advisor"

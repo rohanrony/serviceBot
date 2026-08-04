@@ -8,6 +8,10 @@ from serviceBot.graph.state import AgentState
 from serviceBot.api.portal import load_config
 from serviceBot.logger import get_logger
 
+def is_within_business_hours() -> bool:
+    from serviceBot.api.telephony import is_within_business_hours as _func
+    return _func()
+
 logger = get_logger("graph.nodes")
 
 class IntentClassification(BaseModel):

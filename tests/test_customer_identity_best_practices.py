@@ -26,8 +26,9 @@ def test_e164_phone_normalization_and_lookup():
     # Create customer with raw format
     with get_db_connection() as conn:
         cursor = conn.cursor()
+        cursor.execute("SELECT setval(pg_get_serial_sequence('customers', 'id'), COALESCE(MAX(id), 1)) FROM customers;")
         cursor.execute(
-            "INSERT INTO customers (name, phone) VALUES (%s, %s) RETURNING id;",
+            "INSERT INTO customers (name, phone) VALUES (%s, %s) ON CONFLICT (phone) DO UPDATE SET name = EXCLUDED.name RETURNING id;",
             ("John Smith", "+15550001111")
         )
         c_id = cursor.fetchone()["id"]
@@ -58,6 +59,7 @@ def test_verify_caller_identity_voice_tool():
 
     # Test matching name
     payload_match = {
+        "tool_call_id": "call_verify_1",
         "name": "verify_caller_identity",
         "arguments": {
             "phone": "+15550001111",
@@ -67,12 +69,14 @@ def test_verify_caller_identity_voice_tool():
     res_match = client.post("/api/v1/voice/tools", json=payload_match)
     assert res_match.status_code == 200
     data_match = res_match.json()
-    assert data_match["success"] is True
-    assert data_match["is_verified_existing_customer"] is True
-    assert data_match["customer_name"] == "Alice Smith"
+    result_match = data_match.get("result", data_match)
+    assert result_match["success"] is True
+    assert result_match["is_verified_existing_customer"] is True
+    assert result_match["customer_name"] == "Alice Smith"
 
     # Test mismatching name (e.g. household member calling)
     payload_diff = {
+        "tool_call_id": "call_verify_2",
         "name": "verify_caller_identity",
         "arguments": {
             "phone": "+15550001111",
@@ -82,6 +86,7 @@ def test_verify_caller_identity_voice_tool():
     res_diff = client.post("/api/v1/voice/tools", json=payload_diff)
     assert res_diff.status_code == 200
     data_diff = res_diff.json()
-    assert data_diff["success"] is True
-    assert data_diff["is_verified_existing_customer"] is False
-    assert "Bob Smith" in data_diff["message"]
+    result_diff = data_diff.get("result", data_diff)
+    assert result_diff["success"] is True
+    assert result_diff["is_verified_existing_customer"] is False
+    assert "Bob Smith" in result_diff["message"]

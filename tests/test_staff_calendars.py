@@ -83,19 +83,22 @@ def test_db_queries_integration():
     # Insert test slot
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("INSERT OR IGNORE INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES ('2026-06-12 15:00:00', 0, 1);")
+        cursor.execute("INSERT INTO staff_agents (id, name, role) VALUES (1, 'Agent 1', 'Advisor') ON CONFLICT (id) DO NOTHING;")
+        cursor.execute("DELETE FROM service_requests WHERE CAST(booking_time AS TEXT) LIKE '2026-10-15 08:00%%';")
+        cursor.execute("DELETE FROM mock_calendar_slots WHERE slot_datetime = CAST('2026-10-15 08:00:00' AS TIMESTAMP);")
+        cursor.execute("INSERT INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES ('2026-10-15 08:00:00', FALSE, 1);")
         conn.commit()
 
     # Test check_availability returns standard business slots
-    avail = check_availability(preferred_date="2026-06-12 14:30:00")
-    # Verify that '2026-06-12 15:00:00' is listed (a standard weekday slot)
-    assert "2026-06-12 15:00:00" in avail
+    avail = check_availability(preferred_date="2026-10-15 08:00:00")
+    # Verify that '2026-10-15 08:00:00' is listed (a standard weekday slot)
+    assert "2026-10-15 08:00:00" in avail
     
     # Test book_appointment bookings
     appt_id = book_appointment(
         customer_id=1,
         service_request_id=1,
-        appointment_datetime="2026-06-12 15:00:00",
+        appointment_datetime="2026-10-15 08:00:00",
         service_type="Oil Change"
     )
     assert appt_id is not None
@@ -103,10 +106,10 @@ def test_db_queries_integration():
     # Check that the appointment is booked in service_requests
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT booking_time, staff_agent_id FROM service_requests WHERE id = ?", (appt_id,))
+        cursor.execute("SELECT booking_time, staff_agent_id FROM service_requests WHERE id = %s;", (appt_id,))
         row = cursor.fetchone()
         assert row is not None
-        assert row["booking_time"] == "2026-06-12 15:00:00"
+        assert row["booking_time"] == "2026-10-15 08:00:00"
 
 
 def test_create_and_delete_staff_agent_endpoint():
@@ -148,6 +151,8 @@ def test_reschedule_appointment_checks_google_calendar(monkeypatch):
         cursor.execute("DELETE FROM vehicles WHERE customer_id = 999;")
         cursor.execute("DELETE FROM service_requests WHERE customer_id = 999;")
         cursor.execute("DELETE FROM customers WHERE id = 999;")
+        cursor.execute("INSERT INTO staff_agents (id, name, role) VALUES (1, 'Agent 1', 'Advisor') ON CONFLICT (id) DO NOTHING;")
+        cursor.execute("INSERT INTO staff_agents (id, name, role) VALUES (2, 'Agent 2', 'Advisor') ON CONFLICT (id) DO NOTHING;")
         # Insert customer
         cursor.execute("INSERT INTO customers (id, name, phone, email) VALUES (999, 'Test Reschedule Customer', '555-999-9999', 'cust@example.com');")
         # Insert vehicle

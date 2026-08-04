@@ -61,11 +61,11 @@ def test_seed_default_services_endpoint():
     data = response.json()
     assert data["success"] is True
     assert "inserted_count" in data
-    assert data["total_defaults"] == 33
+    assert data["total_defaults"] == 34
 
 def test_create_service_endpoint():
     payload = {
-        "name": "Brake Repair",
+        "name": "Brake Repair Custom",
         "description": "Front/Rear brake pad and rotor replacement",
         "price_range": "$150-400",
         "duration_minutes": 90
@@ -79,7 +79,7 @@ def test_create_service_endpoint():
 def test_update_service_endpoint():
     # First create a service
     create_payload = {
-        "name": "Spark Plug Replacement",
+        "name": "Custom Spark Plug Tuning",
         "description": "Replace engine spark plugs",
         "price_range": "$80-150",
         "duration_minutes": 45
@@ -269,36 +269,33 @@ def test_get_stats_endpoint():
         assert "total_calls" in tf_data
         assert tf_data.get("timeframe") == tf
 
-
 def test_update_service_request_status_endpoint():
     # 1. Fetch existing requests
     res = client.get("/api/v1/portal/service-requests")
     assert res.status_code == 200
     reqs = res.json()
-    if reqs:
-        req_id = reqs[0]["id"]
-        # Update status to completed
-        patch_res = client.patch(f"/api/v1/portal/service-requests/{req_id}/status", json={"status": "completed"})
+    if len(reqs) > 1:
+        # Use a different request so we don't break subsequent tests that need a pending request
+        req_id = reqs[1]["id"]
+        
+        # Update status to in_progress
+        patch_res = client.patch(f"/api/v1/portal/service-requests/{req_id}/status", json={"status": "in_progress"})
         assert patch_res.status_code == 200
         data = patch_res.json()
         assert data["success"] is True
-        assert data["data"]["status"] == "completed"
+        assert data["data"]["status"] == "in_progress"
 
-        # Update status to rescheduled
+        # Update status to completed
+        patch_res2 = client.patch(f"/api/v1/portal/service-requests/{req_id}/status", json={"status": "completed"})
+        assert patch_res2.status_code == 200
+        
+        # Update status to rescheduled (should fail FSM)
         resched_res = client.patch(f"/api/v1/portal/service-requests/{req_id}/status", json={"status": "rescheduled"})
-        assert resched_res.status_code == 200
-        assert resched_res.json()["data"]["status"] == "rescheduled"
+        assert resched_res.status_code == 400
 
-        # Update status to cancelled
-        cancel_res = client.patch(f"/api/v1/portal/service-requests/{req_id}/status", json={"status": "cancelled"})
-        assert cancel_res.status_code == 200
-        assert cancel_res.json()["data"]["status"] == "cancelled"
-
-        # Update back to pending
-        patch_res_2 = client.patch(f"/api/v1/portal/service-requests/{req_id}/status", json={"status": "pending"})
-        assert patch_res_2.status_code == 200
-        assert patch_res_2.json()["data"]["status"] == "pending"
-
+        # Update back to pending (should fail FSM)
+        patch_res_3 = client.patch(f"/api/v1/portal/service-requests/{req_id}/status", json={"status": "pending"})
+        assert patch_res_3.status_code == 400
 
 def test_get_calls_and_service_requests_pagination():
     res_calls = client.get("/api/v1/portal/calls?limit=2&offset=0")
@@ -316,9 +313,9 @@ def test_agent_availability_and_assignment_endpoints():
     res = client.get("/api/v1/portal/service-requests")
     assert res.status_code == 200
     reqs = res.json()
-    if reqs:
-        req_id = reqs[0]["id"]
-        
+    req_id = next((r["id"] for r in reqs if r["status"] in ("pending", "in_progress")), None)
+    
+    if req_id:
         # Test available agents endpoint
         avail_res = client.get(f"/api/v1/portal/service-requests/{req_id}/available-agents")
         assert avail_res.status_code == 200
@@ -347,7 +344,7 @@ def test_cannot_assign_agent_for_completed_service_request():
     from serviceBot.db.connection import get_db_connection, dict_cursor
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
-            cursor.execute("INSERT INTO customers (name, phone) VALUES ('Completed Cust', '555-9999') RETURNING id;")
+            cursor.execute("INSERT INTO customers (name, phone) VALUES ('Completed Cust', '555-9999') ON CONFLICT (phone) DO UPDATE SET name = EXCLUDED.name RETURNING id;")
             cust_id = cursor.fetchone()["id"]
             cursor.execute("INSERT INTO staff_agents (name, role) VALUES ('Target Agent', 'Tech') RETURNING id;")
             agent_id = cursor.fetchone()["id"]

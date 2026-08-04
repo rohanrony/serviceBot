@@ -15,13 +15,13 @@ def clean_db_agent():
     from serviceBot.services.encryption import encrypt_key
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM staff_agents WHERE id = 100;")
-        cursor.execute("DELETE FROM user_google_accounts WHERE agent_id = 100;")
         cursor.execute("DELETE FROM service_requests WHERE staff_agent_id = 100;")
+        cursor.execute("DELETE FROM user_google_accounts WHERE agent_id = 100;")
+        cursor.execute("DELETE FROM staff_agents WHERE id = 100;")
         
         # Insert a test agent
         cursor.execute(
-            "INSERT INTO staff_agents (id, name, role, email) VALUES (100, 'Test Agent', 'Tester', 'test.agent@example.com');"
+            "INSERT INTO staff_agents (id, name, role, email) VALUES (100, 'Test Agent', 'Tester', 'test.agent@example.com') ON CONFLICT (id) DO NOTHING;"
         )
         # Also insert a connected google account for the test agent so tests can mock calls!
         cursor.execute(
@@ -31,15 +31,15 @@ def clean_db_agent():
         )
         cursor.execute(
             "INSERT INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) "
-            "VALUES ('2026-06-25 11:00:00', FALSE, 100) ON CONFLICT DO NOTHING;"
+            "VALUES ('2026-06-25 11:00:00', FALSE, 100), ('2026-06-25 11:30:00', FALSE, 100) ON CONFLICT DO NOTHING;"
         )
         conn.commit()
     yield
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM staff_agents WHERE id = 100;")
-        cursor.execute("DELETE FROM user_google_accounts WHERE agent_id = 100;")
         cursor.execute("DELETE FROM service_requests WHERE staff_agent_id = 100;")
+        cursor.execute("DELETE FROM user_google_accounts WHERE agent_id = 100;")
+        cursor.execute("DELETE FROM staff_agents WHERE id = 100;")
         conn.commit()
 
 
@@ -76,7 +76,7 @@ def test_portal_agent_disconnect():
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT OR REPLACE INTO user_google_accounts (agent_id, provider, email, refresh_token) VALUES (100, 'google', 'test.agent@example.com', 'dummy_refresh_token');"
+            "INSERT INTO user_google_accounts (agent_id, provider, email, refresh_token) VALUES (100, 'google', 'test.agent@example.com', 'dummy_refresh_token') ON CONFLICT (agent_id) DO UPDATE SET email = EXCLUDED.email, refresh_token = EXCLUDED.refresh_token;"
         )
         conn.commit()
 
@@ -125,7 +125,7 @@ def test_agent_oauth_callback(mock_get, mock_post):
         # Insert matching state in oauth_states table
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("INSERT OR REPLACE INTO oauth_states (state, agent_id, action_type) VALUES ('agent_100', 100, 'calendar');")
+            cursor.execute("INSERT INTO oauth_states (state, agent_id, action_type) VALUES ('agent_100', 100, 'calendar') ON CONFLICT (state) DO UPDATE SET agent_id = EXCLUDED.agent_id;")
             conn.commit()
 
         response = client.get(
@@ -177,16 +177,16 @@ def test_is_agent_free_busy(mock_get, mock_creds):
 
 @patch("serviceBot.services.google_calendar.fetch_agent_events")
 def test_check_availability_filtering(mock_fetch):
-    # If the agent is busy, slot should not be returned in check_availability
-    mock_fetch.return_value = [{"id": "event1", "status": "confirmed", "start": {"dateTime": "2026-06-25T11:00:00-04:00"}, "end": {"dateTime": "2026-06-25T12:00:00-04:00"}}]
-    slots = check_availability(preferred_date="2026-06-25 09:00:00")
-    # Should not find 2026-06-25 11:00:00 because the single agent is busy
-    assert "2026-06-25 11:00:00" not in slots
+    # If the agent is busy, 07:00 slot should not be returned in check_availability
+    mock_fetch.return_value = [{"id": "event1", "status": "confirmed", "start": {"dateTime": "2026-08-17T07:00:00-04:00"}, "end": {"dateTime": "2026-08-17T08:00:00-04:00"}}]
+    slots = check_availability(preferred_date="2026-08-17 07:00:00")
+    # Should not find 2026-08-17 07:00:00 because the single agent is busy
+    assert "2026-08-17 07:00:00" not in slots
 
     # If the agent is free, slot should be returned
     mock_fetch.return_value = []
-    slots = check_availability(preferred_date="2026-06-25 09:00:00")
-    assert "2026-06-25 11:00:00" in slots
+    slots = check_availability(preferred_date="2026-08-17 07:00:00")
+    assert "2026-08-17 07:00:00" in slots
 
 @patch("serviceBot.services.google_calendar.is_agent_free")
 @patch("serviceBot.services.google_calendar.create_agent_calendar_event")
@@ -198,7 +198,7 @@ def test_booking_notifications(mock_notify, mock_event, mock_free):
     # We must insert a mock vehicle for Sarah Johnson (id=1) as it is now required
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("INSERT OR IGNORE INTO vehicles (id, customer_id, make, model, year) VALUES (99, 1, 'Honda', 'Civic', 2020);")
+        cursor.execute("INSERT INTO vehicles (id, customer_id, make, model, year) VALUES (99, 1, 'Honda', 'Civic', 2020) ON CONFLICT (id) DO NOTHING;")
         conn.commit()
     
     appt_id = book_appointment(
@@ -212,7 +212,7 @@ def test_booking_notifications(mock_notify, mock_event, mock_free):
     # Confirm slot has been marked booked in local DB service_requests table
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT staff_agent_id, booking_time FROM service_requests WHERE id = ?;", (appt_id,))
+        cursor.execute("SELECT staff_agent_id, booking_time FROM service_requests WHERE id = %s;", (appt_id,))
         row = cursor.fetchone()
         assert row["staff_agent_id"] == 100
         assert row["booking_time"] == "2026-06-25 11:00:00"

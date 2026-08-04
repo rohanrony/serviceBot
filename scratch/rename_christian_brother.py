@@ -16,7 +16,7 @@ def replace_terms(text: str) -> str:
         return text
     # Pattern to match "Christian Brothers Automotive" / "Christian Brothers" / "Christian Brother" case-insensitively
     pattern = re.compile(r"Christian\s+Brothers?\s+Automotive|Christian\s+Brothers?|christian\s+brothers?\s+automotive|christian\s+brothers?", re.IGNORECASE)
-    return pattern.sub("Test", text)
+    return pattern.sub("Davidson Car Care", text)
 
 def update_file(filepath: str):
     if not os.path.exists(filepath):
@@ -43,7 +43,7 @@ async def sync_to_elevenlabs():
     prompts = config.get("prompts", {})
     first_message = config.get("first_message", "")
     
-    combined_prompt = f"""You are an advanced voice assistant for Test.
+    combined_prompt = f"""You are an advanced voice assistant for Davidson Car Care.
 
 ### Core Router instructions:
 {prompts.get('router', '')}
@@ -82,7 +82,7 @@ Make sure the filler message sounds like a normal part of the conversation and i
     
     # We update the agent name to "Test Service Agent", prompt, and first_message
     payload = {
-        "name": "Test Service Agent",
+        "name": "Davidson Car Care Service Agent",
         "conversation_config": {
             "agent": {
                 "prompt": {

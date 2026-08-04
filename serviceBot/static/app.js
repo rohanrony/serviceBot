@@ -449,9 +449,9 @@ document.addEventListener('DOMContentLoaded', () => {
         targetReq.staff_agent_id = parsedId;
       }
       showToast(`Agent reassigned for Service Request #${requestId}! Slot updated, old invite cancelled & admin notified.`, 'success');
-
     } catch (err) {
       showToast(err.message, 'danger');
+      throw err;
     }
   }
 
@@ -474,8 +474,8 @@ document.addEventListener('DOMContentLoaded', () => {
         completed: 'Done',
         done: 'Done',
         pending: 'Pending',
+        confirmed: 'Confirmed',
         in_progress: 'In Progress',
-        rescheduled: 'Rescheduled',
         cancelled: 'Cancelled'
       };
       const label = statusLabels[newStatus] || newStatus;
@@ -502,6 +502,7 @@ document.addEventListener('DOMContentLoaded', () => {
       applyServiceRequestsFilter();
     } catch (err) {
       showToast(err.message, 'danger');
+      throw err;
     }
   }
 
@@ -589,46 +590,82 @@ document.addEventListener('DOMContentLoaded', () => {
     if (nextBtn) nextBtn.disabled = srCurrentPage >= totalPages;
     
     if (paginatedReqs.length === 0) {
-      requestsListBody.innerHTML = `<tr><td colspan="9" class="text-center py-6 text-muted">No matching service requests found.</td></tr>`;
+      requestsListBody.innerHTML = `<tr><td colspan="8" class="text-center py-6 text-muted">No matching service requests found.</td></tr>`;
     } else {
       requestsListBody.innerHTML = '';
       paginatedReqs.forEach(req => {
         const tr = document.createElement('tr');
-        const formattedDate = formatShortDate(req.created_at);
+        
         const vehicleStr = `${req.year} ${req.make} ${req.model}`;
         
         let currentStatus = req.status;
         let statusBadgeClass = 'warning';
-        if (currentStatus === 'completed' || currentStatus === 'done' || currentStatus === 'confirmed') {
+        if (currentStatus === 'completed' || currentStatus === 'done') {
           statusBadgeClass = 'success';
+        } else if (currentStatus === 'confirmed') {
+          statusBadgeClass = 'teal';
         } else if (currentStatus === 'cancelled' || currentStatus === 'cancelled_by_customer') {
           statusBadgeClass = 'danger';
         } else if (currentStatus === 'in_progress') {
           statusBadgeClass = 'info';
-        } else if (currentStatus === 'rescheduled') {
-          statusBadgeClass = 'purple';
         }
 
         let displayTime = formatBookingTimeRange(req);
 
         const isDone = ['completed', 'done', 'cancelled', 'cancelled_by_customer'].includes(currentStatus);
 
+        let initialAgentName = req.staff_agent_name || 'Select Agent';
+        let initialAgentRole = req.staff_agent_role || '';
+        if (!initialAgentRole && req.staff_agent_name && req.staff_agent_name.includes(' - ')) {
+          const parts = req.staff_agent_name.split(' - ');
+          initialAgentName = parts[0].trim();
+          initialAgentRole = parts[1].trim();
+        }
+        if (!req.staff_agent_name) {
+          initialAgentRole = 'Unassigned';
+        }
+
         const agentSelectHtml = `
-          <select class="agent-select-badge" data-id="${req.id}" ${isDone ? 'disabled title="Agent cannot be changed for completed or cancelled tasks"' : ''}>
-            <option value="">${req.staff_agent_name || 'Select Agent'}</option>
-          </select>
+          <div class="agent-badge-wrapper ${isDone ? 'disabled' : ''}">
+            <div class="agent-badge-display">
+              <div class="agent-name-line">${initialAgentName}</div>
+              <div class="agent-role-line">${initialAgentRole}</div>
+            </div>
+            <select class="agent-select-badge" data-id="${req.id}" ${isDone ? 'disabled title="Agent cannot be changed for completed or cancelled tasks"' : ''}>
+              <option value="" data-name="${initialAgentName}" data-role="${initialAgentRole}">${req.staff_agent_name || 'Select Agent'}</option>
+            </select>
+          </div>
         `;
 
+        let slaBadgeHtml = '';
+        if (currentStatus === 'pending' || currentStatus === 'rescheduled') {
+          const slaStart = req.notification_dispatched_at || req.created_at;
+          if (slaStart) {
+            // Fix date parsing for Safari/cross-browser
+            let safeDateStr = String(slaStart).replace(' ', 'T');
+            if (!safeDateStr.endsWith('Z') && !/[+-]\d{2}:?\d{2}$/.test(safeDateStr)) safeDateStr += 'Z';
+            
+            const diffMs = Date.now() - new Date(safeDateStr).getTime();
+            const diffMins = diffMs / 60000;
+            if (diffMins > 60) {
+              slaBadgeHtml = `<div style="font-size: 10px; color: #ef4444; margin-top: 4px; font-weight: bold;">⚠️ SLA Overdue</div>`;
+            } else if (diffMins > 15) {
+              slaBadgeHtml = `<div style="font-size: 10px; color: #f59e0b; margin-top: 4px; font-weight: bold;">⚠️ Unconfirmed</div>`;
+            }
+          }
+        }
+
         const statusSelectHtml = `
-          <select class="status-select-badge ${statusBadgeClass}" data-id="${req.id}" data-status="${currentStatus}">
-            <option value="pending" ${currentStatus === 'pending' ? 'selected' : ''}>pending</option>
-            <option value="confirmed" ${currentStatus === 'confirmed' ? 'selected' : ''}>confirmed</option>
-            <option value="in_progress" ${currentStatus === 'in_progress' ? 'selected' : ''}>in progress</option>
-            <option value="completed" ${currentStatus === 'completed' || currentStatus === 'done' ? 'selected' : ''}>done</option>
-            <option value="rescheduled" ${currentStatus === 'rescheduled' ? 'selected' : ''}>rescheduled</option>
-            <option value="cancelled" ${currentStatus === 'cancelled' ? 'selected' : ''}>cancelled</option>
-            <option value="cancelled_by_customer" ${currentStatus === 'cancelled_by_customer' ? 'selected' : ''}>cancelled by customer</option>
-          </select>
+          <div style="display: flex; flex-direction: column; align-items: flex-start;">
+            <select class="status-select-badge ${statusBadgeClass}" data-id="${req.id}" data-status="${currentStatus}">
+              <option value="pending" ${currentStatus === 'pending' || currentStatus === 'rescheduled' ? 'selected' : ''}>pending</option>
+              <option value="confirmed" ${currentStatus === 'confirmed' ? 'selected' : ''}>confirmed</option>
+              <option value="in_progress" ${currentStatus === 'in_progress' ? 'selected' : ''}>in progress</option>
+              <option value="completed" ${currentStatus === 'completed' || currentStatus === 'done' ? 'selected' : ''}>done</option>
+              <option value="cancelled" ${currentStatus === 'cancelled' || currentStatus === 'cancelled_by_customer' ? 'selected' : ''}>cancelled</option>
+            </select>
+            ${slaBadgeHtml}
+          </div>
         `;
 
         const formattedPhone = formatPhoneNumber(req.phone);
@@ -636,12 +673,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const actionsHtml = `
           <div class="actions-cell-container">
             ${failedIndicator}
+            <button type="button" class="btn btn-primary btn-sm edit-sr-btn" data-id="${req.id}" style="margin-right: 4px;">Edit</button>
             <button type="button" class="btn btn-secondary btn-sm details-sms-log-btn" data-id="${req.id}">Details</button>
           </div>
         `;
 
         tr.innerHTML = `
-          <td class="text-muted" style="font-size: 12px; white-space: nowrap;">${formattedDate}</td>
           <td><strong>${req.customer_name || 'Unknown Customer'}</strong></td>
           <td class="text-muted" style="font-size: 12.5px; white-space: nowrap;">${formattedPhone}</td>
           <td>${vehicleStr}</td>
@@ -664,6 +701,13 @@ document.addEventListener('DOMContentLoaded', () => {
           });
         }
 
+        const editBtn = tr.querySelector('.edit-sr-btn');
+        if (editBtn) {
+          editBtn.addEventListener('click', () => {
+            if (window.openSREditModal) window.openSREditModal(req);
+          });
+        }
+
         const agentSelect = tr.querySelector('.agent-select-badge');
         if (agentSelect) {
           const loadAgentOptions = async () => {
@@ -672,15 +716,26 @@ document.addEventListener('DOMContentLoaded', () => {
               if (!res.ok) return;
               const data = await res.json();
               if (data.agents && data.agents.length > 0) {
-                let optionsHtml = `<option value="">Select Agent</option>`;
+                let optionsHtml = `<option value="" data-name="Select Agent" data-role="Unassigned">Select Agent</option>`;
                 data.agents.forEach(a => {
                   const isSel = (req.assigned_staff_id && Number(req.assigned_staff_id) === Number(a.id)) || (req.staff_agent_name === a.name);
-                  optionsHtml += `<option value="${a.id}" ${isSel ? 'selected' : ''}>${a.name} - ${a.role}</option>`;
+                  const isUnavailable = a.is_available === false;
+                  const labelSuffix = isUnavailable ? ` (Unavailable - ${a.reason || 'Busy'})` : '';
+                  const disabledAttr = (isUnavailable && !isSel) ? 'disabled' : '';
+                  optionsHtml += `<option value="${a.id}" data-name="${a.name}" data-role="${a.role || ''}" ${isSel ? 'selected' : ''} ${disabledAttr}>${a.name} - ${a.role}${labelSuffix}</option>`;
                 });
                 agentSelect.innerHTML = optionsHtml;
                 if (isDone) {
                   agentSelect.disabled = true;
                   agentSelect.title = "Agent cannot be changed for completed or cancelled tasks";
+                }
+
+                const selectedOpt = agentSelect.options[agentSelect.selectedIndex];
+                if (selectedOpt && selectedOpt.dataset.name) {
+                  const nameLine = tr.querySelector('.agent-name-line');
+                  const roleLine = tr.querySelector('.agent-role-line');
+                  if (nameLine) nameLine.textContent = selectedOpt.dataset.name;
+                  if (roleLine) roleLine.textContent = selectedOpt.dataset.role || '';
                 }
               }
             } catch (err) {
@@ -691,29 +746,55 @@ document.addEventListener('DOMContentLoaded', () => {
           loadAgentOptions();
 
           agentSelect.addEventListener('change', (e) => {
-            updateAssignedAgent(req.id, e.target.value);
+            const selectedOpt = agentSelect.options[agentSelect.selectedIndex];
+            const nameLine = tr.querySelector('.agent-name-line');
+            const roleLine = tr.querySelector('.agent-role-line');
+            if (selectedOpt) {
+              if (nameLine) nameLine.textContent = selectedOpt.dataset.name || selectedOpt.text.split(' - ')[0] || 'Select Agent';
+              if (roleLine) roleLine.textContent = selectedOpt.dataset.role || selectedOpt.text.split(' - ')[1] || '';
+            }
+            updateAssignedAgent(req.id, e.target.value).catch(() => {
+              applyServiceRequestsFilter();
+            });
           });
         }
 
         const statusSelect = tr.querySelector('.status-select-badge');
         if (statusSelect) {
+          let previousStatus = statusSelect.value;
           statusSelect.addEventListener('change', (e) => {
             const newStatus = e.target.value;
+            const customerName = req.customer_name || 'Customer';
+            
+            if (!window.confirm(`Are you sure you want to change the status of ${customerName}'s booking from '${previousStatus}' to '${newStatus}'?`)) {
+              statusSelect.value = previousStatus;
+              return;
+            }
+            
             statusSelect.setAttribute('data-status', newStatus);
             let badgeClass = 'warning';
-            if (newStatus === 'completed' || newStatus === 'done' || newStatus === 'confirmed') badgeClass = 'success';
+            if (newStatus === 'completed' || newStatus === 'done') badgeClass = 'success';
+            else if (newStatus === 'confirmed') badgeClass = 'teal';
             else if (newStatus === 'cancelled' || newStatus === 'cancelled_by_customer') badgeClass = 'danger';
             else if (newStatus === 'in_progress') badgeClass = 'info';
-            else if (newStatus === 'rescheduled') badgeClass = 'purple';
             statusSelect.className = `status-select-badge ${badgeClass}`;
 
             if (agentSelect) {
               const isNowDone = ['completed', 'done', 'cancelled', 'cancelled_by_customer'].includes(newStatus);
               agentSelect.disabled = isNowDone;
               agentSelect.title = isNowDone ? "Agent cannot be changed for completed or cancelled tasks" : "";
+              const agentWrapper = tr.querySelector('.agent-badge-wrapper');
+              if (agentWrapper) {
+                if (isNowDone) agentWrapper.classList.add('disabled');
+                else agentWrapper.classList.remove('disabled');
+              }
             }
 
-            updateRequestStatus(req.id, newStatus);
+            updateRequestStatus(req.id, newStatus).then(() => {
+              previousStatus = newStatus;
+            }).catch(() => {
+              applyServiceRequestsFilter();
+            });
           });
         }
 
@@ -722,12 +803,37 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function isDateInTimeframe(dateStr, timeframe) {
+    if (!timeframe || timeframe === 'all') return true;
+    if (!dateStr) return false;
+    let cleanStr = String(dateStr).trim();
+    if (cleanStr.includes(' ') && !cleanStr.includes('T')) cleanStr = cleanStr.replace(' ', 'T');
+    if (!cleanStr.endsWith('Z') && !/[+-]\d{2}:?\d{2}$/.test(cleanStr)) cleanStr += 'Z';
+    const d = new Date(cleanStr);
+    if (isNaN(d.getTime())) return true;
+
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    if (diffMs < 0) return true;
+
+    if (timeframe === '24h' || timeframe === '1d') {
+      return diffMs <= 24 * 60 * 60 * 1000;
+    } else if (timeframe === '7d') {
+      return diffMs <= 7 * 24 * 60 * 60 * 1000;
+    } else if (timeframe === '30d') {
+      return diffMs <= 30 * 24 * 60 * 60 * 1000;
+    }
+    return true;
+  }
+
   function applyServiceRequestsFilter() {
     const query = (document.getElementById('filter-sr-search')?.value || '').toLowerCase().trim();
     const type = document.getElementById('filter-sr-type')?.value || 'all';
     const status = document.getElementById('filter-sr-status')?.value || 'all';
     
     const filtered = allRequests.filter(req => {
+      const matchesTime = isDateInTimeframe(req.created_at, currentCallsTimeframe);
+
       const matchesText = !query || 
         (req.customer_name || '').toLowerCase().includes(query) ||
         (req.phone || '').toLowerCase().includes(query) ||
@@ -739,7 +845,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const matchesType = type === 'all' || req.booking_type === type;
       const matchesStatus = status === 'all' || req.status === status || (status === 'completed' && req.status === 'done');
       
-      return matchesText && matchesType && matchesStatus;
+      return matchesTime && matchesText && matchesType && matchesStatus;
     });
     
     renderServiceRequests(filtered);
@@ -749,11 +855,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const query = (document.getElementById('filter-calls-search')?.value || '').toLowerCase().trim();
     
     const filtered = allCalls.filter(call => {
-      return !query || 
+      const matchesTime = isDateInTimeframe(call.created_at || call.timestamp, currentCallsTimeframe);
+      const matchesText = !query || 
         (call.customer_name || '').toLowerCase().includes(query) ||
         (call.phone || '').toLowerCase().includes(query) ||
         (call.vehicle || '').toLowerCase().includes(query) ||
         (call.summary || '').toLowerCase().includes(query);
+      return matchesTime && matchesText;
     });
     
     renderCallLogs(filtered);
@@ -2913,7 +3021,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const agents = data.agents || [];
                 let opts = '<option value="">👤 Reassign Staff Agent...</option>';
                 agents.forEach(a => {
-                  opts += `<option value="${a.id}">${a.name}</option>`;
+                  const isSel = (convDetails.assigned_staff_id && Number(convDetails.assigned_staff_id) === Number(a.id)) || (convDetails.staff_agent_name === a.name);
+                  const isUnavailable = a.is_available === false;
+                  const labelSuffix = isUnavailable ? ` (Unavailable: ${a.reason || 'Busy'})` : '';
+                  const disabledAttr = (isUnavailable && !isSel) ? 'disabled' : '';
+                  opts += `<option value="${a.id}" ${isSel ? 'selected' : ''} ${disabledAttr}>${a.name}${labelSuffix}</option>`;
                 });
                 reassignSelect.innerHTML = opts;
               }).catch(console.error);
@@ -3048,6 +3160,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <span class="badge ${statusClass}">${statusUpper}</span>
           </div>
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; font-size: 12px;">
+            <div><span style="color: var(--text-muted);">Submitted At:</span> <span style="color: var(--text-main); font-weight: 500;">${app.created_at ? formatShortDate(app.created_at) : 'N/A'}</span></div>
             <div><span style="color: var(--text-muted);">Customer:</span> <span style="color: var(--text-main); font-weight: 500;">${app.customer_name || 'N/A'}</span></div>
             <div><span style="color: var(--text-muted);">Phone:</span> <span style="color: var(--text-main); font-weight: 500;">${app.customer_phone || 'N/A'}</span></div>
             <div><span style="color: var(--text-muted);">Agent:</span> <span style="color: var(--text-main); font-weight: 500;">${app.staff_agent_name || 'Unassigned'}</span></div>
@@ -3199,7 +3312,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const info = await res.json();
       
       document.querySelectorAll('.sandbox-code-val').forEach(el => {
-        el.textContent = info.join_code || 'join service-bot';
+        el.textContent = info.join_code || 'join evidence-lips';
       });
       document.querySelectorAll('.sandbox-num-val').forEach(el => {
         el.textContent = info.sandbox_number || '+14155238886';
@@ -3335,6 +3448,346 @@ document.addEventListener('DOMContentLoaded', () => {
       const phone = document.getElementById('onboard-customer-phone').value.trim();
       const name = document.getElementById('onboard-customer-name').value.trim();
       await sendWhatsAppTestPing(phone, name, 'CUSTOMER');
+    });
+  }
+
+  // --- UNIFIED QR CODE ONBOARDING MODAL LOGIC (ADMIN, AGENT, CUSTOMER) ---
+  const qrModal = document.getElementById('qr-onboard-modal');
+  const qrOverlay = document.getElementById('qr-modal-overlay');
+  const closeQrModalBtn = document.getElementById('close-qr-modal-btn');
+  const qrCopyBtn = document.getElementById('qr-modal-copy-btn');
+
+  function hideQRCodeModal() {
+    if (qrModal) qrModal.style.display = 'none';
+    if (qrOverlay) qrOverlay.style.display = 'none';
+  }
+
+  if (closeQrModalBtn) closeQrModalBtn.addEventListener('click', hideQRCodeModal);
+  if (qrOverlay) qrOverlay.addEventListener('click', hideQRCodeModal);
+
+  async function showQRCodeModal(role = 'CUSTOMER', phone = '', name = '') {
+    try {
+      const cleanRole = (role || 'CUSTOMER').toUpperCase();
+      const res = await fetch(`/api/v1/portal/twilio/sandbox-info?role=${encodeURIComponent(cleanRole)}&phone_number=${encodeURIComponent(phone)}`);
+      if (!res.ok) throw new Error('Failed to fetch QR code data');
+      const info = await res.json();
+
+      const titleEl = document.getElementById('qr-modal-title');
+      const roleBadge = document.getElementById('qr-modal-role-badge');
+      const phoneDisplay = document.getElementById('qr-modal-phone-display');
+      const qrImg = document.getElementById('qr-modal-img');
+      const numEl = document.getElementById('qr-modal-num');
+      const joinEl = document.getElementById('qr-modal-join');
+      const waLink = document.getElementById('qr-modal-wa-link');
+
+      if (titleEl) titleEl.textContent = `${cleanRole} WhatsApp QR Onboarding`;
+      if (roleBadge) {
+        roleBadge.textContent = cleanRole;
+        if (cleanRole === 'ADMIN') {
+          roleBadge.style.background = 'rgba(59, 130, 246, 0.15)';
+          roleBadge.style.color = '#3b82f6';
+          roleBadge.style.borderColor = 'rgba(59, 130, 246, 0.3)';
+        } else if (cleanRole === 'AGENT') {
+          roleBadge.style.background = 'rgba(245, 158, 11, 0.15)';
+          roleBadge.style.color = '#f59e0b';
+          roleBadge.style.borderColor = 'rgba(245, 158, 11, 0.3)';
+        } else {
+          roleBadge.style.background = 'rgba(37, 211, 102, 0.15)';
+          roleBadge.style.color = '#25D366';
+          roleBadge.style.borderColor = 'rgba(37, 211, 102, 0.3)';
+        }
+      }
+
+      if (phoneDisplay) phoneDisplay.textContent = phone ? `${name ? name + ' (' : ''}${phone}${name ? ')' : ''}` : `Onboarding Role: ${cleanRole}`;
+      if (qrImg && info.qr_code_url) qrImg.src = info.qr_code_url;
+      if (numEl) numEl.textContent = info.sandbox_number || '+1 415 523 8886';
+      if (joinEl) joinEl.textContent = info.join_code || 'join evidence-lips';
+      if (waLink) waLink.href = info.whatsapp_url || '#';
+
+      if (qrCopyBtn) {
+        qrCopyBtn.onclick = () => {
+          if (info.whatsapp_url) {
+            navigator.clipboard.writeText(info.whatsapp_url);
+            showToast('WhatsApp link copied to clipboard!');
+          }
+        };
+      }
+
+      if (qrModal) qrModal.style.display = 'block';
+      if (qrOverlay) qrOverlay.style.display = 'block';
+    } catch (err) {
+      console.error('Error showing QR Code modal:', err);
+      showToast('Error generating QR Code: ' + err.message, 'error');
+    }
+  }
+
+  // Admin QR Code Button Event
+  const adminQrBtn = document.getElementById('admin-qr-btn');
+  if (adminQrBtn) {
+    adminQrBtn.addEventListener('click', () => {
+      const phoneInput = document.getElementById('admin-sms-phone');
+      const phone = phoneInput ? phoneInput.value.trim() : '';
+      showQRCodeModal('ADMIN', phone, 'System Administrator');
+    });
+  }
+
+  // Agent QR Code Button Event
+  const agentQrOnboardBtn = document.getElementById('agent-qr-onboard-btn');
+  if (agentQrOnboardBtn) {
+    agentQrOnboardBtn.addEventListener('click', () => {
+      const staffSelector = document.getElementById('staff-agent-selector');
+      let agentName = '';
+      if (staffSelector && staffSelector.selectedIndex >= 0) {
+        agentName = staffSelector.options[staffSelector.selectedIndex].text;
+      }
+      showQRCodeModal('AGENT', '', agentName || 'Service Agent');
+    });
+  }
+
+  // Customer QR Code Button Event
+  const customerQrBtn = document.getElementById('customer-qr-btn');
+  if (customerQrBtn) {
+    customerQrBtn.addEventListener('click', () => {
+      const phone = document.getElementById('onboard-customer-phone') ? document.getElementById('onboard-customer-phone').value.trim() : '';
+      const name = document.getElementById('onboard-customer-name') ? document.getElementById('onboard-customer-name').value.trim() : '';
+      showQRCodeModal('CUSTOMER', phone, name);
+    });
+  }
+
+  // --- Manual Service Request Feature ---
+  const srModal = document.getElementById('sr-modal');
+  const srModalOverlay = document.getElementById('sr-modal-overlay');
+  const srForm = document.getElementById('sr-form');
+  const confirmModal = document.getElementById('confirm-modal');
+  const confirmOverlay = document.getElementById('confirm-modal-overlay');
+
+  let activeConfirmAction = null;
+
+  function closeSRModal() {
+    if (srModal) srModal.style.display = 'none';
+    if (srModalOverlay) srModalOverlay.style.display = 'none';
+    srForm.reset();
+  }
+
+  function openConfirmModal(title, msg, onConfirm) {
+    document.getElementById('confirm-modal-title').textContent = title;
+    document.getElementById('confirm-modal-msg').textContent = msg;
+    activeConfirmAction = onConfirm;
+    if (confirmModal) confirmModal.style.display = 'block';
+    if (confirmOverlay) confirmOverlay.style.display = 'block';
+  }
+
+  function closeConfirmModal() {
+    activeConfirmAction = null;
+    if (confirmModal) confirmModal.style.display = 'none';
+    if (confirmOverlay) confirmOverlay.style.display = 'none';
+  }
+
+  document.getElementById('confirm-modal-no').addEventListener('click', closeConfirmModal);
+  document.getElementById('confirm-modal-yes').addEventListener('click', () => {
+    if (activeConfirmAction) activeConfirmAction();
+    closeConfirmModal();
+  });
+  
+  if (document.getElementById('close-sr-modal-btn')) {
+    document.getElementById('close-sr-modal-btn').addEventListener('click', closeSRModal);
+  }
+  if (document.getElementById('sr-cancel-btn')) {
+    document.getElementById('sr-cancel-btn').addEventListener('click', closeSRModal);
+  }
+
+  window.openSREditModal = (req) => {
+    document.getElementById('sr-modal-title').textContent = 'Edit Service Request';
+    document.getElementById('sr-form-id').value = req.id;
+    
+    // Populate form
+    document.getElementById('sr-cust-name').value = req.customer_name || '';
+    document.getElementById('sr-cust-phone').value = req.phone || '';
+    document.getElementById('sr-veh-make').value = req.make || '';
+    document.getElementById('sr-veh-model').value = req.model || '';
+    document.getElementById('sr-veh-year').value = req.year || '';
+    document.getElementById('sr-veh-vin').value = req.vin || '';
+    const svcSelect = document.getElementById('sr-service-type');
+    const valToSet = req.service_type || '';
+    if (valToSet) {
+      let optionExists = Array.from(svcSelect.options).some(opt => opt.value === valToSet);
+      if (!optionExists) {
+        const customOpt = document.createElement('option');
+        customOpt.value = valToSet;
+        customOpt.textContent = valToSet;
+        svcSelect.appendChild(customOpt);
+      }
+    }
+    svcSelect.value = valToSet;
+    document.getElementById('sr-issue-desc').value = req.issue_description || '';
+    
+    // Disable customer and service type fields for editing
+    document.getElementById('sr-cust-name').disabled = true;
+    document.getElementById('sr-cust-phone').disabled = true;
+    document.getElementById('sr-service-type').disabled = true;
+
+    // Load agents
+    populateAgentsDropdown('sr-agent-select', req.staff_agent_id);
+
+    if (srModal) srModal.style.display = 'block';
+    if (srModalOverlay) srModalOverlay.style.display = 'block';
+  };
+
+  const btnNewRequest = document.getElementById('btn-new-request');
+  if (btnNewRequest) {
+    btnNewRequest.addEventListener('click', () => {
+      document.getElementById('sr-modal-title').textContent = 'New Service Request';
+      document.getElementById('sr-form-id').value = '';
+      
+      // Enable all fields
+      document.getElementById('sr-cust-name').disabled = false;
+      document.getElementById('sr-cust-phone').disabled = false;
+      document.getElementById('sr-service-type').disabled = false;
+      
+      populateAgentsDropdown('sr-agent-select', null);
+
+      if (srModal) srModal.style.display = 'block';
+      if (srModalOverlay) srModalOverlay.style.display = 'block';
+    });
+  }
+
+  async function populateAgentsDropdown(selectId, selectedAgentId) {
+    const selectEl = document.getElementById(selectId);
+    if (!selectEl) return;
+    
+    try {
+      const res = await fetch('/api/v1/portal/agents');
+      if (res.ok) {
+        const agents = await res.json();
+        selectEl.innerHTML = '<option value="">Select an Agent...</option>';
+        agents.forEach(a => {
+          const opt = document.createElement('option');
+          opt.value = a.id;
+          opt.textContent = `${a.name} (${a.role})`;
+          if (selectedAgentId && a.id == selectedAgentId) opt.selected = true;
+          selectEl.appendChild(opt);
+        });
+      }
+    } catch (e) {
+      console.error('Failed to load agents', e);
+    }
+  }
+
+  const loadSlotsBtn = document.getElementById('sr-load-slots-btn');
+  if (loadSlotsBtn) {
+    loadSlotsBtn.addEventListener('click', async () => {
+      const agentId = document.getElementById('sr-agent-select').value;
+      if (!agentId) {
+        showToast('Please select an agent first.', 'warning');
+        return;
+      }
+      
+      try {
+        loadSlotsBtn.disabled = true;
+        loadSlotsBtn.textContent = 'Loading...';
+        
+        // Trigger populate to get fresh slots
+        await fetch(`/api/v1/portal/agents/${agentId}/calendar/populate`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ days: 14 })
+        });
+        
+        // Fetch slots
+        const res = await fetch(`/api/v1/portal/agents/${agentId}/calendar`);
+        if (res.ok) {
+          const slots = await res.json();
+          const slotSelect = document.getElementById('sr-slot-select');
+          slotSelect.innerHTML = '<option value="">-- Do not assign slot --</option>';
+          const unbooked = slots.filter(s => !s.is_booked);
+          unbooked.forEach(s => {
+            const opt = document.createElement('option');
+            opt.value = s.id;
+            const dtStr = s.slot_datetime ? s.slot_datetime.replace('T', ' ') : 'Available Slot';
+            opt.textContent = dtStr;
+            slotSelect.appendChild(opt);
+          });
+          showToast(`Loaded ${unbooked.length} available slots.`, 'success');
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          showToast(errData.detail || 'Failed to load slots from calendar.', 'danger');
+        }
+      } catch (e) {
+        console.error('Error loading slots:', e);
+        showToast('Failed to load slots: ' + e.message, 'danger');
+      } finally {
+        loadSlotsBtn.disabled = false;
+        loadSlotsBtn.textContent = 'Load Slots';
+      }
+    });
+  }
+
+  if (srForm) {
+    srForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      
+      const reqId = document.getElementById('sr-form-id').value;
+      const isEdit = !!reqId;
+      
+      const actionText = isEdit ? 'Update this service request?' : 'Create new service request?';
+      const slotId = document.getElementById('sr-slot-select').value;
+      let msg = 'This will save the changes.';
+      if (slotId) msg += ' A booking confirmation SMS will be sent to the customer.';
+
+      openConfirmModal(actionText, msg, async () => {
+        try {
+          const payload = {
+            vehicle_details: {
+              make: document.getElementById('sr-veh-make').value,
+              model: document.getElementById('sr-veh-model').value,
+              year: parseInt(document.getElementById('sr-veh-year').value),
+              vin: document.getElementById('sr-veh-vin').value || null
+            },
+            new_slot_id: slotId ? parseInt(slotId) : null,
+            issue_description: document.getElementById('sr-issue-desc').value
+          };
+
+          let url, method, finalPayload;
+          
+          if (isEdit) {
+            url = `/api/v1/portal/service-requests/${reqId}`;
+            method = 'PUT';
+            finalPayload = payload;
+          } else {
+            url = `/api/v1/portal/service-requests`;
+            method = 'POST';
+            finalPayload = {
+              customer: {
+                name: document.getElementById('sr-cust-name').value,
+                phone: document.getElementById('sr-cust-phone').value
+              },
+              vehicle: payload.vehicle_details,
+              service_request: {
+                service_type: document.getElementById('sr-service-type').value,
+                issue_description: payload.issue_description,
+                slot_id: payload.new_slot_id
+              }
+            };
+          }
+
+          const res = await fetch(url, {
+            method,
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(finalPayload)
+          });
+          
+          if (res.ok) {
+            showToast('Service Request saved successfully!', 'success');
+            closeSRModal();
+            fetchData(); // reload dashboard
+          } else {
+            const err = await res.json();
+            showToast(err.detail || 'Failed to save request.', 'danger');
+          }
+        } catch (err) {
+          showToast('An error occurred.', 'danger');
+        }
+      });
     });
   }
 

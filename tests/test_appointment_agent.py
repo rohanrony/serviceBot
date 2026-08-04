@@ -1,4 +1,5 @@
 import pytest
+from unittest.mock import patch, MagicMock
 from serviceBot.db.queries import check_availability, book_appointment
 
 @pytest.fixture
@@ -117,7 +118,7 @@ def test_book_appointment_updates_is_booked(mock_db):
     
     # Query database directly to verify service_request has staff agent and time
     cursor = mock_db.cursor()
-    cursor.execute("SELECT booking_time, staff_agent_id FROM service_requests WHERE id = ?;", (1,))
+    cursor.execute("SELECT booking_time, staff_agent_id FROM service_requests WHERE id = %s;", (1,))
     row = cursor.fetchone()
     assert row is not None
     assert row["booking_time"] == slot
@@ -159,7 +160,7 @@ def test_appointment_booking_node_success(mock_db):
         assert final_state["appointment_id"] is not None
         # Assert database service request has the booked time and agent
         cursor = mock_db.cursor()
-        cursor.execute("SELECT booking_time, staff_agent_id FROM service_requests WHERE id = ?;", (1,))
+        cursor.execute("SELECT booking_time, staff_agent_id FROM service_requests WHERE id = %s;", (1,))
         row = cursor.fetchone()
         assert row is not None
         assert row["booking_time"] == "2026-06-09 16:00:00"

@@ -107,11 +107,11 @@ case "$1" in
             FILE_PATH="$WORKSPACE_DIR/$FILE_PATH"
         fi
         echo -e "${BLUE}${BOLD}Running tests in file: $FILE_PATH...${NC}"
-        PYTHONDONTWRITEBYTECODE=1 "$PYTEST_BIN" "$FILE_PATH" -o cache_dir="$CACHE_DIR"
+        PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 "$PYTEST_BIN" "$FILE_PATH" -s -o cache_dir="$CACHE_DIR"
         ;;
     --all|"")
         echo -e "${BLUE}${BOLD}Running entire test suite...${NC}"
-        PYTHONDONTWRITEBYTECODE=1 "$PYTEST_BIN" tests/ -o cache_dir="$CACHE_DIR"
+        PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 "$PYTEST_BIN" tests/ -s -o cache_dir="$CACHE_DIR"
         ;;
     *)
         echo -e "${RED}${BOLD}Error:${NC} Unknown option: $1"

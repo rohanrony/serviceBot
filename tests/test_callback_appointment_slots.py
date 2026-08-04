@@ -14,7 +14,7 @@ from serviceBot.services.calendar_sync import _generate_slot_strings
 
 def test_generate_slot_strings_has_15_min_intervals():
     """Verify that _generate_slot_strings generates 15-minute interval slots (0, 15, 30, 45)."""
-    slots = _generate_slot_strings(days=1, hours=[10])
+    slots = _generate_slot_strings(days=7, hours=[10])
     minutes = [datetime.datetime.strptime(s, "%Y-%m-%d %H:%M:%S").minute for s in slots]
     assert 0 in minutes
     assert 15 in minutes

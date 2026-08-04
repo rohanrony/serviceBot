@@ -1,4 +1,4 @@
-# Test Business Hours and Location Specifics
+# Davidson Car Care Business Hours and Location Specifics
 
 ## Standard Business Hours
 * Weekdays: Monday through Friday from 7:00 AM to 6:00 PM.
@@ -6,6 +6,6 @@
 * Holiday Closures: Shops are closed on major national holidays. Check with your local branch for holiday schedule updates.
 
 ## Franchise Locations and Contact Info
-* Franchise Model: Each Test shop is independently owned and operated by local members of the community.
+* Franchise Model: Each Davidson Car Care shop is independently owned and operated by local members of the community.
 * Finding a Local Shop: You can easily find contact details, phone numbers, and street addresses for any of our over 250 locations nationwide on the official website locator.
 * Scheduling Appointments: Bookings can be made online, over the phone, or directly through the voice assistant configuration portal.

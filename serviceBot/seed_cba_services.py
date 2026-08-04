@@ -386,7 +386,7 @@ SERVICES_DATA = [
 ]
 
 def main():
-    print("Seeding Test service catalog...")
+    print("Seeding Davidson Car Care service catalog...")
     with get_db_connection() as conn:
         cursor = conn.cursor()
         

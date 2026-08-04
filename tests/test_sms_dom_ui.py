@@ -90,7 +90,7 @@ def test_api_bug_fixes_verification():
 
     res_status = client.patch(f"/api/v1/portal/service-requests/{req_id}/status", json={"status": "cancelled_by_customer"})
     assert res_status.status_code == 200
-    assert res_status.json()["data"]["status"] == "cancelled_by_customer"
+    assert res_status.json()["data"]["status"] == "cancelled"
 
     # Verify staff agent creation with phone_number
     res_agent = client.post("/api/v1/portal/agents", json={

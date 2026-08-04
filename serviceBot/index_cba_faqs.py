@@ -17,7 +17,7 @@ def main():
     service = FAQService()
     kb_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "kb_documents")
     
-    print("Starting Test FAQ indexing process...")
+    print("Starting Davidson Car Care FAQ indexing process...")
     for filename in FAQ_FILES:
         filepath = os.path.join(kb_dir, filename)
         if not os.path.exists(filepath):

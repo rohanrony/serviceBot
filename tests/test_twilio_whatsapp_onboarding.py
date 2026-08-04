@@ -8,9 +8,12 @@ from serviceBot.services.twilio_sms import TwilioSMSClient
 client = TestClient(app)
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(scope="module", autouse=True)
 def setup_database():
-    init_db()
+    try:
+        init_db()
+    except Exception as exc:
+        print(f"Database setup skipped/warning in test fixture: {exc}")
 
 
 def test_twilio_client_sandbox_credentials():
@@ -86,3 +89,22 @@ def test_portal_whatsapp_test_ping_endpoint():
     data = response.json()
     assert data["success"] is True
     assert data["record"]["whatsapp_onboarded"] is True
+
+
+def test_twilio_client_sandbox_credentials_role_support():
+    twilio_client = TwilioSMSClient()
+    info_admin = twilio_client.get_sandbox_credentials(role="ADMIN", phone_number="+15550191111")
+    assert info_admin["role"] == "ADMIN"
+    assert info_admin["recipient_phone"] == "+15550191111"
+    assert "qr_code_url" in info_admin
+
+    info_agent = twilio_client.get_sandbox_credentials(role="AGENT", phone_number="+15550192222")
+    assert info_agent["role"] == "AGENT"
+    assert info_agent["recipient_phone"] == "+15550192222"
+
+
+def test_portal_twilio_qr_code_endpoint():
+    response = client.get("/api/v1/portal/twilio/qr-code?data=https://wa.me/14155238886?text=join", follow_redirects=False)
+    assert response.status_code == 307
+    assert "api.qrserver.com" in response.headers["location"]
+

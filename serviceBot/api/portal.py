@@ -115,7 +115,7 @@ SYSTEM_PROMPT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "s
 
 def load_config():
     import json
-    default_system_prompt = """You are Rachel, an AI voice assistant for Test Automotive. Be polite, friendly, professional, and conversational. Speak clearly and concisely.
+    default_system_prompt = """You are Rachel, an AI voice assistant for Davidson Car Care. Be polite, friendly, professional, and conversational. Speak clearly and concisely.
 
 ### 1. CORE INTENT & BEHAVIOR
 Understand the caller's intent and assist them naturally across these areas:
@@ -136,12 +136,12 @@ If a specific service is requested (such as an oil change, brake inspection, or 
 
 Once all mandatory details are collected, ask:
 "Would you like to book an appointment for this service now, or would you prefer to arrange a callback?"
-- If they prefer a callback: Ask for their preferred day and time window, then call `create_service_request` (or `request_callback`).
+- If they prefer a callback: Ask for their preferred day and time window, then call `create_service_request` (or `request_callback`). MANDATORY: Always include complete details in `issue_description` (or `issue`), combining all reported vehicle issues/services, vehicle Year/Make/Model, preferred callback time window, and caller notes.
 - If they want to book an appointment: Proceed to the Appointment Booking steps below.
 
 ### 3. APPOINTMENT BOOKING & RESCHEDULING
 - **Checking Availability:** Always check open calendar slots first by calling `check_availability` with their preferred date or time window. Suggest the best available slots clearly.
-- **Mandatory Price & Duration Quote Before Booking:** BEFORE calling `create_service_request` or `book_appointment`, you MUST look up the service's estimated cost and time duration in our knowledge base (using `query_knowledge_base` if needed). Quote both clearly to the caller (for example: *"An oil change is typically $79 to $119 and takes about 45 minutes"*). Ask for their explicit confirmation to proceed at that rate. Only call the booking tool after they explicitly confirm.
+- **Mandatory Price & Duration Quote Before Booking:** BEFORE calling `create_service_request` or `book_appointment`, you MUST look up the service's estimated cost and time duration in our knowledge base (using `query_knowledge_base` if needed). Quote both clearly to the caller (for example: *"An oil change is typically $79 to $119 and takes about 45 minutes"*). Ask for their explicit confirmation to proceed at that rate. Only call the booking tool after they explicitly confirm. MANDATORY: Always include complete details in `issue_description` (or `issue`), combining all reported vehicle issues/services, vehicle Year/Make/Model, quoted estimated price and duration, and confirmed appointment date/time slot. Never leave the description generic or empty.
 - **Rescheduling:** First call `get_customer_appointments` using their phone number to check current bookings. State their existing appointment time, then call `check_availability` for their preferred new date/time. Once confirmed, call `reschedule_appointment`.
 
 ### 4. FAQ & KNOWLEDGE BASE
@@ -172,7 +172,7 @@ Speak the filler naturally as part of the conversation so the caller experiences
             "location": True
         },
         "system_prompt": default_system_prompt,
-        "first_message": "Hello! Thank you for calling Test Automotive. I am Rachel, AI voice Assistant. How can I help you today?",
+        "first_message": "Hello! Thank you for calling Davidson Car Care. I am Rachel, AI voice Assistant. How can I help you today?",
         "gmail_enabled": False,
         "gmail_sender": "",
         "gmail_password": "",
@@ -280,7 +280,7 @@ async def sync_prompt_to_elevenlabs(prompt_text: str, first_message: str = None)
         
     headers = {"xi-api-key": api_key}
     el_payload = {
-        "name": "Test Service Agent",
+        "name": "Davidson Car Care Service Agent",
         "conversation_config": {
             "agent": {
                 "prompt": {
@@ -449,8 +449,8 @@ async def create_service(payload: ServiceCreate):
                  bool(payload.req_vehicle_details), bool(payload.req_issue_description),
                  bool(payload.req_location))
             )
-            conn.commit()
             new_id = cursor.fetchone()["id"]
+            conn.commit()
             try:
                 sync_services_to_kb()
             except Exception:
@@ -506,7 +506,7 @@ class CalendarSlotUpdate(BaseModel):
     slot_datetime: Optional[str] = None
 
 @router.get("/agents")
-async def get_staff_agents():
+def get_staff_agents():
     from serviceBot.db.connection import get_db_connection, dict_cursor
     try:
         with get_db_connection() as conn:
@@ -773,6 +773,7 @@ async def disconnect_agent_calendar(agent_id: int):
     return await disconnect_agent_google(agent_id)
 
 @router.get("/agents/{agent_id}/calendar")
+@router.get("/agents/{agent_id}/slots")
 async def get_agent_calendar(agent_id: int):
     from serviceBot.db.connection import get_db_connection, dict_cursor
     try:
@@ -942,6 +943,26 @@ class ServiceRequestStatusUpdate(BaseModel):
 class AgentAssignPayload(BaseModel):
     staff_agent_id: Optional[int] = None
 
+class CustomerDetails(BaseModel):
+    name: str
+    phone: str
+
+class VehicleDetails(BaseModel):
+    make: str
+    model: str
+    year: int
+    vin: Optional[str] = None
+
+class ServiceRequestCreate(BaseModel):
+    customer: CustomerDetails
+    vehicle: VehicleDetails
+    service_request: dict
+
+class ServiceRequestEdit(BaseModel):
+    issue_description: str
+    vehicle_details: VehicleDetails
+    new_slot_id: Optional[int] = None
+
 
 
 @router.get("/calls")
@@ -985,7 +1006,7 @@ async def get_appointments():
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             cursor.execute("""
-                SELECT sr.id, sr.booking_time AS appointment_datetime, sr.service_type, sr.issue_description, sr.status, sr.created_at, c.name AS customer_name, c.phone,
+                SELECT sr.id, sr.booking_time AS appointment_datetime, sr.service_type, sr.issue_description, sr.duration_minutes, sr.status, sr.created_at, c.name AS customer_name, c.phone,
                        v.make, v.model, v.year
                 FROM service_requests sr
                 LEFT JOIN customers c ON sr.customer_id = c.id
@@ -1000,9 +1021,11 @@ async def get_appointments():
                 if not isinstance(r["created_at"], str) and r["created_at"]:
                     r["created_at"] = r["created_at"].strftime("%Y-%m-%d %H:%M:%S")
 
-                svc = r.get("service_type") or r.get("issue_description") or ""
-                svc_fields = get_service_required_fields(svc) if svc else None
-                duration = (svc_fields.get("duration_minutes") or 60) if svc_fields else 60
+                duration = r.get("duration_minutes")
+                if not duration:
+                    svc = r.get("service_type") or r.get("issue_description") or ""
+                    svc_fields = get_service_required_fields(svc) if svc else None
+                    duration = (svc_fields.get("duration_minutes") or 60) if svc_fields else 60
                 r["duration_minutes"] = duration
 
                 raw_time = r.get("appointment_datetime")
@@ -1033,7 +1056,8 @@ async def get_service_requests(limit: Optional[int] = None, offset: Optional[int
         with dict_cursor(conn) as cursor:
             query = """
                 SELECT sr.id, sr.service_type, sr.issue_description, sr.status, sr.time_slot, sr.created_at,
-                       sr.booking_type, sr.booking_time, sr.staff_agent_id,
+                       sr.booking_type, sr.booking_time, sr.duration_minutes, sr.staff_agent_id,
+                       sr.notification_dispatched_at, sr.sla_expires_at,
                        c.name AS customer_name, c.phone,
                        v.make, v.model, v.year,
                        sa.name AS staff_agent_name, sa.role AS staff_agent_role,
@@ -1059,9 +1083,11 @@ async def get_service_requests(limit: Optional[int] = None, offset: Optional[int
                 if not isinstance(r["created_at"], str) and r["created_at"]:
                     r["created_at"] = r["created_at"].strftime("%Y-%m-%d %H:%M:%S")
 
-                svc = r.get("service_type") or r.get("issue_description") or ""
-                svc_fields = get_service_required_fields(svc) if svc else None
-                duration = (svc_fields.get("duration_minutes") or 60) if svc_fields else 60
+                duration = r.get("duration_minutes")
+                if not duration:
+                    svc = r.get("service_type") or r.get("issue_description") or ""
+                    svc_fields = get_service_required_fields(svc) if svc else None
+                    duration = (svc_fields.get("duration_minutes") or 60) if svc_fields else 60
                 r["duration_minutes"] = duration
 
                 raw_time = r.get("booking_time") or r.get("time_slot")
@@ -1090,6 +1116,114 @@ async def get_service_requests(limit: Optional[int] = None, offset: Optional[int
 
                 res.append(r)
             return res
+
+@router.post("/service-requests", status_code=201)
+async def create_service_request_endpoint(payload: ServiceRequestCreate):
+    from serviceBot.db.queries import lookup_customer_by_phone, normalize_e164_phone, book_appointment
+    from serviceBot.db.connection import get_db_connection, dict_cursor
+    from serviceBot.services.twilio_sms import TwilioSMSClient
+
+    norm_phone = normalize_e164_phone(payload.customer.phone)
+    
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("INSERT INTO customers (name, phone) VALUES (%s, %s) ON CONFLICT (phone) DO NOTHING RETURNING id", (payload.customer.name, norm_phone))
+            res = cursor.fetchone()
+            if res:
+                customer_id = res["id"]
+            else:
+                cursor.execute("SELECT id FROM customers WHERE phone = %s", (norm_phone,))
+                customer_id = cursor.fetchone()["id"]
+            
+            cursor.execute("INSERT INTO vehicles (customer_id, make, model, year, vin) VALUES (%s, %s, %s, %s, %s) RETURNING id", 
+                (customer_id, payload.vehicle.make, payload.vehicle.model, payload.vehicle.year, payload.vehicle.vin))
+            vehicle_id = cursor.fetchone()["id"]
+            
+            svc_type = payload.service_request.get("service_type", "General Service")
+            issue_desc = payload.service_request.get("issue_description", "")
+            
+            cursor.execute("""
+                INSERT INTO service_requests (customer_id, vehicle_id, service_type, issue_description, status)
+                VALUES (%s, %s, %s, %s, 'pending') RETURNING id
+            """, (customer_id, vehicle_id, svc_type, issue_desc))
+            request_id = cursor.fetchone()["id"]
+            
+            # Audit log
+            cursor.execute("INSERT INTO service_request_audit_log (request_id, triggered_by, from_status, to_status, notes) VALUES (%s, %s, %s, %s, %s)",
+                           (request_id, 'system', None, 'pending', 'Manual request created from portal'))
+            
+            # Booking logic
+            slot_id = payload.service_request.get("slot_id")
+            if slot_id:
+                cursor.execute("SELECT slot_datetime FROM mock_calendar_slots WHERE id = %s", (slot_id,))
+                slot = cursor.fetchone()
+                if slot:
+                    dt_str = slot["slot_datetime"].strftime("%Y-%m-%d %H:%M:%S") if not isinstance(slot["slot_datetime"], str) else slot["slot_datetime"]
+                    try:
+                        book_appointment(customer_id, request_id, dt_str, svc_type, payload.vehicle.model_dump(), "appointment")
+                        
+                        # SMS logic handled internally by book_appointment if enabled, but let's dispatch explicit confirmation if needed
+                        client = TwilioSMSClient()
+                        client.send_sms(
+                            to_number=norm_phone,
+                            body=f"Hi {payload.customer.name}, your {svc_type} appointment has been scheduled for {dt_str}.",
+                            appointment_id=request_id
+                        )
+                    except ValueError as e:
+                        raise HTTPException(status_code=409, detail=str(e))
+                
+    return {"success": True, "request_id": request_id}
+
+@router.put("/service-requests/{request_id}")
+async def edit_service_request_endpoint(request_id: int, payload: ServiceRequestEdit):
+    from serviceBot.db.connection import get_db_connection, dict_cursor
+    from serviceBot.db.queries import reschedule_appointment
+    from serviceBot.services.twilio_sms import TwilioSMSClient
+    
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            # Update issue description
+            cursor.execute("SELECT customer_id, issue_description, status FROM service_requests WHERE id = %s", (request_id,))
+            sr = cursor.fetchone()
+            if not sr:
+                raise HTTPException(status_code=404, detail="Service request not found")
+                
+            cursor.execute("UPDATE service_requests SET issue_description = %s WHERE id = %s RETURNING vehicle_id", 
+                (payload.issue_description, request_id))
+            vehicle_id = cursor.fetchone()["vehicle_id"]
+            
+            # Audit log for description
+            if sr["issue_description"] != payload.issue_description:
+                cursor.execute("INSERT INTO service_request_audit_log (request_id, triggered_by, from_status, to_status, notes) VALUES (%s, %s, %s, %s, %s)",
+                               (request_id, 'system', None, sr["status"], 'Manual issue description update'))
+            
+            # Update vehicle details
+            cursor.execute("""
+                UPDATE vehicles SET make = %s, model = %s, year = %s, vin = %s WHERE id = %s
+            """, (payload.vehicle_details.make, payload.vehicle_details.model, payload.vehicle_details.year, payload.vehicle_details.vin, vehicle_id))
+            
+            # Handle slot reassignment
+            if payload.new_slot_id:
+                cursor.execute("SELECT slot_datetime FROM mock_calendar_slots WHERE id = %s", (payload.new_slot_id,))
+                slot = cursor.fetchone()
+                if slot:
+                    dt_str = slot["slot_datetime"].strftime("%Y-%m-%d %H:%M:%S") if not isinstance(slot["slot_datetime"], str) else slot["slot_datetime"]
+                    try:
+                        reschedule_appointment(request_id, dt_str)
+                        
+                        cursor.execute("SELECT phone, name FROM customers WHERE id = %s", (sr["customer_id"],))
+                        cust = cursor.fetchone()
+                        
+                        client = TwilioSMSClient()
+                        client.send_sms(
+                            to_number=cust["phone"],
+                            body=f"Hi {cust['name']}, your appointment has been rescheduled to {dt_str}.",
+                            appointment_id=request_id
+                        )
+                    except ValueError as e:
+                        raise HTTPException(status_code=409, detail=str(e))
+            
+    return {"success": True}
 
 @router.patch("/service-requests/{request_id}/status")
 @router.put("/service-requests/{request_id}/status")
@@ -1158,6 +1292,18 @@ async def get_stats(timeframe: Optional[str] = "7d", calls_timeframe: Optional[s
     from serviceBot.db.connection import get_db_connection, dict_cursor
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
+            time_clause = ""
+            sr_time_clause = ""
+            if tf in ("24h", "1d"):
+                time_clause = " AND created_at >= NOW() - INTERVAL '24 hours'"
+                sr_time_clause = " WHERE created_at >= NOW() - INTERVAL '24 hours'"
+            elif tf == "7d":
+                time_clause = " AND created_at >= NOW() - INTERVAL '7 days'"
+                sr_time_clause = " WHERE created_at >= NOW() - INTERVAL '7 days'"
+            elif tf == "30d":
+                time_clause = " AND created_at >= NOW() - INTERVAL '30 days'"
+                sr_time_clause = " WHERE created_at >= NOW() - INTERVAL '30 days'"
+
             # Total Calls with timeframe filtering (default past 7 days)
             if tf in ("24h", "1d"):
                 cursor.execute("SELECT COUNT(*) AS count FROM crm_notes WHERE created_at >= NOW() - INTERVAL '24 hours'")
@@ -1170,15 +1316,15 @@ async def get_stats(timeframe: Optional[str] = "7d", calls_timeframe: Optional[s
             total_calls = cursor.fetchone()["count"]
             
             # Booked Appointments
-            cursor.execute("SELECT COUNT(*) AS count FROM service_requests WHERE booking_type = 'appointment'")
+            cursor.execute("SELECT COUNT(*) AS count FROM service_requests WHERE booking_type = 'appointment'" + time_clause)
             total_appointments = cursor.fetchone()["count"]
             
             # Service Requests
-            cursor.execute("SELECT COUNT(*) AS count FROM service_requests")
+            cursor.execute("SELECT COUNT(*) AS count FROM service_requests" + sr_time_clause)
             total_requests = cursor.fetchone()["count"]
             
             # Pending Requests (Pending Triage)
-            cursor.execute("SELECT COUNT(*) AS count FROM service_requests WHERE status = 'pending'")
+            cursor.execute("SELECT COUNT(*) AS count FROM service_requests WHERE status = 'pending'" + time_clause)
             pending_requests = cursor.fetchone()["count"]
             
             # Open Slots
@@ -1186,7 +1332,7 @@ async def get_stats(timeframe: Optional[str] = "7d", calls_timeframe: Optional[s
             open_slots = cursor.fetchone()["count"]
             
             # Callbacks
-            cursor.execute("SELECT COUNT(*) AS count FROM service_requests WHERE booking_type = 'callback'")
+            cursor.execute("SELECT COUNT(*) AS count FROM service_requests WHERE booking_type = 'callback'" + time_clause)
             total_callbacks = cursor.fetchone()["count"]
                 
             return {
@@ -1934,10 +2080,20 @@ class WhatsAppTestPingPayload(BaseModel):
 
 
 @router.get("/twilio/sandbox-info")
-async def get_twilio_sandbox_info():
+async def get_twilio_sandbox_info(role: Optional[str] = "CUSTOMER", phone_number: Optional[str] = None):
     from serviceBot.services.twilio_sms import TwilioSMSClient
     client = TwilioSMSClient()
-    return client.get_sandbox_credentials()
+    return client.get_sandbox_credentials(role=role, phone_number=phone_number)
+
+
+@router.get("/twilio/qr-code")
+async def get_qr_code_image(data: str):
+    from fastapi.responses import RedirectResponse
+    import urllib.parse
+    encoded_data = urllib.parse.quote(data, safe="")
+    # Use reliable QR code service API for high-resolution mobile camera scanning
+    qr_service_url = f"https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=10&data={encoded_data}"
+    return RedirectResponse(url=qr_service_url, status_code=307)
 
 
 @router.post("/twilio/customer-onboard")

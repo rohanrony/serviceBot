@@ -22,21 +22,29 @@ class TwilioSMSClient:
     def is_configured(self) -> bool:
         return bool(self.account_sid and self.auth_token and (self.messaging_service_sid or self.from_number))
 
-    def get_sandbox_credentials(self) -> dict:
-        """Returns configured Twilio WhatsApp Sandbox info and generated wa.me deep links."""
+    def get_sandbox_credentials(self, role: str = "CUSTOMER", phone_number: str = None) -> dict:
+        """Returns configured Twilio WhatsApp Sandbox info and generated wa.me deep links tailored by role."""
         sandbox_number = os.getenv("TWILIO_WHATSAPP_SANDBOX_NUMBER", "+14155238886")
-        join_code = os.getenv("TWILIO_WHATSAPP_JOIN_CODE", "join service-bot")
+        join_code = os.getenv("TWILIO_WHATSAPP_JOIN_CODE", "join evidence-lips")
         
+        # Customize join code label based on role if needed
+        clean_role = (role or "CUSTOMER").upper()
         clean_num = re.sub(r"\D", "", sandbox_number)
-        encoded_join = join_code.replace(" ", "%20") if join_code else "join"
+        from urllib.parse import quote
+        encoded_join = quote(join_code) if join_code else "join"
+        
         whatsapp_url = f"https://wa.me/{clean_num}?text={encoded_join}"
-        qr_code_url = f"https://chart.googleapis.com/chart?chs=200x200&cht=qr&chl={whatsapp_url}"
+        qr_code_url = f"/api/v1/portal/twilio/qr-code?data={whatsapp_url}"
+        fallback_qr_url = f"https://chart.googleapis.com/chart?chs=200x200&cht=qr&chl={whatsapp_url}"
         
         return {
+            "role": clean_role,
+            "recipient_phone": phone_number,
             "sandbox_number": sandbox_number,
             "join_code": join_code,
             "whatsapp_url": whatsapp_url,
-            "qr_code_url": qr_code_url
+            "qr_code_url": qr_code_url,
+            "fallback_qr_url": fallback_qr_url
         }
 
     def send_whatsapp(self, to: str, body: str, template_type: str = "whatsapp_verification", appointment_id: int = None) -> dict:

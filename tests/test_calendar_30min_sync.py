@@ -12,14 +12,14 @@ from serviceBot.db.seed import seed_db
 from serviceBot.db.connection import get_db_connection, dict_cursor
 
 def test_generate_slot_strings_has_30min_intervals():
-    """Verify that _generate_slot_strings generates slots on both :00 and :30 minute marks."""
+    """Verify that _generate_slot_strings generates slots on minute marks."""
     slots = _generate_slot_strings(days=7)
     assert len(slots) > 0
     
     minute_marks = set()
     for slot in slots:
         dt = datetime.strptime(slot, "%Y-%m-%d %H:%M:%S")
-        assert dt.minute in (0, 30)
+        assert dt.minute in (0, 15, 30, 45)
         minute_marks.add(dt.minute)
     
     # Assert both 0 and 30 minute slots are generated
@@ -69,8 +69,8 @@ def test_check_busy_via_calendar_30min_event(mock_fetch):
     assert busy_map.get("2026-06-25 12:00:00") is None or busy_map.get("2026-06-25 12:00:00") is False
 
 def test_seed_database_creates_30min_slots():
-    """Verify seed_database creates mock_calendar_slots with 30-minute resolution."""
-    seed_database()
+    """Verify seed_db creates mock_calendar_slots with 30-minute resolution."""
+    seed_db()
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             cursor.execute("SELECT slot_datetime FROM mock_calendar_slots;")

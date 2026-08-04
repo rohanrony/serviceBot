@@ -103,8 +103,8 @@ def test_appointment_booking_triggers_email(mock_send_email):
         """)
         # Seed staff agent
         cursor.execute("UPDATE staff_agents SET email = 'john@example.com' WHERE id = 1;")
-        cursor.execute("INSERT OR IGNORE INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES ('2026-06-25 14:00:00', 0, 1);")
-        cursor.execute("INSERT OR IGNORE INTO services (id, name, description, price_range, duration_minutes) VALUES (2, 'Brake Service & Repair', 'Brake inspection and repair', '$199-450 per axle', 90);")
+        cursor.execute("INSERT INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES ('2026-06-25 14:00:00', false, 1) ON CONFLICT (slot_datetime, staff_agent_id) DO NOTHING;")
+        cursor.execute("INSERT INTO services (id, name, description, price_range, duration_minutes) VALUES (2, 'Brake Service & Repair', 'Brake inspection and repair', '$199-450 per axle', 90) ON CONFLICT (id) DO NOTHING;")
         conn.commit()
 
     payload = {

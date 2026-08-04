@@ -9,7 +9,7 @@ from serviceBot.services.calendar_sync import (
     get_configured_business_hours,
     get_configured_business_days,
 )
-from serviceBot.db.connection import get_db_connection
+from serviceBot.db.connection import get_db_connection, dict_cursor
 
 @patch("serviceBot.api.portal.load_config")
 def test_get_configured_business_hours(mock_load_config):
@@ -100,31 +100,34 @@ def test_sync_agent_slots(mock_check_busy):
     # Configure mock busy slots
     # Get today's slots
     today_str = date.today().strftime("%Y-%m-%d")
-    slot_09 = f"{today_str} 09:00:00"
-    slot_11 = f"{today_str} 11:00:00"
+    slot_08 = f"{today_str} 08:00:00"
+    slot_12 = f"{today_str} 12:00:00"
     
     mock_check_busy.return_value = {
-        slot_09: False,
-        slot_11: True
+        slot_12: True
     }
+    
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("DELETE FROM mock_calendar_slots WHERE staff_agent_id = 1;")
     
     # Run sync on test agent 1
     sync_agent_slots(1, days=1)
-    
+
     # Query database to confirm (check is_booked column)
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT slot_datetime, is_booked FROM mock_calendar_slots WHERE staff_agent_id = 1 AND slot_datetime = ?;", (slot_09,))
-        row_09 = cursor.fetchone()
-        
-        cursor.execute("SELECT slot_datetime, is_booked FROM mock_calendar_slots WHERE staff_agent_id = 1 AND slot_datetime = ?;", (slot_11,))
-        row_11 = cursor.fetchone()
-        
-        # Depending on weekday, they should exist
-        if row_09:
-            assert row_09["is_booked"] == 0
-        if row_11:
-            assert row_11["is_booked"] == 1
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT slot_datetime, is_booked FROM mock_calendar_slots WHERE staff_agent_id = 1 AND slot_datetime = %s;", (slot_08,))
+            row_08 = cursor.fetchone()
+
+            cursor.execute("SELECT slot_datetime, is_booked FROM mock_calendar_slots WHERE staff_agent_id = 1 AND slot_datetime = %s;", (slot_12,))
+            row_12 = cursor.fetchone()
+
+            # Depending on weekday, they should exist
+            if row_08:
+                assert bool(row_08["is_booked"]) is False
+            if row_12:
+                assert bool(row_12["is_booked"]) is True
 
 @patch("serviceBot.services.calendar_sync.sync_agent_slots")
 def test_sync_all_connected_agents(mock_sync_agent):

@@ -95,6 +95,12 @@
         </div>
         
         <div class="header-actions">
+          <select id="calls-timeframe-select" class="timeframe-select-global" title="Select global timeframe">
+            <option value="24h">24 Hours</option>
+            <option value="7d" selected>7 Days</option>
+            <option value="30d">30 Days</option>
+            <option value="all">All Time</option>
+          </select>
           <button class="btn btn-secondary" id="refresh-data-btn">
             <svg class="btn-icon" viewBox="0 0 24 24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
             Refresh
@@ -110,15 +116,7 @@
           <!-- Metric Row -->
           <div class="metrics-grid">
             <div class="metric-card">
-              <div class="metric-card-header">
-                <span class="metric-label">Total Calls</span>
-                <select id="calls-timeframe-select" class="timeframe-select" title="Select timeframe">
-                  <option value="24h">24h</option>
-                  <option value="7d" selected>7 Days</option>
-                  <option value="30d">30 Days</option>
-                  <option value="all">All Time</option>
-                </select>
-              </div>
+              <span class="metric-label">Total Calls</span>
               <h3 class="metric-value" id="stat-total-calls">--</h3>
               <div class="metric-badge success" id="stat-calls-badge">Past 7 days • 100% answer rate</div>
             </div>
@@ -146,7 +144,10 @@
           <div class="content-card mt-6">
             <div class="card-header card-header-split">
               <div>
-                <h3>Service Requests</h3>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                  <h3>Service Requests</h3>
+                  <button class="btn btn-primary btn-sm" id="btn-new-request">+ New Request</button>
+                </div>
                 <p class="text-muted">Captured customer issues, service requirements, and scheduling preferences.</p>
               </div>
               <div class="table-filters">
@@ -156,9 +157,8 @@
                   <option value="all">All Statuses</option>
                   <option value="pending">Pending</option>
                   <option value="confirmed">Confirmed</option>
-                  <option value="completed">Done (Completed)</option>
                   <option value="in_progress">In Progress</option>
-                  <option value="rescheduled">Rescheduled</option>
+                  <option value="completed">Done</option>
                   <option value="cancelled">Cancelled</option>
                   <option value="cancelled_by_customer">Cancelled by Customer</option>
                 </select>
@@ -170,14 +170,8 @@
                   <tr>
                     <th>
                       <div class="tooltip-container">
-                        <span>Submitted At</span>
-                        <div class="tooltip-popup">Submitted At</div>
-                      </div>
-                    </th>
-                    <th>
-                      <div class="tooltip-container">
-                        <span>Customer Name</span>
-                        <div class="tooltip-popup">Customer Name</div>
+                        <span>Customer</span>
+                        <div class="tooltip-popup">Customer</div>
                       </div>
                     </th>
                     <th>
@@ -226,7 +220,7 @@
                 </thead>
                 <tbody id="service-requests-list">
                   <tr>
-                    <td colspan="9" class="text-center py-6 text-muted">Loading service requests...</td>
+                    <td colspan="8" class="text-center py-6 text-muted">Loading service requests...</td>
                   </tr>
                 </tbody>
               </table>
@@ -339,7 +333,7 @@
             <form id="intent-config-form" class="form-grid">
               <div class="form-group full-width">
                 <label for="prompt-first-message">Agent Greeting (First Message / Intro spoken to caller)</label>
-                <textarea id="prompt-first-message" rows="2" class="form-input" placeholder="e.g. Hello! Thank you for calling Test..."></textarea>
+                <textarea id="prompt-first-message" rows="2" class="form-input" placeholder="e.g. Hello! Thank you for calling Davidson Car Care..."></textarea>
               </div>
 
               <div class="form-group full-width">
@@ -501,6 +495,10 @@
                 <div class="connection-status-row-border" style="display: flex; justify-content: space-between; align-items: center;">
                   <span style="color: var(--text-muted);">Profile Actions:</span>
                   <div style="display: flex; gap: 8px;">
+                    <button type="button" class="btn btn-secondary btn-sm" id="agent-qr-onboard-btn" style="padding: 2px 8px; font-size: 10px; border-color: #25D366; color: #25D366; display: inline-flex; align-items: center; gap: 4px;" title="Scan QR Code to onboard Agent to WhatsApp dispatches">
+                      <svg viewBox="0 0 24 24" style="width: 12px; height: 12px; fill: currentColor;"><path d="M3 3h8v8H3V3zm2 2v4h4V5H5zm8-2h8v8h-8V3zm2 2v4h4V5h-4zM3 13h8v8H3v-8zm2 2v4h4v-4H5zm13-2h3v2h-3v-2zm-3 0h2v3h-2v-3zm3 3h3v5h-3v-5zm-3 2h2v3h-2v-3zm-3-2h2v2h-2v-2zm0 3h2v2h-2v-2z"/></svg>
+                      WhatsApp QR
+                    </button>
                     <button type="button" class="btn btn-secondary btn-sm" id="edit-agent-profile-btn" style="padding: 2px 8px; font-size: 10px; border-color: var(--color-primary); color: #fff;">
                       Edit Profile
                     </button>
@@ -622,7 +620,7 @@
                       </p>
                       <div class="helper-actions">
                         <a href="#" target="_blank" class="btn btn-secondary btn-sm sandbox-wa-link" style="font-size: 11px; padding: 4px 8px;">Open WhatsApp & Join</a>
-                        <button type="button" class="btn btn-secondary btn-sm verify-whatsapp-ping-btn" data-phone-input="new-agent-phone" data-role="AGENT" style="font-size: 11px; padding: 4px 8px;">Send Test WhatsApp Ping</button>
+                        <button type="button" class="btn btn-secondary btn-sm verify-whatsapp-ping-btn" id="verify-agent-twilio-btn" data-phone-input="new-agent-phone" data-role="AGENT" style="font-size: 11px; padding: 4px 8px;">Send Test WhatsApp Ping</button>
                       </div>
                     </div>
                   </details>
@@ -843,7 +841,11 @@
                     <p class="helper-text">
                       To onboard this Admin number for SMS & WhatsApp alerts, send <code class="sandbox-code-val helper-code">join ...</code> to <strong class="sandbox-num-val" style="color: #fff;">+14155238886</strong>.
                     </p>
-                    <div class="helper-actions">
+                    <div class="helper-actions" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">
+                      <button type="button" class="btn btn-secondary btn-sm" id="admin-qr-btn" style="font-size: 11px; padding: 4px 8px; border-color: #25D366; color: #25D366; display: inline-flex; align-items: center; gap: 4px;">
+                        <svg viewBox="0 0 24 24" style="width: 12px; height: 12px; fill: currentColor;"><path d="M3 3h8v8H3V3zm2 2v4h4V5H5zm8-2h8v8h-8V3zm2 2v4h4V5h-4zM3 13h8v8H3v-8zm2 2v4h4v-4H5zm13-2h3v2h-3v-2zm-3 0h2v3h-2v-3zm3 3h3v5h-3v-5zm-3 2h2v3h-2v-3zm-3-2h2v2h-2v-2zm0 3h2v2h-2v-2z"/></svg>
+                        Admin QR Code
+                      </button>
                       <a href="#" target="_blank" class="btn btn-secondary btn-sm sandbox-wa-link" style="font-size: 11px; padding: 4px 8px;">Open WhatsApp & Join</a>
                       <button type="button" class="btn btn-secondary btn-sm verify-whatsapp-ping-btn" data-phone-input="admin-sms-phone" data-role="ADMIN" style="font-size: 11px; padding: 4px 8px;">Send Test WhatsApp Ping</button>
                     </div>
@@ -1149,9 +1151,15 @@
                   <div style="flex: 1;">
                     <div style="font-size: 11px; color: var(--text-muted);">Sandbox Number</div>
                     <div style="font-size: 14px; font-weight: 600; color: #fff;" class="sandbox-num-val">+1 415 523 8886</div>
-                    <a href="#" target="_blank" class="btn btn-secondary btn-sm mt-2 sandbox-wa-link" style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px;">
-                      Open WhatsApp & Join
-                    </a>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;">
+                      <button type="button" class="btn btn-secondary btn-sm" id="customer-qr-btn" style="font-size: 11px; padding: 4px 8px; border-color: #25D366; color: #25D366; display: inline-flex; align-items: center; gap: 4px;">
+                        <svg viewBox="0 0 24 24" style="width: 12px; height: 12px; fill: currentColor;"><path d="M3 3h8v8H3V3zm2 2v4h4V5H5zm8-2h8v8h-8V3zm2 2v4h4V5h-4zM3 13h8v8H3v-8zm2 2v4h4v-4H5zm13-2h3v2h-3v-2zm-3 0h2v3h-2v-3zm3 3h3v5h-3v-5zm-3 2h2v3h-2v-3zm-3-2h2v2h-2v-2zm0 3h2v2h-2v-2z"/></svg>
+                        Scan QR Code
+                      </button>
+                      <a href="#" target="_blank" class="btn btn-secondary btn-sm sandbox-wa-link" style="display: inline-flex; align-items: center; gap: 6px; font-size: 11px; padding: 4px 8px;">
+                        Open WhatsApp & Join
+                      </a>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1415,10 +1423,164 @@
     </div>
   </div>
 
+  <!-- QR Code Onboarding Modal -->
+  <div class="drawer-overlay" id="qr-modal-overlay"></div>
+  <div class="modal-card" id="qr-onboard-modal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1100; max-width: 440px; width: 90%; background: #161a23; border: 1px solid var(--border-card); border-radius: 12px; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.6);">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span id="qr-modal-role-badge" class="badge" style="background: rgba(37, 211, 102, 0.15); color: #25D366; border: 1px solid rgba(37, 211, 102, 0.3); font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: 600; text-transform: uppercase;">CUSTOMER</span>
+        <h3 id="qr-modal-title" style="margin: 0; font-size: 16px; color: #fff;">WhatsApp QR Onboarding</h3>
+      </div>
+      <button class="btn-close" id="close-qr-modal-btn">
+        <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+      </button>
+    </div>
+
+    <!-- Phone Camera Scanner Callout -->
+    <div class="qr-camera-guide" style="background: rgba(255, 255, 255, 0.04); border: 1px dashed rgba(255, 255, 255, 0.2); border-radius: 8px; padding: 12px; margin-bottom: 16px; display: flex; align-items: center; gap: 12px;">
+      <div style="font-size: 24px; line-height: 1;">📱</div>
+      <div style="font-size: 12px; color: var(--text-muted); line-height: 1.4;">
+        <strong style="color: #fff;">No WhatsApp on Desktop?</strong><br/>
+        Open your mobile phone camera, point it at this screen, and tap the link to join directly from your phone.
+      </div>
+    </div>
+
+    <!-- Main QR Container -->
+    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; background: #ffffff; padding: 16px; border-radius: 10px; margin-bottom: 16px;">
+      <img id="qr-modal-img" src="" alt="WhatsApp QR Code" style="width: 220px; height: 220px; display: block;" />
+      <div id="qr-modal-phone-display" style="margin-top: 8px; font-size: 13px; font-weight: 600; color: #111;">--</div>
+    </div>
+
+    <!-- Sandbox Details -->
+    <div style="background: rgba(0,0,0,0.3); border-radius: 8px; padding: 12px; font-size: 12px; margin-bottom: 20px; display: flex; flex-direction: column; gap: 6px;">
+      <div style="display: flex; justify-content: space-between;">
+        <span style="color: var(--text-muted);">Sandbox Number:</span>
+        <strong id="qr-modal-num" style="color: #fff;">+1 415 523 8886</strong>
+      </div>
+      <div style="display: flex; justify-content: space-between;">
+        <span style="color: var(--text-muted);">Join Message:</span>
+        <code id="qr-modal-join" style="color: #10b981; background: rgba(16,185,129,0.1); padding: 1px 6px; border-radius: 4px;">join evidence-lips</code>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div style="display: flex; gap: 10px;">
+      <a href="#" id="qr-modal-wa-link" target="_blank" class="btn btn-primary" style="flex: 1; text-align: center; justify-content: center; font-size: 12px; padding: 8px 12px; background: #25D366; border-color: #25D366; color: #fff;">
+        Open WhatsApp Direct
+      </a>
+      <button type="button" id="qr-modal-copy-btn" class="btn btn-secondary" style="font-size: 12px; padding: 8px 12px;">
+        Copy Link
+      </button>
+    </div>
+  </div>
+
+  <!-- Create/Edit Service Request Modal -->
+  <div class="drawer-overlay" id="sr-modal-overlay"></div>
+  <div class="modal-card" id="sr-modal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1100; max-width: 600px; width: 90%; background: #161a23; border: 1px solid var(--border-card); border-radius: 12px; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.6); max-height: 90vh; overflow-y: auto;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+      <h3 id="sr-modal-title" style="margin: 0; font-size: 18px; color: #fff;">New Service Request</h3>
+      <button class="btn-close" id="close-sr-modal-btn">
+        <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+      </button>
+    </div>
+    
+    <form id="sr-form">
+      <input type="hidden" id="sr-form-id" value="">
+      
+      <div id="sr-customer-section" style="margin-bottom: 16px;">
+        <h4 style="margin-bottom: 8px; color: var(--text-muted); font-size: 12px; text-transform: uppercase;">Customer Details</h4>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div>
+            <label>Name</label>
+            <input type="text" id="sr-cust-name" class="form-input" required>
+          </div>
+          <div>
+            <label>Phone</label>
+            <input type="text" id="sr-cust-phone" class="form-input" required>
+          </div>
+        </div>
+      </div>
+      
+      <div style="margin-bottom: 16px;">
+        <h4 style="margin-bottom: 8px; color: var(--text-muted); font-size: 12px; text-transform: uppercase;">Vehicle Details</h4>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px;">
+          <div>
+            <label>Make</label>
+            <input type="text" id="sr-veh-make" class="form-input" required>
+          </div>
+          <div>
+            <label>Model</label>
+            <input type="text" id="sr-veh-model" class="form-input" required>
+          </div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div>
+            <label>Year</label>
+            <input type="number" id="sr-veh-year" class="form-input" required>
+          </div>
+          <div>
+            <label>VIN (Optional)</label>
+            <input type="text" id="sr-veh-vin" class="form-input">
+          </div>
+        </div>
+      </div>
+      
+      <div style="margin-bottom: 16px;">
+        <h4 style="margin-bottom: 8px; color: var(--text-muted); font-size: 12px; text-transform: uppercase;">Service Request</h4>
+        <div style="margin-bottom: 12px;">
+          <label>Service Type</label>
+          <select id="sr-service-type" class="form-input" required>
+            <option value="">Select Service Type...</option>
+            <option value="Oil Change">Oil Change</option>
+            <option value="Brake Service">Brake Service</option>
+            <option value="Tire Rotation">Tire Rotation & Balancing</option>
+            <option value="Engine Diagnostic">Engine Diagnostic</option>
+            <option value="Battery Replacement">Battery Replacement</option>
+            <option value="Transmission Service">Transmission Service</option>
+            <option value="General Maintenance">General Maintenance</option>
+            <option value="Auto Repair Estimates">Auto Repair Estimates & Quotes</option>
+          </select>
+        </div>
+        <div style="margin-bottom: 12px;">
+          <label>Issue Description</label>
+          <textarea id="sr-issue-desc" class="form-input" rows="3" required></textarea>
+        </div>
+        <div>
+          <label>Select Time Slot</label>
+          <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+              <select id="sr-agent-select" class="form-input" style="flex: 1;">
+                  <option value="">Select an Agent...</option>
+              </select>
+              <button type="button" class="btn btn-secondary" id="sr-load-slots-btn">Load Slots</button>
+          </div>
+          <select id="sr-slot-select" class="form-input">
+            <option value="">No slots loaded (Optional for Waitlist)</option>
+          </select>
+        </div>
+      </div>
+      
+      <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px;">
+        <button type="button" class="btn btn-secondary" id="sr-cancel-btn">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="sr-save-btn">Save Request</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Confirmation Modal -->
+  <div class="drawer-overlay" id="confirm-modal-overlay"></div>
+  <div class="modal-card" id="confirm-modal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1200; max-width: 400px; width: 90%; background: #161a23; border: 1px solid var(--border-card); border-radius: 12px; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.6);">
+      <h3 id="confirm-modal-title" style="margin-top: 0; color: #fff;">Are you sure?</h3>
+      <p id="confirm-modal-msg" style="color: var(--text-muted); margin-bottom: 24px;">This action cannot be undone.</p>
+      <div style="display: flex; justify-content: flex-end; gap: 12px;">
+          <button type="button" class="btn btn-secondary" id="confirm-modal-no">Cancel</button>
+          <button type="button" class="btn btn-primary" id="confirm-modal-yes">Confirm</button>
+      </div>
+  </div>
+
   <!-- Toast Notification -->
   <div class="toast" id="app-toast">Action completed successfully</div>
 
   <!-- Javascript Logic -->
-  <script src="app.js?v=25"></script>
+  <script src="app.js?v=27"></script>
 </body>
 </html>

@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 from serviceBot.main import app
-from serviceBot.db.connection import get_db_connection
+from serviceBot.db.connection import get_db_connection, dict_cursor
 
 client = TestClient(app)
 
@@ -54,23 +54,22 @@ def test_post_call_webhook_saves_data(mock_summarize):
     
     # Verify database state
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        
-        # Customer should be auto-created
-        cursor.execute("SELECT id, name, phone FROM customers WHERE phone = ?;", ("+15559998888",))
-        customer = cursor.fetchone()
-        assert customer is not None
-        assert customer["name"] == "Unknown Customer"
-        customer_id = customer["id"]
-        
-        # CRM note should be created
-        cursor.execute("SELECT call_id, customer_id, summary, transcript FROM crm_notes WHERE call_id = ?;", ("conv_test_123",))
-        note = cursor.fetchone()
-        assert note is not None
-        assert note["customer_id"] == customer_id
-        assert note["summary"] == "The customer requested a brake repair."
-        assert "User: I need to fix my brakes." in note["transcript"]
-        assert "Agent: I can help with that." in note["transcript"]
+        with dict_cursor(conn) as cursor:
+            # Customer should be auto-created
+            cursor.execute("SELECT id, name, phone FROM customers WHERE phone = %s;", ("+15559998888",))
+            customer = cursor.fetchone()
+            assert customer is not None
+            assert customer["name"] == "Unknown Customer"
+            customer_id = customer["id"]
+            
+            # CRM note should be created
+            cursor.execute("SELECT call_id, customer_id, summary, transcript FROM crm_notes WHERE call_id = %s;", ("conv_test_123",))
+            note = cursor.fetchone()
+            assert note is not None
+            assert note["customer_id"] == customer_id
+            assert note["summary"] == "The customer requested a brake repair."
+            assert "User: I need to fix my brakes." in note["transcript"]
+            assert "Agent: I can help with that." in note["transcript"]
 
 
 @patch("serviceBot.api.telephony.extract_callback_from_transcript")
@@ -111,17 +110,16 @@ def test_post_call_webhook_extracts_callback(mock_summarize, mock_extract_callba
     
     # Verify database state
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        
-        # Get customer ID
-        cursor.execute("SELECT id FROM customers WHERE phone = ?;", ("+15559998888",))
-        customer = cursor.fetchone()
-        assert customer is not None
-        customer_id = customer["id"]
-        
-        # Callback request should be created
-        cursor.execute("SELECT customer_id, booking_time, booking_type FROM service_requests WHERE customer_id = ?;", (customer_id,))
-        callback = cursor.fetchone()
-        assert callback is not None
-        assert callback["booking_time"] == "tomorrow morning at 8:00 AM"
-        assert callback["booking_type"] == "callback"
+        with dict_cursor(conn) as cursor:
+            # Get customer ID
+            cursor.execute("SELECT id FROM customers WHERE phone = %s;", ("+15559998888",))
+            customer = cursor.fetchone()
+            assert customer is not None
+            customer_id = customer["id"]
+            
+            # Callback request should be created
+            cursor.execute("SELECT customer_id, booking_time, booking_type FROM service_requests WHERE customer_id = %s;", (customer_id,))
+            callback = cursor.fetchone()
+            assert callback is not None
+            assert callback["booking_time"] == "tomorrow morning at 8:00 AM"
+            assert callback["booking_type"] == "callback"

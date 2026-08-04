@@ -81,7 +81,7 @@ def test_voice_tools_handoff_business_hours_enforcement(mock_biz_hours):
     assert res_data_in["success"] is True
 
 
-@patch("serviceBot.graph.nodes.is_within_business_hours")
+@patch("serviceBot.api.telephony.is_within_business_hours")
 def test_graph_handoff_node_business_hours_awareness(mock_biz_hours):
     """Assert graph handoff_node incorporates business hours status into summary."""
     mock_biz_hours.return_value = False

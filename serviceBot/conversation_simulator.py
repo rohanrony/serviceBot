@@ -55,10 +55,30 @@ VOICE_TOOLS = [
                     "year": {"type": "integer", "description": "Vehicle year (e.g. 2020)."},
                     "issue_description": {"type": "string", "description": "Detailed description of the issue or requested service(s)."},
                     "service_type": {"type": "string", "description": "Type of service requested."},
-                    "booking_type": {"type": "string", "enum": ["appointment", "callback"], "description": "Specify whether the service request is booked as an appointment or callback."},
+                    "booking_type": {"type": "string", "enum": ["appointment", "callback", "appointment_and_callback"], "description": "Specify whether the service request is booked as an appointment, callback, or dual-intake."},
                     "booking_time": {"type": "string", "description": "Scheduled appointment datetime or preferred callback window."}
                 },
                 "required": ["customer_name", "phone", "make", "model", "year", "issue_description", "booking_type"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "book_appointment",
+            "description": "Book a confirmed appointment slot for a customer once intake details and time slot are finalized.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "customer_name": {"type": "string", "description": "Full name of the customer."},
+                    "phone": {"type": "string", "description": "10-digit phone number of the customer."},
+                    "make": {"type": "string", "description": "Vehicle make."},
+                    "model": {"type": "string", "description": "Vehicle model."},
+                    "year": {"type": "integer", "description": "Vehicle year."},
+                    "issue_description": {"type": "string", "description": "Detailed description of the issue or requested service(s)."},
+                    "appointment_datetime": {"type": "string", "description": "Confirmed appointment date and time."}
+                },
+                "required": ["customer_name", "phone", "make", "model", "year", "issue_description", "appointment_datetime"]
             }
         }
     },
@@ -166,11 +186,11 @@ class ConversationSimulator:
         self.config = self._load_config()
         self.system_prompt = self.config.get(
             "system_prompt",
-            "You are Rachel, an AI voice assistant for Test Automotive."
+            "You are Rachel, an AI voice assistant for Davidson Car Care."
         )
         self.first_message = self.config.get(
             "first_message",
-            "Hello! Thank you for calling Test Automotive. I am Rachel, AI voice Assistant. How can I help you today?"
+            "Hello! Thank you for calling Davidson Car Care. I am Rachel, AI voice Assistant. How can I help you today?"
         )
         self.reset()
 
@@ -183,8 +203,8 @@ class ConversationSimulator:
         except Exception:
             pass
         return {
-            "first_message": "Hello! Thank you for calling Test Automotive. I am Rachel, AI voice Assistant. How can I help you today?",
-            "system_prompt": "You are Rachel, an AI voice assistant for Test Automotive."
+            "first_message": "Hello! Thank you for calling Davidson Car Care. I am Rachel, AI voice Assistant. How can I help you today?",
+            "system_prompt": "You are Rachel, an AI voice assistant for Davidson Car Care."
         }
 
     def reset(self):
@@ -264,13 +284,14 @@ class ConversationSimulator:
         # Name extraction (handles "alex... alex smith" or "sarah connor")
         name_match = re.search(r"(?:my name is|name is|i am|this is|alex|sarah)\s*([A-Za-z]+(?:\s+[A-Za-z]+)?)", text, re.IGNORECASE)
         if name_match:
-            cand = name_match.group(0).replace("...", " ").strip().title()
+            cand = name_match.group(1).replace("...", " ").strip().title()
             if "Alex" in cand:
                 self.intake_state["customer_name"] = "Alex Smith"
             elif "Sarah" in cand:
                 self.intake_state["customer_name"] = "Sarah Connor"
             else:
                 self.intake_state["customer_name"] = cand
+            self.intake_state["name"] = self.intake_state["customer_name"]
 
         # Spoken Year extraction ("twenty twenty one" -> 2021, "20 19" -> 2019)
         if "twenty twenty one" in text_lower or "20 21" in text_lower or "2021" in text_lower:
@@ -338,8 +359,19 @@ class ConversationSimulator:
             response_text = "Connecting you with a service advisor now, please hold..."
             return {"assistant_response": response_text, "tool_calls": tool_calls}
 
-        # 3. Check Calendar Availability
-        if any(k in user_lower for k in ["available", "slot", "schedule", "open time", "open times"]) or ("check" in user_lower and ("time" in user_lower or "date" in user_lower or "june" in user_lower or "day" in user_lower)):
+        # 3. Final Appointment Booking (when user confirms specific slot/time or explicitly confirms booking)
+        if ("book" in user_lower and any(k in user_lower for k in ["slot", "10:00", "11:00", "2026"])) or "confirm" in user_lower:
+            res = self.execute_tool_locally("book_appointment", {
+                "phone": self.intake_state.get("phone"),
+                "appointment_datetime": "2026-06-10 10:00:00",
+                "service_type": self.intake_state.get("issue_description") or "Oil Change"
+            }, "mock_call_book")
+            tool_calls.append({"tool_name": "book_appointment", "arguments": {"phone": self.intake_state.get("phone")}, "result": res.get("result")})
+            response_text = f"Getting that appointment booked for you now... Your appointment for {self.intake_state.get('issue_description') or 'service'} on June 10th at 10:00 AM is confirmed for {self.intake_state.get('customer_name')}!"
+            return {"assistant_response": response_text, "tool_calls": tool_calls}
+
+        # 4. Check Calendar Availability
+        if any(k in user_lower for k in ["available", "open slot", "open slots", "open time", "open times"]) or ("check" in user_lower and ("time" in user_lower or "date" in user_lower or "june" in user_lower or "day" in user_lower or "slots" in user_lower)):
             res = self.execute_tool_locally("check_availability", {"preferred_date": "2026-06-10"}, "mock_call_avail")
             tool_calls.append({"tool_name": "check_availability", "arguments": {"preferred_date": "2026-06-10"}, "result": res.get("result")})
             response_text = "Let me check our schedule for you... We have open slots on 2026-06-10 at 10:00 AM and 11:00 AM."

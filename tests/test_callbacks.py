@@ -48,6 +48,15 @@ def test_get_callbacks_endpoint():
 
 def test_voice_tools_request_callback():
     """Test that voice tool request_callback creates customer, service request, and callback request."""
+    # Ensure service is seeded so matching succeeds
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("DELETE FROM services WHERE name = 'AC Service & Repair';")
+            cursor.execute("INSERT INTO services (name, description, price_range, duration_minutes) VALUES ('AC Service & Repair', 'A/C service', '$150-250', 60);")
+            cursor.execute("DELETE FROM service_requests WHERE customer_id IN (SELECT id FROM customers WHERE phone IN ('4242704893', '424-270-4893'));")
+            cursor.execute("DELETE FROM customers WHERE phone IN ('4242704893', '424-270-4893');")
+            conn.commit()
+
     # Ensure any mock customer is cleared first or doesn't clash
     payload = {
         "tool_call_id": "call_callback_1",
@@ -80,7 +89,7 @@ def test_voice_tools_request_callback():
             SELECT sr.id, c.name, c.phone, sr.service_type, sr.issue_description, sr.booking_time
             FROM service_requests sr
             JOIN customers c ON sr.customer_id = c.id
-            WHERE sr.id = ?
+            WHERE sr.id = %s
         """, (cb_id,))
         row = cursor.fetchone()
         assert row is not None

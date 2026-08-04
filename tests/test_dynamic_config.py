@@ -59,7 +59,7 @@ def clean_services():
         cursor.execute("SELECT COUNT(*) FROM services WHERE name = 'Oil Change'")
         if cursor.fetchone()[0] == 0:
             cursor.execute(
-                "INSERT INTO services (name, description, price_range, duration_minutes, req_customer_name, req_phone_number, req_vehicle_details, req_issue_description, req_location) VALUES (?, ?, ?, ?, 1, 1, 1, 1, 1)",
+                "INSERT INTO services (name, description, price_range, duration_minutes, req_customer_name, req_phone_number, req_vehicle_details, req_issue_description, req_location) VALUES (%s, %s, %s, %s, TRUE, TRUE, TRUE, TRUE, TRUE)",
                 ("Oil Change", "Regular oil change with premium motor oil", "$49-69", 30)
             )
         conn.commit()
@@ -146,11 +146,11 @@ def test_catalog_deduplication():
         cursor.execute("DELETE FROM services")
         # Insert duplicates
         cursor.execute(
-            "INSERT INTO services (name, description, price_range, duration_minutes) VALUES (?, ?, ?, ?)",
+            "INSERT INTO services (name, description, price_range, duration_minutes) VALUES (%s, %s, %s, %s)",
             ("Tire Rotation", "Rotate tires", "$20-40", 15)
         )
         cursor.execute(
-            "INSERT INTO services (name, description, price_range, duration_minutes) VALUES (?, ?, ?, ?)",
+            "INSERT INTO services (name, description, price_range, duration_minutes) VALUES (%s, %s, %s, %s)",
             ("Tire Rotation", "Rotate tires duplicate", "$25-45", 20)
         )
         conn.commit()

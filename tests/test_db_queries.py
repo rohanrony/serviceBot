@@ -21,6 +21,7 @@ def mock_db():
         with dict_cursor(conn) as cursor:
             # Only truncate the tables we need to re-seed with controlled test data
             cursor.execute("TRUNCATE TABLE customers, vehicles, service_requests, services CASCADE;")
+            cursor.execute("UPDATE mock_calendar_slots SET is_booked = FALSE;")
 
             # Seed data matching Sarah Johnson from spec
             cursor.execute(
@@ -342,9 +343,9 @@ def test_get_service_required_fields_multi_service_fallback(mock_db):
     Test that get_service_required_fields gracefully handles multi-service strings,
     calculates aggregate duration_minutes, and returns a combined dict.
     """
-    res = get_service_required_fields("oil change, air conditioning repair, and brake repair")
+    res = get_service_required_fields("oil change, ac change, and brake repair")
     assert res is not None
-    assert res["name"] == "oil change, air conditioning repair, and brake repair"
+    assert res["name"] == "oil change, ac change, and brake repair"
     # Seeded: Oil Change (45 min), AC change (60 min), Brake repair (90 min) -> Total 195 min
     assert res["duration_minutes"] == 195
 
@@ -395,17 +396,17 @@ def test_aggregate_service_duration_slot_checking_and_booking(mock_db):
 def test_update_service_request_status(mock_db):
     from serviceBot.db.queries import update_service_request_status
 
-    # 1. Update status from 'pending' to 'completed'
-    res = update_service_request_status(1, "completed")
-    assert res["status"] == "completed"
+    # 1. Update status from 'pending' to 'in_progress'
+    res = update_service_request_status(1, "in_progress")
+    assert res["status"] == "in_progress"
 
-    # 2. Update status using 'done' (maps to 'completed')
+    # 2. Update status to 'completed' (maps to 'completed')
     res2 = update_service_request_status(1, "done")
     assert res2["status"] == "completed"
 
-    # 3. Update status back to 'pending'
-    res3 = update_service_request_status(1, "pending")
-    assert res3["status"] == "pending"
+    # 3. Invalid FSM transition: completed -> pending raises ValueError
+    with pytest.raises(ValueError):
+        update_service_request_status(1, "pending")
 
     # 4. Invalid status raises ValueError
     with pytest.raises(ValueError):

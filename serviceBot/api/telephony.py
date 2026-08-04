@@ -10,8 +10,6 @@ from datetime import datetime
 from serviceBot.db.queries import lookup_customer_by_phone, create_service_request, check_availability, book_appointment, get_service_required_fields, create_crm_note, create_callback_request, get_customer_appointments, reschedule_appointment, update_customer_name
 from serviceBot.db.connection import get_db_connection, dict_cursor
 from serviceBot.services.rag import FAQService
-from serviceBot.services.gmail import send_booking_notification, send_admin_notification
-from serviceBot.services.sms_router import SMSNotificationRouter
 from serviceBot.graph.nodes import handoff_node
 from serviceBot.logger import get_logger
 from serviceBot.api.portal import load_config
@@ -58,7 +56,7 @@ def clean_and_validate_phone(phone: str) -> Optional[str]:
 
 def generate_service_summary(transcript: str) -> str:
     """
-    Generates a structured, service-oriented summary for Test
+    Generates a structured, service-oriented summary for Davidson Car Care
     using the OpenAI API.
     """
     if not transcript or not transcript.strip():
@@ -76,7 +74,7 @@ def generate_service_summary(transcript: str) -> str:
         llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.0, openai_api_key=openai_key)
         
         system_prompt = (
-            "You are a service advisor call summarizer for Test.\n"
+            "You are a service advisor call summarizer for Davidson Car Care.\n"
             "Analyze the phone call transcript and write a concise, structured summary (3-4 bullet points) "
             "specifically tailored to an automotive service intake.\n\n"
             "Include the following details where mentioned:\n"
@@ -111,9 +109,10 @@ def get_booking_details(customer_id: int, service_request_id: int = None) -> dic
             vehicle_str = "Unknown Vehicle"
             issue_desc = ""
             service_type = "Repair"
+            duration_minutes = 60
             if service_request_id:
                 cursor.execute("""
-                    SELECT sr.service_type, sr.issue_description, v.year, v.make, v.model 
+                    SELECT sr.service_type, sr.issue_description, sr.duration_minutes, v.year, v.make, v.model 
                     FROM service_requests sr
                     LEFT JOIN vehicles v ON sr.vehicle_id = v.id
                     WHERE sr.id = %s;
@@ -122,6 +121,7 @@ def get_booking_details(customer_id: int, service_request_id: int = None) -> dic
                 if row:
                     service_type = row["service_type"] or "Repair"
                     issue_desc = row["issue_description"] or ""
+                    duration_minutes = row["duration_minutes"] or 60
                     if row["make"] or row["model"]:
                         vehicle_str = f"{row['year'] or ''} {row['make'] or ''} {row['model'] or ''}".strip()
             else:
@@ -131,11 +131,18 @@ def get_booking_details(customer_id: int, service_request_id: int = None) -> dic
                 if row:
                     vehicle_str = f"{row['year'] or ''} {row['make'] or ''} {row['model'] or ''}".strip()
                     
+            if not duration_minutes or duration_minutes == 60:
+                from serviceBot.db.queries import get_service_required_fields
+                fields = get_service_required_fields(service_type)
+                if fields and fields.get("duration_minutes"):
+                    duration_minutes = fields["duration_minutes"]
+
             return {
                 "customer_name": cust_name,
                 "phone": cust_phone,
                 "vehicle": vehicle_str,
                 "service_type": service_type,
+                "duration_minutes": duration_minutes,
                 "issue": issue_desc
             }
 
@@ -416,10 +423,15 @@ async def post_call_webhook(request: Request = None, payload: Dict[str, Any] = N
                                 
                             details = get_booking_details(customer_id, sr_id)
                             details["time"] = callback_info.get("preferred_time") or "ASAP"
-                            send_booking_notification("callback", details, agent_email=agent_email)
-                            send_admin_notification("callback", details, mechanic_name=agent_name, mechanic_email=agent_email)
+                            try:
+                                from serviceBot.services.gmail import send_booking_notification, send_admin_notification
+                                send_booking_notification("callback", details, agent_email=agent_email)
+                                send_admin_notification("callback", details, mechanic_name=agent_name, mechanic_email=agent_email)
+                            except Exception as email_err:
+                                print(f"Error triggering webhook callback email: {email_err}")
                             # SMS: notify customer + agent on callback booking
                             try:
+                                from serviceBot.services.sms_router import SMSNotificationRouter
                                 SMSNotificationRouter().process_event(
                                     event_type="BOOKING",
                                     appointment_id=sr_id,
@@ -429,8 +441,8 @@ async def post_call_webhook(request: Request = None, payload: Dict[str, Any] = N
                                 )
                             except Exception as sms_err:
                                 print(f"Error sending SMS notification (webhook callback): {sms_err}")
-                        except Exception as email_err:
-                            print(f"Error triggering webhook callback email: {email_err}")
+                        except Exception as notify_err:
+                            print(f"Error processing notifications: {notify_err}")
 
         
         return {"success": True}
@@ -465,7 +477,9 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
         
         # If not in query params, try to detect from the payload keys
         if not tool_name:
-            if any(k in payload for k in ["appointment_datetime", "appointmentDatetime", "datetime"]):
+            if any(k in payload for k in ["summary_text", "summaryText", "summary", "reason", "transfer_phone_number"]):
+                tool_name = "cba_webhook"
+            elif any(k in payload for k in ["appointment_datetime", "appointmentDatetime", "datetime"]):
                 tool_name = "book_appointment"
             elif any(k in payload for k in ["preferred_date", "preferredDate"]):
                 tool_name = "check_availability"
@@ -475,8 +489,7 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                 tool_name = "query_knowledge_base"
             elif any(k in payload for k in ["make", "model", "year", "issue_description", "issue"]):
                 tool_name = "create_service_request"
-            elif "phone" in payload:
-                # Default to check_availability if only phone is provided, or route accordingly
+            elif any(k in payload for k in ["phone", "phone_number", "phoneNumber", "caller_phone"]):
                 tool_name = "check_availability"
             else:
                 tool_name = "check_availability"
@@ -506,18 +519,22 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                 }
             else:
                 # Perform handoff node simulation
-                phone = args.get("phone")
+                phone = args.get("phone") or args.get("phone_number") or args.get("phoneNumber") or args.get("caller_phone") or args.get("caller_id")
+                customer_name = args.get("customer_name") or args.get("name") or args.get("claimed_name") or "Unknown Customer"
+                issue_description = args.get("issue_description") or args.get("summary_text") or args.get("summaryText") or args.get("summary") or args.get("reason") or "Not specified"
+                
                 customer = None
                 if phone:
-                    customer = lookup_customer_by_phone(phone)
+                    validated_p = clean_and_validate_phone(phone)
+                    if validated_p:
+                        customer = lookup_customer_by_phone(validated_p)
                 if not customer:
                     customer = {
-                        "name": args.get("customer_name") or args.get("name") or "Unknown Customer",
+                        "name": customer_name,
                         "phone": phone or "Unknown"
                     }
 
                 # Gather summary
-                issue_description = args.get("issue_description") or "Not specified"
                 state = {
                     "messages": [HumanMessage(content=f"I have an issue: {issue_description}")],
                     "customer": customer,
@@ -536,7 +553,7 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                 }
 
         elif tool_name == "create_service_request":
-            phone = args.get("phone")
+            phone = args.get("phone") or args.get("phone_number") or args.get("phoneNumber") or args.get("caller_phone") or args.get("caller_id")
             validated_phone = clean_and_validate_phone(phone)
             if not validated_phone:
                 result = {
@@ -566,7 +583,7 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                 phone_to_lookup = phone if phone else "Unknown"
                 c_data = lookup_customer_by_phone(phone_to_lookup)
                 if c_data:
-                    customer_id = c_data["customer_id"]
+                    customer_id = c_data.get("customer_id") or c_data.get("id")
                     if customer_name and customer_name not in ("Unknown Customer", "Unknown"):
                         update_customer_name(customer_id, customer_name)
                 
@@ -575,11 +592,23 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                     with get_db_connection() as conn:
                         with dict_cursor(conn) as cursor:
                             cursor.execute(
-                                "INSERT INTO customers (name, phone) VALUES (%s, %s) RETURNING id;",
+                                "INSERT INTO customers (name, phone) VALUES (%s, %s) ON CONFLICT (phone) DO UPDATE SET name = EXCLUDED.name RETURNING id;",
                                 (customer_name or "Unknown Customer", phone_to_lookup)
                             )
                             conn.commit()
                             customer_id = cursor.fetchone()["id"]
+
+                extra_kwargs = {}
+                if "is_uncataloged" in args or "isUncataloged" in args:
+                    extra_kwargs["is_uncataloged"] = bool(args.get("is_uncataloged") or args.get("isUncataloged"))
+                if "linked_appointment_id" in args or "linkedAppointmentId" in args:
+                    extra_kwargs["linked_appointment_id"] = args.get("linked_appointment_id") or args.get("linkedAppointmentId")
+                if "callback_priority" in args or "callbackPriority" in args:
+                    extra_kwargs["callback_priority"] = args.get("callback_priority") or args.get("callbackPriority")
+                if "callback_number" in args or "callbackNumber" in args:
+                    extra_kwargs["callback_number"] = args.get("callback_number") or args.get("callbackNumber")
+
+                is_uncataloged = extra_kwargs.get("is_uncataloged", False)
 
                 # Create service request
                 vehicle_details = {"make": make, "model": model, "year": year}
@@ -590,7 +619,8 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                     service_type=service_type,
                     time_slot=time_slot,
                     booking_type=booking_type,
-                    booking_time=booking_time
+                    booking_time=booking_time,
+                    **extra_kwargs
                 )
 
                 fields = get_service_required_fields(service_type)
@@ -601,6 +631,7 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                         "success": True,
                         "service_request_id": sr_id,
                         "booking_type": "appointment",
+                        "is_uncataloged": is_uncataloged,
                         "message": f"Service request booked as an appointment successfully. The estimated rate for this service is {price_range}. Please inform the customer of this rate."
                     }
                     try:
@@ -620,13 +651,18 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                                     agent_name = a_row["name"]
                                     agent_email = a_row["email"]
 
-                        details = get_booking_details(customer_id, sr_id)
+                        details = get_booking_details(customer_id, sr_id) or {}
                         details["time"] = booking_time or "Scheduled"
                         details["service_type"] = service_type
-                        send_booking_notification("appointment", details, agent_email=agent_email)
-                        send_admin_notification("appointment", details, mechanic_name=agent_name, mechanic_email=agent_email)
+                        try:
+                            from serviceBot.services.gmail import send_booking_notification, send_admin_notification
+                            send_booking_notification("appointment", details, agent_email=agent_email)
+                            send_admin_notification("appointment", details, mechanic_name=agent_name, mechanic_email=agent_email)
+                        except Exception as email_err:
+                            print(f"Error triggering service request appointment email: {email_err}")
                         # SMS: notify customer + agent on appointment booking
                         try:
+                            from serviceBot.services.sms_router import SMSNotificationRouter
                             SMSNotificationRouter().process_event(
                                 event_type="BOOKING",
                                 appointment_id=sr_id,
@@ -636,13 +672,14 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                             )
                         except Exception as sms_err:
                             print(f"Error sending SMS notification (create_service_request appointment): {sms_err}")
-                    except Exception as email_err:
-                        print(f"Error triggering service request appointment email: {email_err}")
-                elif booking_type == "callback":
+                    except Exception as notify_err:
+                        print(f"Error processing appointment notifications: {notify_err}")
+                elif booking_type in ("callback", "appointment_and_callback"):
                     result = {
                         "success": True,
                         "service_request_id": sr_id,
-                        "booking_type": "callback",
+                        "booking_type": booking_type,
+                        "is_uncataloged": is_uncataloged,
                         "message": "Service request callback recorded successfully."
                     }
                     try:
@@ -662,12 +699,17 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                                     agent_name = a_row["name"]
                                     agent_email = a_row["email"]
 
-                        details = get_booking_details(customer_id, sr_id)
+                        details = get_booking_details(customer_id, sr_id) or {}
                         details["time"] = booking_time or "ASAP"
-                        send_booking_notification("callback", details, agent_email=agent_email)
-                        send_admin_notification("callback", details, mechanic_name=agent_name, mechanic_email=agent_email)
+                        try:
+                            from serviceBot.services.gmail import send_booking_notification, send_admin_notification
+                            send_booking_notification("callback", details, agent_email=agent_email)
+                            send_admin_notification("callback", details, mechanic_name=agent_name, mechanic_email=agent_email)
+                        except Exception as email_err:
+                            print(f"Error triggering service request callback email: {email_err}")
                         # SMS: notify customer + agent on callback booking
                         try:
+                            from serviceBot.services.sms_router import SMSNotificationRouter
                             SMSNotificationRouter().process_event(
                                 event_type="BOOKING",
                                 appointment_id=sr_id,
@@ -677,8 +719,8 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                             )
                         except Exception as sms_err:
                             print(f"Error sending SMS notification (create_service_request callback): {sms_err}")
-                    except Exception as email_err:
-                        print(f"Error triggering service request callback email: {email_err}")
+                    except Exception as err:
+                        print(f"Error in callback notifications: {err}")
                 else:
                     result = {
                         "success": True,
@@ -687,7 +729,7 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                     }
 
         elif tool_name == "book_appointment":
-            phone = args.get("phone")
+            phone = args.get("phone") or args.get("phone_number") or args.get("phoneNumber") or args.get("caller_phone") or args.get("caller_id")
             appointment_datetime = args.get("appointment_datetime") or args.get("appointmentDatetime") or args.get("datetime")
             service_type = args.get("service_type") or args.get("serviceType") or "Repair"
 
@@ -731,7 +773,7 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                 customer_id = None
                 sr_id = None
                 if c_data:
-                    customer_id = c_data["customer_id"]
+                    customer_id = c_data.get("customer_id") or c_data.get("id")
                     sr_id = c_data.get("open_sr_id")
                     if customer_name and customer_name not in ("Unknown Customer", "Unknown"):
                         update_customer_name(customer_id, customer_name)
@@ -740,7 +782,7 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                     with get_db_connection() as conn:
                         with dict_cursor(conn) as cursor:
                             cursor.execute(
-                                "INSERT INTO customers (name, phone) VALUES (%s, %s) RETURNING id;",
+                                "INSERT INTO customers (name, phone) VALUES (%s, %s) ON CONFLICT (phone) DO UPDATE SET name = EXCLUDED.name RETURNING id;",
                                 (customer_name, phone)
                             )
                             conn.commit()
@@ -771,34 +813,41 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                         with get_db_connection() as conn:
                             with dict_cursor(conn) as cursor:
                                 cursor.execute("""
-                                    SELECT sa.name, COALESCE(uga.email, sa.email) AS email
+                                    SELECT sa.name, sa.phone_number, COALESCE(uga.email, sa.email) AS email
                                     FROM service_requests sr
                                     JOIN staff_agents sa ON sr.staff_agent_id = sa.id
                                     LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id
                                     WHERE sr.id = %s;
                                 """, (appt_id,))
                                 a_row = cursor.fetchone()
+                                agent_phone = None
                                 if a_row:
                                     agent_name = a_row["name"]
                                     agent_email = a_row["email"]
+                                    agent_phone = a_row["phone_number"]
 
                         details = get_booking_details(customer_id, appt_id)
                         details["time"] = appointment_datetime
                         details["service_type"] = service_type
-                        send_booking_notification("appointment", details, agent_email=agent_email)
-                        send_admin_notification("appointment", details, mechanic_name=agent_name, mechanic_email=agent_email)
                         try:
+                            from serviceBot.services.gmail import send_booking_notification, send_admin_notification
+                            send_booking_notification("appointment", details, agent_email=agent_email)
+                            send_admin_notification("appointment", details, mechanic_name=agent_name, mechanic_email=agent_email)
+                        except Exception as email_err:
+                            logger.warning(f"Email notification failed (book_appointment): {email_err}")
+                        try:
+                            from serviceBot.services.sms_router import SMSNotificationRouter
                             SMSNotificationRouter().process_event(
                                 event_type="BOOKING",
                                 appointment_id=appt_id,
                                 customer_phone=details.get("phone"),
-                                agent_phone=None,
+                                agent_phone=agent_phone,
                                 booking_time=details.get("time")
                             )
                         except Exception as sms_err:
                             logger.warning(f"SMS notification failed (book_appointment): {sms_err}")
-                    except Exception as email_err:
-                        logger.warning(f"Email notification failed (book_appointment): {email_err}")
+                    except Exception as notify_err:
+                        logger.warning(f"Notification processing failed (book_appointment): {notify_err}")
                 except ValueError as val_err:
                     result = {
                         "success": False,
@@ -806,7 +855,7 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                     }
 
         elif tool_name == "request_callback":
-            phone = args.get("phone")
+            phone = args.get("phone") or args.get("phone_number") or args.get("phoneNumber") or args.get("caller_phone") or args.get("caller_id")
             validated_phone = clean_and_validate_phone(phone)
             if not validated_phone:
                 result = {
@@ -815,14 +864,14 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                 }
             else:
                 phone = validated_phone
-                customer_name = args.get("customer_name") or args.get("name")
+                customer_name = args.get("customer_name") or args.get("name") or args.get("claimed_name")
                 make = args.get("make")
                 model = args.get("model")
                 year = args.get("year")
                 
                 c_data = lookup_customer_by_phone(phone)
                 if c_data:
-                    if not customer_name or customer_name == "Unknown Customer":
+                    if not customer_name or customer_name in ("Unknown Customer", "Unknown", ""):
                         customer_name = c_data.get("name")
                     if not make or make == "Unknown":
                         make = c_data.get("make")
@@ -831,21 +880,24 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                     if not year or year == 2000 or str(year) == "2000":
                         year = c_data.get("year")
                 
-                if not customer_name or customer_name == "Unknown Customer" or customer_name.strip() == "":
-                    result = {
-                        "success": False,
-                        "message": "Validation failed: Customer name is required to arrange a callback. Please ask the caller for their name."
-                    }
-                elif not make or make == "Unknown" or make.strip() == "" or not model or model == "Unknown" or model.strip() == "" or not year or year == 2000 or str(year) == "2000":
-                    result = {
-                        "success": False,
-                        "message": "Validation failed: Vehicle year, make, and model are required to arrange a callback. Please ask the caller for their vehicle's year, make, and model."
-                    }
-                else:
+                if not customer_name or customer_name in ("Unknown Customer", "Unknown", ""):
+                    if c_data and c_data.get("name") and c_data["name"] not in ("Unknown Customer", "Unknown", ""):
+                        customer_name = c_data["name"]
+                    else:
+                        customer_name = "Valued Customer"
+
+                if not make or make in ("Unknown", ""):
+                    make = (c_data.get("make") if c_data else None) or "Vehicle"
+                if not model or model in ("Unknown", ""):
+                    model = (c_data.get("model") if c_data else None) or "Standard"
+                if not year or year == 2000 or str(year) == "2000":
+                    year = (c_data.get("year") if c_data else None) or 2020
+
+                if True:
                     customer_id = None
                     sr_id = args.get("service_request_id")
                     if c_data:
-                        customer_id = c_data["customer_id"]
+                        customer_id = c_data.get("customer_id") or c_data.get("id")
                         if not sr_id:
                             sr_id = c_data.get("open_sr_id")
                         if c_data.get("name") == "Unknown Customer" and customer_name != "Unknown Customer":
@@ -858,7 +910,7 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                         with get_db_connection() as conn:
                             with dict_cursor(conn) as cursor:
                                 cursor.execute(
-                                    "INSERT INTO customers (name, phone) VALUES (%s, %s) RETURNING id;",
+                                    "INSERT INTO customers (name, phone) VALUES (%s, %s) ON CONFLICT (phone) DO UPDATE SET name = EXCLUDED.name RETURNING id;",
                                     (customer_name, phone)
                                 )
                                 conn.commit()
@@ -897,34 +949,41 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                             with get_db_connection() as conn:
                                 with dict_cursor(conn) as cursor:
                                     cursor.execute("""
-                                        SELECT sa.name, COALESCE(uga.email, sa.email) AS email
+                                        SELECT sa.name, sa.phone_number, COALESCE(uga.email, sa.email) AS email
                                         FROM service_requests sr
                                         JOIN staff_agents sa ON sr.staff_agent_id = sa.id
                                         LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id
                                         WHERE sr.id = %s;
                                     """, (cb_id,))
                                     a_row = cursor.fetchone()
+                                    agent_phone = None
                                     if a_row:
                                         agent_name = a_row["name"]
                                         agent_email = a_row["email"]
+                                        agent_phone = a_row["phone_number"]
 
                             details = get_booking_details(customer_id, cb_id)
                             details["time"] = preferred_time or "ASAP"
-                            send_booking_notification("callback", details, agent_email=agent_email)
-                            send_admin_notification("callback", details, mechanic_name=agent_name, mechanic_email=agent_email)
+                            try:
+                                from serviceBot.services.gmail import send_booking_notification, send_admin_notification
+                                send_booking_notification("callback", details, agent_email=agent_email)
+                                send_admin_notification("callback", details, mechanic_name=agent_name, mechanic_email=agent_email)
+                            except Exception as email_err:
+                                print(f"Error triggering callback email: {email_err}")
                             # SMS: notify customer on callback request
                             try:
+                                from serviceBot.services.sms_router import SMSNotificationRouter
                                 SMSNotificationRouter().process_event(
                                     event_type="BOOKING",
                                     appointment_id=cb_id,
                                     customer_phone=details.get("phone"),
-                                    agent_phone=None,
+                                    agent_phone=agent_phone,
                                     booking_time=details.get("time")
                                 )
                             except Exception as sms_err:
                                 print(f"Error sending SMS notification (request_callback): {sms_err}")
-                        except Exception as email_err:
-                            print(f"Error triggering callback email: {email_err}")
+                        except Exception as notify_err:
+                            print(f"Notification processing failed (request_callback): {notify_err}")
                     except ValueError as val_err:
                         result = {
                             "success": False,
@@ -955,12 +1014,12 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                     clean_claimed = claimed_name.lower().strip() if claimed_name else ""
 
                     if clean_existing == "unknown customer" and clean_claimed:
-                        update_customer_name(c_data["customer_id"], claimed_name)
+                        update_customer_name(c_data.get("customer_id") or c_data.get("id"), claimed_name)
                         result = {
                             "success": True,
                             "is_existing_customer": True,
                             "is_verified_existing_customer": True,
-                            "customer_id": c_data["customer_id"],
+                            "customer_id": c_data.get("customer_id") or c_data.get("id"),
                             "customer_name": claimed_name,
                             "open_sr_id": c_data.get("open_sr_id"),
                             "open_sr_type": c_data.get("open_sr_type"),
@@ -971,7 +1030,7 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                             "success": True,
                             "is_existing_customer": True,
                             "is_verified_existing_customer": True,
-                            "customer_id": c_data["customer_id"],
+                            "customer_id": c_data.get("customer_id") or c_data.get("id"),
                             "customer_name": existing_name,
                             "open_sr_id": c_data.get("open_sr_id"),
                             "open_sr_type": c_data.get("open_sr_type"),
@@ -984,7 +1043,7 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                             "is_verified_existing_customer": False,
                             "existing_profile_name": existing_name,
                             "claimed_name": claimed_name,
-                            "customer_id": c_data["customer_id"],
+                            "customer_id": c_data.get("customer_id") or c_data.get("id"),
                             "message": f"Phone number is registered to {existing_name}, but caller identified as {claimed_name}."
                         }
 
@@ -1030,6 +1089,22 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                         appt_id = appts[0]["id"]
                     
                     try:
+                        previous_agent_phone = None
+                        try:
+                            with get_db_connection() as conn:
+                                with dict_cursor(conn) as cursor:
+                                    cursor.execute("""
+                                        SELECT sa.phone_number
+                                        FROM service_requests sr
+                                        JOIN staff_agents sa ON sr.staff_agent_id = sa.id
+                                        WHERE sr.id = %s;
+                                    """, (appt_id,))
+                                    old_row = cursor.fetchone()
+                                    if old_row:
+                                        previous_agent_phone = old_row["phone_number"]
+                        except Exception:
+                            pass
+                            
                         # Attempt to reschedule
                         reschedule_appointment(appointment_id=appt_id, new_datetime=new_datetime)
                         result = {
@@ -1043,42 +1118,54 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                             cust_id = None
                             c_data = lookup_customer_by_phone(phone)
                             if c_data:
-                                cust_id = c_data["customer_id"]
+                                cust_id = c_data.get("customer_id") or c_data.get("id")
                             if cust_id:
                                 agent_email = None
                                 agent_name = None
                                 with get_db_connection() as conn:
                                     with dict_cursor(conn) as cursor:
                                         cursor.execute("""
-                                            SELECT sa.name, COALESCE(uga.email, sa.email) AS email
+                                            SELECT sa.name, sa.phone_number, COALESCE(uga.email, sa.email) AS email
                                             FROM service_requests sr
                                             JOIN staff_agents sa ON sr.staff_agent_id = sa.id
                                             LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id
                                             WHERE sr.id = %s;
                                         """, (appt_id,))
                                         a_row = cursor.fetchone()
+                                        agent_phone = None
                                         if a_row:
                                             agent_name = a_row["name"]
                                             agent_email = a_row["email"]
+                                            agent_phone = a_row["phone_number"]
 
 
                                 details = get_booking_details(cust_id, appt_id)
                                 details["time"] = new_datetime
-                                send_booking_notification("reschedule", details, agent_email=agent_email)
-                                send_admin_notification("reschedule", details, mechanic_name=agent_name, mechanic_email=agent_email)
+                                try:
+                                    from serviceBot.services.gmail import send_booking_notification, send_admin_notification
+                                    send_booking_notification("reschedule", details, agent_email=agent_email)
+                                    send_admin_notification("reschedule", details, mechanic_name=agent_name, mechanic_email=agent_email)
+                                except Exception as email_err:
+                                    print(f"Error triggering reschedule email: {email_err}")
                                 # SMS: notify customer on reschedule
                                 try:
+                                    from serviceBot.services.sms_router import SMSNotificationRouter
+                                    event_type = "RESCHEDULED"
+                                    if previous_agent_phone and agent_phone and previous_agent_phone != agent_phone:
+                                        event_type = "RESCHEDULED_REASSIGNED"
+                                        
                                     SMSNotificationRouter().process_event(
-                                        event_type="RESCHEDULED",
+                                        event_type=event_type,
                                         appointment_id=appt_id,
                                         customer_phone=details.get("phone"),
-                                        agent_phone=None,
+                                        agent_phone=agent_phone,
+                                        previous_agent_phone=previous_agent_phone,
                                         booking_time=new_datetime
                                     )
                                 except Exception as sms_err:
                                     print(f"Error sending SMS notification (reschedule): {sms_err}")
-                        except Exception as email_err:
-                            print(f"Error triggering reschedule email: {email_err}")
+                        except Exception as notify_err:
+                            print(f"Notification processing failed (reschedule): {notify_err}")
                     except Exception as e:
                         result = {
                             "success": False,

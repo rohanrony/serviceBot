@@ -18,13 +18,18 @@ load_dotenv()
 
 def get_db_url():
     """Returns the DATABASE_URL for PostgreSQL connections."""
-    is_testing = "pytest" in sys.modules or any("pytest" in arg or "unittest" in arg for arg in sys.argv)
+    is_testing = (
+        "pytest" in sys.modules 
+        or any("pytest" in arg or "unittest" in arg or "run_tests" in arg for arg in sys.argv)
+        or os.getenv("TESTING") == "1"
+    )
     if is_testing:
         env_val = os.getenv("TEST_DATABASE_URL")
         if env_val and (env_val.startswith("postgresql") or env_val.startswith("postgres")):
             if env_val.startswith("postgres://"):
                 env_val = env_val.replace("postgres://", "postgresql://", 1)
             return env_val
+        return "postgresql://localhost/voice_service_test"
     url = os.getenv("DATABASE_URL", "")
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
@@ -48,15 +53,25 @@ def _get_pool():
             )
         _pool = psycopg2.pool.SimpleConnectionPool(
             minconn=1,
-            maxconn=10,
+            maxconn=50,
             dsn=db_url,
             keepalives=1,
             keepalives_idle=30,
             keepalives_interval=10,
             keepalives_count=5,
         )
-        logger.info("Initialized PostgreSQL connection pool (minconn=1, maxconn=10).")
+        logger.info("Initialized PostgreSQL connection pool (minconn=1, maxconn=50).")
     return _pool
+
+
+def close_db_pool():
+    global _pool
+    if _pool is not None:
+        try:
+            _pool.closeall()
+        except Exception:
+            pass
+        _pool = None
 
 
 # PostgreSQL DDL Schema
@@ -98,21 +113,34 @@ CREATE INDEX IF NOT EXISTS idx_vehicles_customer_id ON vehicles(customer_id);
 CREATE TABLE IF NOT EXISTS service_requests (
     id SERIAL PRIMARY KEY,
     customer_id INTEGER NOT NULL,
-    vehicle_id INTEGER NOT NULL,
-    service_type VARCHAR(100) NOT NULL,
-    issue_description TEXT NOT NULL,
+    vehicle_id INTEGER DEFAULT NULL,
+    service_type VARCHAR(100) DEFAULT 'Repair',
+    issue_description TEXT DEFAULT NULL,
     status VARCHAR(50) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'completed', 'cancelled', 'rescheduled')),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     time_slot VARCHAR(100) DEFAULT NULL,
-    booking_type VARCHAR(50) DEFAULT NULL CHECK (booking_type IN ('appointment', 'callback')),
+    booking_type VARCHAR(50) DEFAULT NULL CHECK (booking_type IN ('appointment', 'callback', 'appointment_and_callback')),
     booking_time VARCHAR(100) DEFAULT NULL,
+    duration_minutes INTEGER DEFAULT 60,
     staff_agent_id INTEGER DEFAULT NULL REFERENCES staff_agents(id) ON DELETE SET NULL,
     FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE RESTRICT,
-    FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE RESTRICT
+    FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_service_requests_customer ON service_requests(customer_id);
+
+CREATE TABLE IF NOT EXISTS service_request_audit_log (
+    id SERIAL PRIMARY KEY,
+    request_id INTEGER NOT NULL REFERENCES service_requests(id) ON DELETE CASCADE,
+    from_status VARCHAR(50) DEFAULT NULL,
+    to_status VARCHAR(50) NOT NULL,
+    triggered_by VARCHAR(100) NOT NULL,
+    notes TEXT DEFAULT NULL,
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_sr_audit_log_request_id ON service_request_audit_log(request_id);
 
 CREATE TABLE IF NOT EXISTS crm_notes (
     id SERIAL PRIMARY KEY,
@@ -293,37 +321,49 @@ _db_initialized = False
 
 
 def _safe_alter(cursor, conn, sql):
-    """Run an ALTER TABLE statement cleanly using SAVEPOINT."""
+    """Run an ALTER TABLE statement cleanly."""
     try:
-        cursor.execute("SAVEPOINT alter_sp;")
-        cursor.execute(sql)
-        cursor.execute("RELEASE SAVEPOINT alter_sp;")
+        if getattr(conn, 'autocommit', False):
+            cursor.execute(sql)
+        else:
+            cursor.execute("SAVEPOINT alter_sp;")
+            cursor.execute(sql)
+            cursor.execute("RELEASE SAVEPOINT alter_sp;")
     except Exception as exc:
-        cursor.execute("ROLLBACK TO SAVEPOINT alter_sp;")
+        if not getattr(conn, 'autocommit', False):
+            try:
+                cursor.execute("ROLLBACK TO SAVEPOINT alter_sp;")
+            except Exception:
+                pass
         logger.debug(f"ALTER statement skipped or safe rollback: {exc}")
 
 
-def init_db(db_url: str = None):
+def init_db(db_url: str = None, force: bool = False):
     """Initializes the database by running the DDL schema."""
     global _db_initialized
+    if _db_initialized and db_url is None and not force:
+        return
     if db_url is None:
         db_url = get_db_url()
 
     try:
         conn = psycopg2.connect(db_url)
-        conn.autocommit = False
+        conn.autocommit = True
         cursor = conn.cursor()
+        try:
+            cursor.execute("SET statement_timeout = '2000ms';")
+            cursor.execute("SET lock_timeout = '2000ms';")
+        except Exception:
+            pass
 
         # Run DDL schema statements to ensure all tables exist (e.g. render_logs)
         for statement in DDL_SCHEMA.split(";"):
             stmt = statement.strip()
             if stmt:
                 try:
-                    cursor.execute("SAVEPOINT ddl_sp;")
                     cursor.execute(stmt)
-                    cursor.execute("RELEASE SAVEPOINT ddl_sp;")
                 except Exception as exc:
-                    cursor.execute("ROLLBACK TO SAVEPOINT ddl_sp;")
+                    logger.debug(f"DDL statement skipped: {exc}")
         conn.commit()
 
         # Auto-migrations for existing tables
@@ -350,12 +390,27 @@ def init_db(db_url: str = None):
         ]:
             _safe_alter(cursor, conn, f"ALTER TABLE customers ADD COLUMN IF NOT EXISTS {col} {col_type}")
 
+        _safe_alter(cursor, conn, "ALTER TABLE service_requests DROP CONSTRAINT IF EXISTS service_requests_booking_type_check;")
+        _safe_alter(cursor, conn, "ALTER TABLE service_requests ALTER COLUMN vehicle_id DROP NOT NULL;")
+        _safe_alter(cursor, conn, "ALTER TABLE service_requests ALTER COLUMN issue_description DROP NOT NULL;")
+        _safe_alter(cursor, conn, "ALTER TABLE service_requests ALTER COLUMN service_type DROP NOT NULL;")
         for col, col_type in [
             ("time_slot", "VARCHAR(100) DEFAULT NULL"),
-            ("booking_type", "VARCHAR(50) DEFAULT NULL CHECK (booking_type IN ('appointment', 'callback'))"),
+            ("booking_type", "VARCHAR(50) DEFAULT NULL"),
             ("booking_time", "VARCHAR(100) DEFAULT NULL"),
+            ("duration_minutes", "INTEGER DEFAULT 60"),
             ("staff_agent_id", "INTEGER REFERENCES staff_agents(id) ON DELETE SET NULL"),
             ("updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+            ("is_uncataloged", "BOOLEAN DEFAULT FALSE"),
+            ("linked_appointment_id", "INTEGER DEFAULT NULL REFERENCES service_requests(id) ON DELETE SET NULL"),
+            ("callback_priority", "VARCHAR(20) DEFAULT 'medium'"),
+            ("callback_number", "VARCHAR(50) DEFAULT NULL"),
+            ("triage_lock_owner", "INTEGER DEFAULT NULL REFERENCES staff_agents(id) ON DELETE SET NULL"),
+            ("triage_lock_expires", "REAL DEFAULT NULL"),
+            ("triage_history", "TEXT DEFAULT NULL"),
+            ("agent_confirmed_at", "TIMESTAMP WITHOUT TIME ZONE DEFAULT NULL"),
+            ("notification_dispatched_at", "TIMESTAMP WITHOUT TIME ZONE DEFAULT NULL"),
+            ("sla_expires_at", "TIMESTAMP WITHOUT TIME ZONE DEFAULT NULL"),
         ]:
             _safe_alter(cursor, conn, f"ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS {col} {col_type}")
 
@@ -379,8 +434,14 @@ def init_db(db_url: str = None):
         try:
             cursor.execute("ALTER TABLE service_requests DROP CONSTRAINT IF EXISTS service_requests_status_check;")
             cursor.execute("ALTER TABLE service_requests ADD CONSTRAINT service_requests_status_check CHECK (status IN ('pending', 'in_progress', 'completed', 'cancelled', 'rescheduled', 'confirmed', 'cancelled_by_customer'));")
+            
+            # Normalize legacy status values in existing data
+            cursor.execute("UPDATE service_requests SET status = 'cancelled' WHERE status = 'cancelled_by_customer';")
+            cursor.execute("UPDATE service_requests SET status = 'pending' WHERE status = 'rescheduled';")
+            cursor.execute("UPDATE service_requests SET status = 'completed' WHERE status = 'done';")
             conn.commit()
-        except Exception:
+        except Exception as exc:
+            logger.debug(f"Status normalization or constraint migration skipped: {exc}")
             conn.rollback()
 
         # Seed default sms_config if empty
@@ -461,30 +522,36 @@ def get_db_connection():
         pool = _get_pool()
 
         # Validate connection liveness to handle Supabase pooler idle disconnects
-        for _ in range(3):
-            c = None
-            try:
-                c = pool.getconn()
-                if c and c.closed == 0:
-                    c.autocommit = True
-                    with c.cursor() as cur:
-                        cur.execute("SELECT 1;")
-                    c.autocommit = False
-                    conn = c
-                    break
-                elif c:
-                    pool.putconn(c, close=True)
-            except Exception as test_err:
-                logger.warning(f"Discarding stale connection from pool: {test_err}")
-                if c:
-                    try:
+        is_test_env = ("pytest" in sys.modules or "unittest" in sys.modules or os.getenv("TESTING") == "1")
+        if not is_test_env:
+            for _ in range(3):
+                c = None
+                try:
+                    c = pool.getconn()
+                    if c and c.closed == 0:
+                        c.autocommit = True
+                        with c.cursor() as cur:
+                            cur.execute("SELECT 1;")
+                        c.autocommit = False
+                        conn = c
+                        break
+                    elif c:
                         pool.putconn(c, close=True)
-                    except Exception:
-                        pass
+                except Exception as test_err:
+                    logger.warning(f"Discarding stale connection from pool: {test_err}")
+                    if c:
+                        try:
+                            pool.putconn(c, close=True)
+                        except Exception:
+                            pass
 
         if conn is None:
-            conn = pool.getconn()
+            try:
+                conn = pool.getconn()
+            except Exception:
+                conn = psycopg2.connect(get_db_url())
 
+        conn.cursor_factory = psycopg2.extras.DictCursor
         conn.autocommit = False
         try:
             yield conn

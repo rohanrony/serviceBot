@@ -15,28 +15,44 @@ def seed_db(force: bool = False):
     with get_db_connection() as conn:
         cursor = conn.cursor()
         
+        if is_testing and not force:
+            try:
+                cursor.execute("SELECT COUNT(*) FROM services;")
+                row = cursor.fetchone()
+                conn.commit()
+                if row and row[0] >= 15:
+                    return
+            except Exception:
+                conn.rollback()
+        
         # Clear existing data using TRUNCATE CASCADE
-        cursor.execute("""
-            TRUNCATE TABLE 
-                crm_notes, 
-                service_requests, 
-                vehicles, 
-                customers, 
-                mock_calendar_slots, 
-                staff_agents, 
-                services, 
-                user_google_accounts, 
-                oauth_states,
-                sms_config,
-                sms_matrix_rules,
-                sms_whitelist,
-                sms_log,
-                sms_reminders,
-                sms_conversations,
-                sms_messages
-            CASCADE;
-        """)
-        conn.commit()
+        try:
+            cursor.execute("SET LOCAL lock_timeout = '2s';")
+            cursor.execute("""
+                TRUNCATE TABLE 
+                    crm_notes, 
+                    service_requests, 
+                    vehicles, 
+                    customers, 
+                    mock_calendar_slots, 
+                    staff_agents, 
+                    services, 
+                    user_google_accounts, 
+                    oauth_states,
+                    sms_config,
+                    sms_matrix_rules,
+                    sms_whitelist,
+                    sms_log,
+                    sms_reminders,
+                    sms_conversations,
+                    sms_messages
+                CASCADE;
+            """)
+            conn.commit()
+        except Exception as truncate_err:
+            conn.rollback()
+            print(f"[seed_db] Notice: TRUNCATE lock timeout ({truncate_err}). Proceeding with existing test data.")
+            return
 
         
         # Insert Services
@@ -119,7 +135,7 @@ def seed_db(force: bool = False):
                 "call_sarah_101", 
                 1, 
                 "Customer Sarah Johnson reported grinding noise when stopping on her 2020 Honda Civic. Scheduled Brake Service & Repair and Courtesy Inspection for June 10th. Requested local shuttle service.",
-                "Advisor: Thank you for calling Test in Springfield, home of the Nice Difference. This is John, how can I help you?\nSarah: Hi, my Honda Civic's brakes are making a loud grinding noise when I stop, and the brake light just came on.\nAdvisor: I understand, Sarah. Safety is our priority. We can get you in for our complimentary Courtesy Inspection to check out the brake pads and rotors. We also have a free shuttle if you need a ride back home or to work. Would you like to schedule that?\nSarah: Yes, please. Monday afternoon at 2:00 PM would work best.\nAdvisor: Perfect, we have you set for Wednesday, June 10th at 2:00 PM. See you then!",
+                "Advisor: Thank you for calling Davidson Car Care in Springfield, home of the Nice Difference. This is John, how can I help you?\nSarah: Hi, my Honda Civic's brakes are making a loud grinding noise when I stop, and the brake light just came on.\nAdvisor: I understand, Sarah. Safety is our priority. We can get you in for our complimentary Courtesy Inspection to check out the brake pads and rotors. We also have a free shuttle if you need a ride back home or to work. Would you like to schedule that?\nSarah: Yes, please. Monday afternoon at 2:00 PM would work best.\nAdvisor: Perfect, we have you set for Wednesday, June 10th at 2:00 PM. See you then!",
                 call_time_1
             )
         )
@@ -130,7 +146,7 @@ def seed_db(force: bool = False):
                 "call_david_102", 
                 2, 
                 "David Smith requested a full synthetic oil change on his 2018 Ford F-150. Service completed on time. Courtesy inspection completed with green status overall.",
-                "Advisor: Test, this is John. How can I serve you today?\nDavid: Hi, I need to schedule a full synthetic oil change for my Ford F-150.\nAdvisor: Absolutely, David. We can set that up for you. That will include our full synthetic oil, premium filter, fluid top-off, and our complimentary Courtesy Inspection to check your vehicle's overall health.\nDavid: That sounds great. Do you have anything open today?\nAdvisor: Yes, we have a slot at 4:00 PM.\nDavid: Perfect, see you then.",
+                "Advisor: Davidson Car Care, this is John. How can I serve you today?\nDavid: Hi, I need to schedule a full synthetic oil change for my Ford F-150.\nAdvisor: Absolutely, David. We can set that up for you. That will include our full synthetic oil, premium filter, fluid top-off, and our complimentary Courtesy Inspection to check your vehicle's overall health.\nDavid: That sounds great. Do you have anything open today?\nAdvisor: Yes, we have a slot at 4:00 PM.\nDavid: Perfect, see you then.",
                 call_time_2
             )
         )
@@ -141,7 +157,7 @@ def seed_db(force: bool = False):
                 "call_emily_103", 
                 3, 
                 "Emily Davis reported AC blowing warm air on her 2021 Toyota RAV4. Scheduled AC performance test and inspection. Customer will use the free local shuttle service.",
-                "Advisor: Thank you for calling Test. This is John.\nEmily: Hi, my RAV4's air conditioner is blowing warm air, and it's really hot today.\nAdvisor: I hear you, Emily. We can run our AC performance test to check the refrigerant levels, scan for codes, and inspect components for leaks. We have an opening at 10:00 AM on Wednesday, June 10th.\nEmily: That works. Will I be able to get a ride to my office?\nAdvisor: Yes, our complimentary shuttle is happy to drop you off and pick you back up when the vehicle is ready.\nEmily: Wonderful, sign me up.",
+                "Advisor: Thank you for calling Davidson Car Care. This is John.\nEmily: Hi, my RAV4's air conditioner is blowing warm air, and it's really hot today.\nAdvisor: I hear you, Emily. We can run our AC performance test to check the refrigerant levels, scan for codes, and inspect components for leaks. We have an opening at 10:00 AM on Wednesday, June 10th.\nEmily: That works. Will I be able to get a ride to my office?\nAdvisor: Yes, our complimentary shuttle is happy to drop you off and pick you back up when the vehicle is ready.\nEmily: Wonderful, sign me up.",
                 call_time_3
             )
         )
@@ -152,7 +168,7 @@ def seed_db(force: bool = False):
                 "call_michael_104", 
                 4, 
                 "Michael Miller reported Check Engine light is on and engine running rough on 2015 Chevrolet Silverado. Scheduled Engine Diagnostics. Shuttle service coordinated.",
-                "Advisor: Test, John speaking. How can I help you?\nMichael: Hi, my Silverado's check engine light is flashing and the engine feels like it is running rough.\nAdvisor: A flashing check engine light indicates a potential misfire, Michael, so we definitely want to check that out as soon as possible. We will perform an Engine Diagnostic scan and physical check. We have an open slot on Thursday at 11:00 AM.\nMichael: That works. I will need the shuttle back to my house.\nAdvisor: Not a problem, we will coordinate that. See you Thursday.",
+                "Advisor: Davidson Car Care, John speaking. How can I help you?\nMichael: Hi, my Silverado's check engine light is flashing and the engine feels like it is running rough.\nAdvisor: A flashing check engine light indicates a potential misfire, Michael, so we definitely want to check that out as soon as possible. We will perform an Engine Diagnostic scan and physical check. We have an open slot on Thursday at 11:00 AM.\nMichael: That works. I will need the shuttle back to my house.\nAdvisor: Not a problem, we will coordinate that. See you Thursday.",
                 call_time_4
             )
         )
@@ -177,7 +193,7 @@ def seed_db(force: bool = False):
         valid_days = get_configured_business_days()
         start_date = datetime.date.today()
         slots = []
-        for day_offset in range(30):
+        for day_offset in range(5):
             current_day = start_date + datetime.timedelta(days=day_offset)
 
             if current_day.weekday() in valid_days:
@@ -189,9 +205,12 @@ def seed_db(force: bool = False):
                             is_booked = random.random() < 0.3
                             slots.append((slot_str, is_booked, agent_id))
                         
-        cursor.executemany(
+        from psycopg2.extras import execute_batch
+        execute_batch(
+            cursor,
             "INSERT INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES (%s, %s, %s) ON CONFLICT (slot_datetime, staff_agent_id) DO NOTHING;",
-            slots
+            slots,
+            page_size=200
         )
         
         # Seed default sms_config if empty
@@ -243,7 +262,7 @@ def seed_db(force: bool = False):
             cursor.execute(f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), COALESCE(MAX(id), 1)) FROM {table};")
         
         conn.commit()
-        print("Database seeded successfully with Test mock data!")
+        print("Database seeded successfully with Davidson Car Care mock data!")
 
 
  

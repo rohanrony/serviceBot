@@ -12,7 +12,7 @@ def test_get_customer_appointments_query():
     # Seed a known customer and appointment
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM service_requests WHERE id = 5000;")
+        cursor.execute("DELETE FROM service_requests WHERE id = 5000 OR customer_id IN (SELECT id FROM customers WHERE id = 1500 OR phone = '555-999-8888');")
         cursor.execute("DELETE FROM customers WHERE id = 1500 OR phone = '555-999-8888';")
         cursor.execute("INSERT INTO customers (id, name, phone) VALUES (1500, 'Resched Customer', '555-999-8888')")
         cursor.execute("INSERT INTO service_requests (id, customer_id, vehicle_id, service_type, issue_description, booking_type, booking_time) VALUES (5000, 1500, 1, 'AC Service & Repair', 'Symptom description', 'appointment', '2026-06-12 10:00:00')")
@@ -33,10 +33,11 @@ def test_reschedule_appointment_query():
     with get_db_connection() as conn:
         cursor = conn.cursor()
         # Seed customer, appointment and slot
+        cursor.execute("INSERT INTO staff_agents (id, name, role) VALUES (1, 'Agent 1', 'Advisor') ON CONFLICT (id) DO NOTHING;")
         cursor.execute("INSERT INTO customers (id, name, phone) VALUES (16, 'Resched Customer 2', '555-999-7777') ON CONFLICT (id) DO NOTHING;")
-        cursor.execute("INSERT INTO mock_calendar_slots (slot_datetime, is_booked) VALUES ('2026-06-15 14:00:00', TRUE) ON CONFLICT DO NOTHING;")
-        cursor.execute("INSERT INTO mock_calendar_slots (slot_datetime, is_booked) VALUES ('2026-06-15 16:00:00', FALSE) ON CONFLICT DO NOTHING;")
-        cursor.execute("INSERT INTO service_requests (id, customer_id, vehicle_id, service_type, issue_description, booking_type, booking_time) VALUES (51, 16, 1, 'Oil Change', 'General repair', 'appointment', '2026-06-15 14:00:00') ON CONFLICT (id) DO NOTHING;")
+        cursor.execute("INSERT INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES ('2026-06-15 14:00:00', TRUE, 1) ON CONFLICT DO NOTHING;")
+        cursor.execute("INSERT INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES ('2026-06-15 16:00:00', FALSE, 1) ON CONFLICT DO NOTHING;")
+        cursor.execute("INSERT INTO service_requests (id, customer_id, vehicle_id, service_type, issue_description, booking_type, booking_time, staff_agent_id) VALUES (51, 16, 1, 'Oil Change', 'General repair', 'appointment', '2026-06-15 14:00:00', 1) ON CONFLICT (id) DO NOTHING;")
         conn.commit()
 
     # Reschedule
@@ -47,11 +48,11 @@ def test_reschedule_appointment_query():
     with get_db_connection() as conn:
         cursor = conn.cursor()
         # Old slot should be unbooked
-        cursor.execute("SELECT is_booked FROM mock_calendar_slots WHERE slot_datetime = '2026-06-15 14:00:00'")
+        cursor.execute("SELECT is_booked FROM mock_calendar_slots WHERE slot_datetime = '2026-06-15 14:00:00' AND staff_agent_id = 1")
         assert cursor.fetchone()["is_booked"] == 0
         
         # New slot should be booked
-        cursor.execute("SELECT is_booked FROM mock_calendar_slots WHERE slot_datetime = '2026-06-15 16:00:00'")
+        cursor.execute("SELECT is_booked FROM mock_calendar_slots WHERE slot_datetime = '2026-06-15 16:00:00' AND staff_agent_id = 1")
         assert cursor.fetchone()["is_booked"] == 1
         
         # Appointment should be updated
@@ -65,10 +66,11 @@ def test_voice_tools_reschedule_appointment_flat():
     with get_db_connection() as conn:
         cursor = conn.cursor()
         # Seed database state
-        cursor.execute("INSERT OR IGNORE INTO customers (id, name, phone) VALUES (17, 'Resched Customer 3', '424-270-4893')")
-        cursor.execute("INSERT OR IGNORE INTO mock_calendar_slots (slot_datetime, is_booked) VALUES ('2026-06-16 10:00:00', 1)")
-        cursor.execute("INSERT OR IGNORE INTO mock_calendar_slots (slot_datetime, is_booked) VALUES ('2026-06-16 11:00:00', 0)")
-        cursor.execute("INSERT OR IGNORE INTO service_requests (id, customer_id, vehicle_id, service_type, issue_description, booking_type, booking_time) VALUES (52, 17, 1, 'Oil Change', 'General repair', 'appointment', '2026-06-16 10:00:00')")
+        cursor.execute("INSERT INTO staff_agents (id, name, role) VALUES (1, 'Agent 1', 'Advisor') ON CONFLICT (id) DO NOTHING;")
+        cursor.execute("INSERT INTO customers (id, name, phone) VALUES (17, 'Resched Customer 3', '424-270-4893') ON CONFLICT (id) DO NOTHING;")
+        cursor.execute("INSERT INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES ('2026-06-16 10:00:00', TRUE, 1) ON CONFLICT DO NOTHING;")
+        cursor.execute("INSERT INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES ('2026-06-16 11:00:00', FALSE, 1) ON CONFLICT DO NOTHING;")
+        cursor.execute("INSERT INTO service_requests (id, customer_id, vehicle_id, service_type, issue_description, booking_type, booking_time, staff_agent_id) VALUES (52, 17, 1, 'Oil Change', 'General repair', 'appointment', '2026-06-16 10:00:00', 1) ON CONFLICT (id) DO NOTHING;")
         conn.commit()
 
     payload = {

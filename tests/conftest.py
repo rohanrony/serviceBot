@@ -14,7 +14,7 @@ if os.path.exists(env_path):
                 k, v = line.split("=", 1)
                 os.environ[k.strip()] = v.strip().strip("'\"")
 
-test_db_url = os.getenv("TEST_DATABASE_URL") or os.getenv("DATABASE_URL") or "postgresql://localhost/voice_service_test"
+test_db_url = os.getenv("TEST_DATABASE_URL") or "postgresql://localhost/voice_service_test"
 os.environ["DATABASE_URL"] = test_db_url
 os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 
@@ -33,10 +33,21 @@ def setup_and_cleanup_test_db():
     print(f"\n[TEST_DB_PATH_DIAGNOSTIC] DATABASE_URL env: {os.environ.get('DATABASE_URL')}")
     print(f"[TEST_DB_PATH_DIAGNOSTIC] connection.get_db_url(): {get_db_url()}")
     try:
+        import psycopg2
+        kill_conn = psycopg2.connect(get_db_url(), connect_timeout=3)
+        kill_conn.autocommit = True
+        kill_cur = kill_conn.cursor()
+        kill_cur.execute("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'voice_service_test' AND pid <> pg_backend_pid();")
+        kill_cur.close()
+        kill_conn.close()
+    except Exception:
+        pass
+
+    try:
         from serviceBot.db.connection import init_db
         from serviceBot.db.seed import seed_db
-        init_db()
-        seed_db()
+        init_db(force=True)
+        seed_db(force=True)
     except Exception as e:
         print(f"[conftest] Warning: Database seeding skipped or failed ({e}). Tests will proceed with mocked fixtures.")
     
@@ -48,6 +59,34 @@ def setup_and_cleanup_test_db():
             shutil.rmtree(WORKSPACE_SCRATCH)
         except OSError:
             pass
+
+
+@pytest.fixture(autouse=True)
+def mock_google_events():
+    from unittest.mock import patch, MagicMock
+    dummy_res = MagicMock()
+    dummy_res.status_code = 200
+    dummy_res.json.return_value = {}
+    dummy_res.text = "{}"
+
+    with patch("serviceBot.services.google_calendar.fetch_agent_events", return_value=[]), \
+         patch("serviceBot.db.queries.fetch_agent_events", return_value=[]), \
+         patch("serviceBot.services.google_calendar.create_agent_calendar_event", return_value=True), \
+         patch("serviceBot.services.gmail.create_admin_calendar_event", return_value=True), \
+         patch("serviceBot.services.gmail.send_booking_notification", return_value=True), \
+         patch("httpx.get", return_value=dummy_res), \
+         patch("httpx.post", return_value=dummy_res), \
+         patch("httpx.AsyncClient.get", return_value=dummy_res), \
+         patch("httpx.AsyncClient.post", return_value=dummy_res):
+        yield
+
+
+def pytest_sessionfinish(session, exitstatus):
+    try:
+        from serviceBot.db.connection import close_db_pool
+        close_db_pool()
+    except Exception:
+        pass
 
 
 @pytest.fixture
