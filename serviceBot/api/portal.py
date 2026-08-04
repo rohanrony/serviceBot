@@ -568,7 +568,6 @@ async def get_staff_agent(agent_id: int):
 @router.patch("/agents/{agent_id}")
 async def update_staff_agent(agent_id: int, payload: StaffAgentUpdate):
     from serviceBot.db.connection import get_db_connection, dict_cursor
-    from serviceBot.services.calendar_sync import sync_agent_slots
 
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
@@ -606,17 +605,9 @@ async def update_staff_agent(agent_id: int, payload: StaffAgentUpdate):
             else:
                 updated_agent = dict(agent)
 
-    # Immediately trigger calendar sync so live free/busy slots are updated to reflect the agent changes
-    sync_result = {}
-    try:
-        sync_result = sync_agent_slots(agent_id)
-    except Exception as e:
-        print(f"[update_staff_agent] Calendar sync notice for agent {agent_id}: {e}")
-
     return {
         "success": True,
-        "agent": updated_agent,
-        "calendar_sync": sync_result
+        "agent": updated_agent
     }
 
 @router.post("/agents", status_code=201)
@@ -772,168 +763,7 @@ async def disconnect_agent_calendar(agent_id: int):
     # Backward compatibility endpoint
     return await disconnect_agent_google(agent_id)
 
-@router.get("/agents/{agent_id}/calendar")
-@router.get("/agents/{agent_id}/slots")
-async def get_agent_calendar(agent_id: int):
-    from serviceBot.db.connection import get_db_connection, dict_cursor
-    try:
-        with get_db_connection() as conn:
-            with dict_cursor(conn) as cursor:
-                # Verify agent exists
-                cursor.execute("SELECT id FROM staff_agents WHERE id = %s", (agent_id,))
-                if not cursor.fetchone():
-                    raise HTTPException(status_code=404, detail="Agent not found")
-                
-                cursor.execute(
-                    "SELECT id, slot_datetime, is_booked, staff_agent_id FROM mock_calendar_slots "
-                    "WHERE staff_agent_id = %s ORDER BY slot_datetime ASC",
-                    (agent_id,)
-                )
-                rows = cursor.fetchall()
-                res = []
-                for row in rows:
-                    r = dict(row)
-                    if r.get("slot_datetime") is not None and not isinstance(r["slot_datetime"], str):
-                        r["slot_datetime"] = r["slot_datetime"].strftime("%Y-%m-%d %H:%M:%S")
-                    elif r.get("slot_datetime") is None:
-                        r["slot_datetime"] = ""
-                    res.append(r)
-                return res
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error fetching calendar for agent {agent_id}: {e}")
-        return []
 
-@router.post("/agents/{agent_id}/calendar", status_code=201)
-async def create_agent_slot(agent_id: int, payload: CalendarSlotCreate):
-    from serviceBot.db.connection import get_db_connection, dict_cursor
-    with get_db_connection() as conn:
-        with dict_cursor(conn) as cursor:
-            # Verify agent exists
-            cursor.execute("SELECT id FROM staff_agents WHERE id = %s", (agent_id,))
-            if not cursor.fetchone():
-                raise HTTPException(status_code=404, detail="Agent not found")
-            
-            # Verify slot doesn't already exist for this agent
-            cursor.execute(
-                "SELECT id FROM mock_calendar_slots WHERE slot_datetime = CAST(%s AS TIMESTAMP) AND staff_agent_id = %s",
-                (payload.slot_datetime, agent_id)
-            )
-            if cursor.fetchone():
-                raise HTTPException(status_code=400, detail="Time slot already exists for this agent")
-                
-            cursor.execute(
-                "INSERT INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES (%s, %s, %s) RETURNING id",
-                (payload.slot_datetime, bool(payload.is_booked), agent_id)
-            )
-            conn.commit()
-            new_id = cursor.fetchone()["id"]
-            return {"id": new_id, "slot_datetime": payload.slot_datetime, "success": True}
-
-@router.patch("/calendar/{slot_id}")
-async def update_calendar_slot(slot_id: int, payload: CalendarSlotUpdate):
-    from serviceBot.db.connection import get_db_connection, dict_cursor
-    with get_db_connection() as conn:
-        with dict_cursor(conn) as cursor:
-            # Verify slot exists
-            cursor.execute("SELECT id, slot_datetime, is_booked, staff_agent_id FROM mock_calendar_slots WHERE id = %s", (slot_id,))
-            row = cursor.fetchone()
-            if not row:
-                raise HTTPException(status_code=404, detail="Calendar slot not found")
-            
-            current_data = dict(row)
-            new_datetime = payload.slot_datetime if payload.slot_datetime is not None else current_data["slot_datetime"]
-            new_is_booked = bool(payload.is_booked if payload.is_booked is not None else current_data["is_booked"])
-            
-            # Update
-            cursor.execute(
-                "UPDATE mock_calendar_slots SET slot_datetime = %s, is_booked = %s WHERE id = %s",
-                (new_datetime, new_is_booked, slot_id)
-            )
-            conn.commit()
-            if not isinstance(new_datetime, str):
-                new_datetime = new_datetime.strftime("%Y-%m-%d %H:%M:%S")
-            return {"id": slot_id, "slot_datetime": new_datetime, "is_booked": new_is_booked, "success": True}
-
-@router.delete("/calendar/{slot_id}")
-async def delete_calendar_slot(slot_id: int):
-    from serviceBot.db.connection import get_db_connection, dict_cursor
-    with get_db_connection() as conn:
-        with dict_cursor(conn) as cursor:
-            cursor.execute("SELECT id FROM mock_calendar_slots WHERE id = %s", (slot_id,))
-            if not cursor.fetchone():
-                raise HTTPException(status_code=404, detail="Calendar slot not found")
-                
-            cursor.execute("DELETE FROM mock_calendar_slots WHERE id = %s", (slot_id,))
-            conn.commit()
-            return {"id": slot_id, "success": True}
-
-
-class PopulateSlotsPayload(BaseModel):
-    days: Optional[int] = 30
-    hours: Optional[list] = None  # e.g. [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] — defaults to all available business hours if None
-
-@router.post("/agents/{agent_id}/calendar/populate")
-async def populate_agent_slots(agent_id: int, payload: PopulateSlotsPayload = None):
-    """
-    Generates Mon–Fri business-hour availability slots for the next N days (default 30).
-    For agents with Google Calendar connected, live free/busy data is checked and busy
-    slots are automatically marked as booked so the voice bot won't offer them.
-    Skips slots that were already booked by the system.
-    """
-    from serviceBot.db.connection import get_db_connection, dict_cursor
-    from serviceBot.services.calendar_sync import sync_agent_slots
-
-    if payload is None:
-        payload = PopulateSlotsPayload()
-
-    days = max(1, min(payload.days or 30, 365))
-    hours = payload.hours if payload.hours else None
-
-    with get_db_connection() as conn:
-        with dict_cursor(conn) as cursor:
-            cursor.execute("SELECT id FROM staff_agents WHERE id = %s", (agent_id,))
-            if not cursor.fetchone():
-                raise HTTPException(status_code=404, detail="Agent not found")
-
-    try:
-        result = sync_agent_slots(agent_id=agent_id, days=days, hours=hours)
-        return {
-            "success": True,
-            "agent_id": agent_id,
-            "slots_created": result["created"],
-            "slots_blocked_by_calendar": result["blocked"],
-            "total_candidates": result["total"],
-            "free_estimate": result["free_estimate"],
-            "message": (
-                f"Created {result['created']} new slots. "
-                f"{result['blocked']} marked busy from live Google Calendar. "
-                f"~{result['free_estimate']} slots available for booking."
-            ),
-        }
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Slot sync failed: {str(exc)}")
-
-
-@router.post("/calendar/sync-all")
-async def sync_all_calendar_slots(days: int = 30):
-    """
-    Triggers an immediate live Google Calendar → DB sync for ALL connected agents.
-    Useful as a manual "Refresh Now" action from the portal UI.
-    """
-    from serviceBot.services.calendar_sync import sync_all_connected_agents
-    try:
-        results = sync_all_connected_agents(days=days)
-        total_new = sum(r.get("created", 0) for r in results.values() if isinstance(r, dict))
-        return {
-            "success": True,
-            "agents_synced": list(results.keys()),
-            "total_new_slots": total_new,
-            "details": results,
-        }
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Sync failed: {str(exc)}")
 
 
 class ServiceRequestStatusUpdate(BaseModel):
@@ -961,7 +791,7 @@ class ServiceRequestCreate(BaseModel):
 class ServiceRequestEdit(BaseModel):
     issue_description: str
     vehicle_details: VehicleDetails
-    new_slot_id: Optional[int] = None
+    booking_time: Optional[str] = None
 
 
 
@@ -1153,24 +983,20 @@ async def create_service_request_endpoint(payload: ServiceRequestCreate):
                            (request_id, 'system', None, 'pending', 'Manual request created from portal'))
             
             # Booking logic
-            slot_id = payload.service_request.get("slot_id")
-            if slot_id:
-                cursor.execute("SELECT slot_datetime FROM mock_calendar_slots WHERE id = %s", (slot_id,))
-                slot = cursor.fetchone()
-                if slot:
-                    dt_str = slot["slot_datetime"].strftime("%Y-%m-%d %H:%M:%S") if not isinstance(slot["slot_datetime"], str) else slot["slot_datetime"]
-                    try:
-                        book_appointment(customer_id, request_id, dt_str, svc_type, payload.vehicle.model_dump(), "appointment")
-                        
-                        # SMS logic handled internally by book_appointment if enabled, but let's dispatch explicit confirmation if needed
-                        client = TwilioSMSClient()
-                        client.send_sms(
-                            to_number=norm_phone,
-                            body=f"Hi {payload.customer.name}, your {svc_type} appointment has been scheduled for {dt_str}.",
-                            appointment_id=request_id
-                        )
-                    except ValueError as e:
-                        raise HTTPException(status_code=409, detail=str(e))
+            booking_time = payload.service_request.get("booking_time")
+            if booking_time:
+                try:
+                    book_appointment(customer_id, request_id, booking_time, svc_type, payload.vehicle.model_dump(), "appointment")
+                    
+                    # SMS logic handled internally by book_appointment if enabled, but let's dispatch explicit confirmation if needed
+                    client = TwilioSMSClient()
+                    client.send_sms(
+                        to_number=norm_phone,
+                        body=f"Hi {payload.customer.name}, your {svc_type} appointment has been scheduled for {booking_time}.",
+                        appointment_id=request_id
+                    )
+                except ValueError as e:
+                    raise HTTPException(status_code=409, detail=str(e))
                 
     return {"success": True, "request_id": request_id}
 
@@ -1203,26 +1029,22 @@ async def edit_service_request_endpoint(request_id: int, payload: ServiceRequest
             """, (payload.vehicle_details.make, payload.vehicle_details.model, payload.vehicle_details.year, payload.vehicle_details.vin, vehicle_id))
             
             # Handle slot reassignment
-            if payload.new_slot_id:
-                cursor.execute("SELECT slot_datetime FROM mock_calendar_slots WHERE id = %s", (payload.new_slot_id,))
-                slot = cursor.fetchone()
-                if slot:
-                    dt_str = slot["slot_datetime"].strftime("%Y-%m-%d %H:%M:%S") if not isinstance(slot["slot_datetime"], str) else slot["slot_datetime"]
-                    try:
-                        reschedule_appointment(request_id, dt_str)
-                        
-                        cursor.execute("SELECT phone, name FROM customers WHERE id = %s", (sr["customer_id"],))
-                        cust = cursor.fetchone()
-                        
-                        client = TwilioSMSClient()
-                        client.send_sms(
-                            to_number=cust["phone"],
-                            body=f"Hi {cust['name']}, your appointment has been rescheduled to {dt_str}.",
-                            appointment_id=request_id
-                        )
-                    except ValueError as e:
-                        raise HTTPException(status_code=409, detail=str(e))
-            
+            if payload.booking_time:
+                dt_str = payload.booking_time
+                try:
+                    reschedule_appointment(request_id, dt_str)
+                    
+                    cursor.execute("SELECT phone, name FROM customers WHERE id = %s", (sr["customer_id"],))
+                    cust = cursor.fetchone()
+                    
+                    client = TwilioSMSClient()
+                    client.send_sms(
+                        to_number=cust["phone"],
+                        body=f"Hi {cust['name']}, your appointment has been rescheduled to {dt_str}.",
+                        appointment_id=request_id
+                    )
+                except ValueError as e:
+                    raise HTTPException(status_code=409, detail=str(e))
     return {"success": True}
 
 @router.patch("/service-requests/{request_id}/status")
@@ -1327,9 +1149,8 @@ async def get_stats(timeframe: Optional[str] = "7d", calls_timeframe: Optional[s
             cursor.execute("SELECT COUNT(*) AS count FROM service_requests WHERE status = 'pending'" + time_clause)
             pending_requests = cursor.fetchone()["count"]
             
-            # Open Slots
-            cursor.execute("SELECT COUNT(*) AS count FROM mock_calendar_slots WHERE is_booked = FALSE")
-            open_slots = cursor.fetchone()["count"]
+            # Open Slots (mock slots deprecated)
+            open_slots = 0
             
             # Callbacks
             cursor.execute("SELECT COUNT(*) AS count FROM service_requests WHERE booking_type = 'callback'" + time_clause)

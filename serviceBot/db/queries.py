@@ -171,27 +171,7 @@ def create_service_request(
             )
             sr_id = cursor.fetchone()['id']
 
-            # Attempt to mark mock calendar slots as booked
-            if booking_time:
-                try:
-                    if is_cb:
-                        duration_minutes = 15
-                    else:
-                        duration_minutes = fields.get("duration_minutes") or 60 if fields else 60
-                    
-                    b_start = dt_mod.datetime.strptime(booking_time, "%Y-%m-%d %H:%M:%S") if isinstance(booking_time, str) else booking_time
-                    b_end = b_start + dt_mod.timedelta(minutes=duration_minutes)
-                    cursor.execute(
-                        """
-                        UPDATE mock_calendar_slots 
-                        SET is_booked = TRUE 
-                        WHERE slot_datetime >= CAST(%s AS TIMESTAMP) 
-                          AND slot_datetime < CAST(%s AS TIMESTAMP);
-                        """,
-                        (b_start.strftime("%Y-%m-%d %H:%M:%S"), b_end.strftime("%Y-%m-%d %H:%M:%S"))
-                    )
-                except Exception as slot_err:
-                    logger.warning(f"Could not update mock_calendar_slots: {slot_err}")
+
 
             conn.commit()
 
@@ -412,7 +392,7 @@ def _generate_dynamic_slots(preferred_date_str: str, duration_minutes: int, inte
     elif time_window == "morning":
         valid_hours = [h for h in valid_hours if 7 <= h < 12]
     elif time_window == "evening":
-        valid_hours = [h for h in valid_hours if 15 <= h < 18]
+        valid_hours = [h for h in valid_hours if h >= 15]
 
     valid_minutes = (0, 15, 30, 45) if interval_minutes == 15 else (0, 30)
 
@@ -457,147 +437,19 @@ def check_availability(service_type: str = None, preferred_date: str = None, boo
                 duration_minutes = fields["duration_minutes"]
         valid_minutes = (0, 30)
 
-    # --- Fetch mock calendar slots ---
-    query = """
-    SELECT id, slot_datetime, staff_agent_id, is_booked 
-    FROM mock_calendar_slots 
-    WHERE slot_datetime >= CAST(%s AS TIMESTAMP)
-    ORDER BY slot_datetime ASC;
-    """
+    # --- Get all agents ---
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
-            cursor.execute(query, (start_time,))
-            mock_rows = cursor.fetchall()
-
-    # Filter out past slots relative to current system time
-    now_dt = dt_mod.datetime.now()
-    all_agent_slots = {}
-    candidate_rows = []
-    target_date_candidates = []
-    if mock_rows:
-        for r in mock_rows:
-            val = r["slot_datetime"]
-            dt_val = dt_mod.datetime.strptime(val, "%Y-%m-%d %H:%M:%S") if isinstance(val, str) else val
-            all_agent_slots[(r["staff_agent_id"], dt_val)] = r["is_booked"]
-            if dt_val > now_dt and not r["is_booked"] and dt_val.minute in valid_minutes:
-                # Check time window
-                if time_window == "afternoon" and not (12 <= dt_val.hour < 18):
-                    continue
-                elif time_window == "morning" and not (7 <= dt_val.hour < 12):
-                    continue
-                elif time_window == "evening" and not (15 <= dt_val.hour < 18):
-                    continue
-
-                candidate_rows.append(r)
-                if iso_date_str and dt_val.strftime("%Y-%m-%d") == iso_date_str:
-                    target_date_candidates.append(r)
-
-    # --- Get all Google Calendar connected agents ---
-    with get_db_connection() as conn:
-        with dict_cursor(conn) as cursor:
-            cursor.execute("SELECT agent_id FROM user_google_accounts WHERE refresh_token IS NOT NULL;")
-            connected_agent_ids = [r["agent_id"] for r in cursor.fetchall()]
+            cursor.execute("SELECT id FROM staff_agents;")
+            all_agent_ids = [r["id"] for r in cursor.fetchall()]
 
     try:
         tz = zoneinfo.ZoneInfo("America/New_York")
     except Exception:
         from datetime import timezone, timedelta
         tz = timezone(timedelta(hours=-4))
+        
     agent_events_map = {}
-
-    # ===========================================================
-    # MODE 1: Mock slot mode — slots exist in mock_calendar_slots
-    # ===========================================================
-    if mock_rows:
-        # Prioritize candidate rows on the explicitly requested target date if present
-        eval_rows = target_date_candidates if target_date_candidates else candidate_rows
-        limited_rows = eval_rows[:100]
-
-        if connected_agent_ids and limited_rows:
-            slot_dts = []
-            for r in limited_rows:
-                val = r["slot_datetime"]
-                if isinstance(val, str):
-                    slot_dts.append(datetime.strptime(val, "%Y-%m-%d %H:%M:%S"))
-                else:
-                    slot_dts.append(val)
-
-            min_dt = min(slot_dts).replace(tzinfo=tz)
-            max_dt = (max(slot_dts) + timedelta(minutes=duration_minutes)).replace(tzinfo=tz)
-            start_iso = min_dt.isoformat()
-            end_iso = max_dt.isoformat()
-
-            with ThreadPoolExecutor(max_workers=max(1, len(connected_agent_ids))) as executor:
-                future_to_agent = {
-                    executor.submit(fetch_agent_events, aid, start_iso, end_iso): aid
-                    for aid in connected_agent_ids
-                }
-                for future in as_completed(future_to_agent):
-                    aid = future_to_agent[future]
-                    try:
-                        events = future.result()
-                        if events is not None:
-                            agent_events_map[aid] = events
-                    except Exception as exc:
-                        print(f"Error concurrent calendar fetch for agent {aid}: {exc}")
-                        agent_events_map[aid] = []
-
-        def is_agent_free_locally(agent_id: int, slot_dt_val) -> bool:
-            if isinstance(slot_dt_val, str):
-                slot_start = datetime.strptime(slot_dt_val, "%Y-%m-%d %H:%M:%S").replace(tzinfo=tz)
-            else:
-                slot_start = slot_dt_val.replace(tzinfo=tz)
-            slot_end = slot_start + timedelta(minutes=duration_minutes)
-            
-            # 1. Google Calendar event overlap check
-            if agent_id in agent_events_map:
-                for event in agent_events_map[agent_id]:
-                    evt_start = parse_google_datetime(event.get("start"), tz)
-                    evt_end = parse_google_datetime(event.get("end"), tz)
-                    if evt_start and evt_end:
-                        if slot_start < evt_end and slot_end > evt_start:
-                            return False
-
-            # 2. DB mock slots overlap check for aggregate duration [slot_start, slot_end)
-            raw_start = slot_start.replace(tzinfo=None)
-            raw_end = slot_end.replace(tzinfo=None)
-            for (aid, dt_k), is_booked in all_agent_slots.items():
-                if aid == agent_id and raw_start <= dt_k < raw_end:
-                    if is_booked:
-                        return False
-
-            return True
-
-        from collections import defaultdict
-        slots_by_time = defaultdict(list)
-        for row in limited_rows:
-            dt_val = row["slot_datetime"]
-            dt_obj = dt_mod.datetime.strptime(dt_val, "%Y-%m-%d %H:%M:%S") if isinstance(dt_val, str) else dt_val
-            dt_str = dt_obj.strftime("%Y-%m-%d %H:%M:%S")
-            slots_by_time[dt_str].append((row["staff_agent_id"], dt_obj))
-
-        unique_datetimes = sorted(list(slots_by_time.keys()))
-        available_datetimes = []
-        for slot_dt_str in unique_datetimes:
-            if len(available_datetimes) >= 3:
-                break
-            any_free = any(
-                is_agent_free_locally(agent_id, dt_val)
-                for agent_id, dt_val in slots_by_time[slot_dt_str]
-            )
-            if any_free:
-                available_datetimes.append(slot_dt_str)
-
-        return available_datetimes
-
-    # =============================================================
-    # MODE 2: Live/dynamic mode — no mock slots, use Google Calendar
-    # =============================================================
-    if not connected_agent_ids:
-        print("[check_availability] No mock calendar slots and no connected Google Calendars. Returning empty.")
-        return []
-
-    print(f"[check_availability] No mock slots found. Falling back to live Google Calendar check for {len(connected_agent_ids)} connected agent(s).")
 
     preferred_date_for_gen = preferred_date if preferred_date else None
     candidate_slots = _generate_dynamic_slots(preferred_date_for_gen, duration_minutes, interval_minutes=15 if is_callback else 30)
@@ -605,17 +457,17 @@ def check_availability(service_type: str = None, preferred_date: str = None, boo
     if not candidate_slots:
         return []
 
-    # Pre-fetch events for all connected agents across the full candidate range
+    # Pre-fetch events for all agents across the full candidate range
     slot_dts_parsed = [datetime.strptime(s, "%Y-%m-%d %H:%M:%S") for s in candidate_slots]
     min_dt = min(slot_dts_parsed).replace(tzinfo=tz)
     max_dt = (max(slot_dts_parsed) + timedelta(minutes=duration_minutes)).replace(tzinfo=tz)
     start_iso = min_dt.isoformat()
     end_iso = max_dt.isoformat()
 
-    with ThreadPoolExecutor(max_workers=max(1, len(connected_agent_ids))) as executor:
+    with ThreadPoolExecutor(max_workers=max(1, len(all_agent_ids))) as executor:
         future_to_agent = {
             executor.submit(fetch_agent_events, aid, start_iso, end_iso): aid
-            for aid in connected_agent_ids
+            for aid in all_agent_ids
         }
         for future in as_completed(future_to_agent):
             aid = future_to_agent[future]
@@ -624,7 +476,6 @@ def check_availability(service_type: str = None, preferred_date: str = None, boo
                 if events is not None:
                     agent_events_map[aid] = events
             except Exception as exc:
-                print(f"Error live calendar fetch for agent {aid}: {exc}")
                 agent_events_map[aid] = []
 
     def is_agent_free_live(agent_id: int, slot_dt_str: str) -> bool:
@@ -645,7 +496,7 @@ def check_availability(service_type: str = None, preferred_date: str = None, boo
     for slot_dt_str in candidate_slots:
         if len(available_datetimes) >= 3:
             break
-        any_free = any(is_agent_free_live(aid, slot_dt_str) for aid in connected_agent_ids)
+        any_free = any(is_agent_free_live(aid, slot_dt_str) for aid in all_agent_ids)
         if any_free:
             available_datetimes.append(slot_dt_str)
 
@@ -807,81 +658,26 @@ def book_appointment(customer_id: int, service_request_id: int, appointment_date
 
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
-            # --- Try mock-slot mode first ---
-            cursor.execute(
-                "SELECT id, slot_datetime, staff_agent_id, is_booked FROM mock_calendar_slots WHERE slot_datetime >= CAST(%s AS TIMESTAMP);",
-                (appointment_datetime,)
-            )
-            all_mock_rows = cursor.fetchall()
+            # --- Live/dynamic mode: no mock slot row, use Google Calendar agents ---
+            cursor.execute("SELECT id FROM staff_agents;")
+            all_agent_ids = [r["id"] for r in cursor.fetchall()]
 
-            all_agent_slots = {}
-            candidate_rows = []
-            for r in all_mock_rows:
-                val = r["slot_datetime"]
-                dt_val = dt_mod.datetime.strptime(val, "%Y-%m-%d %H:%M:%S") if isinstance(val, str) else val
-                dt_str = dt_val.strftime("%Y-%m-%d %H:%M:%S")
-                all_agent_slots[(r["staff_agent_id"], dt_val)] = r["is_booked"]
-                if dt_str == appointment_datetime and not r["is_booked"]:
-                    candidate_rows.append(r)
-
-            chosen_slot = None
-            chosen_agent_id = None
-
-            if candidate_rows:
-                start_dt = dt_mod.datetime.strptime(appointment_datetime, "%Y-%m-%d %H:%M:%S") if isinstance(appointment_datetime, str) else appointment_datetime
-                end_dt = start_dt + timedelta(minutes=duration_minutes)
-
-                for row in candidate_rows:
-                    aid = row["staff_agent_id"]
-                    if not is_agent_free(aid, appointment_datetime, duration_minutes):
-                        continue
-                    
-                    is_free_in_db = True
-                    for (slot_aid, dt_k), is_booked in all_agent_slots.items():
-                        if slot_aid == aid and start_dt <= dt_k < end_dt:
-                            if is_booked:
-                                is_free_in_db = False
-                                break
-                    if is_free_in_db:
-                        chosen_slot = row
-                        chosen_agent_id = aid
-                        break
-
-                if not chosen_slot:
-                    raise ValueError(f"Slot {appointment_datetime} is already booked or all agents are busy on Google Calendar.")
-
-                # Mark all mock slots in the aggregate duration window as booked
-                cursor.execute(
-                    """
-                    UPDATE mock_calendar_slots 
-                    SET is_booked = TRUE 
-                    WHERE staff_agent_id = %s 
-                      AND slot_datetime >= CAST(%s AS TIMESTAMP) 
-                      AND slot_datetime < CAST(%s AS TIMESTAMP);
-                    """,
-                    (chosen_agent_id, start_dt.strftime("%Y-%m-%d %H:%M:%S"), end_dt.strftime("%Y-%m-%d %H:%M:%S"))
+            if not all_agent_ids:
+                raise ValueError(
+                    f"No staff agents found in the system to book the appointment at {appointment_datetime}."
                 )
-            else:
-                # --- Live/dynamic mode: no mock slot row, use connected Google Calendar agents ---
-                cursor.execute("SELECT agent_id FROM user_google_accounts WHERE refresh_token IS NOT NULL;")
-                connected_ids = [r["agent_id"] for r in cursor.fetchall()]
 
-                if not connected_ids:
-                    raise ValueError(
-                        f"No available slot at {appointment_datetime} and no agents have Google Calendar connected. "
-                        "Please seed mock calendar data or connect an agent's Google Calendar."
-                    )
+            chosen_agent_id = None
+            # Pick first agent who is free at the requested time
+            for aid in all_agent_ids:
+                if is_agent_free(aid, appointment_datetime, duration_minutes):
+                    chosen_agent_id = aid
+                    break
 
-                # Pick first agent who is free at the requested time
-                for aid in connected_ids:
-                    if is_agent_free(aid, appointment_datetime, duration_minutes):
-                        chosen_agent_id = aid
-                        break
+            if not chosen_agent_id:
+                raise ValueError(f"All agents are busy at {appointment_datetime} on Google Calendar.")
 
-                if not chosen_agent_id:
-                    raise ValueError(f"All connected agents are busy at {appointment_datetime} on Google Calendar.")
-
-                print(f"[book_appointment] Live mode: booking with agent {chosen_agent_id} at {appointment_datetime} (no mock slot row).")
+            print(f"[book_appointment] Live mode: booking with agent {chosen_agent_id} at {appointment_datetime} (no mock slot row).")
 
             # --- Resolve / create service_request ---
             # If service_request_id is provided, verify it is not already booked
@@ -1227,63 +1023,45 @@ def create_callback_request(customer_id: int, service_request_id: int = None, pr
                 (cleaned_time, staff_agent_id, service_request_id)
             )
 
-            # Mark 15-minute mock slot as booked
-            if cleaned_time:
+            # Create Google Calendar & Admin events
+            if staff_agent_id:
                 try:
-                    import datetime as dt_mod
-                    b_start = dt_mod.datetime.strptime(cleaned_time, "%Y-%m-%d %H:%M:%S") if isinstance(cleaned_time, str) else cleaned_time
-                    b_end = b_start + dt_mod.timedelta(minutes=15)
-                    cursor.execute(
-                        """
-                        UPDATE mock_calendar_slots 
-                        SET is_booked = TRUE 
-                        WHERE slot_datetime >= CAST(%s AS TIMESTAMP) 
-                          AND slot_datetime < CAST(%s AS TIMESTAMP);
-                        """,
-                        (b_start.strftime("%Y-%m-%d %H:%M:%S"), b_end.strftime("%Y-%m-%d %H:%M:%S"))
+                    cursor.execute("SELECT name FROM customers WHERE id = %s;", (customer_id,))
+                    c_row = cursor.fetchone()
+                    c_name = c_row["name"] if c_row else "Customer"
+
+                    cursor.execute("SELECT service_type, issue_description FROM service_requests WHERE id = %s;", (service_request_id,))
+                    sr_info = cursor.fetchone()
+                    svc_type = sr_info["service_type"] if sr_info else "Callback / Phone Consultation"
+                    issue_desc = sr_info["issue_description"] if sr_info else "Callback requested."
+
+                    from serviceBot.services.google_calendar import create_agent_calendar_event
+                    create_agent_calendar_event(
+                        agent_id=staff_agent_id,
+                        customer_name=c_name,
+                        service_type=svc_type,
+                        issue_description=issue_desc,
+                        slot_datetime_str=cleaned_time if isinstance(cleaned_time, str) else cleaned_time.strftime("%Y-%m-%d %H:%M:%S"),
+                        duration_minutes=15,
+                        booking_type="callback"
                     )
-                except Exception as slot_err:
-                    logger.warning(f"Could not update mock_calendar_slots for callback: {slot_err}")
 
-                # Create Google Calendar & Admin events
-                if staff_agent_id:
-                    try:
-                        cursor.execute("SELECT name FROM customers WHERE id = %s;", (customer_id,))
-                        c_row = cursor.fetchone()
-                        c_name = c_row["name"] if c_row else "Customer"
+                    from serviceBot.services.gmail import create_admin_calendar_event
+                    cursor.execute("SELECT name FROM staff_agents WHERE id = %s;", (staff_agent_id,))
+                    sa_row = cursor.fetchone()
+                    mech_name = sa_row["name"] if sa_row else f"Agent {staff_agent_id}"
 
-                        cursor.execute("SELECT service_type, issue_description FROM service_requests WHERE id = %s;", (service_request_id,))
-                        sr_info = cursor.fetchone()
-                        svc_type = sr_info["service_type"] if sr_info else "Callback / Phone Consultation"
-                        issue_desc = sr_info["issue_description"] if sr_info else "Callback requested."
-
-                        from serviceBot.services.google_calendar import create_agent_calendar_event
-                        create_agent_calendar_event(
-                            agent_id=staff_agent_id,
-                            customer_name=c_name,
-                            service_type=svc_type,
-                            issue_description=issue_desc,
-                            slot_datetime_str=cleaned_time if isinstance(cleaned_time, str) else cleaned_time.strftime("%Y-%m-%d %H:%M:%S"),
-                            duration_minutes=15,
-                            booking_type="callback"
-                        )
-
-                        from serviceBot.services.gmail import create_admin_calendar_event
-                        cursor.execute("SELECT name FROM staff_agents WHERE id = %s;", (staff_agent_id,))
-                        sa_row = cursor.fetchone()
-                        mech_name = sa_row["name"] if sa_row else f"Agent {staff_agent_id}"
-
-                        create_admin_calendar_event(
-                            customer_name=c_name,
-                            service_type=svc_type,
-                            issue_description=issue_desc,
-                            slot_datetime_str=cleaned_time if isinstance(cleaned_time, str) else cleaned_time.strftime("%Y-%m-%d %H:%M:%S"),
-                            mechanic_name=mech_name,
-                            duration_minutes=15,
-                            booking_type="callback"
-                        )
-                    except Exception as cal_err:
-                        logger.warning(f"Could not create calendar events for callback {service_request_id}: {cal_err}")
+                    create_admin_calendar_event(
+                        customer_name=c_name,
+                        service_type=svc_type,
+                        issue_description=issue_desc,
+                        slot_datetime_str=cleaned_time if isinstance(cleaned_time, str) else cleaned_time.strftime("%Y-%m-%d %H:%M:%S"),
+                        mechanic_name=mech_name,
+                        duration_minutes=15,
+                        booking_type="callback"
+                    )
+                except Exception as cal_err:
+                    logger.warning(f"Could not create calendar events for callback {service_request_id}: {cal_err}")
 
             conn.commit()
             return service_request_id
@@ -1340,106 +1118,31 @@ def reschedule_appointment(appointment_id: int, new_datetime: str) -> bool:
             service_type = row["service_type"]
             customer_id = row["customer_id"]
 
-            # 2. Free old slot window
-            old_fields = get_service_required_fields(service_type) if service_type else None
-            old_duration = old_fields.get("duration_minutes") or 60 if old_fields else 60
-            if old_datetime:
-                old_start = dt_mod.datetime.strptime(old_datetime, "%Y-%m-%d %H:%M:%S") if isinstance(old_datetime, str) else old_datetime
-                old_end = old_start + dt_mod.timedelta(minutes=old_duration)
-                if old_agent_id:
-                    cursor.execute(
-                        """
-                        UPDATE mock_calendar_slots 
-                        SET is_booked = FALSE 
-                        WHERE staff_agent_id = %s 
-                          AND slot_datetime >= CAST(%s AS TIMESTAMP) 
-                          AND slot_datetime < CAST(%s AS TIMESTAMP);
-                        """,
-                        (old_agent_id, old_start.strftime("%Y-%m-%d %H:%M:%S"), old_end.strftime("%Y-%m-%d %H:%M:%S"))
-                    )
-                else:
-                    cursor.execute(
-                        """
-                        UPDATE mock_calendar_slots 
-                        SET is_booked = FALSE 
-                        WHERE slot_datetime >= CAST(%s AS TIMESTAMP) 
-                          AND slot_datetime < CAST(%s AS TIMESTAMP);
-                        """,
-                        (old_start.strftime("%Y-%m-%d %H:%M:%S"), old_end.strftime("%Y-%m-%d %H:%M:%S"))
-                    )
-
-            # 3. Check availability for the slot datetime across all candidate slots
+            # 2. Check availability for the slot datetime across all candidate agents
             duration_minutes = 60
             if service_type:
                 fields = get_service_required_fields(service_type)
                 if fields and fields.get("duration_minutes"):
                     duration_minutes = fields["duration_minutes"]
 
-            cursor.execute(
-                "SELECT id, slot_datetime, staff_agent_id, is_booked FROM mock_calendar_slots WHERE slot_datetime >= CAST(%s AS TIMESTAMP);",
-                (new_datetime,)
-            )
-            all_mock_rows = cursor.fetchall()
-
-            all_agent_slots = {}
-            candidate_rows = []
-            for r in all_mock_rows:
-                val = r["slot_datetime"]
-                dt_val = dt_mod.datetime.strptime(val, "%Y-%m-%d %H:%M:%S") if isinstance(val, str) else val
-                dt_str = dt_val.strftime("%Y-%m-%d %H:%M:%S")
-                all_agent_slots[(r["staff_agent_id"], dt_val)] = r["is_booked"]
-                if dt_str == new_datetime and not r["is_booked"]:
-                    candidate_rows.append(r)
-            
             from serviceBot.services.google_calendar import is_agent_free, create_agent_calendar_event
 
-            chosen_slot = None
             chosen_agent_id = None
+            
+            # Live/dynamic mode
+            cursor.execute("SELECT id FROM staff_agents;")
+            connected_ids = [r["id"] for r in cursor.fetchall()]
+            
+            if not connected_ids:
+                raise ValueError(f"No staff agents found to handle the rescheduling at {new_datetime}.")
 
-            if candidate_rows:
-                new_start = dt_mod.datetime.strptime(new_datetime, "%Y-%m-%d %H:%M:%S") if isinstance(new_datetime, str) else new_datetime
-                new_end = new_start + dt_mod.timedelta(minutes=duration_minutes)
-
-                for r in candidate_rows:
-                    aid = r["staff_agent_id"]
-                    if not is_agent_free(aid, new_datetime, duration_minutes):
-                        continue
+            for aid in connected_ids:
+                if is_agent_free(aid, new_datetime, duration_minutes):
+                    chosen_agent_id = aid
+                    break
                     
-                    is_free_in_db = True
-                    for (slot_aid, dt_k), is_booked in all_agent_slots.items():
-                        if slot_aid == aid and new_start <= dt_k < new_end:
-                            if is_booked:
-                                is_free_in_db = False
-                                break
-                    if is_free_in_db:
-                        chosen_slot = r
-                        chosen_agent_id = aid
-                        break
-            else:
-                # Live/dynamic mode
-                cursor.execute("SELECT agent_id FROM user_google_accounts WHERE refresh_token IS NOT NULL;")
-                connected_ids = [r["agent_id"] for r in cursor.fetchall()]
-                for aid in connected_ids:
-                    if is_agent_free(aid, new_datetime, duration_minutes):
-                        chosen_agent_id = aid
-                        break
-                    
-            if not chosen_slot and not chosen_agent_id:
+            if not chosen_agent_id:
                 raise ValueError(f"New slot {new_datetime} is not available or the agents are busy on Google Calendar.")
-                
-            if chosen_slot and chosen_agent_id:
-                new_start = dt_mod.datetime.strptime(new_datetime, "%Y-%m-%d %H:%M:%S") if isinstance(new_datetime, str) else new_datetime
-                new_end = new_start + dt_mod.timedelta(minutes=duration_minutes)
-                cursor.execute(
-                    """
-                    UPDATE mock_calendar_slots 
-                    SET is_booked = TRUE 
-                    WHERE staff_agent_id = %s 
-                      AND slot_datetime >= CAST(%s AS TIMESTAMP) 
-                      AND slot_datetime < CAST(%s AS TIMESTAMP);
-                    """,
-                    (chosen_agent_id, new_start.strftime("%Y-%m-%d %H:%M:%S"), new_end.strftime("%Y-%m-%d %H:%M:%S"))
-                )
 
             # 4. Update service request
             cursor.execute(
@@ -1462,12 +1165,12 @@ def reschedule_appointment(appointment_id: int, new_datetime: str) -> bool:
                 if old_agent_id:
                     try:
                         from serviceBot.services.google_calendar import delete_agent_calendar_event
-                        delete_agent_calendar_event(old_agent_id, old_dt_str, duration_minutes=old_duration)
+                        delete_agent_calendar_event(old_agent_id, old_dt_str, duration_minutes=duration_minutes)
                     except Exception as del_err:
                         logger.warning(f"Could not delete old agent calendar event for agent {old_agent_id} at {old_dt_str}: {del_err}")
                 try:
                     from serviceBot.services.gmail import delete_admin_calendar_event
-                    delete_admin_calendar_event(old_dt_str, duration_minutes=old_duration)
+                    delete_admin_calendar_event(old_dt_str, duration_minutes=duration_minutes)
                 except Exception as del_adm_err:
                     logger.warning(f"Could not delete old admin calendar event at {old_dt_str}: {del_adm_err}")
 
@@ -1546,52 +1249,6 @@ def update_service_request_status(request_id: int, status: str, triggered_by: st
                 # but to be strict to the PRD, we raise ValueError.
                 if normalized_status not in allowed_next:
                     raise ValueError(f"Invalid FSM transition: Cannot move from '{current_status}' to '{normalized_status}'.")
-
-            # If cancelling, release the booked slots in mock_calendar_slots
-            if normalized_status in ('cancelled', 'cancelled_by_customer') and current_status not in ('cancelled', 'cancelled_by_customer'):
-                cursor.execute(
-                    "SELECT booking_time, staff_agent_id, service_type, booking_type FROM service_requests WHERE id = %s;",
-                    (request_id,)
-                )
-                sr_row = cursor.fetchone()
-                if sr_row and sr_row.get("booking_time"):
-                    b_time = sr_row["booking_time"]
-                    agent_id = sr_row.get("staff_agent_id")
-                    b_type = sr_row.get("booking_type")
-                    svc_type = sr_row.get("service_type")
-
-                    duration_minutes = 15 if b_type == 'callback' else 60
-                    if svc_type and b_type != 'callback':
-                        fields = get_service_required_fields(svc_type)
-                        if fields and fields.get("duration_minutes"):
-                            duration_minutes = fields["duration_minutes"]
-
-                    b_start = dt_mod.datetime.strptime(b_time, "%Y-%m-%d %H:%M:%S") if isinstance(b_time, str) else b_time
-                    b_end = b_start + dt_mod.timedelta(minutes=duration_minutes)
-                    b_start_str = b_start.strftime("%Y-%m-%d %H:%M:%S")
-                    b_end_str = b_end.strftime("%Y-%m-%d %H:%M:%S")
-
-                    if agent_id:
-                        cursor.execute(
-                            """
-                            UPDATE mock_calendar_slots
-                            SET is_booked = FALSE
-                            WHERE staff_agent_id = %s
-                              AND slot_datetime >= CAST(%s AS TIMESTAMP)
-                              AND slot_datetime < CAST(%s AS TIMESTAMP);
-                            """,
-                            (agent_id, b_start_str, b_end_str)
-                        )
-                    else:
-                        cursor.execute(
-                            """
-                            UPDATE mock_calendar_slots
-                            SET is_booked = FALSE
-                            WHERE slot_datetime >= CAST(%s AS TIMESTAMP)
-                              AND slot_datetime < CAST(%s AS TIMESTAMP);
-                            """,
-                            (b_start_str, b_end_str)
-                        )
 
             cursor.execute(
                 "UPDATE service_requests SET status = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s RETURNING id, status, updated_at;",
@@ -1676,32 +1333,6 @@ def assign_staff_agent_to_service_request(request_id: int, staff_agent_id: int =
                 booking_time_str = booking_time_str.strftime("%Y-%m-%d %H:%M:%S")
 
             if is_agent_changed and booking_time_str and str(booking_time_str).upper() != "ASAP":
-                # --- A. Slot Booking Changes ---
-                # Unbook slot for previous agent if present
-                if old_agent_id:
-                    cursor.execute(
-                        "UPDATE mock_calendar_slots SET is_booked = FALSE WHERE staff_agent_id = %s AND slot_datetime = CAST(%s AS TIMESTAMP);",
-                        (old_agent_id, str(booking_time_str)[:19])
-                    )
-
-                # Reserve slot for new agent if present
-                if staff_agent_id is not None:
-                    cursor.execute(
-                        "SELECT id FROM mock_calendar_slots WHERE staff_agent_id = %s AND slot_datetime = CAST(%s AS TIMESTAMP);",
-                        (staff_agent_id, str(booking_time_str)[:19])
-                    )
-                    existing_slot = cursor.fetchone()
-                    if existing_slot:
-                        cursor.execute(
-                            "UPDATE mock_calendar_slots SET is_booked = TRUE WHERE id = %s;",
-                            (existing_slot["id"],)
-                        )
-                    else:
-                        cursor.execute(
-                            "INSERT INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES (CAST(%s AS TIMESTAMP), TRUE, %s) ON CONFLICT (slot_datetime, staff_agent_id) DO UPDATE SET is_booked = TRUE;",
-                            (str(booking_time_str)[:19], staff_agent_id)
-                        )
-
                 # Prepare details dictionary for email notifications
                 v_parts = [sr.get("vehicle_year"), sr.get("vehicle_make"), sr.get("vehicle_model")]
                 v_str = " ".join([str(p) for p in v_parts if p]).strip() or "N/A"
@@ -1786,11 +1417,6 @@ def get_available_agents_for_request(request_id: int) -> list:
 
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
-            cursor.execute(
-                "SELECT staff_agent_id FROM mock_calendar_slots WHERE slot_datetime = CAST(%s AS TIMESTAMP) AND is_booked = TRUE;",
-                (start_str,)
-            )
-            booked_slot_agent_ids = {r["staff_agent_id"] for r in cursor.fetchall() if r["staff_agent_id"] is not None}
 
             cursor.execute(
                 "SELECT staff_agent_id FROM service_requests WHERE (booking_time = %s OR time_slot = %s) AND id != %s AND status NOT IN ('cancelled') AND staff_agent_id IS NOT NULL;",
@@ -1803,10 +1429,7 @@ def get_available_agents_for_request(request_id: int) -> list:
         is_busy = False
         reason = "Available"
 
-        if agent_id in booked_slot_agent_ids:
-            is_busy = True
-            reason = "Booked in calendar"
-        elif agent_id in conflicting_sr_agent_ids:
+        if agent_id in conflicting_sr_agent_ids:
             is_busy = True
             reason = "Assigned to another request at this time"
         else:

@@ -1,0 +1,3265 @@
+{
+  "agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+  "agent_name": "Davidson Car Care Service Agent",
+  "conversation_product": "agent",
+  "status": "done",
+  "user_id": "+14242704893",
+  "branch_id": "agtbrch_6201ktmjf58qer6bhb3aava8xjhn",
+  "version_id": "agtvrsn_9901kz005exhe86atb031rm8a7vx",
+  "metadata": {
+    "start_time_unix_secs": 1785873664,
+    "accepted_time_unix_secs": 1785873664,
+    "call_duration_secs": 388,
+    "cost": 2984,
+    "deletion_settings": {
+      "deletion_time_unix_secs": null,
+      "deleted_logs_at_time_unix_secs": null,
+      "deleted_audio_at_time_unix_secs": null,
+      "deleted_transcript_at_time_unix_secs": null,
+      "delete_transcript_and_pii": false,
+      "delete_audio": false
+    },
+    "feedback": {
+      "type": null,
+      "overall_score": null,
+      "likes": 0,
+      "dislikes": 0,
+      "rating": null,
+      "comment": null
+    },
+    "authorization_method": "signed_url",
+    "charging": {
+      "dev_discount": false,
+      "is_burst": false,
+      "tier": "starter",
+      "llm_usage": {
+        "irreversible_generation": {
+          "model_usage": {
+            "gemini-2.5-flash": {
+              "input": {
+                "tokens": 36129,
+                "price": 0.00541935
+              },
+              "input_cache_read": {
+                "tokens": 21916,
+                "price": 0.0
+              },
+              "input_cache_write": {
+                "tokens": 0,
+                "price": 0.0
+              },
+              "output_total": {
+                "tokens": 439,
+                "price": 0.0002634
+              }
+            },
+            "gpt-4o": {
+              "input": {
+                "tokens": 8106,
+                "price": 0.020265
+              },
+              "input_cache_read": {
+                "tokens": 19584,
+                "price": 0.024480000000000002
+              },
+              "input_cache_write": {
+                "tokens": 0,
+                "price": 0.0
+              },
+              "output_total": {
+                "tokens": 245,
+                "price": 0.00245
+              }
+            }
+          }
+        },
+        "initiated_generation": {
+          "model_usage": {
+            "gemini-2.5-flash": {
+              "input": {
+                "tokens": 50640,
+                "price": 0.0075959999999999995
+              },
+              "input_cache_read": {
+                "tokens": 32883,
+                "price": 0.0
+              },
+              "input_cache_write": {
+                "tokens": 0,
+                "price": 0.0
+              },
+              "output_total": {
+                "tokens": 546,
+                "price": 0.0003276
+              }
+            },
+            "gpt-4o": {
+              "input": {
+                "tokens": 15439,
+                "price": 0.0385975
+              },
+              "input_cache_read": {
+                "tokens": 24192,
+                "price": 0.030240000000000003
+              },
+              "input_cache_write": {
+                "tokens": 0,
+                "price": 0.0
+              },
+              "output_total": {
+                "tokens": 256,
+                "price": 0.0025599999999999998
+              }
+            }
+          }
+        }
+      },
+      "llm_price": 0.0793211,
+      "llm_charge": 397,
+      "call_charge": 2587,
+      "platform_charge": 2587,
+      "platform_usage": {
+        "category_usage": {
+          "voice": {
+            "credits": 2587,
+            "price": 0.5132285164306669,
+            "quantity": 6.465356455383335
+          }
+        }
+      },
+      "platform_price": 0.5132285164306669,
+      "free_minutes_consumed": 0.0,
+      "free_llm_dollars_consumed": 0.0,
+      "tts_usage": {
+        "primary_tts_model": "eleven_v3_conversational",
+        "total_audio_output_seconds": 167.5200000000002,
+        "total_characters": 2464,
+        "per_voice_usage": [
+          {
+            "voice_id": "K7W7zLWeGoxU9YqWoB7A",
+            "audio_output_seconds": 167.5200000000002
+          }
+        ]
+      },
+      "asr_usage": {
+        "asr_model": "scribe_realtime",
+        "total_transcription_calls": 874,
+        "total_audio_input_seconds": 148.0159999999978
+      },
+      "analysis": null
+    },
+    "phone_call": {
+      "direction": "inbound",
+      "phone_number_id": "phnum_1801ktq3n780ejw9k53w7vx5zjtw",
+      "agent_number": "+15595464402",
+      "external_number": "+14242704893",
+      "type": "twilio",
+      "stream_sid": "MZed6c9df15477878ec92b740394fe472b",
+      "call_sid": "CA00eb5831807e192612428ffa5593fb4a"
+    },
+    "batch_call": null,
+    "termination_reason": "Call ended by remote party",
+    "error": null,
+    "warnings": [],
+    "main_language": "en",
+    "rag_usage": null,
+    "text_only": false,
+    "features_usage": {
+      "language_detection": {
+        "enabled": false,
+        "used": false
+      },
+      "transfer_to_agent": {
+        "enabled": false,
+        "used": false
+      },
+      "transfer_to_number": {
+        "enabled": false,
+        "used": false
+      },
+      "multivoice": {
+        "enabled": false,
+        "used": false
+      },
+      "dtmf_tones": {
+        "enabled": false,
+        "used": false
+      },
+      "external_mcp_servers": {
+        "enabled": false,
+        "used": false
+      },
+      "pii_zrm_workspace": false,
+      "pii_zrm_agent": false,
+      "tool_dynamic_variable_updates": {
+        "enabled": false,
+        "used": false
+      },
+      "is_livekit": false,
+      "voicemail_detection": {
+        "enabled": false,
+        "used": false
+      },
+      "dtmf_input": {
+        "enabled": false,
+        "used": false
+      },
+      "workflow": {
+        "enabled": false,
+        "tool_node": {
+          "enabled": false,
+          "used": false
+        },
+        "standalone_agent_node": {
+          "enabled": false,
+          "used": false
+        },
+        "phone_number_node": {
+          "enabled": false,
+          "used": false
+        },
+        "end_node": {
+          "enabled": false,
+          "used": false
+        }
+      },
+      "agent_testing": {
+        "enabled": false,
+        "tests_ran_after_last_modification": false,
+        "tests_ran_in_last_7_days": false
+      },
+      "versioning": {
+        "enabled": true,
+        "used": false
+      },
+      "file_input": {
+        "enabled": true,
+        "used": false
+      }
+    },
+    "eleven_assistant": {
+      "is_eleven_assistant": false
+    },
+    "initiator_id": null,
+    "conversation_initiation_source": "twilio",
+    "conversation_initiation_source_version": null,
+    "timezone": "America/New_York",
+    "async_metadata": null,
+    "whatsapp": null,
+    "sms": null,
+    "agent_created_from": "ui",
+    "agent_last_updated_from": "api",
+    "voice_rewards": [],
+    "cost_fiat": 0.592549616430667
+  },
+  "analysis": {
+    "evaluation_criteria_results": {},
+    "data_collection_results": {},
+    "evaluation_criteria_results_list": [],
+    "data_collection_results_list": [],
+    "call_successful": "success",
+    "call_success_score": null,
+    "transcript_summary": "The user, Rohan Roy, contacted Davidson Car Care regarding a broken windshield on his 2021 BMW X3. The agent collected his name and phone number (424-270-4893) and then proceeded to find an appointment slot. After declining initial morning slots for August 5th and evening slots for August 10th (which were unavailable), Rohan booked an appointment for windshield repair on Monday, August 10th, at 8 AM. The agent informed him that the exact cost would vary and a precise quote would be provided by a service advisor.",
+    "call_summary_title": "Windshield Repair Appointment",
+    "scoped": [],
+    "sentiment_analysis": null
+  },
+  "visited_agents": [
+    {
+      "agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+      "branch_id": "agtbrch_6201ktmjf58qer6bhb3aava8xjhn"
+    }
+  ],
+  "conversation_initiation_client_data": {
+    "conversation_config_override": {
+      "asr": null,
+      "turn": null,
+      "tts": null,
+      "conversation": null,
+      "agent": null
+    },
+    "custom_llm_extra_body": {},
+    "user_id": null,
+    "source_info": {
+      "source": null,
+      "version": null
+    },
+    "branch_id": null,
+    "environment": null,
+    "starting_workflow_node_id": null,
+    "dynamic_variables": {
+      "system__agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+      "system__agent_turns": 20,
+      "system__current_agent_turns": 20,
+      "system__current_subagent_turns": 20,
+      "system__current_agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+      "system__conversation_id": "conv_0601kz75v2k8fmkb22pnqbby4mat",
+      "system__call_duration_secs": 387,
+      "system__time_utc": "2026-08-04T20:07:32.682155+00:00",
+      "system__time": "Tuesday, 16:07 04 August 2026",
+      "system__timezone": "America/New_York",
+      "system__is_text_only": false,
+      "system__channel": "twilio",
+      "system__caller_id": "+14242704893",
+      "system__called_number": "+15595464402",
+      "system__call_sid": "CA00eb5831807e192612428ffa5593fb4a",
+      "system__conversation_history": "{\"x-elevenlabs-history\": true, \"entries\": [{\"role\": \"agent\", \"message\": \"Hello! Thank you for calling Davidson Car Care. I am Rachel, AI voice Assistant. How can I help you today?\"}, {\"role\": \"user\", \"message\": \"Uh, hi, AI. It's me. I have some issues with my car. My, um, uh, uh, my window shield is broken. Hello?\"}, {\"role\": \"agent\", \"message\": \"Hi there! I can certainly help you with that. I'll just need a few quick details to set everything up: your name, phone number, vehicle information, and what issue you're experiencing.\\n\\nFirst, could I get your full name please?\"}, {\"role\": \"user\", \"message\": \"Um, so it's Rohan Roy.\"}, {\"role\": \"agent\", \"message\": \"Thanks, Rohan. Could you please provide your phone number? It should be ten digits.\"}, {\"role\": \"user\", \"message\": \"424-270-4893.\"}, {\"role\": \"agent\", \"message\": \"Got it. And what's the year, make, and model of your vehicle?\"}, {\"role\": \"user\", \"message\": \"Oh, it's a BMW X3, 2021.\"}, {\"role\": \"agent\", \"message\": \"Okay, so a 2021 BMW X3 with a broken windshield.\\n\\n\"}, {\"role\": \"agent\", \"tool_requests\": [{\"tool_name\": \"query_knowledge_base\", \"params_as_json\": {\"query_text\": \"windshield repair cost and time\"}}]}, {\"role\": \"agent\", \"tool_results\": [{\"tool_name\": \"query_knowledge_base\", \"result_value\": \"Tool execution was abandoned due to user input\", \"is_error\": true}]}, {\"role\": \"user\", \"message\": \"Yes.\"}, {\"role\": \"agent\", \"message\": \"Alright, Rohan. I have your name, phone number, and vehicle details. I've also noted that you need a windshield repair for your 2021 BMW X3.\\n\\nI'm just going to look up some information about that for you. Please give me a moment.\"}, {\"role\": \"user\", \"message\": \"Sure.\"}, {\"role\": \"agent\", \"message\": \"Let me look that up for you, one moment...\"}, {\"role\": \"agent\", \"tool_requests\": [{\"tool_name\": \"query_knowledge_base\", \"params_as_json\": {\"query_text\": \"windshield repair for BMW X3\"}}]}, {\"role\": \"agent\", \"tool_results\": [{\"tool_name\": \"query_knowledge_base\", \"result_value\": \"{\\\"tool_call_id\\\":\\\"call_flat\\\",\\\"result\\\":{\\\"success\\\":true,\\\"answer\\\":\\\"I can certainly help you with that! Before we proceed, I just need to gather a few quick details: \\\\n\\\\nCould you please provide your full name?\\\"}}\"}]}, {\"role\": \"agent\", \"message\": \"I can certainly help you with that! Before we proceed, I just need to gather a few quick details.\\n\\nCould you please provide your full name?\"}, {\"role\": \"user\", \"message\": \"Rohan Roy.\"}, {\"role\": \"agent\", \"message\": \"Thanks, Rohan. And your phone number?\"}, {\"role\": \"user\", \"message\": \"424-270-4893.\"}, {\"role\": \"agent\", \"message\": \"Great, and just to confirm, it's a 2021 BMW X3 with a broken windshield. Let's check our schedule for available slots. Please give me a moment.\"}, {\"role\": \"agent\", \"tool_requests\": [{\"tool_name\": \"check_availability\", \"params_as_json\": {\"preferred_date\": \"2026-08-05\"}}]}, {\"role\": \"agent\", \"tool_results\": [{\"tool_name\": \"check_availability\", \"result_value\": \"{\\\"tool_call_id\\\":\\\"call_flat\\\",\\\"result\\\":{\\\"success\\\":true,\\\"available_slots\\\":[\\\"2026-08-05 07:00:00\\\",\\\"2026-08-05 07:30:00\\\",\\\"2026-08-05 08:00:00\\\"],\\\"message\\\":\\\"Found 3 available slots on/after 2026-08-05.\\\"}}\"}]}, {\"role\": \"agent\", \"message\": \"Okay, I see a few open slots for tomorrow, August fifth. We have seven AM, seven thirty AM, and eight AM. Do any of those work for you?\"}, {\"role\": \"user\", \"message\": \"No. Shall we try next Monday?\"}, {\"role\": \"agent\", \"tool_requests\": [{\"tool_name\": \"check_availability\", \"params_as_json\": {\"preferred_date\": \"2026-08-10\"}}]}, {\"role\": \"agent\", \"tool_results\": [{\"tool_name\": \"check_availability\", \"result_value\": \"{\\\"tool_call_id\\\":\\\"call_flat\\\",\\\"result\\\":{\\\"success\\\":true,\\\"available_slots\\\":[\\\"2026-08-10 07:00:00\\\",\\\"2026-08-10 07:30:00\\\",\\\"2026-08-10 08:00:00\\\"],\\\"message\\\":\\\"Found 3 available slots on/after 2026-08-10.\\\"}}\"}]}, {\"role\": \"agent\", \"message\": \"Let me look up our open slots, just a second.\\n\\nOkay, for next Monday, August tenth, we have seven AM, seven thirty AM, and eight AM available. Do any of those times work for your windshield repair?\"}, {\"role\": \"user\", \"message\": \"Um, no, I want something in the evening.\"}, {\"role\": \"agent\", \"message\": \"Alright, let me check for evening slots on that day. Please hold on.\"}, {\"role\": \"agent\", \"tool_requests\": [{\"tool_name\": \"check_availability\", \"params_as_json\": {\"preferred_date\": \"2026-08-10\"}}]}, {\"role\": \"agent\", \"tool_results\": [{\"tool_name\": \"check_availability\", \"result_value\": \"{\\\"tool_call_id\\\":\\\"call_flat\\\",\\\"result\\\":{\\\"success\\\":true,\\\"available_slots\\\":[\\\"2026-08-10 07:00:00\\\",\\\"2026-08-10 07:30:00\\\",\\\"2026-08-10 08:00:00\\\"],\\\"message\\\":\\\"Found 3 available slots on/after 2026-08-10.\\\"}}\"}]}, {\"role\": \"agent\", \"message\": \"It looks like our latest appointment on Monday, August tenth, is at eight AM. We don't have any evening slots available that day. Would you like me to check another day for an evening appointment?\"}, {\"role\": \"user\", \"message\": \"You said that Monday, that is tenth of August, you don't have slots in the evening.\"}, {\"role\": \"agent\", \"message\": \"That's right, we only have morning slots available on Monday, August tenth. Would you like me to check for evening availability on another day?\"}, {\"role\": \"user\", \"message\": \"No, thank you. Uh, it's fine. Can, we can, uh, okay, whatever. We, I'll book in, like, early morning slot at 8:00 a.m.\"}, {\"role\": \"agent\", \"message\": \"Alright, I'll book you in for the eight AM slot on Monday, August tenth. Please wait a moment while I get that set up for you.\"}, {\"role\": \"agent\", \"tool_requests\": [{\"tool_name\": \"book_appointment\", \"params_as_json\": {\"phone\": \"424-270-4893\", \"appointment_datetime\": \"2026-08-10 08:00:00\", \"service_type\": \"Windshield repair for 2021 BMW X3\"}}]}, {\"role\": \"agent\", \"tool_results\": [{\"tool_name\": \"book_appointment\", \"result_value\": \"{\\\"tool_call_id\\\":\\\"call_flat\\\",\\\"result\\\":{\\\"success\\\":true,\\\"appointment_id\\\":3,\\\"message\\\":\\\"Appointment booked successfully. The estimated rate for this service is Varies by service. Please inform the customer of this rate.\\\"}}\"}]}, {\"role\": \"agent\", \"message\": \"Okay, Rohan, your appointment for a windshield repair on your 2021 BMW X3 is booked for Monday, August tenth, at eight AM.\\n\\nJust so you know, the exact cost for the windshield repair can...\"}, {\"role\": \"user\", \"message\": \"Okay.\"}, {\"role\": \"agent\", \"message\": \"...vary depending on the specific damage. Our service advisor will give you a precise quote when you come in.\"}, {\"role\": \"user\", \"message\": \"Sure.\"}, {\"role\": \"agent\", \"message\": \"Is there anything else I can help you with today?\"}, {\"role\": \"user\", \"message\": \"No.\"}, {\"role\": \"agent\", \"message\": \"Alright, Rohan. Thanks for calling Davidson Car Care. Have a great day!\"}, {\"role\": \"user\", \"message\": \"Have a great day.\"}]}",
+      "system__user_id": "+14242704893",
+      "system__initiator_id": null
+    },
+    "tool_mock_config": {
+      "mocking_strategy": "none",
+      "fallback_strategy": "raise_error",
+      "mocked_tool_names": []
+    },
+    "tool_mock_overrides": {}
+  },
+  "environment": "production",
+  "hiding_reason": null,
+  "smb_metadata": null,
+  "conversation_id": "conv_0601kz75v2k8fmkb22pnqbby4mat",
+  "has_audio": true,
+  "has_user_audio": true,
+  "has_response_audio": true,
+  "has_auxiliary_audio": false,
+  "transcript": [
+    {
+      "role": "agent",
+      "agent_metadata": {
+        "agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+        "branch_id": "agtbrch_6201ktmjf58qer6bhb3aava8xjhn",
+        "workflow_node_id": null,
+        "version_id": "agtvrsn_9901kz005exhe86atb031rm8a7vx"
+      },
+      "message": "Hello! Thank you for calling Davidson Car Care. I am Rachel, AI voice Assistant. How can I help you today?",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": null,
+      "time_in_call_secs": 0,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_tts_service_ttfb": {
+            "elapsed_time": 0.21506534699801705
+          },
+          "convai_ttf_audio_since_silence": {
+            "elapsed_time": 0.2165751469983661
+          },
+          "convai_turn_silence_before_initiation": {
+            "elapsed_time": 0.0
+          }
+        },
+        "convai_asr_provider": null,
+        "convai_tts_model": "eleven_v3_conversational",
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": null,
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": null,
+      "source_event_id": 1,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "user",
+      "agent_metadata": null,
+      "message": "Uh, hi, AI. It's me. I have some issues with my car. My, um, uh, uh, my window shield is broken. Hello?",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": null,
+      "time_in_call_secs": 10,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_asr_trailing_service_latency": {
+            "elapsed_time": 0.07993558200178086
+          }
+        },
+        "convai_asr_provider": "Scribe v2 Realtime",
+        "convai_tts_model": null,
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": null,
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": "audio",
+      "source_event_id": 164,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "agent",
+      "agent_metadata": {
+        "agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+        "branch_id": "agtbrch_6201ktmjf58qer6bhb3aava8xjhn",
+        "workflow_node_id": null,
+        "version_id": "agtvrsn_9901kz005exhe86atb031rm8a7vx"
+      },
+      "message": "Hi there! I can certainly help you with that. I'll just need a few quick details to set everything up: your name, phone number, vehicle information, and what issue you're experiencing.\n\nFirst, could I get your full name please?",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": null,
+      "time_in_call_secs": 28,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_llm_service_ttf_sentence": {
+            "elapsed_time": 0.6707456670010288
+          },
+          "convai_llm_service_ttfb": {
+            "elapsed_time": 0.5001529560031486
+          },
+          "convai_llm_service_tt_last_sentence": {
+            "elapsed_time": 0.9148250910002389
+          },
+          "convai_tts_service_ttfb": {
+            "elapsed_time": 0.41055804599818657
+          },
+          "convai_ttf_audio_since_silence": {
+            "elapsed_time": 1.4612575130008627
+          },
+          "convai_turn_silence_before_initiation": {
+            "elapsed_time": 0.288
+          },
+          "convai_turn_asr_latency": {
+            "elapsed_time": 0.07993558200178086
+          }
+        },
+        "convai_asr_provider": null,
+        "convai_tts_model": "eleven_v3_conversational",
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": {
+        "model_usage": {
+          "gemini-2.5-flash": {
+            "input": {
+              "tokens": 393,
+              "price": 5.8949999999999996e-05
+            },
+            "input_cache_read": {
+              "tokens": 3403,
+              "price": 0.0
+            },
+            "input_cache_write": {
+              "tokens": 0,
+              "price": 0.0
+            },
+            "output_total": {
+              "tokens": 53,
+              "price": 3.18e-05
+            }
+          }
+        }
+      },
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": null,
+      "source_event_id": 164,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "user",
+      "agent_metadata": null,
+      "message": "Um, so it's Rohan Roy.",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": null,
+      "time_in_call_secs": 45,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_asr_trailing_service_latency": {
+            "elapsed_time": 0.07306620199960889
+          }
+        },
+        "convai_asr_provider": "Scribe v2 Realtime",
+        "convai_tts_model": null,
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": null,
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": "audio",
+      "source_event_id": 298,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "agent",
+      "agent_metadata": {
+        "agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+        "branch_id": "agtbrch_6201ktmjf58qer6bhb3aava8xjhn",
+        "workflow_node_id": null,
+        "version_id": "agtvrsn_9901kz005exhe86atb031rm8a7vx"
+      },
+      "message": "Thanks, Rohan. Could you please provide your phone number? It should be ten digits.",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": "gpt-4o",
+      "time_in_call_secs": 58,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_llm_service_ttf_sentence": {
+            "elapsed_time": 8.74151325999992
+          },
+          "convai_llm_service_ttfb": {
+            "elapsed_time": 8.653984640001
+          },
+          "convai_llm_service_tt_last_sentence": {
+            "elapsed_time": 9.161069805002626
+          },
+          "convai_tts_service_ttfb": {
+            "elapsed_time": 0.2354609049980354
+          },
+          "convai_ttf_audio_since_silence": {
+            "elapsed_time": 9.5166121340018
+          },
+          "convai_turn_silence_before_initiation": {
+            "elapsed_time": 0.352
+          },
+          "convai_turn_asr_latency": {
+            "elapsed_time": 0.07306620199960889
+          }
+        },
+        "convai_asr_provider": null,
+        "convai_tts_model": "eleven_v3_conversational",
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": {
+        "model_usage": {
+          "gpt-4o": {
+            "input": {
+              "tokens": 3985,
+              "price": 0.0099625
+            },
+            "input_cache_read": {
+              "tokens": 0,
+              "price": 0.0
+            },
+            "input_cache_write": {
+              "tokens": 0,
+              "price": 0.0
+            },
+            "output_total": {
+              "tokens": 20,
+              "price": 0.0002
+            }
+          }
+        }
+      },
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": null,
+      "source_event_id": 298,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "user",
+      "agent_metadata": null,
+      "message": "424-270-4893.",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": null,
+      "time_in_call_secs": 65,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_asr_trailing_service_latency": {
+            "elapsed_time": 0.09941579900259967
+          }
+        },
+        "convai_asr_provider": "Scribe v2 Realtime",
+        "convai_tts_model": null,
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": null,
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": "audio",
+      "source_event_id": 431,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "agent",
+      "agent_metadata": {
+        "agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+        "branch_id": "agtbrch_6201ktmjf58qer6bhb3aava8xjhn",
+        "workflow_node_id": null,
+        "version_id": "agtvrsn_9901kz005exhe86atb031rm8a7vx"
+      },
+      "message": "Got it. And what's the year, make, and model of your vehicle?",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": null,
+      "time_in_call_secs": 71,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_llm_service_ttf_sentence": {
+            "elapsed_time": 0.8865453629987314
+          },
+          "convai_llm_service_ttfb": {
+            "elapsed_time": 0.5841899959996226
+          },
+          "convai_llm_service_tt_last_sentence": {
+            "elapsed_time": 0.8865361630014377
+          },
+          "convai_tts_service_ttfb": {
+            "elapsed_time": 0.22713521499827038
+          },
+          "convai_ttf_audio_since_silence": {
+            "elapsed_time": 1.5466936759988312
+          },
+          "convai_turn_silence_before_initiation": {
+            "elapsed_time": 0.32
+          },
+          "convai_turn_asr_latency": {
+            "elapsed_time": 0.09941579900259967
+          }
+        },
+        "convai_asr_provider": null,
+        "convai_tts_model": "eleven_v3_conversational",
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": {
+        "model_usage": {
+          "gemini-2.5-flash": {
+            "input": {
+              "tokens": 3889,
+              "price": 0.0005833500000000001
+            },
+            "input_cache_read": {
+              "tokens": 0,
+              "price": 0.0
+            },
+            "input_cache_write": {
+              "tokens": 0,
+              "price": 0.0
+            },
+            "output_total": {
+              "tokens": 18,
+              "price": 1.0799999999999998e-05
+            }
+          }
+        }
+      },
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": null,
+      "source_event_id": 431,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "user",
+      "agent_metadata": null,
+      "message": "Oh, it's a BMW X3, 2021.",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": null,
+      "time_in_call_secs": 77,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_asr_trailing_service_latency": {
+            "elapsed_time": 0.051383484998950735
+          }
+        },
+        "convai_asr_provider": "Scribe v2 Realtime",
+        "convai_tts_model": null,
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": null,
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": "audio",
+      "source_event_id": 499,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "agent",
+      "agent_metadata": {
+        "agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+        "branch_id": "agtbrch_6201ktmjf58qer6bhb3aava8xjhn",
+        "workflow_node_id": null,
+        "version_id": "agtvrsn_9901kz005exhe86atb031rm8a7vx"
+      },
+      "message": "Okay, so a 2021 BMW X3 with a broken windshield.\n\n",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": "gpt-4o",
+      "time_in_call_secs": 89,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_llm_service_ttf_sentence": {
+            "elapsed_time": 7.457963918997848
+          },
+          "convai_llm_service_ttfb": {
+            "elapsed_time": 7.457601858997805
+          },
+          "convai_llm_service_tt_last_sentence": {
+            "elapsed_time": 7.674019355999917
+          },
+          "convai_tts_service_ttfb": {
+            "elapsed_time": 0.23931055399953038
+          },
+          "convai_ttf_audio_since_silence": {
+            "elapsed_time": 8.200263952998124
+          },
+          "convai_turn_silence_before_initiation": {
+            "elapsed_time": 0.224
+          },
+          "convai_turn_asr_latency": {
+            "elapsed_time": 0.051383484998950735
+          }
+        },
+        "convai_asr_provider": null,
+        "convai_tts_model": "eleven_v3_conversational",
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": null,
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": null,
+      "source_event_id": 499,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "agent",
+      "agent_metadata": {
+        "agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+        "branch_id": "agtbrch_6201ktmjf58qer6bhb3aava8xjhn",
+        "workflow_node_id": null,
+        "version_id": "agtvrsn_9901kz005exhe86atb031rm8a7vx"
+      },
+      "message": null,
+      "multivoice_message": null,
+      "tool_calls": [
+        {
+          "type": "webhook",
+          "request_id": "query_knowledge_base_0f84206375c64929a41ec010a1050e5d",
+          "tool_name": "query_knowledge_base",
+          "params_as_json": "{\"system__message_to_speak\": \"Please give me a moment, let me get that answer for you...\", \"query_text\": \"windshield repair cost and time\"}",
+          "tool_has_been_called": true,
+          "tool_details": {
+            "type": "webhook",
+            "method": "POST",
+            "url": "https://servicebot-w6hm.onrender.com/api/v1/voice/tools",
+            "headers": {},
+            "path_params": {},
+            "query_params": {},
+            "body": "{\"query_text\": \"windshield repair cost and time\"}"
+          }
+        }
+      ],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": "gpt-4o",
+      "time_in_call_secs": 90,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_llm_service_ttf_sentence": {
+            "elapsed_time": 7.457963918997848
+          },
+          "convai_llm_service_ttfb": {
+            "elapsed_time": 7.457601858997805
+          },
+          "convai_llm_tool_request_generation_latency": {
+            "elapsed_time": 0.9418764069996541
+          },
+          "convai_llm_service_tt_last_sentence": {
+            "elapsed_time": 7.674019355999917
+          },
+          "convai_tts_service_ttfb": {
+            "elapsed_time": 0.23931055399953038
+          },
+          "convai_ttf_audio_since_silence": {
+            "elapsed_time": 8.200263952998124
+          },
+          "convai_turn_silence_before_initiation": {
+            "elapsed_time": 0.224
+          },
+          "convai_turn_asr_latency": {
+            "elapsed_time": 0.051383484998950735
+          }
+        },
+        "convai_asr_provider": null,
+        "convai_tts_model": "eleven_v3_conversational",
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": {
+        "model_usage": {
+          "gemini-2.5-flash": {
+            "input": {
+              "tokens": 523,
+              "price": 7.845000000000001e-05
+            },
+            "input_cache_read": {
+              "tokens": 3400,
+              "price": 0.0
+            },
+            "input_cache_write": {
+              "tokens": 0,
+              "price": 0.0
+            },
+            "output_total": {
+              "tokens": 53,
+              "price": 3.18e-05
+            }
+          }
+        }
+      },
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": null,
+      "source_event_id": 499,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "agent",
+      "agent_metadata": {
+        "agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+        "branch_id": "agtbrch_6201ktmjf58qer6bhb3aava8xjhn",
+        "workflow_node_id": null,
+        "version_id": "agtvrsn_9901kz005exhe86atb031rm8a7vx"
+      },
+      "message": null,
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [
+        {
+          "request_id": "query_knowledge_base_0f84206375c64929a41ec010a1050e5d",
+          "tool_name": "query_knowledge_base",
+          "result_value": "Tool execution was abandoned due to user input",
+          "is_error": true,
+          "is_blocked": false,
+          "tool_has_been_called": false,
+          "tool_latency_secs": 0.0,
+          "error_type": "unknown",
+          "raw_error_message": "",
+          "dynamic_variable_updates": [],
+          "type": "webhook"
+        }
+      ],
+      "feedback": null,
+      "llm_override": null,
+      "time_in_call_secs": 111,
+      "conversation_turn_metrics": null,
+      "rag_retrieval_info": null,
+      "llm_usage": null,
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": null,
+      "source_event_id": 499,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "user",
+      "agent_metadata": null,
+      "message": "Yes.",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": null,
+      "time_in_call_secs": 99,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_asr_trailing_service_latency": {
+            "elapsed_time": 0.0418548749985348
+          }
+        },
+        "convai_asr_provider": "Scribe v2 Realtime",
+        "convai_tts_model": null,
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": null,
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": "audio",
+      "source_event_id": 612,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "agent",
+      "agent_metadata": {
+        "agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+        "branch_id": "agtbrch_6201ktmjf58qer6bhb3aava8xjhn",
+        "workflow_node_id": null,
+        "version_id": "agtvrsn_9901kz005exhe86atb031rm8a7vx"
+      },
+      "message": "Alright, Rohan. I have your name, phone number, and vehicle details. I've also noted that you need a windshield repair for your 2021 BMW X3.\n\nI'm just going to look up some information about that for you. Please give me a moment.",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": null,
+      "time_in_call_secs": 105,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_llm_service_ttf_sentence": {
+            "elapsed_time": 5.570067574000859
+          },
+          "convai_llm_service_ttfb": {
+            "elapsed_time": 5.34577864899984
+          },
+          "convai_llm_service_tt_last_sentence": {
+            "elapsed_time": 5.9317185649997555
+          },
+          "convai_tts_service_ttfb": {
+            "elapsed_time": 0.28169899900240125
+          },
+          "convai_ttf_audio_since_silence": {
+            "elapsed_time": 6.100973907000473
+          },
+          "convai_turn_silence_before_initiation": {
+            "elapsed_time": 0.192
+          },
+          "convai_turn_asr_latency": {
+            "elapsed_time": 0.0418548749985348
+          }
+        },
+        "convai_asr_provider": null,
+        "convai_tts_model": "eleven_v3_conversational",
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": {
+        "model_usage": {
+          "gemini-2.5-flash": {
+            "input": {
+              "tokens": 613,
+              "price": 9.195e-05
+            },
+            "input_cache_read": {
+              "tokens": 3379,
+              "price": 0.0
+            },
+            "input_cache_write": {
+              "tokens": 0,
+              "price": 0.0
+            },
+            "output_total": {
+              "tokens": 60,
+              "price": 3.6e-05
+            }
+          }
+        }
+      },
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": null,
+      "source_event_id": 612,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "user",
+      "agent_metadata": null,
+      "message": "Sure.",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": null,
+      "time_in_call_secs": 121,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_asr_trailing_service_latency": {
+            "elapsed_time": 0.0725807620001433
+          }
+        },
+        "convai_asr_provider": "Scribe v2 Realtime",
+        "convai_tts_model": null,
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": null,
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": "audio",
+      "source_event_id": 753,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "agent",
+      "agent_metadata": {
+        "agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+        "branch_id": "agtbrch_6201ktmjf58qer6bhb3aava8xjhn",
+        "workflow_node_id": null,
+        "version_id": "agtvrsn_9901kz005exhe86atb031rm8a7vx"
+      },
+      "message": "Let me look that up for you, one moment...",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": null,
+      "time_in_call_secs": 123,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_llm_service_ttfb": {
+            "elapsed_time": 0.7577689179997833
+          },
+          "convai_llm_tool_request_generation_latency": {
+            "elapsed_time": 0.7582132480019936
+          },
+          "convai_tts_service_ttfb": {
+            "elapsed_time": 0.2505137330008438
+          },
+          "convai_ttf_audio_since_silence": {
+            "elapsed_time": 17.89579300099722
+          },
+          "convai_turn_silence_before_initiation": {
+            "elapsed_time": 16.8
+          },
+          "convai_turn_asr_latency": {
+            "elapsed_time": 0.0725807620001433
+          }
+        },
+        "convai_asr_provider": null,
+        "convai_tts_model": "eleven_v3_conversational",
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": null,
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": null,
+      "source_event_id": 753,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "agent",
+      "agent_metadata": {
+        "agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+        "branch_id": "agtbrch_6201ktmjf58qer6bhb3aava8xjhn",
+        "workflow_node_id": null,
+        "version_id": "agtvrsn_9901kz005exhe86atb031rm8a7vx"
+      },
+      "message": null,
+      "multivoice_message": null,
+      "tool_calls": [
+        {
+          "type": "webhook",
+          "request_id": "query_knowledge_base_6fa3a2d4a1f846e0abbfb69b427e1554",
+          "tool_name": "query_knowledge_base",
+          "params_as_json": "{\"system__message_to_speak\": \"Let me look that up for you, one moment...\", \"query_text\": \"windshield repair for BMW X3\"}",
+          "tool_has_been_called": true,
+          "tool_details": {
+            "type": "webhook",
+            "method": "POST",
+            "url": "https://servicebot-w6hm.onrender.com/api/v1/voice/tools",
+            "headers": {},
+            "path_params": {},
+            "query_params": {},
+            "body": "{\"query_text\": \"windshield repair for BMW X3\"}"
+          }
+        }
+      ],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": null,
+      "time_in_call_secs": 124,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_llm_service_ttfb": {
+            "elapsed_time": 0.7577689179997833
+          },
+          "convai_llm_tool_request_generation_latency": {
+            "elapsed_time": 0.7582132480019936
+          },
+          "convai_tts_service_ttfb": {
+            "elapsed_time": 0.2505137330008438
+          },
+          "convai_ttf_audio_since_silence": {
+            "elapsed_time": 17.89579300099722
+          },
+          "convai_turn_silence_before_initiation": {
+            "elapsed_time": 16.8
+          },
+          "convai_turn_asr_latency": {
+            "elapsed_time": 0.0725807620001433
+          }
+        },
+        "convai_asr_provider": null,
+        "convai_tts_model": "eleven_v3_conversational",
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": {
+        "model_usage": {
+          "gemini-2.5-flash": {
+            "input": {
+              "tokens": 4054,
+              "price": 0.0006081
+            },
+            "input_cache_read": {
+              "tokens": 0,
+              "price": 0.0
+            },
+            "input_cache_write": {
+              "tokens": 0,
+              "price": 0.0
+            },
+            "output_total": {
+              "tokens": 33,
+              "price": 1.98e-05
+            }
+          }
+        }
+      },
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": null,
+      "source_event_id": 753,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "agent",
+      "agent_metadata": {
+        "agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+        "branch_id": "agtbrch_6201ktmjf58qer6bhb3aava8xjhn",
+        "workflow_node_id": null,
+        "version_id": "agtvrsn_9901kz005exhe86atb031rm8a7vx"
+      },
+      "message": null,
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [
+        {
+          "request_id": "query_knowledge_base_6fa3a2d4a1f846e0abbfb69b427e1554",
+          "tool_name": "query_knowledge_base",
+          "result_value": "{\"tool_call_id\":\"call_flat\",\"result\":{\"success\":true,\"answer\":\"I can certainly help you with that! Before we proceed, I just need to gather a few quick details: \\n\\nCould you please provide your full name?\"}}",
+          "is_error": false,
+          "is_blocked": false,
+          "tool_has_been_called": true,
+          "tool_latency_secs": 7.488483415996598,
+          "error_type": "",
+          "raw_error_message": "",
+          "dynamic_variable_updates": [],
+          "type": "webhook"
+        }
+      ],
+      "feedback": null,
+      "llm_override": null,
+      "time_in_call_secs": 131,
+      "conversation_turn_metrics": null,
+      "rag_retrieval_info": null,
+      "llm_usage": null,
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": null,
+      "source_event_id": 753,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "agent",
+      "agent_metadata": {
+        "agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+        "branch_id": "agtbrch_6201ktmjf58qer6bhb3aava8xjhn",
+        "workflow_node_id": null,
+        "version_id": "agtvrsn_9901kz005exhe86atb031rm8a7vx"
+      },
+      "message": "I can certainly help you with that! Before we proceed, I just need to gather a few quick details.\n\nCould you please provide your full name?",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": null,
+      "time_in_call_secs": 139,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_llm_service_ttf_sentence": {
+            "elapsed_time": 8.046421595001448
+          },
+          "convai_llm_service_ttfb": {
+            "elapsed_time": 7.734260009001446
+          },
+          "convai_llm_service_tt_last_sentence": {
+            "elapsed_time": 8.26591984100014
+          },
+          "convai_tts_service_ttfb": {
+            "elapsed_time": 0.22337352600152371
+          }
+        },
+        "convai_asr_provider": null,
+        "convai_tts_model": "eleven_v3_conversational",
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": {
+        "model_usage": {
+          "gemini-2.5-flash": {
+            "input": {
+              "tokens": 787,
+              "price": 0.00011805
+            },
+            "input_cache_read": {
+              "tokens": 3371,
+              "price": 0.0
+            },
+            "input_cache_write": {
+              "tokens": 0,
+              "price": 0.0
+            },
+            "output_total": {
+              "tokens": 31,
+              "price": 1.8599999999999998e-05
+            }
+          }
+        }
+      },
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": null,
+      "source_event_id": 753,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "user",
+      "agent_metadata": null,
+      "message": "Rohan Roy.",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": null,
+      "time_in_call_secs": 151,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_asr_trailing_service_latency": {
+            "elapsed_time": 0.07119687200247427
+          }
+        },
+        "convai_asr_provider": "Scribe v2 Realtime",
+        "convai_tts_model": null,
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": null,
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": "audio",
+      "source_event_id": 947,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "agent",
+      "agent_metadata": {
+        "agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+        "branch_id": "agtbrch_6201ktmjf58qer6bhb3aava8xjhn",
+        "workflow_node_id": null,
+        "version_id": "agtvrsn_9901kz005exhe86atb031rm8a7vx"
+      },
+      "message": "Thanks, Rohan. And your phone number?",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": null,
+      "time_in_call_secs": 159,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_llm_service_ttf_sentence": {
+            "elapsed_time": 4.4570077050011605
+          },
+          "convai_llm_service_ttfb": {
+            "elapsed_time": 4.281301825001719
+          },
+          "convai_llm_service_tt_last_sentence": {
+            "elapsed_time": 4.456997825000144
+          },
+          "convai_tts_service_ttfb": {
+            "elapsed_time": 0.2551966720020573
+          },
+          "convai_ttf_audio_since_silence": {
+            "elapsed_time": 6.590299033999589
+          },
+          "convai_turn_silence_before_initiation": {
+            "elapsed_time": 0.288
+          },
+          "convai_turn_asr_latency": {
+            "elapsed_time": 0.07119687200247427
+          }
+        },
+        "convai_asr_provider": null,
+        "convai_tts_model": "eleven_v3_conversational",
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": {
+        "model_usage": {
+          "gemini-2.5-flash": {
+            "input": {
+              "tokens": 824,
+              "price": 0.0001236
+            },
+            "input_cache_read": {
+              "tokens": 3369,
+              "price": 0.0
+            },
+            "input_cache_write": {
+              "tokens": 0,
+              "price": 0.0
+            },
+            "output_total": {
+              "tokens": 9,
+              "price": 5.399999999999999e-06
+            }
+          }
+        }
+      },
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": null,
+      "source_event_id": 947,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "user",
+      "agent_metadata": null,
+      "message": "424-270-4893.",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": null,
+      "time_in_call_secs": 164,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_asr_trailing_service_latency": {
+            "elapsed_time": 0.03140736700152047
+          }
+        },
+        "convai_asr_provider": "Scribe v2 Realtime",
+        "convai_tts_model": null,
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": null,
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": "audio",
+      "source_event_id": 1049,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "agent",
+      "agent_metadata": {
+        "agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+        "branch_id": "agtbrch_6201ktmjf58qer6bhb3aava8xjhn",
+        "workflow_node_id": null,
+        "version_id": "agtvrsn_9901kz005exhe86atb031rm8a7vx"
+      },
+      "message": "Great, and just to confirm, it's a 2021 BMW X3 with a broken windshield. Let's check our schedule for available slots. Please give me a moment.",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": "gpt-4o",
+      "time_in_call_secs": 178,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_llm_service_ttf_sentence": {
+            "elapsed_time": 8.896718552001403
+          },
+          "convai_llm_service_ttfb": {
+            "elapsed_time": 8.891115433001687
+          },
+          "convai_llm_service_tt_last_sentence": {
+            "elapsed_time": 14.085651928002335
+          },
+          "convai_tts_service_ttfb": {
+            "elapsed_time": 0.24689726399810752
+          },
+          "convai_ttf_audio_since_silence": {
+            "elapsed_time": 9.453944066002645
+          },
+          "convai_turn_silence_before_initiation": {
+            "elapsed_time": 0.224
+          },
+          "convai_turn_asr_latency": {
+            "elapsed_time": 0.03140736700152047
+          }
+        },
+        "convai_asr_provider": null,
+        "convai_tts_model": "eleven_v3_conversational",
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": null,
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": null,
+      "source_event_id": 1049,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "agent",
+      "agent_metadata": {
+        "agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+        "branch_id": "agtbrch_6201ktmjf58qer6bhb3aava8xjhn",
+        "workflow_node_id": null,
+        "version_id": "agtvrsn_9901kz005exhe86atb031rm8a7vx"
+      },
+      "message": null,
+      "multivoice_message": null,
+      "tool_calls": [
+        {
+          "type": "webhook",
+          "request_id": "call_fFB3F8dryIV2N55hJYVmmpmy",
+          "tool_name": "check_availability",
+          "params_as_json": "{\"preferred_date\":\"2026-08-05\"}",
+          "tool_has_been_called": true,
+          "tool_details": {
+            "type": "webhook",
+            "method": "POST",
+            "url": "https://servicebot-w6hm.onrender.com/api/v1/voice/tools",
+            "headers": {},
+            "path_params": {},
+            "query_params": {},
+            "body": "{\"preferred_date\": \"2026-08-05\"}"
+          }
+        }
+      ],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": "gpt-4o",
+      "time_in_call_secs": 184,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_llm_service_ttf_sentence": {
+            "elapsed_time": 8.896718552001403
+          },
+          "convai_llm_service_ttfb": {
+            "elapsed_time": 8.891115433001687
+          },
+          "convai_llm_tool_request_generation_latency": {
+            "elapsed_time": 0.001571679997141473
+          },
+          "convai_llm_service_tt_last_sentence": {
+            "elapsed_time": 14.085651928002335
+          },
+          "convai_tts_service_ttfb": {
+            "elapsed_time": 0.24689726399810752
+          },
+          "convai_ttf_audio_since_silence": {
+            "elapsed_time": 9.453944066002645
+          },
+          "convai_turn_silence_before_initiation": {
+            "elapsed_time": 0.224
+          },
+          "convai_turn_asr_latency": {
+            "elapsed_time": 0.03140736700152047
+          }
+        },
+        "convai_asr_provider": null,
+        "convai_tts_model": "eleven_v3_conversational",
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": {
+        "model_usage": {
+          "gpt-4o": {
+            "input": {
+              "tokens": 1446,
+              "price": 0.003615
+            },
+            "input_cache_read": {
+              "tokens": 2944,
+              "price": 0.00368
+            },
+            "input_cache_write": {
+              "tokens": 0,
+              "price": 0.0
+            },
+            "output_total": {
+              "tokens": 56,
+              "price": 0.00056
+            }
+          }
+        }
+      },
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": null,
+      "source_event_id": 1049,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "agent",
+      "agent_metadata": {
+        "agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+        "branch_id": "agtbrch_6201ktmjf58qer6bhb3aava8xjhn",
+        "workflow_node_id": null,
+        "version_id": "agtvrsn_9901kz005exhe86atb031rm8a7vx"
+      },
+      "message": null,
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [
+        {
+          "request_id": "call_fFB3F8dryIV2N55hJYVmmpmy",
+          "tool_name": "check_availability",
+          "result_value": "{\"tool_call_id\":\"call_flat\",\"result\":{\"success\":true,\"available_slots\":[\"2026-08-05 07:00:00\",\"2026-08-05 07:30:00\",\"2026-08-05 08:00:00\"],\"message\":\"Found 3 available slots on/after 2026-08-05.\"}}",
+          "is_error": false,
+          "is_blocked": false,
+          "tool_has_been_called": true,
+          "tool_latency_secs": 2.2160977799976536,
+          "error_type": "",
+          "raw_error_message": "",
+          "dynamic_variable_updates": [],
+          "type": "webhook"
+        }
+      ],
+      "feedback": null,
+      "llm_override": "gpt-4o",
+      "time_in_call_secs": 186,
+      "conversation_turn_metrics": null,
+      "rag_retrieval_info": null,
+      "llm_usage": null,
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": null,
+      "source_event_id": 1049,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "agent",
+      "agent_metadata": {
+        "agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+        "branch_id": "agtbrch_6201ktmjf58qer6bhb3aava8xjhn",
+        "workflow_node_id": null,
+        "version_id": "agtvrsn_9901kz005exhe86atb031rm8a7vx"
+      },
+      "message": "Okay, I see a few open slots for tomorrow, August fifth. We have seven AM, seven thirty AM, and eight AM. Do any of those work for you?",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": null,
+      "time_in_call_secs": 187,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_llm_service_ttf_sentence": {
+            "elapsed_time": 0.7533348979995935
+          },
+          "convai_llm_service_ttfb": {
+            "elapsed_time": 0.5169815129993367
+          },
+          "convai_llm_service_tt_last_sentence": {
+            "elapsed_time": 0.9845527520010364
+          },
+          "convai_tts_service_ttfb": {
+            "elapsed_time": 0.26384869199682726
+          }
+        },
+        "convai_asr_provider": null,
+        "convai_tts_model": "eleven_v3_conversational",
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": {
+        "model_usage": {
+          "gemini-2.5-flash": {
+            "input": {
+              "tokens": 4379,
+              "price": 0.0006568500000000001
+            },
+            "input_cache_read": {
+              "tokens": 0,
+              "price": 0.0
+            },
+            "input_cache_write": {
+              "tokens": 0,
+              "price": 0.0
+            },
+            "output_total": {
+              "tokens": 35,
+              "price": 2.1e-05
+            }
+          }
+        }
+      },
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": null,
+      "source_event_id": 1049,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "user",
+      "agent_metadata": null,
+      "message": "No. Shall we try next Monday?",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": null,
+      "time_in_call_secs": 203,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_asr_trailing_service_latency": {
+            "elapsed_time": 0.09213743999862345
+          }
+        },
+        "convai_asr_provider": "Scribe v2 Realtime",
+        "convai_tts_model": null,
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": null,
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": "audio",
+      "source_event_id": 1271,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "agent",
+      "agent_metadata": {
+        "agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+        "branch_id": "agtbrch_6201ktmjf58qer6bhb3aava8xjhn",
+        "workflow_node_id": null,
+        "version_id": "agtvrsn_9901kz005exhe86atb031rm8a7vx"
+      },
+      "message": null,
+      "multivoice_message": null,
+      "tool_calls": [
+        {
+          "type": "webhook",
+          "request_id": "call_3srkElVHKcutEBPFEEOdOcuF",
+          "tool_name": "check_availability",
+          "params_as_json": "{\"preferred_date\":\"2026-08-10\"}",
+          "tool_has_been_called": true,
+          "tool_details": {
+            "type": "webhook",
+            "method": "POST",
+            "url": "https://servicebot-w6hm.onrender.com/api/v1/voice/tools",
+            "headers": {},
+            "path_params": {},
+            "query_params": {},
+            "body": "{\"preferred_date\": \"2026-08-10\"}"
+          }
+        }
+      ],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": "gpt-4o",
+      "time_in_call_secs": 214,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_llm_service_ttfb": {
+            "elapsed_time": 8.853799907003122
+          },
+          "convai_llm_tool_request_generation_latency": {
+            "elapsed_time": 8.854438457001379
+          }
+        },
+        "convai_asr_provider": null,
+        "convai_tts_model": null,
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": {
+        "model_usage": {
+          "gpt-4o": {
+            "input": {
+              "tokens": 361,
+              "price": 0.0009025
+            },
+            "input_cache_read": {
+              "tokens": 4224,
+              "price": 0.00528
+            },
+            "input_cache_write": {
+              "tokens": 0,
+              "price": 0.0
+            },
+            "output_total": {
+              "tokens": 21,
+              "price": 0.00021
+            }
+          }
+        }
+      },
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": null,
+      "source_event_id": 1271,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "agent",
+      "agent_metadata": {
+        "agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+        "branch_id": "agtbrch_6201ktmjf58qer6bhb3aava8xjhn",
+        "workflow_node_id": null,
+        "version_id": "agtvrsn_9901kz005exhe86atb031rm8a7vx"
+      },
+      "message": null,
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [
+        {
+          "request_id": "call_3srkElVHKcutEBPFEEOdOcuF",
+          "tool_name": "check_availability",
+          "result_value": "{\"tool_call_id\":\"call_flat\",\"result\":{\"success\":true,\"available_slots\":[\"2026-08-10 07:00:00\",\"2026-08-10 07:30:00\",\"2026-08-10 08:00:00\"],\"message\":\"Found 3 available slots on/after 2026-08-10.\"}}",
+          "is_error": false,
+          "is_blocked": false,
+          "tool_has_been_called": true,
+          "tool_latency_secs": 1.9548447180022777,
+          "error_type": "",
+          "raw_error_message": "",
+          "dynamic_variable_updates": [],
+          "type": "webhook"
+        }
+      ],
+      "feedback": null,
+      "llm_override": "gpt-4o",
+      "time_in_call_secs": 216,
+      "conversation_turn_metrics": null,
+      "rag_retrieval_info": null,
+      "llm_usage": null,
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": null,
+      "source_event_id": 1271,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "agent",
+      "agent_metadata": {
+        "agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+        "branch_id": "agtbrch_6201ktmjf58qer6bhb3aava8xjhn",
+        "workflow_node_id": null,
+        "version_id": "agtvrsn_9901kz005exhe86atb031rm8a7vx"
+      },
+      "message": "Let me look up our open slots, just a second.\n\nOkay, for next Monday, August tenth, we have seven AM, seven thirty AM, and eight AM available. Do any of those times work for your windshield repair?",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": null,
+      "time_in_call_secs": 216,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_llm_service_ttf_sentence": {
+            "elapsed_time": 0.6252158019997296
+          },
+          "convai_llm_service_ttfb": {
+            "elapsed_time": 0.3736121589972754
+          },
+          "convai_llm_service_tt_last_sentence": {
+            "elapsed_time": 1.0418351259977499
+          },
+          "convai_tts_service_ttfb": {
+            "elapsed_time": 0.25566043200160493
+          },
+          "convai_ttf_audio_since_silence": {
+            "elapsed_time": 12.127617935999588
+          },
+          "convai_turn_silence_before_initiation": {
+            "elapsed_time": 0.32
+          }
+        },
+        "convai_asr_provider": null,
+        "convai_tts_model": "eleven_v3_conversational",
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": {
+        "model_usage": {
+          "gemini-2.5-flash": {
+            "input": {
+              "tokens": 4546,
+              "price": 0.0006818999999999999
+            },
+            "input_cache_read": {
+              "tokens": 0,
+              "price": 0.0
+            },
+            "input_cache_write": {
+              "tokens": 0,
+              "price": 0.0
+            },
+            "output_total": {
+              "tokens": 47,
+              "price": 2.8199999999999998e-05
+            }
+          }
+        }
+      },
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": null,
+      "source_event_id": 1271,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "user",
+      "agent_metadata": null,
+      "message": "Um, no, I want something in the evening.",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": null,
+      "time_in_call_secs": 230,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_asr_trailing_service_latency": {
+            "elapsed_time": 0.02914288700048928
+          }
+        },
+        "convai_asr_provider": "Scribe v2 Realtime",
+        "convai_tts_model": null,
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": null,
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": "audio",
+      "source_event_id": 1444,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "agent",
+      "agent_metadata": {
+        "agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+        "branch_id": "agtbrch_6201ktmjf58qer6bhb3aava8xjhn",
+        "workflow_node_id": null,
+        "version_id": "agtvrsn_9901kz005exhe86atb031rm8a7vx"
+      },
+      "message": "Alright, let me check for evening slots on that day. Please hold on.",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": "gpt-4o",
+      "time_in_call_secs": 241,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_llm_service_ttf_sentence": {
+            "elapsed_time": 8.69388745499964
+          },
+          "convai_llm_service_ttfb": {
+            "elapsed_time": 8.69111140500172
+          },
+          "convai_llm_service_tt_last_sentence": {
+            "elapsed_time": 9.518634035001014
+          },
+          "convai_tts_service_ttfb": {
+            "elapsed_time": 0.22743501500008279
+          },
+          "convai_ttf_audio_since_silence": {
+            "elapsed_time": 9.412642630999763
+          },
+          "convai_turn_silence_before_initiation": {
+            "elapsed_time": 0.32
+          },
+          "convai_turn_asr_latency": {
+            "elapsed_time": 0.02914288700048928
+          }
+        },
+        "convai_asr_provider": null,
+        "convai_tts_model": "eleven_v3_conversational",
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": null,
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": null,
+      "source_event_id": 1444,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "agent",
+      "agent_metadata": {
+        "agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+        "branch_id": "agtbrch_6201ktmjf58qer6bhb3aava8xjhn",
+        "workflow_node_id": null,
+        "version_id": "agtvrsn_9901kz005exhe86atb031rm8a7vx"
+      },
+      "message": null,
+      "multivoice_message": null,
+      "tool_calls": [
+        {
+          "type": "webhook",
+          "request_id": "call_Kgr0pLBuJ2iCRfai1qCJYiJZ",
+          "tool_name": "check_availability",
+          "params_as_json": "{\"preferred_date\":\"2026-08-10\"}",
+          "tool_has_been_called": true,
+          "tool_details": {
+            "type": "webhook",
+            "method": "POST",
+            "url": "https://servicebot-w6hm.onrender.com/api/v1/voice/tools",
+            "headers": {},
+            "path_params": {},
+            "query_params": {},
+            "body": "{\"preferred_date\": \"2026-08-10\"}"
+          }
+        }
+      ],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": "gpt-4o",
+      "time_in_call_secs": 242,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_llm_service_ttf_sentence": {
+            "elapsed_time": 8.69388745499964
+          },
+          "convai_llm_service_ttfb": {
+            "elapsed_time": 8.69111140500172
+          },
+          "convai_llm_tool_request_generation_latency": {
+            "elapsed_time": 0.0014150300012261141
+          },
+          "convai_llm_service_tt_last_sentence": {
+            "elapsed_time": 9.518634035001014
+          },
+          "convai_tts_service_ttfb": {
+            "elapsed_time": 0.22743501500008279
+          },
+          "convai_ttf_audio_since_silence": {
+            "elapsed_time": 9.412642630999763
+          },
+          "convai_turn_silence_before_initiation": {
+            "elapsed_time": 0.32
+          },
+          "convai_turn_asr_latency": {
+            "elapsed_time": 0.02914288700048928
+          }
+        },
+        "convai_asr_provider": null,
+        "convai_tts_model": "eleven_v3_conversational",
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": {
+        "model_usage": {
+          "gpt-4o": {
+            "input": {
+              "tokens": 1812,
+              "price": 0.00453
+            },
+            "input_cache_read": {
+              "tokens": 2944,
+              "price": 0.00368
+            },
+            "input_cache_write": {
+              "tokens": 0,
+              "price": 0.0
+            },
+            "output_total": {
+              "tokens": 38,
+              "price": 0.00038
+            }
+          }
+        }
+      },
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": null,
+      "source_event_id": 1444,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "agent",
+      "agent_metadata": {
+        "agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+        "branch_id": "agtbrch_6201ktmjf58qer6bhb3aava8xjhn",
+        "workflow_node_id": null,
+        "version_id": "agtvrsn_9901kz005exhe86atb031rm8a7vx"
+      },
+      "message": null,
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [
+        {
+          "request_id": "call_Kgr0pLBuJ2iCRfai1qCJYiJZ",
+          "tool_name": "check_availability",
+          "result_value": "{\"tool_call_id\":\"call_flat\",\"result\":{\"success\":true,\"available_slots\":[\"2026-08-10 07:00:00\",\"2026-08-10 07:30:00\",\"2026-08-10 08:00:00\"],\"message\":\"Found 3 available slots on/after 2026-08-10.\"}}",
+          "is_error": false,
+          "is_blocked": false,
+          "tool_has_been_called": true,
+          "tool_latency_secs": 2.1958120110029995,
+          "error_type": "",
+          "raw_error_message": "",
+          "dynamic_variable_updates": [],
+          "type": "webhook"
+        }
+      ],
+      "feedback": null,
+      "llm_override": "gpt-4o",
+      "time_in_call_secs": 245,
+      "conversation_turn_metrics": null,
+      "rag_retrieval_info": null,
+      "llm_usage": null,
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": null,
+      "source_event_id": 1444,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "agent",
+      "agent_metadata": {
+        "agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+        "branch_id": "agtbrch_6201ktmjf58qer6bhb3aava8xjhn",
+        "workflow_node_id": null,
+        "version_id": "agtvrsn_9901kz005exhe86atb031rm8a7vx"
+      },
+      "message": "It looks like our latest appointment on Monday, August tenth, is at eight AM. We don't have any evening slots available that day. Would you like me to check another day for an evening appointment?",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": null,
+      "time_in_call_secs": 246,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_llm_service_ttf_sentence": {
+            "elapsed_time": 0.7072477030014852
+          },
+          "convai_llm_service_ttfb": {
+            "elapsed_time": 0.3946288769984676
+          },
+          "convai_llm_service_tt_last_sentence": {
+            "elapsed_time": 0.975452224000037
+          },
+          "convai_tts_service_ttfb": {
+            "elapsed_time": 0.21709397599988733
+          }
+        },
+        "convai_asr_provider": null,
+        "convai_tts_model": "eleven_v3_conversational",
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": {
+        "model_usage": {
+          "gemini-2.5-flash": {
+            "input": {
+              "tokens": 4744,
+              "price": 0.0007116000000000001
+            },
+            "input_cache_read": {
+              "tokens": 0,
+              "price": 0.0
+            },
+            "input_cache_write": {
+              "tokens": 0,
+              "price": 0.0
+            },
+            "output_total": {
+              "tokens": 42,
+              "price": 2.52e-05
+            }
+          }
+        }
+      },
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": null,
+      "source_event_id": 1444,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "user",
+      "agent_metadata": null,
+      "message": "You said that Monday, that is tenth of August, you don't have slots in the evening.",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": null,
+      "time_in_call_secs": 260,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_asr_trailing_service_latency": {
+            "elapsed_time": 0.044111125000199536
+          }
+        },
+        "convai_asr_provider": "Scribe v2 Realtime",
+        "convai_tts_model": null,
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": null,
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": "audio",
+      "source_event_id": 1648,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "agent",
+      "agent_metadata": {
+        "agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+        "branch_id": "agtbrch_6201ktmjf58qer6bhb3aava8xjhn",
+        "workflow_node_id": null,
+        "version_id": "agtvrsn_9901kz005exhe86atb031rm8a7vx"
+      },
+      "message": "That's right, we only have morning slots available on Monday, August tenth. Would you like me to check for evening availability on another day?",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": "gpt-4o",
+      "time_in_call_secs": 274,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_llm_service_ttf_sentence": {
+            "elapsed_time": 8.72733825099931
+          },
+          "convai_llm_service_ttfb": {
+            "elapsed_time": 8.704621263997979
+          },
+          "convai_llm_service_tt_last_sentence": {
+            "elapsed_time": 8.997720092000236
+          },
+          "convai_tts_service_ttfb": {
+            "elapsed_time": 0.43390684299811255
+          },
+          "convai_ttf_audio_since_silence": {
+            "elapsed_time": 9.774241292999534
+          },
+          "convai_turn_silence_before_initiation": {
+            "elapsed_time": 0.512
+          },
+          "convai_turn_asr_latency": {
+            "elapsed_time": 0.044111125000199536
+          }
+        },
+        "convai_asr_provider": null,
+        "convai_tts_model": "eleven_v3_conversational",
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": {
+        "model_usage": {
+          "gpt-4o": {
+            "input": {
+              "tokens": 341,
+              "price": 0.0008525
+            },
+            "input_cache_read": {
+              "tokens": 4608,
+              "price": 0.00576
+            },
+            "input_cache_write": {
+              "tokens": 0,
+              "price": 0.0
+            },
+            "output_total": {
+              "tokens": 29,
+              "price": 0.00029
+            }
+          }
+        }
+      },
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": null,
+      "source_event_id": 1648,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "user",
+      "agent_metadata": null,
+      "message": "No, thank you. Uh, it's fine. Can, we can, uh, okay, whatever. We, I'll book in, like, early morning slot at 8:00 a.m.",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": null,
+      "time_in_call_secs": 290,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_asr_trailing_service_latency": {
+            "elapsed_time": 0.12285711699951207
+          }
+        },
+        "convai_asr_provider": "Scribe v2 Realtime",
+        "convai_tts_model": null,
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": null,
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": "audio",
+      "source_event_id": 1865,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "agent",
+      "agent_metadata": {
+        "agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+        "branch_id": "agtbrch_6201ktmjf58qer6bhb3aava8xjhn",
+        "workflow_node_id": null,
+        "version_id": "agtvrsn_9901kz005exhe86atb031rm8a7vx"
+      },
+      "message": "Alright, I'll book you in for the eight AM slot on Monday, August tenth. Please wait a moment while I get that set up for you.",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": "gpt-4o",
+      "time_in_call_secs": 316,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_llm_service_ttf_sentence": {
+            "elapsed_time": 15.429800051999337
+          },
+          "convai_llm_service_ttfb": {
+            "elapsed_time": 15.423745822998171
+          },
+          "convai_llm_service_tt_last_sentence": {
+            "elapsed_time": 16.285362778999115
+          },
+          "convai_tts_service_ttfb": {
+            "elapsed_time": 0.26809647099798894
+          },
+          "convai_ttf_audio_since_silence": {
+            "elapsed_time": 16.653024127001846
+          },
+          "convai_turn_silence_before_initiation": {
+            "elapsed_time": 0.8
+          },
+          "convai_turn_asr_latency": {
+            "elapsed_time": 0.12285711699951207
+          }
+        },
+        "convai_asr_provider": null,
+        "convai_tts_model": "eleven_v3_conversational",
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": null,
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": null,
+      "source_event_id": 1865,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "agent",
+      "agent_metadata": {
+        "agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+        "branch_id": "agtbrch_6201ktmjf58qer6bhb3aava8xjhn",
+        "workflow_node_id": null,
+        "version_id": "agtvrsn_9901kz005exhe86atb031rm8a7vx"
+      },
+      "message": null,
+      "multivoice_message": null,
+      "tool_calls": [
+        {
+          "type": "webhook",
+          "request_id": "call_FvmFFnL6actyntVmyawlau8E",
+          "tool_name": "book_appointment",
+          "params_as_json": "{\"phone\":\"424-270-4893\",\"appointment_datetime\":\"2026-08-10 08:00:00\",\"service_type\":\"Windshield repair for 2021 BMW X3\"}",
+          "tool_has_been_called": true,
+          "tool_details": {
+            "type": "webhook",
+            "method": "POST",
+            "url": "https://servicebot-w6hm.onrender.com/api/v1/voice/tools",
+            "headers": {},
+            "path_params": {},
+            "query_params": {},
+            "body": "{\"phone\": \"424-270-4893\", \"appointment_datetime\": \"2026-08-10 08:00:00\", \"service_type\": \"Windshield repair for 2021 BMW X3\"}"
+          }
+        }
+      ],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": "gpt-4o",
+      "time_in_call_secs": 318,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_llm_service_ttf_sentence": {
+            "elapsed_time": 15.429800051999337
+          },
+          "convai_llm_service_ttfb": {
+            "elapsed_time": 15.423745822998171
+          },
+          "convai_llm_tool_request_generation_latency": {
+            "elapsed_time": 1.0567683750014112
+          },
+          "convai_llm_service_tt_last_sentence": {
+            "elapsed_time": 16.285362778999115
+          },
+          "convai_tts_service_ttfb": {
+            "elapsed_time": 0.26809647099798894
+          },
+          "convai_ttf_audio_since_silence": {
+            "elapsed_time": 16.653024127001846
+          },
+          "convai_turn_silence_before_initiation": {
+            "elapsed_time": 0.8
+          },
+          "convai_turn_asr_latency": {
+            "elapsed_time": 0.12285711699951207
+          }
+        },
+        "convai_asr_provider": null,
+        "convai_tts_model": "eleven_v3_conversational",
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": {
+        "model_usage": {
+          "gpt-4o": {
+            "input": {
+              "tokens": 161,
+              "price": 0.0004025
+            },
+            "input_cache_read": {
+              "tokens": 4864,
+              "price": 0.00608
+            },
+            "input_cache_write": {
+              "tokens": 0,
+              "price": 0.0
+            },
+            "output_total": {
+              "tokens": 81,
+              "price": 0.00081
+            }
+          }
+        }
+      },
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": null,
+      "source_event_id": 1865,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "agent",
+      "agent_metadata": {
+        "agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+        "branch_id": "agtbrch_6201ktmjf58qer6bhb3aava8xjhn",
+        "workflow_node_id": null,
+        "version_id": "agtvrsn_9901kz005exhe86atb031rm8a7vx"
+      },
+      "message": null,
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [
+        {
+          "request_id": "call_FvmFFnL6actyntVmyawlau8E",
+          "tool_name": "book_appointment",
+          "result_value": "{\"tool_call_id\":\"call_flat\",\"result\":{\"success\":true,\"appointment_id\":3,\"message\":\"Appointment booked successfully. The estimated rate for this service is Varies by service. Please inform the customer of this rate.\"}}",
+          "is_error": false,
+          "is_blocked": false,
+          "tool_has_been_called": true,
+          "tool_latency_secs": 10.895651164999435,
+          "error_type": "",
+          "raw_error_message": "",
+          "dynamic_variable_updates": [],
+          "type": "webhook"
+        }
+      ],
+      "feedback": null,
+      "llm_override": "gpt-4o",
+      "time_in_call_secs": 328,
+      "conversation_turn_metrics": null,
+      "rag_retrieval_info": null,
+      "llm_usage": null,
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": null,
+      "source_event_id": 1865,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "agent",
+      "agent_metadata": {
+        "agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+        "branch_id": "agtbrch_6201ktmjf58qer6bhb3aava8xjhn",
+        "workflow_node_id": null,
+        "version_id": "agtvrsn_9901kz005exhe86atb031rm8a7vx"
+      },
+      "message": "Okay, Rohan, your appointment for a windshield repair on your 2021 BMW X3 is booked for Monday, August tenth, at eight AM.\n\nJust so you know, the exact cost for the windshield repair can...",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": null,
+      "time_in_call_secs": 335,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_llm_service_ttf_sentence": {
+            "elapsed_time": 6.717989979999402
+          },
+          "convai_llm_service_ttfb": {
+            "elapsed_time": 6.469643197000551
+          },
+          "convai_llm_service_tt_last_sentence": {
+            "elapsed_time": 7.119874315998459
+          },
+          "convai_tts_service_ttfb": {
+            "elapsed_time": 0.2457665330002783
+          }
+        },
+        "convai_asr_provider": null,
+        "convai_tts_model": "eleven_v3_conversational",
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": {
+        "model_usage": {
+          "gemini-2.5-flash": {
+            "input": {
+              "tokens": 825,
+              "price": 0.00012375
+            },
+            "input_cache_read": {
+              "tokens": 4197,
+              "price": 0.0
+            },
+            "input_cache_write": {
+              "tokens": 0,
+              "price": 0.0
+            },
+            "output_total": {
+              "tokens": 62,
+              "price": 3.7199999999999996e-05
+            }
+          }
+        }
+      },
+      "interrupted": true,
+      "ignored_as_backchannel": false,
+      "original_message": "Okay, Rohan, your appointment for a windshield repair on your 2021 BMW X3 is booked for Monday, August tenth, at eight AM.\n\nJust so you know, the exact cost for the windshield repair can vary, but our team will give you a precise quote when you come in.",
+      "reasoning": [],
+      "source_medium": null,
+      "source_event_id": 1865,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "user",
+      "agent_metadata": null,
+      "message": "Okay.",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": null,
+      "time_in_call_secs": 349,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_asr_trailing_service_latency": {
+            "elapsed_time": 0.057128783999360166
+          }
+        },
+        "convai_asr_provider": "Scribe v2 Realtime",
+        "convai_tts_model": null,
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": null,
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": "audio",
+      "source_event_id": 2175,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "agent",
+      "agent_metadata": {
+        "agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+        "branch_id": "agtbrch_6201ktmjf58qer6bhb3aava8xjhn",
+        "workflow_node_id": null,
+        "version_id": "agtvrsn_9901kz005exhe86atb031rm8a7vx"
+      },
+      "message": "...vary depending on the specific damage. Our service advisor will give you a precise quote when you come in.",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": null,
+      "time_in_call_secs": 359,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_llm_service_ttf_sentence": {
+            "elapsed_time": 9.764217478001228
+          },
+          "convai_llm_service_ttfb": {
+            "elapsed_time": 5.25631913899997
+          },
+          "convai_llm_service_tt_last_sentence": {
+            "elapsed_time": 9.968026795999322
+          },
+          "convai_tts_service_ttfb": {
+            "elapsed_time": 0.22162360599759268
+          },
+          "convai_ttf_audio_since_silence": {
+            "elapsed_time": 10.576253205000569
+          },
+          "convai_turn_silence_before_initiation": {
+            "elapsed_time": 0.512
+          },
+          "convai_turn_asr_latency": {
+            "elapsed_time": 0.057128783999360166
+          }
+        },
+        "convai_asr_provider": null,
+        "convai_tts_model": "eleven_v3_conversational",
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": {
+        "model_usage": {
+          "gemini-2.5-flash": {
+            "input": {
+              "tokens": 874,
+              "price": 0.0001311
+            },
+            "input_cache_read": {
+              "tokens": 4197,
+              "price": 0.0
+            },
+            "input_cache_write": {
+              "tokens": 0,
+              "price": 0.0
+            },
+            "output_total": {
+              "tokens": 22,
+              "price": 1.3199999999999999e-05
+            }
+          }
+        }
+      },
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": null,
+      "source_event_id": 2175,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "user",
+      "agent_metadata": null,
+      "message": "Sure.",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": null,
+      "time_in_call_secs": 368,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_asr_trailing_service_latency": {
+            "elapsed_time": 0.031135247001657262
+          }
+        },
+        "convai_asr_provider": "Scribe v2 Realtime",
+        "convai_tts_model": null,
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": null,
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": "audio",
+      "source_event_id": 2295,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "agent",
+      "agent_metadata": {
+        "agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+        "branch_id": "agtbrch_6201ktmjf58qer6bhb3aava8xjhn",
+        "workflow_node_id": null,
+        "version_id": "agtvrsn_9901kz005exhe86atb031rm8a7vx"
+      },
+      "message": "Is there anything else I can help you with today?",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": null,
+      "time_in_call_secs": 369,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_llm_service_ttf_sentence": {
+            "elapsed_time": 0.4506639209976129
+          },
+          "convai_llm_service_ttfb": {
+            "elapsed_time": 0.364041520999308
+          },
+          "convai_llm_service_tt_last_sentence": {
+            "elapsed_time": 0.45065378099752706
+          },
+          "convai_tts_service_ttfb": {
+            "elapsed_time": 0.33731997400172986
+          },
+          "convai_ttf_audio_since_silence": {
+            "elapsed_time": 1.127332358998945
+          },
+          "convai_turn_silence_before_initiation": {
+            "elapsed_time": 0.288
+          },
+          "convai_turn_asr_latency": {
+            "elapsed_time": 0.031135247001657262
+          }
+        },
+        "convai_asr_provider": null,
+        "convai_tts_model": "eleven_v3_conversational",
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": {
+        "model_usage": {
+          "gemini-2.5-flash": {
+            "input": {
+              "tokens": 5094,
+              "price": 0.0007641
+            },
+            "input_cache_read": {
+              "tokens": 0,
+              "price": 0.0
+            },
+            "input_cache_write": {
+              "tokens": 0,
+              "price": 0.0
+            },
+            "output_total": {
+              "tokens": 11,
+              "price": 6.5999999999999995e-06
+            }
+          }
+        }
+      },
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": null,
+      "source_event_id": 2295,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "user",
+      "agent_metadata": null,
+      "message": "No.",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": null,
+      "time_in_call_secs": 374,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_asr_trailing_service_latency": {
+            "elapsed_time": 0.07823190199997043
+          }
+        },
+        "convai_asr_provider": "Scribe v2 Realtime",
+        "convai_tts_model": null,
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": null,
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": "audio",
+      "source_event_id": 2330,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "agent",
+      "agent_metadata": {
+        "agent_id": "agent_2501ktmjf3pee2as55y9vx3gdpge",
+        "branch_id": "agtbrch_6201ktmjf58qer6bhb3aava8xjhn",
+        "workflow_node_id": null,
+        "version_id": "agtvrsn_9901kz005exhe86atb031rm8a7vx"
+      },
+      "message": "Alright, Rohan. Thanks for calling Davidson Car Care. Have a great day!",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": null,
+      "time_in_call_secs": 381,
+      "conversation_turn_metrics": {
+        "metrics": {
+          "convai_llm_service_ttf_sentence": {
+            "elapsed_time": 6.203613066001708
+          },
+          "convai_llm_service_ttfb": {
+            "elapsed_time": 3.4404561760020442
+          },
+          "convai_llm_service_tt_last_sentence": {
+            "elapsed_time": 6.20360339599938
+          },
+          "convai_tts_service_ttfb": {
+            "elapsed_time": 0.4164903950004373
+          },
+          "convai_ttf_audio_since_silence": {
+            "elapsed_time": 7.008036170001549
+          },
+          "convai_turn_silence_before_initiation": {
+            "elapsed_time": 0.288
+          },
+          "convai_turn_asr_latency": {
+            "elapsed_time": 0.07823190199997043
+          }
+        },
+        "convai_asr_provider": null,
+        "convai_tts_model": "eleven_v3_conversational",
+        "convai_tts_cascade": null
+      },
+      "rag_retrieval_info": null,
+      "llm_usage": {
+        "model_usage": {
+          "gemini-2.5-flash": {
+            "input": {
+              "tokens": 5107,
+              "price": 0.00076605
+            },
+            "input_cache_read": {
+              "tokens": 0,
+              "price": 0.0
+            },
+            "input_cache_write": {
+              "tokens": 0,
+              "price": 0.0
+            },
+            "output_total": {
+              "tokens": 16,
+              "price": 9.6e-06
+            }
+          }
+        }
+      },
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": null,
+      "source_event_id": 2330,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    },
+    {
+      "role": "user",
+      "agent_metadata": null,
+      "message": "Have a great day.",
+      "multivoice_message": null,
+      "tool_calls": [],
+      "tool_results": [],
+      "feedback": null,
+      "llm_override": null,
+      "time_in_call_secs": 386,
+      "conversation_turn_metrics": null,
+      "rag_retrieval_info": null,
+      "llm_usage": null,
+      "interrupted": false,
+      "ignored_as_backchannel": false,
+      "original_message": null,
+      "reasoning": [],
+      "source_medium": null,
+      "source_event_id": 2412,
+      "used_static_kb_document_ids": [],
+      "analysis": null,
+      "user_identifier": null,
+      "id": null,
+      "triggered_guardrails": [],
+      "file_input": null,
+      "contextual_update_info": null,
+      "config_snapshot_id": null,
+      "reasoned": false
+    }
+  ],
+  "tag_ids": [],
+  "realtime_config_snapshots": null,
+  "otlp_traces": null
+}

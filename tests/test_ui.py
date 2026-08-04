@@ -15,3 +15,4 @@ def test_static_dashboard_serves_html():
     assert 'id="dashboard-view"' in html_content
     assert 'id="services-view"' in html_content
     assert 'id="keys-view"' in html_content
+    assert "Dial '(559) 546-4402 to reach the customer service agent." in html_content

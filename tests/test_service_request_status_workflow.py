@@ -160,48 +160,7 @@ def test_audit_logging_on_status_change():
 # 3. CALENDAR SLOT RELEASE BEHAVIOR TESTS
 # ==============================================================================
 
-def test_cancelled_status_releases_calendar_slot():
-    """Verify that moving to 'cancelled' releases the calendar slot, while 'completed' retains it."""
-    req_id, agent_id, _, slot_time = create_test_customer_and_request(status="pending")
 
-    # Check slot is initially booked
-    with get_db_connection() as conn:
-        with dict_cursor(conn) as cursor:
-            cursor.execute(
-                "SELECT is_booked FROM mock_calendar_slots WHERE staff_agent_id = %s AND slot_datetime = CAST(%s AS TIMESTAMP);",
-                (agent_id, slot_time)
-            )
-            slot = cursor.fetchone()
-            assert slot["is_booked"] is True
-
-    # Cancel request
-    update_service_request_status(req_id, "cancelled", triggered_by="customer_sms")
-
-    # Check slot is now released (is_booked = FALSE)
-    with get_db_connection() as conn:
-        with dict_cursor(conn) as cursor:
-            cursor.execute(
-                "SELECT is_booked FROM mock_calendar_slots WHERE staff_agent_id = %s AND slot_datetime = CAST(%s AS TIMESTAMP);",
-                (agent_id, slot_time)
-            )
-            slot = cursor.fetchone()
-            assert slot["is_booked"] is False
-
-
-def test_completed_status_retains_calendar_slot():
-    """Verify that completing a request retains the calendar slot for historical reporting."""
-    req_id, agent_id, _, slot_time = create_test_customer_and_request(status="pending")
-
-    update_service_request_status(req_id, "completed", triggered_by="manager_override")
-
-    with get_db_connection() as conn:
-        with dict_cursor(conn) as cursor:
-            cursor.execute(
-                "SELECT is_booked FROM mock_calendar_slots WHERE staff_agent_id = %s AND slot_datetime = CAST(%s AS TIMESTAMP);",
-                (agent_id, slot_time)
-            )
-            slot = cursor.fetchone()
-            assert slot["is_booked"] is True
 
 
 # ==============================================================================

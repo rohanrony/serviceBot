@@ -14,24 +14,7 @@ from serviceBot.api.portal import router as portal_router
 logger = get_logger("main")
 
 
-def _run_calendar_sync_loop(interval_seconds: int = 3600):
-    """
-    Background thread: syncs all connected agents' Google Calendar events into
-    mock_calendar_slots every `interval_seconds` seconds (default: 1 hour).
-    Runs immediately on first call, then sleeps between cycles.
-    """
-    import time
-    from serviceBot.services.calendar_sync import sync_all_connected_agents
 
-    while True:
-        try:
-            logger.info("[calendar_sync] Starting scheduled slot refresh for all connected agents...")
-            results = sync_all_connected_agents(days=30)
-            total_new = sum(r.get("created", 0) for r in results.values() if isinstance(r, dict))
-            logger.info(f"[calendar_sync] Refresh complete. New slots created: {total_new}. Agents: {list(results.keys())}")
-        except Exception as exc:
-            logger.error(f"[calendar_sync] Background sync error: {exc}", exc_info=exc)
-        time.sleep(interval_seconds)
 
 
 @asynccontextmanager

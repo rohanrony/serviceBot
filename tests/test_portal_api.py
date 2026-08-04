@@ -377,8 +377,6 @@ def test_agent_switch_triggers_slot_invite_and_admin_mail():
             agent2_id = cursor.fetchone()["id"]
 
             slot_time = "2026-08-01 10:00:00"
-            cursor.execute("INSERT INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES (CAST(%s AS TIMESTAMP), TRUE, %s);", (slot_time, agent1_id))
-            cursor.execute("INSERT INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES (CAST(%s AS TIMESTAMP), FALSE, %s);", (slot_time, agent2_id))
 
             cursor.execute("""
                 INSERT INTO service_requests (customer_id, service_type, booking_type, booking_time, staff_agent_id, status)
@@ -390,16 +388,7 @@ def test_agent_switch_triggers_slot_invite_and_admin_mail():
     res = assign_staff_agent_to_service_request(sr_id, agent2_id)
     assert res["staff_agent_id"] == agent2_id
 
-    # Verify mock slots updated
-    with get_db_connection() as conn:
-        with dict_cursor(conn) as cursor:
-            cursor.execute("SELECT is_booked FROM mock_calendar_slots WHERE staff_agent_id = %s AND slot_datetime = CAST(%s AS TIMESTAMP);", (agent1_id, slot_time))
-            a1_slot = cursor.fetchone()
-            assert a1_slot["is_booked"] is False
 
-            cursor.execute("SELECT is_booked FROM mock_calendar_slots WHERE staff_agent_id = %s AND slot_datetime = CAST(%s AS TIMESTAMP);", (agent2_id, slot_time))
-            a2_slot = cursor.fetchone()
-            assert a2_slot["is_booked"] is True
 
 
 

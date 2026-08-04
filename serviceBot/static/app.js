@@ -2166,8 +2166,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
               }
 
-              const syncInfo = data.calendar_sync ? ` (${data.calendar_sync.total || 0} slots synced)` : '';
-              showToast(`Staff member "${name}" updated & calendar synced successfully!${syncInfo}`);
+              showToast(`Staff member "${name}" updated successfully!`);
               closeEditAgentDrawer();
 
               // Reload staff view and re-select updated agent
@@ -3626,9 +3625,14 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('sr-cust-phone').disabled = true;
     document.getElementById('sr-service-type').disabled = true;
 
-    // Load agents
-    populateAgentsDropdown('sr-agent-select', req.staff_agent_id);
-
+    // Populate booking time if available
+    let bt = req.booking_time || req.time_slot || '';
+    if (bt && bt.length >= 16) {
+      // Assuming format "YYYY-MM-DD HH:MM:SS", convert to "YYYY-MM-DDTHH:MM"
+      document.getElementById('sr-booking-time').value = bt.substring(0, 16).replace(' ', 'T');
+    } else {
+      document.getElementById('sr-booking-time').value = '';
+    }
     if (srModal) srModal.style.display = 'block';
     if (srModalOverlay) srModalOverlay.style.display = 'block';
   };
@@ -3644,8 +3648,7 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('sr-cust-phone').disabled = false;
       document.getElementById('sr-service-type').disabled = false;
       
-      populateAgentsDropdown('sr-agent-select', null);
-
+      document.getElementById('sr-booking-time').value = '';
       if (srModal) srModal.style.display = 'block';
       if (srModalOverlay) srModalOverlay.style.display = 'block';
     });
@@ -3673,54 +3676,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  const loadSlotsBtn = document.getElementById('sr-load-slots-btn');
-  if (loadSlotsBtn) {
-    loadSlotsBtn.addEventListener('click', async () => {
-      const agentId = document.getElementById('sr-agent-select').value;
-      if (!agentId) {
-        showToast('Please select an agent first.', 'warning');
-        return;
-      }
-      
-      try {
-        loadSlotsBtn.disabled = true;
-        loadSlotsBtn.textContent = 'Loading...';
-        
-        // Trigger populate to get fresh slots
-        await fetch(`/api/v1/portal/agents/${agentId}/calendar/populate`, {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ days: 14 })
-        });
-        
-        // Fetch slots
-        const res = await fetch(`/api/v1/portal/agents/${agentId}/calendar`);
-        if (res.ok) {
-          const slots = await res.json();
-          const slotSelect = document.getElementById('sr-slot-select');
-          slotSelect.innerHTML = '<option value="">-- Do not assign slot --</option>';
-          const unbooked = slots.filter(s => !s.is_booked);
-          unbooked.forEach(s => {
-            const opt = document.createElement('option');
-            opt.value = s.id;
-            const dtStr = s.slot_datetime ? s.slot_datetime.replace('T', ' ') : 'Available Slot';
-            opt.textContent = dtStr;
-            slotSelect.appendChild(opt);
-          });
-          showToast(`Loaded ${unbooked.length} available slots.`, 'success');
-        } else {
-          const errData = await res.json().catch(() => ({}));
-          showToast(errData.detail || 'Failed to load slots from calendar.', 'danger');
-        }
-      } catch (e) {
-        console.error('Error loading slots:', e);
-        showToast('Failed to load slots: ' + e.message, 'danger');
-      } finally {
-        loadSlotsBtn.disabled = false;
-        loadSlotsBtn.textContent = 'Load Slots';
-      }
-    });
-  }
+
 
   if (srForm) {
     srForm.addEventListener('submit', (e) => {
@@ -3730,9 +3686,13 @@ document.addEventListener('DOMContentLoaded', () => {
       const isEdit = !!reqId;
       
       const actionText = isEdit ? 'Update this service request?' : 'Create new service request?';
-      const slotId = document.getElementById('sr-slot-select').value;
+      let bookingTimeStr = document.getElementById('sr-booking-time').value;
+      if (bookingTimeStr) {
+         bookingTimeStr = bookingTimeStr.replace('T', ' ') + ':00'; // formatting to YYYY-MM-DD HH:MM:SS
+      }
+      
       let msg = 'This will save the changes.';
-      if (slotId) msg += ' A booking confirmation SMS will be sent to the customer.';
+      if (bookingTimeStr) msg += ' A booking confirmation SMS will be sent to the customer.';
 
       openConfirmModal(actionText, msg, async () => {
         try {
@@ -3743,7 +3703,7 @@ document.addEventListener('DOMContentLoaded', () => {
               year: parseInt(document.getElementById('sr-veh-year').value),
               vin: document.getElementById('sr-veh-vin').value || null
             },
-            new_slot_id: slotId ? parseInt(slotId) : null,
+            booking_time: bookingTimeStr || null,
             issue_description: document.getElementById('sr-issue-desc').value
           };
 
@@ -3765,7 +3725,7 @@ document.addEventListener('DOMContentLoaded', () => {
               service_request: {
                 service_type: document.getElementById('sr-service-type').value,
                 issue_description: payload.issue_description,
-                slot_id: payload.new_slot_id
+                booking_time: payload.booking_time
               }
             };
           }

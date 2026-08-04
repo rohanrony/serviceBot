@@ -1,6 +1,6 @@
 import os
 import json
-from fastapi import APIRouter, Response, HTTPException, Request
+from fastapi import APIRouter, Response, HTTPException, Request, BackgroundTasks
 from pydantic import BaseModel
 from typing import Dict, Any, Optional
 from dotenv import load_dotenv
@@ -164,16 +164,29 @@ async def inbound_call(request: Request = None):
         except Exception:
             pass
 
+    recent_booking_context = ""
     if caller_phone:
-        from serviceBot.db.queries import lookup_customer_by_phone
+        from serviceBot.db.queries import lookup_customer_by_phone, get_customer_appointments
         c_data = lookup_customer_by_phone(caller_phone)
         if c_data:
             print(f"Inbound call from existing customer #{c_data.get('customer_id')} ({c_data.get('name')}). Active SR: {c_data.get('open_sr_type')}")
+            try:
+                appts = get_customer_appointments(caller_phone)
+                if appts:
+                    latest = appts[0]
+                    v_info = f"{latest.get('year', '')} {latest.get('make', '')} {latest.get('model', '')}".strip()
+                    srv = latest.get("service_type") or "Service"
+                    dt = latest.get("appointment_datetime") or "recent date"
+                    recent_booking_context = f"Recent booking on {dt} for {v_info} ({srv})".strip()
+            except Exception as e:
+                print(f"Error fetching recent booking context: {e}")
     
+    param_xml = f'        <Parameter name="recent_booking_context" value="{recent_booking_context}" />\n' if recent_booking_context else ""
     twiml_response = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Connect>
-        <ConversationAgent url="https://api.elevenlabs.io/v1/convai/conversation/stream" agentId="{agent_id}" />
+        <ConversationAgent url="https://api.elevenlabs.io/v1/convai/conversation/stream" agentId="{agent_id}">
+{param_xml}        </ConversationAgent>
     </Connect>
 </Response>"""
     return Response(content=twiml_response, media_type="application/xml")
@@ -460,11 +473,59 @@ class ElevenLabsToolCall(BaseModel):
     arguments: Dict[str, Any]
 
 
+def _send_booking_notifications_bg(booking_kind: str, customer_id: int, item_id: int, booking_time: str, service_type: str = "Repair"):
+    """Background worker function for sending email and SMS notifications without blocking HTTP response."""
+    try:
+        agent_email = None
+        agent_name = None
+        agent_phone = None
+        with get_db_connection() as conn:
+            with dict_cursor(conn) as cursor:
+                cursor.execute("""
+                    SELECT sa.name, sa.phone_number, COALESCE(uga.email, sa.email) AS email
+                    FROM service_requests sr
+                    LEFT JOIN staff_agents sa ON sr.staff_agent_id = sa.id
+                    LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id
+                    WHERE sr.id = %s;
+                """, (item_id,))
+                a_row = cursor.fetchone()
+                if a_row:
+                    agent_name = a_row.get("name")
+                    agent_email = a_row.get("email")
+                    agent_phone = a_row.get("phone_number")
+
+        details = get_booking_details(customer_id, item_id) or {}
+        details["time"] = booking_time or ("Scheduled" if booking_kind == "appointment" else "ASAP")
+        if service_type:
+            details["service_type"] = service_type
+
+        try:
+            from serviceBot.services.gmail import send_booking_notification, send_admin_notification
+            send_booking_notification(booking_kind, details, agent_email=agent_email)
+            send_admin_notification(booking_kind, details, mechanic_name=agent_name, mechanic_email=agent_email)
+        except Exception as email_err:
+            logger.warning(f"Email notification failed ({booking_kind}): {email_err}")
+
+        try:
+            from serviceBot.services.sms_router import SMSNotificationRouter
+            SMSNotificationRouter().process_event(
+                event_type="BOOKING",
+                appointment_id=item_id,
+                customer_phone=details.get("phone"),
+                agent_phone=agent_phone,
+                booking_time=details.get("time")
+            )
+        except Exception as sms_err:
+            logger.warning(f"SMS notification failed ({booking_kind}): {sms_err}")
+    except Exception as notify_err:
+        logger.warning(f"Background notification processing failed ({booking_kind}): {notify_err}")
+
+
 voice_router = APIRouter(prefix="/api/v1/voice", tags=["voice"])
 
 
 @voice_router.post("/tools")
-async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
+async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks = None, name: Optional[str] = None):
     # Check if this is the standard wrapped tool call format
     if "tool_call_id" in payload and "name" in payload and "arguments" in payload:
         tool_name = payload["name"]
@@ -563,9 +624,12 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
             else:
                 phone = validated_phone
                 customer_name = args.get("customer_name") or args.get("name")
-                make = args.get("make") or "Unknown"
-                model = args.get("model") or "Unknown"
-                year = args.get("year") or 2000
+                make = args.get("make")
+                model = args.get("model")
+                year = args.get("year")
+                has_explicit_make = bool(make and make not in ("Unknown", ""))
+                has_explicit_model = bool(model and model not in ("Unknown", ""))
+
                 issue_description = args.get("issue_description") or args.get("issue") or "Not specified"
                 service_type = args.get("service_type") or args.get("serviceType") or "Repair"
                 time_slot = args.get("time_slot") or args.get("timeSlot")
@@ -586,6 +650,18 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                     customer_id = c_data.get("customer_id") or c_data.get("id")
                     if customer_name and customer_name not in ("Unknown Customer", "Unknown"):
                         update_customer_name(customer_id, customer_name)
+                    if not has_explicit_make and not has_explicit_model:
+                        make = c_data.get("make")
+                        model = c_data.get("model")
+                        if not year or year == 2000 or str(year) == "2000":
+                            year = c_data.get("year")
+
+                if not make or make in ("Unknown", ""):
+                    make = "Vehicle"
+                if not model or model in ("Unknown", ""):
+                    model = "Standard"
+                if not year or year == 2000 or str(year) == "2000":
+                    year = 2020
                 
                 if not customer_id:
                     # Insert customer
@@ -634,46 +710,10 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                         "is_uncataloged": is_uncataloged,
                         "message": f"Service request booked as an appointment successfully. The estimated rate for this service is {price_range}. Please inform the customer of this rate."
                     }
-                    try:
-                        agent_email = None
-                        agent_name = None
-                        with get_db_connection() as conn:
-                            with dict_cursor(conn) as cursor:
-                                cursor.execute("""
-                                    SELECT sa.name, COALESCE(uga.email, sa.email) AS email
-                                    FROM service_requests sr
-                                    LEFT JOIN staff_agents sa ON sr.staff_agent_id = sa.id
-                                    LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id
-                                    WHERE sr.id = %s;
-                                """, (sr_id,))
-                                a_row = cursor.fetchone()
-                                if a_row:
-                                    agent_name = a_row["name"]
-                                    agent_email = a_row["email"]
-
-                        details = get_booking_details(customer_id, sr_id) or {}
-                        details["time"] = booking_time or "Scheduled"
-                        details["service_type"] = service_type
-                        try:
-                            from serviceBot.services.gmail import send_booking_notification, send_admin_notification
-                            send_booking_notification("appointment", details, agent_email=agent_email)
-                            send_admin_notification("appointment", details, mechanic_name=agent_name, mechanic_email=agent_email)
-                        except Exception as email_err:
-                            print(f"Error triggering service request appointment email: {email_err}")
-                        # SMS: notify customer + agent on appointment booking
-                        try:
-                            from serviceBot.services.sms_router import SMSNotificationRouter
-                            SMSNotificationRouter().process_event(
-                                event_type="BOOKING",
-                                appointment_id=sr_id,
-                                customer_phone=details.get("phone"),
-                                agent_phone=None,
-                                booking_time=details.get("time")
-                            )
-                        except Exception as sms_err:
-                            print(f"Error sending SMS notification (create_service_request appointment): {sms_err}")
-                    except Exception as notify_err:
-                        print(f"Error processing appointment notifications: {notify_err}")
+                    if background_tasks:
+                        background_tasks.add_task(_send_booking_notifications_bg, "appointment", customer_id, sr_id, booking_time, service_type)
+                    else:
+                        _send_booking_notifications_bg("appointment", customer_id, sr_id, booking_time, service_type)
                 elif booking_type in ("callback", "appointment_and_callback"):
                     result = {
                         "success": True,
@@ -682,45 +722,10 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                         "is_uncataloged": is_uncataloged,
                         "message": "Service request callback recorded successfully."
                     }
-                    try:
-                        agent_email = None
-                        agent_name = None
-                        with get_db_connection() as conn:
-                            with dict_cursor(conn) as cursor:
-                                cursor.execute("""
-                                    SELECT sa.name, COALESCE(uga.email, sa.email) AS email
-                                    FROM service_requests sr
-                                    LEFT JOIN staff_agents sa ON sr.staff_agent_id = sa.id
-                                    LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id
-                                    WHERE sr.id = %s;
-                                """, (sr_id,))
-                                a_row = cursor.fetchone()
-                                if a_row:
-                                    agent_name = a_row["name"]
-                                    agent_email = a_row["email"]
-
-                        details = get_booking_details(customer_id, sr_id) or {}
-                        details["time"] = booking_time or "ASAP"
-                        try:
-                            from serviceBot.services.gmail import send_booking_notification, send_admin_notification
-                            send_booking_notification("callback", details, agent_email=agent_email)
-                            send_admin_notification("callback", details, mechanic_name=agent_name, mechanic_email=agent_email)
-                        except Exception as email_err:
-                            print(f"Error triggering service request callback email: {email_err}")
-                        # SMS: notify customer + agent on callback booking
-                        try:
-                            from serviceBot.services.sms_router import SMSNotificationRouter
-                            SMSNotificationRouter().process_event(
-                                event_type="BOOKING",
-                                appointment_id=sr_id,
-                                customer_phone=details.get("phone"),
-                                agent_phone=None,
-                                booking_time=details.get("time")
-                            )
-                        except Exception as sms_err:
-                            print(f"Error sending SMS notification (create_service_request callback): {sms_err}")
-                    except Exception as err:
-                        print(f"Error in callback notifications: {err}")
+                    if background_tasks:
+                        background_tasks.add_task(_send_booking_notifications_bg, "callback", customer_id, sr_id, booking_time, service_type)
+                    else:
+                        _send_booking_notifications_bg("callback", customer_id, sr_id, booking_time, service_type)
                 else:
                     result = {
                         "success": True,
@@ -745,17 +750,20 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                 make = args.get("make")
                 model = args.get("model")
                 year = args.get("year")
-                
+
+                has_explicit_make = bool(make and make not in ("Unknown", ""))
+                has_explicit_model = bool(model and model not in ("Unknown", ""))
+
                 c_data = lookup_customer_by_phone(phone)
                 if c_data:
-                    if not customer_name or customer_name == "Unknown Customer":
+                    if not customer_name or customer_name in ("Unknown Customer", "Unknown", ""):
                         customer_name = c_data.get("name")
-                    if not make or make == "Unknown":
+                    # Only fallback to historical vehicle if caller/agent provided NO car info at all
+                    if not has_explicit_make and not has_explicit_model:
                         make = c_data.get("make")
-                    if not model or model == "Unknown":
                         model = c_data.get("model")
-                    if not year or year == 2000 or str(year) == "2000":
-                        year = c_data.get("year")
+                        if not year or year == 2000 or str(year) == "2000":
+                            year = c_data.get("year")
                 
                 if not customer_name or customer_name in ("Unknown Customer", "Unknown", ""):
                     if c_data and c_data.get("name") and c_data["name"] not in ("Unknown Customer", "Unknown", ""):
@@ -764,11 +772,11 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                         customer_name = "Valued Customer"
 
                 if not make or make in ("Unknown", ""):
-                    make = (c_data.get("make") if c_data else None) or "Vehicle"
+                    make = "Vehicle"
                 if not model or model in ("Unknown", ""):
-                    model = (c_data.get("model") if c_data else None) or "Standard"
+                    model = "Standard"
                 if not year or year == 2000 or str(year) == "2000":
-                    year = (c_data.get("year") if c_data else None) or 2020
+                    year = 2020
 
                 customer_id = None
                 sr_id = None
@@ -806,48 +814,10 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                         "message": f"Appointment booked successfully. The estimated rate for this service is {price_range}. Please inform the customer of this rate."
                     }
 
-                    # Trigger email + SMS notification (non-fatal: errors are logged, not raised)
-                    try:
-                        agent_email = None
-                        agent_name = None
-                        with get_db_connection() as conn:
-                            with dict_cursor(conn) as cursor:
-                                cursor.execute("""
-                                    SELECT sa.name, sa.phone_number, COALESCE(uga.email, sa.email) AS email
-                                    FROM service_requests sr
-                                    JOIN staff_agents sa ON sr.staff_agent_id = sa.id
-                                    LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id
-                                    WHERE sr.id = %s;
-                                """, (appt_id,))
-                                a_row = cursor.fetchone()
-                                agent_phone = None
-                                if a_row:
-                                    agent_name = a_row["name"]
-                                    agent_email = a_row["email"]
-                                    agent_phone = a_row["phone_number"]
-
-                        details = get_booking_details(customer_id, appt_id)
-                        details["time"] = appointment_datetime
-                        details["service_type"] = service_type
-                        try:
-                            from serviceBot.services.gmail import send_booking_notification, send_admin_notification
-                            send_booking_notification("appointment", details, agent_email=agent_email)
-                            send_admin_notification("appointment", details, mechanic_name=agent_name, mechanic_email=agent_email)
-                        except Exception as email_err:
-                            logger.warning(f"Email notification failed (book_appointment): {email_err}")
-                        try:
-                            from serviceBot.services.sms_router import SMSNotificationRouter
-                            SMSNotificationRouter().process_event(
-                                event_type="BOOKING",
-                                appointment_id=appt_id,
-                                customer_phone=details.get("phone"),
-                                agent_phone=agent_phone,
-                                booking_time=details.get("time")
-                            )
-                        except Exception as sms_err:
-                            logger.warning(f"SMS notification failed (book_appointment): {sms_err}")
-                    except Exception as notify_err:
-                        logger.warning(f"Notification processing failed (book_appointment): {notify_err}")
+                    if background_tasks:
+                        background_tasks.add_task(_send_booking_notifications_bg, "appointment", customer_id, appt_id, appointment_datetime, service_type)
+                    else:
+                        _send_booking_notifications_bg("appointment", customer_id, appt_id, appointment_datetime, service_type)
                 except ValueError as val_err:
                     result = {
                         "success": False,
@@ -942,48 +912,10 @@ async def voice_tools(payload: Dict[str, Any], name: Optional[str] = None):
                             "message": "Callback request captured successfully."
                         }
                         
-                        # Trigger email notification
-                        try:
-                            agent_email = None
-                            agent_name = None
-                            with get_db_connection() as conn:
-                                with dict_cursor(conn) as cursor:
-                                    cursor.execute("""
-                                        SELECT sa.name, sa.phone_number, COALESCE(uga.email, sa.email) AS email
-                                        FROM service_requests sr
-                                        JOIN staff_agents sa ON sr.staff_agent_id = sa.id
-                                        LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id
-                                        WHERE sr.id = %s;
-                                    """, (cb_id,))
-                                    a_row = cursor.fetchone()
-                                    agent_phone = None
-                                    if a_row:
-                                        agent_name = a_row["name"]
-                                        agent_email = a_row["email"]
-                                        agent_phone = a_row["phone_number"]
-
-                            details = get_booking_details(customer_id, cb_id)
-                            details["time"] = preferred_time or "ASAP"
-                            try:
-                                from serviceBot.services.gmail import send_booking_notification, send_admin_notification
-                                send_booking_notification("callback", details, agent_email=agent_email)
-                                send_admin_notification("callback", details, mechanic_name=agent_name, mechanic_email=agent_email)
-                            except Exception as email_err:
-                                print(f"Error triggering callback email: {email_err}")
-                            # SMS: notify customer on callback request
-                            try:
-                                from serviceBot.services.sms_router import SMSNotificationRouter
-                                SMSNotificationRouter().process_event(
-                                    event_type="BOOKING",
-                                    appointment_id=cb_id,
-                                    customer_phone=details.get("phone"),
-                                    agent_phone=agent_phone,
-                                    booking_time=details.get("time")
-                                )
-                            except Exception as sms_err:
-                                print(f"Error sending SMS notification (request_callback): {sms_err}")
-                        except Exception as notify_err:
-                            print(f"Notification processing failed (request_callback): {notify_err}")
+                        if background_tasks:
+                            background_tasks.add_task(_send_booking_notifications_bg, "callback", customer_id, cb_id, preferred_time, "Repair")
+                        else:
+                            _send_booking_notifications_bg("callback", customer_id, cb_id, preferred_time, "Repair")
                     except ValueError as val_err:
                         result = {
                             "success": False,

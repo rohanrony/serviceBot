@@ -21,7 +21,6 @@ def mock_db():
         with dict_cursor(conn) as cursor:
             # Only truncate the tables we need to re-seed with controlled test data
             cursor.execute("TRUNCATE TABLE customers, vehicles, service_requests, services CASCADE;")
-            cursor.execute("UPDATE mock_calendar_slots SET is_booked = FALSE;")
 
             # Seed data matching Sarah Johnson from spec
             cursor.execute(
@@ -161,18 +160,12 @@ def test_create_service_request_with_time_slot(mock_db):
 
 def test_book_appointment_updates_service_type_and_prevents_overwrite(mock_db):
     """Verify book_appointment reuses pending requests and prevents overwriting booked ones."""
-    # Find two future unbooked mock_calendar_slots
-    with get_db_connection() as conn:
-        with dict_cursor(conn) as cursor:
-            cursor.execute(
-                "SELECT DISTINCT slot_datetime FROM mock_calendar_slots WHERE is_booked = FALSE "
-                "ORDER BY slot_datetime ASC LIMIT 2;"
-            )
-            slots = [r["slot_datetime"] for r in cursor.fetchall()]
-            assert len(slots) >= 2, "Need at least 2 unbooked mock_calendar_slots from seed"
+    from serviceBot.db.queries import _generate_dynamic_slots
+    slots = _generate_dynamic_slots(None, 60)
+    assert len(slots) >= 2, "Need at least 2 dynamic slots"
 
-    slot1 = slots[0] if isinstance(slots[0], str) else slots[0].strftime("%Y-%m-%d %H:%M:%S")
-    slot2 = slots[1] if isinstance(slots[1], str) else slots[1].strftime("%Y-%m-%d %H:%M:%S")
+    slot1 = slots[0]
+    slot2 = slots[1]
 
     # 1. Book AC change at slot1 — should reuse pending request id=1
     appt_id = book_appointment(
@@ -232,16 +225,13 @@ def test_fuzzy_service_catalog_matching(mock_db):
 
 def test_book_appointment_vehicle_resolution_and_no_overwrite(mock_db):
     """Verify that book_appointment uses the vehicle details and doesn't overwrite an already booked request."""
-    # Find two future unbooked mock_calendar_slots
+    # Find two future unbooked slots
+    from serviceBot.db.queries import _generate_dynamic_slots
+    slots = _generate_dynamic_slots(None, 60)
+    assert len(slots) >= 2, "Need at least 2 dynamic slots"
+
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
-            cursor.execute(
-                "SELECT DISTINCT slot_datetime FROM mock_calendar_slots WHERE is_booked = FALSE "
-                "ORDER BY slot_datetime ASC LIMIT 2;"
-            )
-            slots = [r["slot_datetime"] for r in cursor.fetchall()]
-            assert len(slots) >= 2, "Need at least 2 unbooked mock_calendar_slots from seed"
-
             # Create another vehicle for customer 1
             cursor.execute(
                 "INSERT INTO vehicles (id, customer_id, make, model, year, vin) VALUES (%s, %s, %s, %s, %s, %s);",
@@ -249,8 +239,8 @@ def test_book_appointment_vehicle_resolution_and_no_overwrite(mock_db):
             )
             conn.commit()
 
-    slot1 = slots[0] if isinstance(slots[0], str) else slots[0].strftime("%Y-%m-%d %H:%M:%S")
-    slot2 = slots[1] if isinstance(slots[1], str) else slots[1].strftime("%Y-%m-%d %H:%M:%S")
+    slot1 = slots[0]
+    slot2 = slots[1]
 
     # Book for Civic (vehicle_id = 1)
     appt_id1 = book_appointment(
@@ -294,19 +284,10 @@ def test_multiple_services_booking_same_slot(mock_db):
     and then another service (AC repair) is booked for the exact same slot and vehicle,
     it merges the new service into the existing appointment instead of raising a ValueError.
     """
-    # Find one future unbooked mock_calendar_slot
-    with get_db_connection() as conn:
-        with dict_cursor(conn) as cursor:
-            cursor.execute(
-                "SELECT slot_datetime FROM mock_calendar_slots WHERE is_booked = FALSE "
-                "ORDER BY slot_datetime ASC LIMIT 1;"
-            )
-            slot_row = cursor.fetchone()
-            assert slot_row is not None, "Need at least 1 unbooked mock_calendar_slot from seed"
-
-    slot_str = slot_row["slot_datetime"]
-    if not isinstance(slot_str, str):
-        slot_str = slot_str.strftime("%Y-%m-%d %H:%M:%S")
+    from serviceBot.db.queries import _generate_dynamic_slots
+    slots = _generate_dynamic_slots(None, 60)
+    assert len(slots) >= 1, "Need at least 1 dynamic slot"
+    slot_str = slots[0]
 
     # 1. Book Oil Change
     appt_id1 = book_appointment(
@@ -361,20 +342,13 @@ def test_aggregate_service_duration_slot_checking_and_booking(mock_db):
     fields = get_service_required_fields("Oil Change, Brake repair")
     assert fields["duration_minutes"] == 135
 
-    # 2. Get unbooked slots
-    with get_db_connection() as conn:
-        with dict_cursor(conn) as cursor:
-            cursor.execute(
-                "SELECT DISTINCT slot_datetime FROM mock_calendar_slots WHERE is_booked = FALSE "
-                "ORDER BY slot_datetime ASC LIMIT 4;"
-            )
-            rows = cursor.fetchall()
-            assert len(rows) >= 4
+    # 2. Get unbooked dynamic slots
+    from serviceBot.db.queries import _generate_dynamic_slots
+    rows = _generate_dynamic_slots(None, 60)
+    assert len(rows) >= 4
 
-    slot1 = rows[0]["slot_datetime"]
-    slot1_str = slot1.strftime("%Y-%m-%d %H:%M:%S") if not isinstance(slot1, str) else slot1
-    slot2 = rows[1]["slot_datetime"]
-    slot2_str = slot2.strftime("%Y-%m-%d %H:%M:%S") if not isinstance(slot2, str) else slot2
+    slot1_str = rows[0]
+    slot2_str = rows[1]
 
     # 3. Book a 135-minute multi-service appointment at slot1
     appt_id = book_appointment(

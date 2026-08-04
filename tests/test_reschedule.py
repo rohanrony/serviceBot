@@ -35,8 +35,7 @@ def test_reschedule_appointment_query():
         # Seed customer, appointment and slot
         cursor.execute("INSERT INTO staff_agents (id, name, role) VALUES (1, 'Agent 1', 'Advisor') ON CONFLICT (id) DO NOTHING;")
         cursor.execute("INSERT INTO customers (id, name, phone) VALUES (16, 'Resched Customer 2', '555-999-7777') ON CONFLICT (id) DO NOTHING;")
-        cursor.execute("INSERT INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES ('2026-06-15 14:00:00', TRUE, 1) ON CONFLICT DO NOTHING;")
-        cursor.execute("INSERT INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES ('2026-06-15 16:00:00', FALSE, 1) ON CONFLICT DO NOTHING;")
+
         cursor.execute("INSERT INTO service_requests (id, customer_id, vehicle_id, service_type, issue_description, booking_type, booking_time, staff_agent_id) VALUES (51, 16, 1, 'Oil Change', 'General repair', 'appointment', '2026-06-15 14:00:00', 1) ON CONFLICT (id) DO NOTHING;")
         conn.commit()
 
@@ -47,14 +46,7 @@ def test_reschedule_appointment_query():
     # Verify slots and appointment status
     with get_db_connection() as conn:
         cursor = conn.cursor()
-        # Old slot should be unbooked
-        cursor.execute("SELECT is_booked FROM mock_calendar_slots WHERE slot_datetime = '2026-06-15 14:00:00' AND staff_agent_id = 1")
-        assert cursor.fetchone()["is_booked"] == 0
-        
-        # New slot should be booked
-        cursor.execute("SELECT is_booked FROM mock_calendar_slots WHERE slot_datetime = '2026-06-15 16:00:00' AND staff_agent_id = 1")
-        assert cursor.fetchone()["is_booked"] == 1
-        
+
         # Appointment should be updated
         cursor.execute("SELECT booking_time FROM service_requests WHERE id = 51")
         row = cursor.fetchone()

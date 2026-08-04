@@ -12,14 +12,12 @@ def clean_db():
         cursor = conn.cursor()
         cursor.execute("DELETE FROM service_requests WHERE booking_time = '2026-06-12 15:00:00';")
         cursor.execute("DELETE FROM service_requests WHERE booking_time = '2026-06-11 09:00:00';")
-        cursor.execute("DELETE FROM mock_calendar_slots WHERE slot_datetime = '2026-06-12 15:00:00';")
         conn.commit()
     yield
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("DELETE FROM service_requests WHERE booking_time = '2026-06-12 15:00:00';")
         cursor.execute("DELETE FROM service_requests WHERE booking_time = '2026-06-11 09:00:00';")
-        cursor.execute("DELETE FROM mock_calendar_slots WHERE slot_datetime = '2026-06-12 15:00:00';")
         conn.commit()
 
 def test_get_staff_agents_endpoint():
@@ -34,50 +32,7 @@ def test_get_staff_agents_endpoint():
     assert "Jane Smith" in names
     assert "Bob Johnson" in names
 
-def test_get_agent_calendar_endpoint():
-    # John Doe is agent 1
-    response = client.get("/api/v1/portal/agents/1/calendar")
-    assert response.status_code == 200
-    calendar = response.json()
-    assert isinstance(calendar, list)
-    assert len(calendar) > 0
-    assert calendar[0]["staff_agent_id"] == 1
 
-def test_create_and_delete_agent_slot():
-    # Insert new slot for John Doe (agent 1) - now returns success/no-op
-    slot_time = "2026-06-11 09:00:00"
-    payload = {
-        "slot_datetime": slot_time,
-        "is_booked": False
-    }
-    
-    # 1. Create slot
-    create_response = client.post("/api/v1/portal/agents/1/calendar", json=payload)
-    assert create_response.status_code == 201
-    create_data = create_response.json()
-    assert create_data["success"] is True
-    slot_id = create_data["id"]
-    
-    # 2. Patch booking status
-    patch_response = client.patch(f"/api/v1/portal/calendar/{slot_id}", json={"is_booked": True})
-    assert patch_response.status_code == 200
-    
-    # 3. Delete slot
-    delete_response = client.delete(f"/api/v1/portal/calendar/{slot_id}")
-    assert delete_response.status_code == 200
-    assert delete_response.json()["success"] is True
-
-def test_agent_not_found_errors():
-    # Invalid agent calendar fetch
-    response = client.get("/api/v1/portal/agents/9999/calendar")
-    assert response.status_code == 404
-    assert response.json()["detail"] == "Agent not found"
-    
-    # Invalid agent slot creation
-    payload = {"slot_datetime": "2026-06-11 10:00:00"}
-    response = client.post("/api/v1/portal/agents/9999/calendar", json=payload)
-    assert response.status_code == 404
-    assert response.json()["detail"] == "Agent not found"
 
 def test_db_queries_integration():
     # Insert test slot
@@ -85,8 +40,6 @@ def test_db_queries_integration():
         cursor = conn.cursor()
         cursor.execute("INSERT INTO staff_agents (id, name, role) VALUES (1, 'Agent 1', 'Advisor') ON CONFLICT (id) DO NOTHING;")
         cursor.execute("DELETE FROM service_requests WHERE CAST(booking_time AS TEXT) LIKE '2026-10-15 08:00%%';")
-        cursor.execute("DELETE FROM mock_calendar_slots WHERE slot_datetime = CAST('2026-10-15 08:00:00' AS TIMESTAMP);")
-        cursor.execute("INSERT INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES ('2026-10-15 08:00:00', FALSE, 1);")
         conn.commit()
 
     # Test check_availability returns standard business slots
@@ -162,9 +115,6 @@ def test_reschedule_appointment_checks_google_calendar(monkeypatch):
             INSERT INTO service_requests (id, customer_id, vehicle_id, service_type, issue_description, status, booking_type, booking_time, staff_agent_id)
             VALUES (999, 999, 999, 'Oil Change', 'Needs oil change', 'pending', 'appointment', '2026-06-12 10:00:00', 1);
         """)
-        # Insert mock slots for agents for 2026-06-12 11:00:00
-        cursor.execute("INSERT INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES ('2026-06-12 11:00:00', FALSE, 1) ON CONFLICT DO NOTHING;")
-        cursor.execute("INSERT INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES ('2026-06-12 11:00:00', FALSE, 2) ON CONFLICT DO NOTHING;")
         conn.commit()
 
     # Mock google_calendar check: agent 1 is busy, agent 2 is free.
@@ -196,6 +146,5 @@ def test_reschedule_appointment_checks_google_calendar(monkeypatch):
         cursor = conn.cursor()
         cursor.execute("DELETE FROM service_requests WHERE id = 999;")
         cursor.execute("DELETE FROM customers WHERE id = 999;")
-        cursor.execute("DELETE FROM mock_calendar_slots WHERE slot_datetime = '2026-06-12 11:00:00';")
         conn.commit()
 

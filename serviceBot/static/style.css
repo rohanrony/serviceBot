@@ -2744,5 +2744,29 @@ textarea.form-input {
   flex-wrap: wrap;
 }
 
+/* Dashboard Customer Service Banner */
+.dashboard-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  padding: 12px 18px;
+  background: rgba(94, 106, 210, 0.08);
+  border: 1px solid rgba(94, 106, 210, 0.25);
+  border-radius: var(--border-radius-md);
+  box-shadow: var(--glass-shadow);
+  color: var(--text-main);
+  font-size: 14px;
+  font-weight: 500;
+}
 
+.dashboard-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 
+.dashboard-banner .banner-icon {
+  color: var(--color-primary-hover);
+  flex-shrink: 0;
+}

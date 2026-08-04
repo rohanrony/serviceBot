@@ -154,17 +154,7 @@ CREATE TABLE IF NOT EXISTS crm_notes (
 
 CREATE INDEX IF NOT EXISTS idx_crm_notes_customer ON crm_notes(customer_id);
 
-CREATE TABLE IF NOT EXISTS mock_calendar_slots (
-    id SERIAL PRIMARY KEY,
-    slot_datetime TIMESTAMP NOT NULL,
-    is_booked BOOLEAN NOT NULL DEFAULT FALSE,
-    staff_agent_id INTEGER DEFAULT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (staff_agent_id) REFERENCES staff_agents(id) ON DELETE CASCADE,
-    UNIQUE(slot_datetime, staff_agent_id)
-);
 
-CREATE INDEX IF NOT EXISTS idx_mock_calendar_slots_datetime ON mock_calendar_slots(slot_datetime);
 
 CREATE TABLE IF NOT EXISTS services (
     id SERIAL PRIMARY KEY,
