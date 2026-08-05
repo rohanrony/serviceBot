@@ -147,3 +147,12 @@ def test_comprehensive_sms_log_drawer_details():
     assert "formatLocalTimestamp(l.created_at)" in js_content
 
 
+
+def test_specific_notification_failure_badge_logic():
+    js_path = os.path.join(os.path.dirname(__file__), "..", "serviceBot", "static", "app.js")
+    with open(js_path, "r", encoding="utf-8") as f:
+        js_content = f.read()
+
+    assert "⚠️ Failed SMS & Email" in js_content
+    assert "⚠️ Failed SMS" in js_content
+    assert "⚠️ Failed Email" in js_content

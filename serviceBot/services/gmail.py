@@ -465,16 +465,25 @@ def send_booking_notification(booking_type: str, details: dict, agent_email: Opt
             recipient=recipient,
             server=server,
             port=port,
-            subject=subject,
+        subject=subject,
             html_body=html_body,
             plain_body=plain_body
         )
 
-def send_admin_notification(booking_type: str, details: dict, mechanic_name: Optional[str] = None, mechanic_email: Optional[str] = None) -> bool:
+def send_admin_notification(
+    booking_type: str, 
+    details: dict, 
+    agent_name: Optional[str] = None, 
+    agent_email: Optional[str] = None,
+    mechanic_name: Optional[str] = None,
+    mechanic_email: Optional[str] = None
+) -> bool:
     """
     Sends an admin notification email (CC copy) to the configured admin recipient address,
-    including the details of which mechanic/staff agent was assigned to the service request.
+    including the details of which agent was assigned to the service request.
     """
+    agent_name = agent_name or mechanic_name
+    agent_email = agent_email or mechanic_email
     config = load_config()
     if not config.get("gmail_enabled"):
         print("Admin Notifications: disabled in settings.")
@@ -508,8 +517,8 @@ def send_admin_notification(booking_type: str, details: dict, mechanic_name: Opt
         type_title = "Admin Alert: New Callback Requested"
         time_label = "Preferred Callback Time"
 
-    assigned_str = f"{mechanic_name or 'Staff Member'} ({mechanic_email})" if mechanic_email else (mechanic_name or "Assigned Staff")
-    subject = f"[Admin Copy] {type_title} - {mechanic_name or 'Staff'}"
+    assigned_str = f"{agent_name or 'Staff Member'} ({agent_email})" if agent_email else (agent_name or "Assigned Staff")
+    subject = f"[Admin Copy] {type_title} - {agent_name or 'Staff'}"
 
 
     html_body = f"""
@@ -518,76 +527,16 @@ def send_admin_notification(booking_type: str, details: dict, mechanic_name: Opt
     <head>
         <meta charset="utf-8">
         <style>
-            body {{
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-                background-color: #f3f4f6;
-                color: #1f2937;
-                margin: 0;
-                padding: 20px;
-            }}
-            .card {{
-                max-width: 600px;
-                margin: 0 auto;
-                background: #ffffff;
-                border-radius: 12px;
-                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-                border-top: 8px solid {color};
-                overflow: hidden;
-            }}
-            .header {{
-                padding: 24px;
-                text-align: center;
-                background-color: #fdfdfd;
-                border-bottom: 1px solid #f3f4f6;
-            }}
-            .header h1 {{
-                font-size: 20px;
-                font-weight: 700;
-                color: #111827;
-                margin: 0;
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
-            }}
-            .content {{
-                padding: 24px;
-            }}
-            .table {{
-                width: 100%;
-                border-collapse: collapse;
-                margin-top: 12px;
-            }}
-            .table th, .table td {{
-                padding: 12px;
-                text-align: left;
-                border-bottom: 1px solid #f3f4f6;
-                font-size: 14px;
-            }}
-            .table th {{
-                color: #6b7280;
-                font-weight: 500;
-                width: 35%;
-            }}
-            .table td {{
-                color: #111827;
-                font-weight: 600;
-            }}
-            .badge {{
-                display: inline-block;
-                padding: 4px 8px;
-                border-radius: 9999px;
-                font-size: 12px;
-                font-weight: 600;
-                background-color: rgba(99, 102, 241, 0.1);
-                color: #6366f1;
-            }}
-            .footer {{
-                padding: 16px;
-                text-align: center;
-                background-color: #f9fafb;
-                font-size: 11px;
-                color: #9ca3af;
-                border-top: 1px solid #f3f4f6;
-            }}
+            body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f8fafc; margin: 0; padding: 20px; color: #334155; }}
+            .card {{ background-color: #ffffff; border-radius: 12px; max-width: 600px; margin: 0 auto; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); overflow: hidden; border: 1px solid #e2e8f0; }}
+            .header {{ background-color: {color}; padding: 24px; text-align: center; color: white; }}
+            .header h1 {{ margin: 0; font-size: 20px; font-weight: 600; font-family: inherit; }}
+            .content {{ padding: 24px; }}
+            .table {{ width: 100%; border-collapse: collapse; margin-top: 12px; }}
+            .table th {{ text-align: left; padding: 12px 8px; color: #64748b; font-size: 13px; text-transform: uppercase; border-bottom: 1px solid #edf2f7; width: 35%; }}
+            .table td {{ padding: 12px 8px; color: #1e293b; font-size: 14px; font-weight: 500; border-bottom: 1px solid #edf2f7; }}
+            .footer {{ background-color: #f1f5f9; padding: 16px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #e2e8f0; }}
+            .badge {{ display: inline-block; padding: 4px 10px; border-radius: 9999px; font-size: 12px; font-weight: 600; background-color: #e0e7ff; color: #4338ca; }}
         </style>
     </head>
     <body>
@@ -598,7 +547,7 @@ def send_admin_notification(booking_type: str, details: dict, mechanic_name: Opt
             <div class="content">
                 <table class="table">
                     <tr>
-                        <th>Assigned Mechanic / Staff</th>
+                        <th>Assigned Agent / Staff</th>
                         <td><span class="badge" style="background-color: rgba(16, 185, 129, 0.1); color: #10b981;">{assigned_str}</span></td>
                     </tr>
                     {"<tr><th>Previous Agent</th><td>" + str(details.get('previous_agent_name')) + "</td></tr>" if details.get('previous_agent_name') else ""}
@@ -612,7 +561,7 @@ def send_admin_notification(booking_type: str, details: dict, mechanic_name: Opt
                         <td>{details.get('phone', 'N/A')}</td>
                     </tr>
                     <tr>
-                        <th>Vehicle Details</th>
+                        <th>Asset Details</th>
                         <td>{details.get('vehicle', 'N/A')}</td>
                     </tr>
                     <tr>
@@ -639,7 +588,7 @@ def send_admin_notification(booking_type: str, details: dict, mechanic_name: Opt
     Assigned Staff: {assigned_str}
     Customer: {details.get('customer_name', 'N/A')}
     Phone: {details.get('phone', 'N/A')}
-    Vehicle: {details.get('vehicle', 'N/A')}
+    Asset: {details.get('vehicle', 'N/A')}
     Service Type: {details.get('service_type', 'N/A')}
     {time_label}: {details.get('time', 'N/A')}
     {"Issue: " + details.get('issue') if details.get('issue') else ""}
@@ -674,13 +623,15 @@ def create_admin_calendar_event(
     service_type: str,
     issue_description: str,
     slot_datetime_str: str,
-    mechanic_name: Optional[str] = None,
+    agent_name: Optional[str] = None,
     duration_minutes: int = 60,
-    booking_type: str = "appointment"
+    booking_type: str = "appointment",
+    mechanic_name: Optional[str] = None
 ) -> bool:
     """
     Inserts a calendar event into the Admin's Google Calendar using system-level OAuth credentials.
     """
+    agent_name = agent_name or mechanic_name
     try:
         access_token = get_gmail_access_token()
         if not access_token:
@@ -715,11 +666,11 @@ def create_admin_calendar_event(
             attendees.append({"email": admin_recipient})
 
         is_cb = booking_type == "callback" or "callback" in str(service_type).lower()
-        summary_title = f"Callback - {customer_name} ({mechanic_name or 'Assigned Staff'})" if is_cb else f"serviceBot Booking - {customer_name} ({mechanic_name or 'Assigned Staff'})"
+        summary_title = f"Callback - {customer_name} ({agent_name or 'Assigned Staff'})" if is_cb else f"serviceBot Booking - {customer_name} ({agent_name or 'Assigned Staff'})"
         desc_text = (
-            f"Booking Type: CALLBACK ({duration_minutes} Mins)\nAssigned Staff: {mechanic_name or 'Unassigned'}\nService Type: {service_type}\nIssue: {issue_description}\nAutomatically logged for Admin by serviceBot."
+            f"Booking Type: CALLBACK ({duration_minutes} Mins)\nAssigned Staff: {agent_name or 'Unassigned'}\nService Type: {service_type}\nIssue: {issue_description}\nAutomatically logged for Admin by serviceBot."
             if is_cb
-            else f"Assigned Mechanic: {mechanic_name or 'Unassigned'}\nService Type: {service_type}\nIssue: {issue_description}\nAutomatically logged for Admin by serviceBot."
+            else f"Assigned Agent: {agent_name or 'Unassigned'}\nService Type: {service_type}\nIssue: {issue_description}\nAutomatically logged for Admin by serviceBot."
         )
 
         payload = {

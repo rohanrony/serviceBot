@@ -107,7 +107,8 @@ class SMSNotificationRouter:
         # Enrich details for clear, professional notifications
         info = self._fetch_details_if_missing(appointment_id, details)
         cust_name = info.get("customer_name") or "Customer"
-        cust_ph = info.get("phone") or customer_phone or ""
+        customer_phone = customer_phone or info.get("phone") or ""
+        cust_ph = customer_phone
         veh = info.get("vehicle") or "N/A"
         srv = info.get("service_type") or "Service"
         raw_t_str = booking_time or info.get("time") or "N/A"
@@ -162,13 +163,29 @@ class SMSNotificationRouter:
                 )
                 dispatches.append({"recipient": "customer", "status": "QUEUED", "scheduled_send_at": str(rel_time), "log_id": log_id})
             else:
-                body = (
-                    f"🚗 [CUSTOMER UPDATE] Appt #{appointment_id}\n"
-                    f"Service: {srv}\n"
-                    f"Slot: {slot_range_str}\n"
-                    f"Assigned Advisor: {new_ag}\n"
-                    f"Vehicle: {veh}"
-                )
+                if event_type in ("CANCELLED_BY_ADMIN", "CANCELLED_BY_CUSTOMER"):
+                    body = (
+                        f"❌ [APPOINTMENT CANCELLED] Appt #{appointment_id}\n"
+                        f"Service: {srv}\n"
+                        f"Vehicle: {veh}\n"
+                        f"Your appointment has been cancelled. Please contact us if you need to reschedule."
+                    )
+                elif event_type in ("RESCHEDULED", "RESCHEDULED_REASSIGNED"):
+                    body = (
+                        f"🗓️ [APPOINTMENT RESCHEDULED] Appt #{appointment_id}\n"
+                        f"Service: {srv}\n"
+                        f"New Slot: {slot_range_str}\n"
+                        f"Assigned Advisor: {new_ag}\n"
+                        f"Vehicle: {veh}"
+                    )
+                else:
+                    body = (
+                        f"🚗 [CUSTOMER UPDATE] Appt #{appointment_id}\n"
+                        f"Service: {srv}\n"
+                        f"Slot: {slot_range_str}\n"
+                        f"Assigned Advisor: {new_ag}\n"
+                        f"Vehicle: {veh}"
+                    )
                 res = self.twilio_client.send_whatsapp(
                     to=customer_phone,
                     body=body,

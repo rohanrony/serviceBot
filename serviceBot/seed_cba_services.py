@@ -10,8 +10,8 @@ from serviceBot.api.portal import sync_services_to_kb
 
 SERVICES_DATA = [
     (
-        "Oil Change (Full Synthetic)",
-        "Full synthetic motor oil replacement, premium filter replacement, fluid top-offs, tire pressure check, and a complimentary courtesy inspection.",
+        "Standard System Inspection",
+        "Full system diagnostic check, filter replacement, fluid top-offs, pressure check, and a complimentary courtesy inspection.",
         "$79 - $119",
         45,
         1, # req_customer_name
@@ -21,63 +21,63 @@ SERVICES_DATA = [
         1  # req_location
     ),
     (
-        "Brake Repair & Pad Replacement",
-        "Full braking system diagnostic check, premium ceramic/semi-metallic brake pad replacement, rotor resurfacing or replacement, and caliper checks.",
-        "$199 - $399 per axle",
+        "Component Repair & Pad Replacement",
+        "Full system diagnostic check, premium component replacement, rotor/part resurfacing or replacement, and safety checks.",
+        "$199 - $399",
         90,
         1, # req_customer_name
         1, # req_phone_number
         1, # req_vehicle_details
-        1, # req_issue_description (needs symptoms like squealing or grinding)
+        1, # req_issue_description
         1  # req_location
     ),
     (
-        "A/C Service & System Diagnostic",
-        "A/C system performance test, pressure testing, visual inspection of lines and components, leak detection using UV dye, and full refrigerant recharge.",
+        "Climate Control Service & System Diagnostic",
+        "A/C and heating system performance test, pressure testing, visual inspection of lines and components, leak detection, and full refrigerant recharge.",
         "$99 - $249",
         60,
         1, # req_customer_name
         1, # req_phone_number
         1, # req_vehicle_details
-        1, # req_issue_description (needs symptoms like blowing warm air)
+        1, # req_issue_description
         1  # req_location
     ),
     (
-        "Wheel Alignment (4-Wheel)",
-        "Precision computerized alignment adjusting front and rear caster, camber, and toe angles to original manufacturer specifications.",
+        "Precision System Alignment & Calibration",
+        "Precision computerized alignment adjusting operating angles to original manufacturer specifications.",
         "$119 - $149",
         60,
         1, # req_customer_name
         1, # req_phone_number
         1, # req_vehicle_details
-        0, # req_issue_description (preventative maintenance)
-        1  # req_location
-    ),
-    (
-        "Manufacturer Scheduled Maintenance (30k/60k/90k)",
-        "Comprehensive mileage-specific maintenance conforming to manufacturer warranty standards, including fluids flush, cabin/air filters, spark plugs check, and multi-point safety inspections.",
-        "$249 - $599",
-        120,
-        1, # req_customer_name
-        1, # req_phone_number
-        1, # req_vehicle_details (highly important to know make/model/year)
         0, # req_issue_description
         1  # req_location
     ),
     (
-        "Check Engine Light Diagnostic",
-        "Full scanning and diagnostics of the vehicle OBD-II system, sensor testing, freeze-frame data analysis, and visual checks of affected components.",
+        "Scheduled Maintenance (Periodic)",
+        "Comprehensive periodic maintenance conforming to manufacturer warranty standards, including fluids flush, cabin/air filters, and multi-point safety inspections.",
+        "$249 - $599",
+        120,
+        1, # req_customer_name
+        1, # req_phone_number
+        1, # req_vehicle_details
+        0, # req_issue_description
+        1  # req_location
+    ),
+    (
+        "System Error Light Diagnostic",
+        "Full scanning and diagnostics of system sensors, freeze-frame data analysis, and visual checks of affected components.",
         "$99 - $149",
         60,
         1, # req_customer_name
         1, # req_phone_number
         1, # req_vehicle_details
-        1, # req_issue_description (needs warning light symptoms or descriptions)
+        1, # req_issue_description
         1  # req_location
     ),
     (
-        "Transmission Fluid Exchange",
-        "Complete exchange of old transmission fluid with high-quality OEM spec fluid, cleaning of transmission pan, and replacement of transmission filter (if applicable).",
+        "Fluid Exchange & Service",
+        "Complete exchange of old system fluid with high-quality spec fluid, cleaning of fluid reservoir, and replacement of filter.",
         "$189 - $299",
         60,
         1, # req_customer_name
@@ -87,19 +87,19 @@ SERVICES_DATA = [
         1  # req_location
     ),
     (
-        "Suspension Repair (Shocks & Struts)",
-        "Inspection and replacement of worn front and rear struts, shock absorbers, sway bar links, and bushings to restore ride control and safety.",
+        "Suspension & Structural Inspection",
+        "Inspection and replacement of worn struts, shock absorbers, links, and bushings to restore control and safety.",
         "$299 - $899",
         120,
         1, # req_customer_name
         1, # req_phone_number
         1, # req_vehicle_details
-        1, # req_issue_description (requires symptoms like bouncing, pulling, or noise)
+        1, # req_issue_description
         1  # req_location
     ),
     (
-        "Battery Replacement & System Test",
-        "Automotive battery voltage and cold-cranking amps diagnostic check, cleaning of battery terminals, and professional installation of a new premium battery.",
+        "Power & Electrical System Service",
+        "Power supply voltage and diagnostic check, terminal cleaning, and professional component installation.",
         "$149 - $249",
         30,
         1, # req_customer_name
@@ -110,18 +110,18 @@ SERVICES_DATA = [
     ),
     (
         "Cooling System Flush & Diagnostic",
-        "Radiator performance inspection, pressure testing for leaks, full drainage of old coolant, flush of heater core/radiator, and refill with fresh OEM coolant.",
+        "Performance inspection, pressure testing for leaks, full drainage of old coolant, and refill with fresh coolant.",
         "$129 - $199",
         60,
         1, # req_customer_name
         1, # req_phone_number
         1, # req_vehicle_details
-        1, # req_issue_description (requires symptoms like overheating or coolant leaks)
+        1, # req_issue_description
         1  # req_location
     ),
     (
-        "Air Filtration (Engine & Cabin)",
-        "Inspection and replacement of engine intake air filters and passenger cabin air filters to maintain engine performance and interior air quality.",
+        "Air Filtration System",
+        "Inspection and replacement of intake air filters and passenger cabin air filters to maintain interior air quality.",
         "$49 - $99",
         30,
         1,
@@ -131,8 +131,8 @@ SERVICES_DATA = [
         1
     ),
     (
-        "Alternator & Starter Service",
-        "Testing and replacement of starter motors, alternators, battery cables, and related ignition/charging system electronics.",
+        "Electronics & Ignition Service",
+        "Testing and replacement of starter motors, alternators, power cables, and related electronics.",
         "$249 - $599",
         90,
         1,

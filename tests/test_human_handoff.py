@@ -48,9 +48,13 @@ def test_agent_reply_and_resolve_flow(mock_biz):
     ids = [c["id"] for c in convs]
     assert conv_id in ids
 
-    # Resolve conversation via API
-    res_resolve = client.post("/api/v1/portal/sms/resolve", json={
-        "conversation_id": conv_id
-    })
-    assert res_resolve.status_code == 200
-    assert res_resolve.json()["state"] == "AUTOMATED"
+    # Resolve conversation
+    resolve_res = client.post("/api/v1/portal/sms/resolve", json={"conversation_id": conv_id})
+    assert resolve_res.status_code == 200
+    assert resolve_res.json()["state"] == "AUTOMATED"
+
+
+def test_get_or_create_sms_conversation_empty_phone():
+    assert get_or_create_sms_conversation(None) == {}
+    assert get_or_create_sms_conversation("") == {}
+

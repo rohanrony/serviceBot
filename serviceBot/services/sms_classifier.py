@@ -142,19 +142,25 @@ def process_inbound_sms(from_phone: str, body: str, twilio_message_sid: str = No
                         target_sr_id = row["id"]
 
                 if target_sr_id:
-                    new_status = "confirmed" if category == "action_confirm" else "cancelled_by_customer"
-                    cursor.execute("UPDATE service_requests SET status = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s;", (new_status, target_sr_id))
-                    conn.commit()
-
-                    reply_text = (
-                        f"Your appointment #{target_sr_id} has been confirmed. Thank you!"
-                        if category == "action_confirm"
-                        else f"Your appointment #{target_sr_id} has been cancelled as requested."
-                    )
-                    if get_customer_opt_in(from_phone):
-                        client.send_sms(to=from_phone, body=reply_text, template_type="action_receipt", appointment_id=target_sr_id)
-                        add_sms_message(conv_id, "outbound", "system", "System", reply_text)
-                    return {"status": "processed", "category": category, "appointment_id": target_sr_id, "new_status": new_status}
+                    new_status = "confirmed" if category == "action_confirm" else "cancelled"
+                    try:
+                        from serviceBot.db.queries import update_service_request_status
+                        update_service_request_status(target_sr_id, new_status, triggered_by="customer_sms", notes="Status updated via customer SMS action")
+                        reply_text = (
+                            f"Your appointment #{target_sr_id} has been confirmed. Thank you!"
+                            if category == "action_confirm"
+                            else f"Your appointment #{target_sr_id} has been cancelled as requested."
+                        )
+                        if get_customer_opt_in(from_phone):
+                            client.send_sms(to=from_phone, body=reply_text, template_type="action_receipt", appointment_id=target_sr_id)
+                            add_sms_message(conv_id, "outbound", "system", "System", reply_text)
+                        return {"status": "processed", "category": category, "appointment_id": target_sr_id, "new_status": new_status}
+                    except ValueError as err:
+                        reply_text = f"Your appointment #{target_sr_id} cannot be modified because its status is already closed."
+                        if get_customer_opt_in(from_phone):
+                            client.send_sms(to=from_phone, body=reply_text, template_type="action_receipt", appointment_id=target_sr_id)
+                            add_sms_message(conv_id, "outbound", "system", "System", reply_text)
+                        return {"status": "error", "category": category, "appointment_id": target_sr_id, "error": str(err)}
 
         # Fallback to free_text if no appointment found
         category = "free_text"

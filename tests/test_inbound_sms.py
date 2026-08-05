@@ -60,3 +60,44 @@ def test_inbound_webhook_endpoint():
     assert res.status_code == 200
     assert "xml" in res.headers["content-type"]
     assert "<Response></Response>" in res.text
+
+
+def test_inbound_sms_cancel_action():
+    from tests.test_service_request_status_workflow import create_test_customer_and_request
+    from serviceBot.db.connection import get_db_connection, dict_cursor
+    from serviceBot.db.queries import get_or_create_sms_conversation
+
+    sr_id, agent_id, cust_id, _ = create_test_customer_and_request(status="pending")
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT phone FROM customers WHERE id = %s;", (cust_id,))
+            phone = cursor.fetchone()["phone"]
+
+    # Cancel active appointment via SMS
+    res = process_inbound_sms(phone, "CANCEL")
+    assert res["category"] == "action_cancel"
+    assert res["status"] == "processed"
+
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT status FROM service_requests WHERE id = %s;", (sr_id,))
+            assert cursor.fetchone()["status"] == "cancelled"
+
+            cursor.execute(
+                "INSERT INTO service_requests (customer_id, service_type, issue_description, status) VALUES (%s, %s, %s, %s) RETURNING id;",
+                (cust_id, "Brake Check", "Done test", "completed")
+            )
+            sr_id_2 = cursor.fetchone()["id"]
+
+    # Explicitly link completed appointment to SMS conversation context
+    get_or_create_sms_conversation(phone, context_appointment_id=sr_id_2)
+
+    res2 = process_inbound_sms(phone, "CANCEL")
+    assert res2["status"] == "error"
+    assert "cannot be modified" in res2["error"] or "Invalid FSM transition" in res2["error"]
+
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT status FROM service_requests WHERE id = %s;", (sr_id_2,))
+            assert cursor.fetchone()["status"] == "completed"
+

@@ -226,13 +226,13 @@ def _dispatch_outbox_event(event_type: str, request_id: Optional[int], payload: 
                     service_type=details.get("service_type") or "Service Request",
                     issue_description=details.get("issue") or "",
                     slot_datetime_str=str(booking_time_str)[:19],
-                    mechanic_name=new_agent_name
+                    agent_name=new_agent_name
                 )
             except Exception as admin_cal_err:
                 logger.warning(f"[OUTBOX CALENDAR WARNING] Failed to update admin calendar event: {admin_cal_err}")
 
         try:
-            send_admin_notification("reassign", details, mechanic_name=new_agent_name, mechanic_email=new_agent_email)
+            send_admin_notification("reassign", details, agent_name=new_agent_name, agent_email=new_agent_email)
         except Exception as admin_email_err:
             logger.warning(f"[OUTBOX EMAIL WARNING] Failed to send admin notification: {admin_email_err}")
 
@@ -284,13 +284,13 @@ def _dispatch_outbox_event(event_type: str, request_id: Optional[int], payload: 
                     service_type=details.get("service_type") or "Service Request",
                     issue_description=details.get("issue") or "",
                     slot_datetime_str=clean_slot_str,
-                    mechanic_name=agent_name
+                    agent_name=agent_name
                 )
             except Exception as cal_err:
                 logger.warning(f"[OUTBOX CALENDAR WARNING] Failed to update admin calendar event: {cal_err}")
 
         try:
-            send_admin_notification(booking_type, details, mechanic_name=agent_name, mechanic_email=agent_email)
+            send_admin_notification(booking_type, details, agent_name=agent_name, agent_email=agent_email)
         except Exception as admin_email_err:
             logger.warning(f"[OUTBOX EMAIL WARNING] Failed to send admin notification: {admin_email_err}")
 

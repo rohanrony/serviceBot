@@ -35,30 +35,27 @@ def create_test_customer_and_request(status="pending"):
             cursor.execute("SELECT setval(pg_get_serial_sequence('customers', 'id'), COALESCE(MAX(id), 1)) FROM customers;")
             cursor.execute("SELECT setval(pg_get_serial_sequence('staff_agents', 'id'), COALESCE(MAX(id), 1)) FROM staff_agents;")
             cursor.execute("SELECT setval(pg_get_serial_sequence('service_requests', 'id'), COALESCE(MAX(id), 1)) FROM service_requests;")
-            cust_id = 10000 + _test_counter
             cursor.execute(
-                "INSERT INTO customers (id, name, phone) VALUES (%s, %s, %s) RETURNING id;",
-                (cust_id, f"FSM Test Customer {_test_counter}", phone_num)
+                "INSERT INTO customers (name, phone) VALUES (%s, %s) RETURNING id;",
+                (f"FSM Test Customer {_test_counter}", phone_num)
             )
             cust_id = cursor.fetchone()["id"]
 
             # 2. Insert staff agent
-            agent_id = 10000 + _test_counter
             cursor.execute(
-                "INSERT INTO staff_agents (id, name, role, email) VALUES (%s, %s, %s, %s) RETURNING id;",
-                (agent_id, f"FSM Test Agent {_test_counter}", "Technician", agent_email)
+                "INSERT INTO staff_agents (name, role, email) VALUES (%s, %s, %s) RETURNING id;",
+                (f"FSM Test Agent {_test_counter}", "Technician", agent_email)
             )
             agent_id = cursor.fetchone()["id"]
 
             # 3. Insert service request
-            req_id = 10000 + _test_counter
             cursor.execute(
                 """
-                INSERT INTO service_requests (id, customer_id, staff_agent_id, service_type, status, booking_type, booking_time)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO service_requests (customer_id, staff_agent_id, service_type, status, booking_type, booking_time)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 RETURNING id;
                 """,
-                (req_id, cust_id, agent_id, "Oil Change", status, "appointment", slot_time)
+                (cust_id, agent_id, "Oil Change", status, "appointment", slot_time)
             )
             req_id = cursor.fetchone()["id"]
 
@@ -112,6 +109,10 @@ def test_fsm_blocked_illegal_transitions():
     # Terminal state: completed -> pending (ILLEGAL)
     with pytest.raises(ValueError, match="Invalid FSM transition"):
         update_service_request_status(req_id, "pending", triggered_by="manager_override")
+
+    # Terminal state: completed -> cancelled (ILLEGAL)
+    with pytest.raises(ValueError, match="Invalid FSM transition"):
+        update_service_request_status(req_id, "cancelled", triggered_by="manager_override")
 
     # Terminal state: completed -> in_progress (ILLEGAL)
     with pytest.raises(ValueError, match="Invalid FSM transition"):

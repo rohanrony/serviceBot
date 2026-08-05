@@ -1038,7 +1038,12 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
                             pass
                             
                         # Attempt to reschedule
-                        reschedule_appointment(appointment_id=appt_id, new_datetime=new_datetime)
+                        reschedule_appointment(
+                            appointment_id=appt_id, 
+                            new_datetime=new_datetime, 
+                            customer_consent_obtained=True, 
+                            triggered_by="voice_agent"
+                        )
                         result = {
                             "success": True,
                             "appointment_id": appt_id,

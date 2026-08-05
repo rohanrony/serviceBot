@@ -64,8 +64,10 @@ def test_seed_default_services_endpoint():
     assert data["total_defaults"] == 34
 
 def test_create_service_endpoint():
+    import uuid
+    uid = uuid.uuid4().hex[:8]
     payload = {
-        "name": "Brake Repair Custom",
+        "name": f"Brake Repair Custom {uid}",
         "description": "Front/Rear brake pad and rotor replacement",
         "price_range": "$150-400",
         "duration_minutes": 90
@@ -77,9 +79,11 @@ def test_create_service_endpoint():
     assert data["id"] is not None
 
 def test_update_service_endpoint():
+    import uuid
+    uid = uuid.uuid4().hex[:8]
     # First create a service
     create_payload = {
-        "name": "Custom Spark Plug Tuning",
+        "name": f"Custom Spark Plug Tuning {uid}",
         "description": "Replace engine spark plugs",
         "price_range": "$80-150",
         "duration_minutes": 45
@@ -90,7 +94,7 @@ def test_update_service_endpoint():
 
     # Now update it
     update_payload = {
-        "name": "Spark Plug Replacement (Platinum)",
+        "name": f"Spark Plug Replacement (Platinum) {uid}",
         "description": "Replace engine spark plugs with platinum ones",
         "price_range": "$120-200",
         "duration_minutes": 60
@@ -107,7 +111,7 @@ def test_update_service_endpoint():
     services = get_response.json()
     updated_svc = next((s for s in services if s["id"] == service_id), None)
     assert updated_svc is not None
-    assert updated_svc["name"] == "Spark Plug Replacement (Platinum)"
+    assert updated_svc["name"] == f"Spark Plug Replacement (Platinum) {uid}"
     assert updated_svc["description"] == "Replace engine spark plugs with platinum ones"
     assert updated_svc["price_range"] == "$120-200"
     assert updated_svc["duration_minutes"] == 60

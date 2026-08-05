@@ -192,8 +192,8 @@
                     </th>
                     <th>
                       <div class="tooltip-container">
-                        <span>Vehicle</span>
-                        <div class="tooltip-popup">Vehicle Details</div>
+                        <span>Asset</span>
+                        <div class="tooltip-popup">Asset Details</div>
                       </div>
                     </th>
                     <th>
@@ -288,8 +288,8 @@
                     </th>
                     <th>
                       <div class="tooltip-container">
-                        <div class="th-text-clipped">Vehicle</div>
-                        <div class="tooltip-popup">Customer Vehicle</div>
+                        <div class="th-text-clipped">Asset</div>
+                        <div class="tooltip-popup">Customer Asset</div>
                       </div>
                     </th>
                     <th>
@@ -435,7 +435,7 @@
                     </label>
                     <label class="checkbox-item">
                       <input type="checkbox" id="new-service-req-vehicle-details" checked>
-                      <span>Vehicle Details</span>
+                      <span>Asset Details</span>
                     </label>
                     <label class="checkbox-item">
                       <input type="checkbox" id="new-service-req-issue-description" checked>
@@ -754,7 +754,7 @@
             <div class="content-card flex-2">
               <div class="card-header">
                 <h3>Admin Notification Settings</h3>
-                <p class="text-muted">Configure the default admin email that gets notified each time a slot is booked. Every booking sends the assigned mechanic their notification, and a copy is sent here so you always know who gets which service request.</p>
+                <p class="text-muted">Configure the default admin email that gets notified each time a slot is booked. Every booking sends the assigned agent their notification, and a copy is sent here so you always know who gets which service request.</p>
               </div>
               
               <form id="gmail-config-form" class="form-grid">
@@ -969,8 +969,8 @@
               <div class="quick-reply-bar" id="quick-reply-bar">
                 <span class="quick-reply-label">Quick Replies:</span>
                 <button class="quick-chip" data-text="Hello! How can we assist you today?">Intro</button>
-                <button class="quick-chip" data-text="Your appointment is confirmed! Our mechanic will see you then.">Confirmed</button>
-                <button class="quick-chip" data-text="We are checking technician availability and will update you shortly.">Check Slot</button>
+                <button class="quick-chip" data-text="Your appointment is confirmed! Our agent will see you then.">Confirmed</button>
+                <button class="quick-chip" data-text="We are checking agent availability and will update you shortly.">Check Slot</button>
                 <button class="quick-chip" data-text="Please reply back with your preferred date & time.">Ask Preferred Time</button>
               </div>
 
@@ -1331,7 +1331,7 @@
             </label>
             <label class="checkbox-item">
               <input type="checkbox" id="edit-service-req-vehicle-details">
-              <span>Vehicle Details</span>
+              <span>Asset Details</span>
             </label>
             <label class="checkbox-item">
               <input type="checkbox" id="edit-service-req-issue-description">
@@ -1496,7 +1496,7 @@
       </div>
       
       <div style="margin-bottom: 16px;">
-        <h4 style="margin-bottom: 8px; color: var(--text-muted); font-size: 12px; text-transform: uppercase;">Vehicle Details</h4>
+        <h4 style="margin-bottom: 8px; color: var(--text-muted); font-size: 12px; text-transform: uppercase;">Asset Details</h4>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px;">
           <div>
             <label>Make</label>
@@ -1541,8 +1541,24 @@
         </div>
         <div>
           <label for="sr-booking-time">Select Time Slot</label>
-          <input type="datetime-local" id="sr-booking-time" class="form-input" style="margin-bottom: 8px;">
-          <p class="text-muted" style="font-size: 11px;">Agent will be automatically assigned based on Google Calendar availability.</p>
+          <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+            <input type="datetime-local" id="sr-booking-time" class="form-input" style="flex: 1;">
+            <button type="button" id="sr-check-slots-btn" class="btn btn-secondary" style="font-size: 12px; white-space: nowrap;">Check Availability</button>
+          </div>
+          <div id="sr-available-slots-container" style="display: none; margin-bottom: 10px; background: #0f1219; border: 1px solid var(--border-card, #2a2f3d); border-radius: 6px; padding: 10px;">
+            <label style="font-size: 11px; color: var(--text-muted, #94a3b8); display: block; margin-bottom: 4px;">Available Staff Calendar Slots:</label>
+            <select id="sr-slots-dropdown" class="form-input" style="font-size: 12px; margin-bottom: 4px;">
+              <option value="">Select an available slot...</option>
+            </select>
+          </div>
+          <p class="text-muted" style="font-size: 11px; margin-bottom: 8px;">Agent will be automatically assigned based on Google Calendar availability.</p>
+
+          <div id="sr-consent-wrapper" style="display: none; margin-top: 10px; padding: 10px; background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 6px;">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12px; font-weight: 500; color: #60a5fa; margin: 0;">
+              <input type="checkbox" id="sr-customer-consent-check" style="width: 16px; height: 16px; accent-color: #3b82f6;">
+              <span>Customer consent sought and obtained for rescheduling</span>
+            </label>
+          </div>
         </div>
       </div>
       

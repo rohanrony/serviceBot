@@ -166,11 +166,11 @@ document.addEventListener('DOMContentLoaded', () => {
     },
     'services': {
       title: 'Services Catalog',
-      subtitle: 'Automotive service catalog database, duration, pricing, and required intake fields.'
+      subtitle: 'Service catalog database, duration, pricing, and required intake fields.'
     },
     'staff': {
       title: 'Staff Calendar Config',
-      subtitle: 'Technician calendars, working shifts, slot availability, and Google Calendar sync.'
+      subtitle: 'Agent calendars, working shifts, slot availability, and Google Calendar sync.'
     },
     'knowledge': {
       title: 'Knowledge Base RAG',
@@ -564,6 +564,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function formatIssueDescription(rawDesc) {
+    if (!rawDesc) return "";
+    let desc = rawDesc;
+    desc = desc.replace(/^(Appointment booked|Callback requested):\s*/i, '');
+    desc = desc.replace(/\.?\s*Preferred time:.*$/i, '');
+    desc = desc.replace(/\s*scheduled for.*$/i, '');
+    desc = desc.replace(/\s*\(\d{4}\s+[a-zA-Z0-9\s-]+\)/g, '');
+    desc = desc.replace(/\s+for\s+\d{4}\s+[a-zA-Z0-9\s-]+$/i, '');
+    return desc.trim() || rawDesc;
+  }
+
   function renderServiceRequests(requestsToRender) {
     const requestsListBody = document.getElementById('service-requests-list');
     if (!requestsListBody) return;
@@ -589,16 +600,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const nextBtn = document.getElementById('sr-next-page');
     if (nextBtn) nextBtn.disabled = srCurrentPage >= totalPages;
     
-  function formatIssueDescription(rawDesc) {
-    if (!rawDesc) return "Not specified";
-    let desc = rawDesc;
-    desc = desc.replace(/^(Appointment booked|Callback requested):\s*/i, '');
-    desc = desc.replace(/\.?\s*Preferred time:.*$/i, '');
-    desc = desc.replace(/\s*scheduled for.*$/i, '');
-    desc = desc.replace(/\s*\(\d{4}\s+[a-zA-Z0-9\s-]+\)/g, '');
-    return desc.trim() || rawDesc;
-  }
-
     if (paginatedReqs.length === 0) {
       requestsListBody.innerHTML = `<tr><td colspan="8" class="text-center py-6 text-muted">No matching service requests found.</td></tr>`;
     } else {
@@ -607,7 +608,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const tr = document.createElement('tr');
         
         const vehicleStr = `${req.year} ${req.make} ${req.model}`;
-        const cleanDesc = formatIssueDescription(req.issue_description);
+        const baseDesc = formatIssueDescription(req.issue_description);
+        const cleanDesc = req.booking_type === 'callback'
+          ? `<span style="color: var(--color-teal, #38bdf8); font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 4px;">Callback</span>${baseDesc}`
+          : baseDesc;
         
         let currentStatus = req.status;
         let statusBadgeClass = 'warning';
@@ -680,7 +684,15 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
 
         const formattedPhone = formatPhoneNumber(req.phone);
-        const failedIndicator = (req.has_failed_sms || req.has_failed_email) ? '<span class="badge danger failed-sms-badge" title="Delivery failed">⚠️ Failed SMS or Email</span>' : '';
+        let failedLabel = '';
+        if (req.has_failed_sms && req.has_failed_email) {
+          failedLabel = '⚠️ Failed SMS & Email';
+        } else if (req.has_failed_sms) {
+          failedLabel = '⚠️ Failed SMS';
+        } else if (req.has_failed_email) {
+          failedLabel = '⚠️ Failed Email';
+        }
+        const failedIndicator = failedLabel ? `<span class="badge danger failed-sms-badge" title="Delivery failed">${failedLabel}</span>` : '';
         const actionsHtml = `
           <div class="actions-cell-container">
             ${failedIndicator}
@@ -3194,7 +3206,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div><span style="color: var(--text-muted);">Customer:</span> <span style="color: var(--text-main); font-weight: 500;">${app.customer_name || 'N/A'}</span></div>
             <div><span style="color: var(--text-muted);">Phone:</span> <span style="color: var(--text-main); font-weight: 500;">${app.customer_phone || 'N/A'}</span></div>
             <div><span style="color: var(--text-muted);">Agent:</span> <span style="color: var(--text-main); font-weight: 500;">${app.staff_agent_name || 'Unassigned'}</span></div>
-            <div><span style="color: var(--text-muted);">Service:</span> <span style="color: var(--text-main); font-weight: 500;">${app.service_type || 'N/A'} ${vehicleStr ? `(${vehicleStr})` : ''}</span></div>
+            <div><span style="color: var(--text-muted);">Service:</span> <span style="color: var(--text-main); font-weight: 500;">${formatIssueDescription(app.service_type) || 'N/A'} ${vehicleStr ? `(${vehicleStr})` : ''}</span></div>
             <div style="grid-column: span 2;"><span style="color: var(--text-muted);">Start & End Time:</span> <span style="color: var(--text-main); font-weight: 500;">${appTimeStr}</span></div>
           </div>
         `;
@@ -3626,10 +3638,102 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('sr-cancel-btn').addEventListener('click', closeSRModal);
   }
 
+  // Slot Availability & Consent Handling
+  const checkSlotsBtn = document.getElementById('sr-check-slots-btn');
+  const slotsContainer = document.getElementById('sr-available-slots-container');
+  const slotsDropdown = document.getElementById('sr-slots-dropdown');
+  const consentWrapper = document.getElementById('sr-consent-wrapper');
+  const consentCheck = document.getElementById('sr-customer-consent-check');
+
+  if (checkSlotsBtn) {
+    checkSlotsBtn.addEventListener('click', async () => {
+      let currentVal = document.getElementById('sr-booking-time').value;
+      let targetDate = '';
+      if (currentVal) {
+        targetDate = currentVal.substring(0, 10);
+      } else {
+        const today = new Date();
+        targetDate = today.toISOString().substring(0, 10);
+      }
+      
+      try {
+        checkSlotsBtn.textContent = 'Checking...';
+        const res = await fetch(`/api/v1/portal/available-slots?date=${targetDate}`);
+        if (res.ok) {
+          const data = await res.json();
+          const slots = data.available_slots || [];
+          slotsDropdown.innerHTML = '<option value="">Select an available slot...</option>';
+          if (slots.length === 0) {
+            const opt = document.createElement('option');
+            opt.value = '';
+            opt.textContent = `No free slots on ${targetDate} (Weekend or All Busy)`;
+            slotsDropdown.appendChild(opt);
+          } else {
+            slots.forEach(s => {
+              const opt = document.createElement('option');
+              opt.value = s.start_time;
+              opt.textContent = `${s.start_time.substring(11, 16)} - ${s.end_time.substring(11, 16)} (${s.available_agents_count} agent free)`;
+              slotsDropdown.appendChild(opt);
+            });
+          }
+          if (slotsContainer) slotsContainer.style.display = 'block';
+        } else {
+          showToast('Failed to check available slots.', 'danger');
+        }
+      } catch (err) {
+        showToast('Error checking slot availability.', 'danger');
+      } finally {
+        checkSlotsBtn.textContent = 'Check Availability';
+      }
+    });
+  }
+
+  if (slotsDropdown) {
+    slotsDropdown.addEventListener('change', () => {
+      const selectedSlot = slotsDropdown.value;
+      if (selectedSlot && selectedSlot.length >= 16) {
+        document.getElementById('sr-booking-time').value = selectedSlot.substring(0, 16).replace(' ', 'T');
+        triggerConsentCheckIfNeeded();
+      }
+    });
+  }
+
+  const bookingTimeInput = document.getElementById('sr-booking-time');
+  if (bookingTimeInput) {
+    bookingTimeInput.addEventListener('change', () => triggerConsentCheckIfNeeded());
+  }
+
+  function triggerConsentCheckIfNeeded() {
+    if (!srForm) return;
+    const isEdit = !!document.getElementById('sr-form-id').value;
+    const origTime = srForm.dataset.originalBookingTime || '';
+    const curTime = (document.getElementById('sr-booking-time').value || '').replace('T', ' ');
+    
+    if (isEdit && curTime && curTime !== origTime) {
+      if (consentWrapper) consentWrapper.style.display = 'block';
+    } else if (!isEdit) {
+      if (consentWrapper) consentWrapper.style.display = 'none';
+    }
+  }
+
   window.openSREditModal = (req) => {
     document.getElementById('sr-modal-title').textContent = 'Edit Service Request';
     document.getElementById('sr-form-id').value = req.id;
     
+    // Store original booking time for consent diffing
+    let origBt = req.booking_time || req.time_slot || '';
+    if (origBt && origBt.length >= 16) {
+      origBt = origBt.substring(0, 16).replace(' ', 'T');
+    } else {
+      origBt = '';
+    }
+    if (srForm) srForm.dataset.originalBookingTime = origBt;
+
+    // Reset slot check & consent wrapper
+    if (slotsContainer) slotsContainer.style.display = 'none';
+    if (consentCheck) consentCheck.checked = false;
+    if (consentWrapper) consentWrapper.style.display = 'none';
+
     // Populate form
     document.getElementById('sr-cust-name').value = req.customer_name || '';
     document.getElementById('sr-cust-phone').value = req.phone || '';
@@ -3638,18 +3742,30 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('sr-veh-year').value = req.year || '';
     document.getElementById('sr-veh-vin').value = req.vin || '';
     const svcSelect = document.getElementById('sr-service-type');
-    const valToSet = req.service_type || '';
+    const rawValToSet = req.service_type || '';
+    const valToSet = formatIssueDescription(rawValToSet);
     if (valToSet) {
-      let optionExists = Array.from(svcSelect.options).some(opt => opt.value === valToSet);
+      let optionExists = Array.from(svcSelect.options).some(opt => opt.value === valToSet || opt.value === rawValToSet);
       if (!optionExists) {
         const customOpt = document.createElement('option');
         customOpt.value = valToSet;
         customOpt.textContent = valToSet;
         svcSelect.appendChild(customOpt);
       }
+      let matchingOpt = Array.from(svcSelect.options).find(opt => opt.value === valToSet || opt.value === rawValToSet);
+      if (matchingOpt) {
+        svcSelect.value = matchingOpt.value;
+      } else {
+        svcSelect.value = valToSet;
+      }
+    } else {
+      svcSelect.value = '';
     }
-    svcSelect.value = valToSet;
-    document.getElementById('sr-issue-desc').value = req.issue_description || '';
+    const issueDescEl = document.getElementById('sr-issue-desc');
+    const cleanedIssueDesc = formatIssueDescription(req.issue_description || '');
+    issueDescEl.value = (req.booking_type === 'callback' && cleanedIssueDesc && !cleanedIssueDesc.toLowerCase().startsWith('callback'))
+      ? `Callback: ${cleanedIssueDesc}`
+      : cleanedIssueDesc;
     
     // Disable customer and service type fields for editing
     document.getElementById('sr-cust-name').disabled = true;
@@ -3657,13 +3773,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('sr-service-type').disabled = true;
 
     // Populate booking time if available
-    let bt = req.booking_time || req.time_slot || '';
-    if (bt && bt.length >= 16) {
-      // Assuming format "YYYY-MM-DD HH:MM:SS", convert to "YYYY-MM-DDTHH:MM"
-      document.getElementById('sr-booking-time').value = bt.substring(0, 16).replace(' ', 'T');
-    } else {
-      document.getElementById('sr-booking-time').value = '';
-    }
+    document.getElementById('sr-booking-time').value = origBt;
+
     if (srModal) srModal.style.display = 'block';
     if (srModalOverlay) srModalOverlay.style.display = 'block';
   };
@@ -3673,7 +3784,12 @@ document.addEventListener('DOMContentLoaded', () => {
     btnNewRequest.addEventListener('click', () => {
       document.getElementById('sr-modal-title').textContent = 'New Service Request';
       document.getElementById('sr-form-id').value = '';
+      if (srForm) srForm.dataset.originalBookingTime = '';
       
+      if (slotsContainer) slotsContainer.style.display = 'none';
+      if (consentCheck) consentCheck.checked = false;
+      if (consentWrapper) consentWrapper.style.display = 'none';
+
       // Enable all fields
       document.getElementById('sr-cust-name').disabled = false;
       document.getElementById('sr-cust-phone').disabled = false;
@@ -3707,8 +3823,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-
-
   if (srForm) {
     srForm.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -3716,14 +3830,24 @@ document.addEventListener('DOMContentLoaded', () => {
       const reqId = document.getElementById('sr-form-id').value;
       const isEdit = !!reqId;
       
-      const actionText = isEdit ? 'Update this service request?' : 'Create new service request?';
       let bookingTimeStr = document.getElementById('sr-booking-time').value;
+      let origBt = (srForm.dataset.originalBookingTime || '').replace(' ', 'T');
       if (bookingTimeStr) {
-         bookingTimeStr = bookingTimeStr.replace('T', ' ') + ':00'; // formatting to YYYY-MM-DD HH:MM:SS
+         bookingTimeStr = bookingTimeStr.replace('T', ' ') + (bookingTimeStr.length === 16 ? ':00' : ''); // formatting to YYYY-MM-DD HH:MM:SS
       }
       
+      const isTimeChanged = isEdit && bookingTimeStr && bookingTimeStr.substring(0, 16).replace(' ', 'T') !== origBt;
+      const isConsentChecked = consentCheck ? consentCheck.checked : false;
+
+      if (isTimeChanged && !isConsentChecked) {
+        showToast('Customer consent is required when rescheduling an appointment. Please check the consent box.', 'warning');
+        if (consentWrapper) consentWrapper.style.display = 'block';
+        return;
+      }
+
+      const actionText = isEdit ? (isTimeChanged ? 'Reschedule this appointment?' : 'Update service request?') : 'Create new service request?';
       let msg = 'This will save the changes.';
-      if (bookingTimeStr) msg += ' A booking confirmation SMS will be sent to the customer.';
+      if (bookingTimeStr) msg += ' A booking notification SMS will be sent to the customer.';
 
       openConfirmModal(actionText, msg, async () => {
         try {
@@ -3735,7 +3859,8 @@ document.addEventListener('DOMContentLoaded', () => {
               vin: document.getElementById('sr-veh-vin').value || null
             },
             booking_time: bookingTimeStr || null,
-            issue_description: document.getElementById('sr-issue-desc').value
+            customer_consent_obtained: isConsentChecked,
+            issue_description: formatIssueDescription(document.getElementById('sr-issue-desc').value)
           };
 
           let url, method, finalPayload;

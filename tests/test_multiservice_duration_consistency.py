@@ -14,18 +14,18 @@ from serviceBot.db.seed import seed_db
 def test_get_service_required_fields_multi_service_sum():
     """Verify get_service_required_fields accurately calculates total multi-service duration."""
     seed_db()
-    # Test case 1: Auto Repair Estimates (30m) + Oil Change (Full Synthetic) (45m) = 75m
-    res1 = get_service_required_fields("Auto Repair Estimates, Oil Change (Full Synthetic)")
+    # Test case 1: Service Repair Estimates (30m) + Standard System Inspection (45m) = 75m
+    res1 = get_service_required_fields("Service Repair Estimates, Standard System Inspection")
     assert res1 is not None
     assert res1["duration_minutes"] == 75
 
-    # Test case 2: Oil Change (Full Synthetic) (45m) + Tire Rotation & Balancing (30m) = 75m
-    res2 = get_service_required_fields("Oil Change (Full Synthetic), Tire Rotation & Balancing")
+    # Test case 2: Standard System Inspection (45m) + Precision System Alignment & Calibration (60m) = 105m
+    res2 = get_service_required_fields("Standard System Inspection, Precision System Alignment & Calibration")
     assert res2 is not None
-    assert res2["duration_minutes"] == 75
+    assert res2["duration_minutes"] == 105
 
-    # Test case 3: Courtesy Inspection (20m) + Oil Change (Full Synthetic) (45m) = 65m
-    res3 = get_service_required_fields("Courtesy Inspection, Oil Change (Full Synthetic)")
+    # Test case 3: Courtesy Inspection (20m) + Standard System Inspection (45m) = 65m
+    res3 = get_service_required_fields("Courtesy Inspection, Standard System Inspection")
     assert res3 is not None
     assert res3["duration_minutes"] == 65
 
@@ -43,7 +43,7 @@ def test_format_time_slot_range_with_custom_duration():
 def test_book_appointment_persists_duration_in_db():
     """Verify book_appointment stores total duration_minutes in service_requests table."""
     seed_db()
-    multi_service = "Auto Repair Estimates, Oil Change (Full Synthetic)"
+    multi_service = "Service Repair Estimates, Standard System Inspection"
     time_slot = "2026-08-06 09:00:00"
 
     with get_db_connection() as conn:

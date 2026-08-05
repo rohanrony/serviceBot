@@ -401,6 +401,8 @@ def init_db(db_url: str = None, force: bool = False):
             ("agent_confirmed_at", "TIMESTAMP WITHOUT TIME ZONE DEFAULT NULL"),
             ("notification_dispatched_at", "TIMESTAMP WITHOUT TIME ZONE DEFAULT NULL"),
             ("sla_expires_at", "TIMESTAMP WITHOUT TIME ZONE DEFAULT NULL"),
+            ("customer_consent_obtained", "BOOLEAN DEFAULT FALSE"),
+            ("last_rescheduled_at", "TIMESTAMP WITHOUT TIME ZONE DEFAULT NULL"),
         ]:
             _safe_alter(cursor, conn, f"ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS {col} {col_type}")
 

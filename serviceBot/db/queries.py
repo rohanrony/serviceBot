@@ -1082,10 +1082,68 @@ def get_customer_appointments(phone: str) -> list:
             return [dict(row) for row in rows]
 
 
-def reschedule_appointment(appointment_id: int, new_datetime: str) -> bool:
+def get_available_slots_for_date(target_date_str: str, duration_minutes: int = 60) -> list:
+    """
+    Returns available time slots for a specific date (YYYY-MM-DD) across staff agents.
+    Generates intervals between 07:00 AM and 05:00 PM (Monday-Friday business hours).
+    Checks Google Calendar availability.
+    """
+    import datetime as dt_mod
+    from serviceBot.services.google_calendar import is_agent_free
+
+    try:
+        clean_date_str = str(target_date_str).strip()[:10]
+        target_date = dt_mod.datetime.strptime(clean_date_str, "%Y-%m-%d").date()
+    except Exception:
+        raise ValueError(f"Invalid date format '{target_date_str}'. Expected YYYY-MM-DD.")
+
+    if target_date.weekday() >= 5:
+        return []
+
+    available_slots = []
+    
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT id, name FROM staff_agents;")
+            agents = cursor.fetchall()
+            
+            if not agents:
+                return []
+            
+            current_slot_dt = dt_mod.datetime.combine(target_date, dt_mod.time(7, 0))
+            end_of_day = dt_mod.datetime.combine(target_date, dt_mod.time(17, 0))
+            
+            while current_slot_dt <= end_of_day:
+                slot_str = current_slot_dt.strftime("%Y-%m-%d %H:%M:%S")
+                free_count = 0
+                
+                for agent in agents:
+                    if is_agent_free(agent["id"], slot_str, duration_minutes=duration_minutes):
+                        free_count += 1
+                
+                if free_count > 0:
+                    end_slot_dt = current_slot_dt + dt_mod.timedelta(minutes=duration_minutes)
+                    available_slots.append({
+                        "start_time": slot_str,
+                        "end_time": end_slot_dt.strftime("%Y-%m-%d %H:%M:%S"),
+                        "available_agents_count": free_count
+                    })
+                
+                current_slot_dt += dt_mod.timedelta(minutes=30)
+                
+    return available_slots
+
+
+def reschedule_appointment(
+    appointment_id: int, 
+    new_datetime: str, 
+    customer_consent_obtained: bool = True, 
+    triggered_by: str = "system"
+) -> bool:
     """
     Reschedules an appointment: frees the old slot, books the new slot, and updates the appointment.
     All inside a single transaction. Checks Google Calendar availability of candidate agents.
+    Records customer consent status and logs audit entry.
     """
     if not validate_booking_time(new_datetime):
         raise ValueError(f"New booking time {new_datetime} is outside company workhours (Monday to Friday, 7:00 AM to 6:00 PM).")
@@ -1094,12 +1152,14 @@ def reschedule_appointment(appointment_id: int, new_datetime: str) -> bool:
         with dict_cursor(conn) as cursor:
             # 1. Get old appointment details
             cursor.execute(
-                "SELECT booking_time, staff_agent_id, service_type, customer_id FROM service_requests WHERE id = %s AND booking_type = 'appointment';",
+                "SELECT booking_time, staff_agent_id, service_type, customer_id, status FROM service_requests WHERE id = %s AND booking_type = 'appointment';",
                 (appointment_id,)
             )
             row = cursor.fetchone()
             if not row:
                 raise ValueError(f"Appointment (Service Request) with ID {appointment_id} not found.")
+            if (row.get("status") or "").lower() in ("completed", "done", "cancelled", "cancelled_by_customer"):
+                raise ValueError(f"Cannot reschedule appointment #{appointment_id} because its status is '{row.get('status')}'.")
             old_datetime = row["booking_time"]
             old_agent_id = row["staff_agent_id"]
             service_type = row["service_type"]
@@ -1133,8 +1193,25 @@ def reschedule_appointment(appointment_id: int, new_datetime: str) -> bool:
 
             # 4. Update service request
             cursor.execute(
-                "UPDATE service_requests SET booking_time = %s, staff_agent_id = %s, duration_minutes = %s, status = 'pending', updated_at = CURRENT_TIMESTAMP WHERE id = %s;",
-                (new_datetime, chosen_agent_id, duration_minutes, appointment_id)
+                """UPDATE service_requests 
+                   SET booking_time = %s, staff_agent_id = %s, duration_minutes = %s, status = 'pending', 
+                       customer_consent_obtained = %s, last_rescheduled_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP 
+                   WHERE id = %s;""",
+                (new_datetime, chosen_agent_id, duration_minutes, customer_consent_obtained, appointment_id)
+            )
+
+            # Audit log
+            old_dt_desc = str(old_datetime)[:19] if old_datetime else "Unscheduled"
+            cursor.execute(
+                """INSERT INTO service_request_audit_log (request_id, triggered_by, from_status, to_status, notes)
+                   VALUES (%s, %s, %s, %s, %s);""",
+                (
+                    appointment_id,
+                    triggered_by,
+                    row.get("status") or "pending",
+                    "pending",
+                    f"Rescheduled slot: {old_dt_desc} -> {new_datetime} | Customer consent obtained: {customer_consent_obtained}"
+                )
             )
             
             # Get customer details for calendar event
@@ -1209,7 +1286,8 @@ def update_service_request_status(request_id: int, status: str, triggered_by: st
     Maps aliases: 'done' -> 'completed', 'cancelled_by_customer' -> 'cancelled', 'rescheduled' -> 'pending'.
     Frees calendar slots if cancelling.
     """
-    normalized_status = status.lower().strip()
+    raw_status = (status or "").lower().strip()
+    normalized_status = raw_status
     if normalized_status in ('done', 'completed'):
         normalized_status = 'completed'
     elif normalized_status in ('cancelled_by_customer', 'cancelled'):
@@ -1245,7 +1323,7 @@ def update_service_request_status(request_id: int, status: str, triggered_by: st
             if not row:
                 raise ValueError(f"Service request with ID {request_id} not found.")
 
-            if normalized_status != current_status:
+            if normalized_status != current_status or raw_status == 'rescheduled':
                 cursor.execute(
                     """
                     INSERT INTO service_request_audit_log (request_id, from_status, to_status, triggered_by, notes)
@@ -1253,6 +1331,19 @@ def update_service_request_status(request_id: int, status: str, triggered_by: st
                     """,
                     (request_id, current_status, normalized_status, triggered_by, notes)
                 )
+
+                # Dispatch customer notifications for critical statuses (cancelled and rescheduled)
+                try:
+                    if normalized_status == 'cancelled':
+                        event_type = "CANCELLED_BY_CUSTOMER" if raw_status == "cancelled_by_customer" or triggered_by == "customer" else "CANCELLED_BY_ADMIN"
+                        from serviceBot.services.sms_router import SMSNotificationRouter
+                        SMSNotificationRouter().process_event(event_type=event_type, appointment_id=request_id)
+                    elif raw_status == 'rescheduled':
+                        from serviceBot.services.sms_router import SMSNotificationRouter
+                        SMSNotificationRouter().process_event(event_type="RESCHEDULED", appointment_id=request_id)
+                except Exception as notify_err:
+                    import logging
+                    logging.getLogger("serviceBot").error(f"Error dispatching status change notification for SR #{request_id}: {notify_err}")
 
             return dict(row)
 
@@ -1820,7 +1911,9 @@ def get_due_queued_sms_logs() -> list:
 def get_or_create_sms_conversation(customer_phone: str, context_appointment_id: int = None, assigned_agent_id: int = None) -> dict:
     """Gets an existing conversation for a customer phone number or creates a new one."""
     import re
-    cleaned_phone = customer_phone.strip()
+    if not customer_phone:
+        return {}
+    cleaned_phone = str(customer_phone).strip()
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             cursor.execute("SELECT * FROM sms_conversations WHERE customer_phone = %s;", (cleaned_phone,))

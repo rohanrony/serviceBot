@@ -803,6 +803,7 @@ class ServiceRequestEdit(BaseModel):
     issue_description: str
     vehicle_details: VehicleDetails
     booking_time: Optional[str] = None
+    customer_consent_obtained: Optional[bool] = False
 
 
 
@@ -912,8 +913,8 @@ async def get_service_requests(limit: Optional[int] = None, offset: Optional[int
                        c.name AS customer_name, c.phone,
                        v.make, v.model, v.year,
                        sa.name AS staff_agent_name, sa.role AS staff_agent_role,
-                       (SELECT EXISTS(SELECT 1 FROM sms_log WHERE appointment_id = sr.id AND status = 'FAILED')) AS has_failed_sms,
-                       (SELECT EXISTS(SELECT 1 FROM outbox_notifications WHERE request_id = sr.id AND status = 'FAILED_REVERTED')) AS has_failed_email
+                       COALESCE((SELECT (status = 'FAILED') FROM sms_log WHERE appointment_id = sr.id ORDER BY created_at DESC, id DESC LIMIT 1), FALSE) AS has_failed_sms,
+                       COALESCE((SELECT (status = 'FAILED_REVERTED') FROM outbox_notifications WHERE request_id = sr.id ORDER BY created_at DESC, id DESC LIMIT 1), FALSE) AS has_failed_email
                 FROM service_requests sr
                 LEFT JOIN customers c ON sr.customer_id = c.id
                 LEFT JOIN vehicles v ON sr.vehicle_id = v.id
@@ -1022,6 +1023,18 @@ async def create_service_request_endpoint(payload: ServiceRequestCreate):
                 
     return {"success": True, "request_id": request_id}
 
+@router.get("/available-slots")
+async def get_available_slots_endpoint(date: str, duration_minutes: Optional[int] = 60):
+    from serviceBot.db.queries import get_available_slots_for_date
+    try:
+        slots = get_available_slots_for_date(date, duration_minutes=duration_minutes or 60)
+        return {"success": True, "date": date, "available_slots": slots}
+    except ValueError as val_err:
+        raise HTTPException(status_code=400, detail=str(val_err))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch available slots: {str(exc)}")
+
+
 @router.put("/service-requests/{request_id}")
 async def edit_service_request_endpoint(request_id: int, payload: ServiceRequestEdit):
     from serviceBot.db.connection import get_db_connection, dict_cursor
@@ -1030,8 +1043,7 @@ async def edit_service_request_endpoint(request_id: int, payload: ServiceRequest
     
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
-            # Update issue description
-            cursor.execute("SELECT customer_id, issue_description, status FROM service_requests WHERE id = %s", (request_id,))
+            cursor.execute("SELECT customer_id, issue_description, status, booking_time FROM service_requests WHERE id = %s", (request_id,))
             sr = cursor.fetchone()
             if not sr:
                 raise HTTPException(status_code=404, detail="Service request not found")
@@ -1043,7 +1055,7 @@ async def edit_service_request_endpoint(request_id: int, payload: ServiceRequest
             # Audit log for description
             if sr["issue_description"] != payload.issue_description:
                 cursor.execute("INSERT INTO service_request_audit_log (request_id, triggered_by, from_status, to_status, notes) VALUES (%s, %s, %s, %s, %s)",
-                               (request_id, 'system', None, sr["status"], 'Manual issue description update'))
+                               (request_id, 'portal_staff', None, sr["status"], 'Manual issue description update'))
             
             # Update vehicle details
             cursor.execute("""
@@ -1051,10 +1063,18 @@ async def edit_service_request_endpoint(request_id: int, payload: ServiceRequest
             """, (payload.vehicle_details.make, payload.vehicle_details.model, payload.vehicle_details.year, payload.vehicle_details.vin, vehicle_id))
             
             # Handle slot reassignment
-            if payload.booking_time:
+            if payload.booking_time and payload.booking_time != sr["booking_time"]:
+                if not payload.customer_consent_obtained:
+                    raise HTTPException(status_code=400, detail="Customer consent is required when rescheduling an appointment.")
+                    
                 dt_str = payload.booking_time
                 try:
-                    reschedule_appointment(request_id, dt_str)
+                    reschedule_appointment(
+                        appointment_id=request_id, 
+                        new_datetime=dt_str, 
+                        customer_consent_obtained=payload.customer_consent_obtained, 
+                        triggered_by="portal_staff"
+                    )
                     
                     cursor.execute("SELECT phone, name FROM customers WHERE id = %s", (sr["customer_id"],))
                     cust = cursor.fetchone()
