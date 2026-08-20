@@ -196,36 +196,39 @@ def seed_db(force: bool = False):
         cursor.execute("SELECT COUNT(*) FROM sms_matrix_rules;")
         if cursor.fetchone()[0] == 0:
             default_rules = [
-                ("BOOKING", "customer", True),
-                ("BOOKING", "agent", True),
-                ("BOOKING", "admin", False),
-                ("RESCHEDULED", "customer", True),
-                ("RESCHEDULED", "agent", True),
-                ("RESCHEDULED", "admin", False),
-                ("REASSIGNED", "customer", False),
-                ("REASSIGNED", "agent", True),
-                ("REASSIGNED", "previous_agent", True),
-                ("REASSIGNED", "admin", False),
-                ("RESCHEDULED_REASSIGNED", "customer", True),
-                ("RESCHEDULED_REASSIGNED", "agent", True),
-                ("RESCHEDULED_REASSIGNED", "previous_agent", True),
-                ("RESCHEDULED_REASSIGNED", "admin", False),
-                ("CANCELLED_BY_CUSTOMER", "customer", True),
-                ("CANCELLED_BY_CUSTOMER", "agent", True),
-                ("CANCELLED_BY_CUSTOMER", "admin", False),
-                ("CANCELLED_BY_ADMIN", "customer", True),
-                ("CANCELLED_BY_ADMIN", "agent", True),
-                ("CANCELLED_BY_ADMIN", "admin", False),
-                ("REMINDER_24H", "customer", True),
-                ("REMINDER_24H", "admin", False),
-                ("REMINDER_2H", "customer", True),
-                ("REMINDER_2H", "agent", True),
-                ("REMINDER_2H", "admin", False),
+                ("BOOKING", "customer", "WHATSAPP", True),
+                ("BOOKING", "agent", "WHATSAPP", True),
+                ("BOOKING", "admin", "WHATSAPP", False),
+                ("RESCHEDULED", "customer", "WHATSAPP", True),
+                ("RESCHEDULED", "agent", "WHATSAPP", True),
+                ("RESCHEDULED", "admin", "WHATSAPP", False),
+                ("REASSIGNED", "customer", "WHATSAPP", False),
+                ("REASSIGNED", "agent", "WHATSAPP", True),
+                ("REASSIGNED", "previous_agent", "WHATSAPP", True),
+                ("REASSIGNED", "admin", "WHATSAPP", False),
+                ("RESCHEDULED_REASSIGNED", "customer", "WHATSAPP", True),
+                ("RESCHEDULED_REASSIGNED", "agent", "WHATSAPP", True),
+                ("RESCHEDULED_REASSIGNED", "previous_agent", "WHATSAPP", True),
+                ("RESCHEDULED_REASSIGNED", "admin", "WHATSAPP", False),
+                ("CANCELLED_BY_CUSTOMER", "customer", "WHATSAPP", True),
+                ("CANCELLED_BY_CUSTOMER", "agent", "WHATSAPP", True),
+                ("CANCELLED_BY_CUSTOMER", "admin", "WHATSAPP", False),
+                ("CANCELLED_BY_ADMIN", "customer", "WHATSAPP", True),
+                ("CANCELLED_BY_ADMIN", "agent", "WHATSAPP", True),
+                ("CANCELLED_BY_ADMIN", "admin", "WHATSAPP", False),
+                ("REMINDER_24H", "customer", "WHATSAPP", True),
+                ("REMINDER_24H", "admin", "WHATSAPP", False),
+                ("REMINDER_2H", "customer", "WHATSAPP", True),
+                ("REMINDER_2H", "agent", "WHATSAPP", True),
+                ("REMINDER_2H", "admin", "WHATSAPP", False),
+                ("AGENT_CONFIRMED", "customer", "WHATSAPP", False),
+                ("AGENT_CONFIRMED", "agent", "WHATSAPP", True),
+                ("AGENT_CONFIRMED", "admin", "WHATSAPP", False),
             ]
-            for event_type, recipient_role, enabled in default_rules:
+            for event_type, recipient_role, channel, enabled in default_rules:
                 cursor.execute(
-                    "INSERT INTO sms_matrix_rules (event_type, recipient_role, enabled) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING;",
-                    (event_type, recipient_role, enabled)
+                    "INSERT INTO sms_matrix_rules (event_type, recipient_role, channel, enabled) VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING;",
+                    (event_type, recipient_role, channel, enabled)
                 )
 
         # Reset SERIAL sequences

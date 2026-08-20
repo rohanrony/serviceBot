@@ -178,6 +178,7 @@ Speak the filler naturally as part of the conversation so the caller experiences
         "gmail_password": "",
         "gmail_recipient": "",
         "gmail_smtp_server": "smtp.gmail.com",
+        "enable_agent_selection": False,
         "gmail_smtp_port": 587,
         "gmail_auth_type": "app_password",
         "gmail_client_id": "",
@@ -803,6 +804,8 @@ class ServiceRequestEdit(BaseModel):
     issue_description: str
     vehicle_details: VehicleDetails
     booking_time: Optional[str] = None
+    booking_type: Optional[str] = None
+    duration_minutes: Optional[int] = None
     customer_consent_obtained: Optional[bool] = False
 
 
@@ -975,8 +978,13 @@ async def create_service_request_endpoint(payload: ServiceRequestCreate):
     from serviceBot.db.queries import lookup_customer_by_phone, normalize_e164_phone, book_appointment
     from serviceBot.db.connection import get_db_connection, dict_cursor
     from serviceBot.services.twilio_sms import TwilioSMSClient
+    from serviceBot.api.telephony import clean_and_validate_phone
 
-    norm_phone = normalize_e164_phone(payload.customer.phone)
+    validated_phone = clean_and_validate_phone(payload.customer.phone)
+    if not validated_phone:
+        raise HTTPException(status_code=400, detail="Phone number must be a valid 10-digit number.")
+        
+    norm_phone = normalize_e164_phone(validated_phone)
     
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
@@ -994,40 +1002,46 @@ async def create_service_request_endpoint(payload: ServiceRequestCreate):
             
             svc_type = payload.service_request.get("service_type", "General Service")
             issue_desc = payload.service_request.get("issue_description", "")
+            staff_agent_id = payload.service_request.get("staff_agent_id")
+            booking_type = payload.service_request.get("booking_type", "appointment")
+            duration_minutes = payload.service_request.get("duration_minutes") or (15 if booking_type == "callback" else 60)
             
-            cursor.execute("""
-                INSERT INTO service_requests (customer_id, vehicle_id, service_type, issue_description, status)
-                VALUES (%s, %s, %s, %s, 'pending') RETURNING id
-            """, (customer_id, vehicle_id, svc_type, issue_desc))
+            if staff_agent_id:
+                cursor.execute("""
+                    INSERT INTO service_requests (customer_id, vehicle_id, service_type, issue_description, status, staff_agent_id, booking_type, duration_minutes)
+                    VALUES (%s, %s, %s, %s, 'pending', %s, %s, %s) RETURNING id
+                """, (customer_id, vehicle_id, svc_type, issue_desc, staff_agent_id, booking_type, duration_minutes))
+            else:
+                cursor.execute("""
+                    INSERT INTO service_requests (customer_id, vehicle_id, service_type, issue_description, status, booking_type, duration_minutes)
+                    VALUES (%s, %s, %s, %s, 'pending', %s, %s) RETURNING id
+                """, (customer_id, vehicle_id, svc_type, issue_desc, booking_type, duration_minutes))
             request_id = cursor.fetchone()["id"]
             
             # Audit log
             cursor.execute("INSERT INTO service_request_audit_log (request_id, triggered_by, from_status, to_status, notes) VALUES (%s, %s, %s, %s, %s)",
                            (request_id, 'system', None, 'pending', 'Manual request created from portal'))
+            conn.commit()
             
-            # Booking logic
-            booking_time = payload.service_request.get("booking_time")
-            if booking_time:
-                try:
-                    book_appointment(customer_id, request_id, booking_time, svc_type, payload.vehicle.model_dump(), "appointment")
-                    
-                    # SMS logic handled internally by book_appointment if enabled, but let's dispatch explicit confirmation if needed
-                    client = TwilioSMSClient()
-                    client.send_sms(
-                        to_number=norm_phone,
-                        body=f"Hi {payload.customer.name}, your {svc_type} appointment has been scheduled for {booking_time}.",
-                        appointment_id=request_id
-                    )
-                except ValueError as e:
-                    raise HTTPException(status_code=409, detail=str(e))
+    # Booking logic (executed after initial DB commit so customer and request records exist across connections)
+    booking_time = payload.service_request.get("booking_time")
+    if booking_time:
+        try:
+            book_appointment(customer_id, request_id, booking_time, svc_type, payload.vehicle.model_dump(), booking_type=booking_type, duration_minutes=duration_minutes)
+            
+            # Dispatch BOOKING event notifications via SMSNotificationRouter to handle Customer, Agent, and Admin rules
+            from serviceBot.services.sms_router import SMSNotificationRouter
+            SMSNotificationRouter().process_event("BOOKING", appointment_id=request_id)
+        except ValueError as e:
+            raise HTTPException(status_code=409, detail=str(e))
                 
     return {"success": True, "request_id": request_id}
 
 @router.get("/available-slots")
-async def get_available_slots_endpoint(date: str, duration_minutes: Optional[int] = 60):
+async def get_available_slots_endpoint(date: str, duration_minutes: Optional[int] = 60, staff_agent_id: Optional[int] = None):
     from serviceBot.db.queries import get_available_slots_for_date
     try:
-        slots = get_available_slots_for_date(date, duration_minutes=duration_minutes or 60)
+        slots = get_available_slots_for_date(date, duration_minutes=duration_minutes or 60, staff_agent_id=staff_agent_id)
         return {"success": True, "date": date, "available_slots": slots}
     except ValueError as val_err:
         raise HTTPException(status_code=400, detail=str(val_err))
@@ -1048,8 +1062,19 @@ async def edit_service_request_endpoint(request_id: int, payload: ServiceRequest
             if not sr:
                 raise HTTPException(status_code=404, detail="Service request not found")
                 
-            cursor.execute("UPDATE service_requests SET issue_description = %s WHERE id = %s RETURNING vehicle_id", 
-                (payload.issue_description, request_id))
+            # Update service request fields
+            update_sql = "UPDATE service_requests SET issue_description = %s"
+            update_params = [payload.issue_description]
+            if payload.booking_type:
+                update_sql += ", booking_type = %s"
+                update_params.append(payload.booking_type)
+            if payload.duration_minutes is not None:
+                update_sql += ", duration_minutes = %s"
+                update_params.append(payload.duration_minutes)
+            update_sql += " WHERE id = %s RETURNING vehicle_id"
+            update_params.append(request_id)
+            
+            cursor.execute(update_sql, tuple(update_params))
             vehicle_id = cursor.fetchone()["vehicle_id"]
             
             # Audit log for description
@@ -1061,32 +1086,35 @@ async def edit_service_request_endpoint(request_id: int, payload: ServiceRequest
             cursor.execute("""
                 UPDATE vehicles SET make = %s, model = %s, year = %s, vin = %s WHERE id = %s
             """, (payload.vehicle_details.make, payload.vehicle_details.model, payload.vehicle_details.year, payload.vehicle_details.vin, vehicle_id))
+            conn.commit()
             
-            # Handle slot reassignment
-            if payload.booking_time and payload.booking_time != sr["booking_time"]:
-                if not payload.customer_consent_obtained:
-                    raise HTTPException(status_code=400, detail="Customer consent is required when rescheduling an appointment.")
-                    
-                dt_str = payload.booking_time
-                try:
-                    reschedule_appointment(
-                        appointment_id=request_id, 
-                        new_datetime=dt_str, 
-                        customer_consent_obtained=payload.customer_consent_obtained, 
-                        triggered_by="portal_staff"
-                    )
-                    
+    # Handle slot reassignment after committing vehicle / service request changes
+    if payload.booking_time and payload.booking_time != sr["booking_time"]:
+        if not payload.customer_consent_obtained:
+            raise HTTPException(status_code=400, detail="Customer consent is required when rescheduling an appointment.")
+            
+        dt_str = payload.booking_time
+        try:
+            reschedule_appointment(
+                appointment_id=request_id, 
+                new_datetime=dt_str, 
+                customer_consent_obtained=payload.customer_consent_obtained, 
+                triggered_by="portal_staff"
+            )
+            
+            with get_db_connection() as conn:
+                with dict_cursor(conn) as cursor:
                     cursor.execute("SELECT phone, name FROM customers WHERE id = %s", (sr["customer_id"],))
                     cust = cursor.fetchone()
-                    
-                    client = TwilioSMSClient()
-                    client.send_sms(
-                        to_number=cust["phone"],
-                        body=f"Hi {cust['name']}, your appointment has been rescheduled to {dt_str}.",
-                        appointment_id=request_id
-                    )
-                except ValueError as e:
-                    raise HTTPException(status_code=409, detail=str(e))
+            
+            client = TwilioSMSClient()
+            client.send_sms(
+                to=cust["phone"],
+                body=f"Hi {cust['name']}, your appointment has been rescheduled to {dt_str}.",
+                appointment_id=request_id
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=409, detail=str(e))
     return {"success": True}
 
 @router.patch("/service-requests/{request_id}/status")
@@ -1289,6 +1317,7 @@ async def delete_kb_file(filename: str):
 
 class GmailConfigPayload(BaseModel):
     gmail_enabled: bool
+    enable_agent_selection: Optional[bool] = False
     gmail_auth_type: str
     gmail_sender: str
     gmail_password: Optional[str] = None
@@ -1318,6 +1347,7 @@ async def get_gmail_config():
     
     return {
         "gmail_enabled": config.get("gmail_enabled", False),
+        "enable_agent_selection": config.get("enable_agent_selection", False),
         "gmail_auth_type": config.get("gmail_auth_type", "app_password"),
         "gmail_sender": config.get("gmail_sender", ""),
         "gmail_recipient": config.get("gmail_recipient", ""),
@@ -1336,6 +1366,7 @@ async def update_gmail_config(payload: GmailConfigPayload):
     config = load_config()
     
     config["gmail_enabled"] = payload.gmail_enabled
+    config["enable_agent_selection"] = payload.enable_agent_selection
     config["gmail_auth_type"] = payload.gmail_auth_type
     if payload.gmail_sender or payload.gmail_auth_type != "oauth2":
         config["gmail_sender"] = payload.gmail_sender
@@ -1769,6 +1800,7 @@ class SMSMatrixRulePayload(BaseModel):
     event_type: str
     recipient_role: str
     enabled: bool
+    channel: Optional[str] = "WHATSAPP"
 
 
 class SMSWhitelistPayload(BaseModel):
@@ -1804,15 +1836,15 @@ async def update_sms_config_endpoint(payload: SMSConfigPayload):
 
 
 @router.get("/sms/matrix-rules")
-async def get_sms_matrix_rules_endpoint():
+async def get_sms_matrix_rules_endpoint(channel: Optional[str] = None):
     from serviceBot.db.queries import get_sms_matrix_rules
-    return get_sms_matrix_rules()
+    return get_sms_matrix_rules(channel=channel)
 
 
 @router.put("/sms/matrix-rules")
 async def update_sms_matrix_rule_endpoint(payload: SMSMatrixRulePayload):
     from serviceBot.db.queries import update_sms_matrix_rule
-    return update_sms_matrix_rule(payload.event_type, payload.recipient_role, payload.enabled)
+    return update_sms_matrix_rule(payload.event_type, payload.recipient_role, payload.enabled, channel=payload.channel or "WHATSAPP")
 
 
 @router.get("/sms/whitelist")

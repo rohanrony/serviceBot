@@ -39,16 +39,31 @@ class SMSNotificationRouter:
     def __init__(self):
         self.twilio_client = TwilioSMSClient()
 
-    def _is_rule_enabled(self, event_type: str, recipient_role: str, rules_list: list) -> bool:
+    def _is_rule_enabled(self, event_type: str, recipient_role: str, rules_list: list, channel: str = "WHATSAPP", channel_overrides: dict = None) -> bool:
+        if channel_overrides and recipient_role in channel_overrides:
+            val = channel_overrides[recipient_role]
+            if isinstance(val, bool):
+                return val
+            if isinstance(val, dict):
+                if channel.lower() in val:
+                    return bool(val[channel.lower()])
+                if channel.upper() in val:
+                    return bool(val[channel.upper()])
+
         for r in rules_list:
-            if r["event_type"] == event_type and r["recipient_role"] == recipient_role:
+            r_chan = r.get("channel") or "WHATSAPP"
+            if r["event_type"] == event_type and r["recipient_role"] == recipient_role and r_chan.upper() == channel.upper():
                 return bool(r["enabled"])
         # Defaults if not found in DB
         if recipient_role == "admin":
             return False
         if event_type == "REASSIGNED" and recipient_role == "customer":
             return False
-        return True
+        if event_type in ("AGENT_CONFIRMED", "CONFIRMED") and recipient_role == "customer":
+            return False
+        if channel.upper() in ("WHATSAPP", "SMS"):
+            return True
+        return False
 
     def _fetch_details_if_missing(self, appointment_id: int, details: dict = None) -> dict:
         if details:
@@ -98,7 +113,8 @@ class SMSNotificationRouter:
         previous_agent_phone: str = None,
         admin_phone: str = None,
         booking_time: str = None,
-        details: dict = None
+        details: dict = None,
+        channel_overrides: dict = None
     ) -> dict:
         import os
         rules = get_sms_matrix_rules()
@@ -140,7 +156,7 @@ class SMSNotificationRouter:
             update_or_cancel_appointment_reminders(appointment_id)
 
         # 1. Customer Dispatch
-        if customer_phone and self._is_rule_enabled(event_type, "customer", rules):
+        if customer_phone and self._is_rule_enabled(event_type, "customer", rules, channel_overrides=channel_overrides):
             if not get_customer_opt_in(customer_phone):
                 log_id = log_sms_dispatch(
                     appointment_id=appointment_id,
@@ -211,7 +227,7 @@ class SMSNotificationRouter:
 
 
         # 2. Agent Dispatch (Current / New Agent)
-        if agent_phone and self._is_rule_enabled(event_type, "agent", rules):
+        if agent_phone and self._is_rule_enabled(event_type, "agent", rules, channel_overrides=channel_overrides):
             body = (
                 f"🚨 [NEW ADVISOR ALERT] Appt #{appointment_id}\n"
                 f"Status: {event_type}\n"
@@ -233,7 +249,7 @@ class SMSNotificationRouter:
             dispatches.append({"recipient": "agent", **res})
 
         # 3. Previous Agent Dispatch (on Reassignment)
-        if previous_agent_phone and self._is_rule_enabled(event_type, "previous_agent", rules):
+        if previous_agent_phone and self._is_rule_enabled(event_type, "previous_agent", rules, channel_overrides=channel_overrides):
             body = (
                 f"ℹ️ [PREVIOUS ADVISOR NOTICE]\n"
                 f"Service Request #{appointment_id} ({srv} for {cust_name}) "
@@ -249,7 +265,7 @@ class SMSNotificationRouter:
             dispatches.append({"recipient": "previous_agent", **res})
 
         # 4. Admin Dispatch
-        if self._is_rule_enabled(event_type, "admin", rules):
+        if self._is_rule_enabled(event_type, "admin", rules, channel_overrides=channel_overrides):
             target_admin_phone = admin_phone
             if not target_admin_phone:
                 from serviceBot.db.queries import get_sms_config

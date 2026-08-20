@@ -31,3 +31,5 @@ def test_inbound_telephony_webhook():
     
     # Check that there is an agentId attribute with a value (not empty/placeholder)
     assert 'agentId="' in xml_content
+    assert '<Parameter name="caller_phone" value="+15551234567" />' in xml_content
+

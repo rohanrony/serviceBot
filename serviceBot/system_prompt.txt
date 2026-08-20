@@ -10,7 +10,7 @@ Understand the caller's intent and assist them naturally across these areas:
 ### 2. MANDATORY INTAKE & SERVICE REQUESTS
 Under our "Nice Difference" policy, before booking any service request (whether as an appointment or a callback), you MUST collect and confirm these 4 details:
 1. Customer's full name
-2. Valid 10-digit phone number (verify it has 10 digits)
+2. Valid 10-digit phone number (verify it has 10 digits). Note: The caller is calling from {{caller_phone}}. If they ask you to use the number they are calling from, use {{caller_phone}}.
 3. Asset details (Asset Brand, Model, Year / Description)
 4. Description of the issue or requested service
 

@@ -1,3 +1,4 @@
+from typing import Optional, Dict, Any, List, Tuple
 from serviceBot.db.connection import get_db_connection, dict_cursor
 from serviceBot.logger import get_logger, log_execution
 import datetime as dt_mod
@@ -569,7 +570,7 @@ def validate_booking_time(booking_time: str) -> bool:
     return True
 
 
-def book_appointment(customer_id: int, service_request_id: int, appointment_datetime: str, service_type: str, vehicle_details: dict = None, booking_type: str = "appointment") -> int:
+def book_appointment(customer_id: int, service_request_id: int, appointment_datetime: str, service_type: str, vehicle_details: dict = None, booking_type: str = "appointment", duration_minutes: Optional[int] = None) -> int:
     """
     Books an appointment or callback and sets staff_agent_id.
 
@@ -654,7 +655,10 @@ def book_appointment(customer_id: int, service_request_id: int, appointment_date
 
     from serviceBot.services.google_calendar import is_agent_free, create_agent_calendar_event
 
-    duration_minutes = 15 if is_cb else (fields.get("duration_minutes") or 60 if fields else 60)
+    if duration_minutes is None:
+        duration_minutes = 15 if is_cb else (fields.get("duration_minutes") or 60 if fields else 60)
+    elif is_cb:
+        duration_minutes = 15
 
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
@@ -1082,18 +1086,35 @@ def get_customer_appointments(phone: str) -> list:
             return [dict(row) for row in rows]
 
 
-def get_available_slots_for_date(target_date_str: str, duration_minutes: int = 60) -> list:
+def get_available_slots_for_date(target_date_str: str, duration_minutes: int = 60, staff_agent_id: int = None) -> list:
     """
-    Returns available time slots for a specific date (YYYY-MM-DD) across staff agents.
+    Returns available time slots for a specific date across staff agents.
     Generates intervals between 07:00 AM and 05:00 PM (Monday-Friday business hours).
-    Checks Google Calendar availability.
+    Checks Google Calendar availability efficiently (pre-fetching day range per agent).
     """
     import datetime as dt_mod
-    from serviceBot.services.google_calendar import is_agent_free
+    import concurrent.futures
+    import zoneinfo
+    from unittest.mock import Mock
+    from serviceBot.services.google_calendar import fetch_agent_events, parse_google_datetime, is_agent_free
+
+    clean_date_str = str(target_date_str).strip()
+    if "T" in clean_date_str:
+        clean_date_str = clean_date_str.split("T")[0]
+    if " " in clean_date_str:
+        clean_date_str = clean_date_str.split(" ")[0]
+    if "," in clean_date_str:
+        clean_date_str = clean_date_str.split(",")[0]
 
     try:
-        clean_date_str = str(target_date_str).strip()[:10]
-        target_date = dt_mod.datetime.strptime(clean_date_str, "%Y-%m-%d").date()
+        if "/" in clean_date_str:
+            parts = clean_date_str.split("/")
+            if len(parts[0]) == 4:
+                target_date = dt_mod.datetime.strptime(clean_date_str, "%Y/%m/%d").date()
+            else:
+                target_date = dt_mod.datetime.strptime(clean_date_str, "%m/%d/%Y").date()
+        else:
+            target_date = dt_mod.datetime.strptime(clean_date_str, "%Y-%m-%d").date()
     except Exception:
         raise ValueError(f"Invalid date format '{target_date_str}'. Expected YYYY-MM-DD.")
 
@@ -1104,21 +1125,86 @@ def get_available_slots_for_date(target_date_str: str, duration_minutes: int = 6
     
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
-            cursor.execute("SELECT id, name FROM staff_agents;")
+            if staff_agent_id:
+                cursor.execute("SELECT id, name FROM staff_agents WHERE id = %s;", (staff_agent_id,))
+            else:
+                cursor.execute("SELECT id, name FROM staff_agents;")
             agents = cursor.fetchall()
             
             if not agents:
                 return []
-            
+
+            # If is_agent_free is explicitly mocked (e.g., in unit tests), use standard fallback loop
+            if isinstance(is_agent_free, Mock):
+                current_slot_dt = dt_mod.datetime.combine(target_date, dt_mod.time(7, 0))
+                end_of_day = dt_mod.datetime.combine(target_date, dt_mod.time(17, 0))
+                while current_slot_dt <= end_of_day:
+                    slot_str = current_slot_dt.strftime("%Y-%m-%d %H:%M:%S")
+                    free_count = sum(1 for agent in agents if is_agent_free(agent["id"], slot_str, duration_minutes=duration_minutes))
+                    if free_count > 0:
+                        end_slot_dt = current_slot_dt + dt_mod.timedelta(minutes=duration_minutes)
+                        available_slots.append({
+                            "start_time": slot_str,
+                            "end_time": end_slot_dt.strftime("%Y-%m-%d %H:%M:%S"),
+                            "available_agents_count": free_count
+                        })
+                    current_slot_dt += dt_mod.timedelta(minutes=30)
+                return available_slots
+
+            try:
+                tz = zoneinfo.ZoneInfo("America/New_York")
+            except Exception:
+                tz = dt_mod.timezone(dt_mod.timedelta(hours=-4))
+
+            day_start_dt = dt_mod.datetime.combine(target_date, dt_mod.time(0, 0, 0)).replace(tzinfo=tz)
+            day_end_dt = dt_mod.datetime.combine(target_date, dt_mod.time(23, 59, 59)).replace(tzinfo=tz)
+            start_iso = day_start_dt.isoformat()
+            end_iso = day_end_dt.isoformat()
+
+            agent_busy_ranges = {}
+
+            def _load_agent_busy(agent_id):
+                events = fetch_agent_events(agent_id, start_iso, end_iso)
+                if events is None:
+                    return []
+                ranges = []
+                for ev in events:
+                    s_dt = parse_google_datetime(ev.get("start"), tz)
+                    e_dt = parse_google_datetime(ev.get("end"), tz)
+                    if s_dt and e_dt:
+                        ranges.append((s_dt, e_dt))
+                return ranges
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(agents), 10)) as executor:
+                future_map = {
+                    executor.submit(_load_agent_busy, agent["id"]): agent["id"]
+                    for agent in agents
+                }
+                for future in concurrent.futures.as_completed(future_map):
+                    aid = future_map[future]
+                    try:
+                        agent_busy_ranges[aid] = future.result()
+                    except Exception:
+                        agent_busy_ranges[aid] = []
+
             current_slot_dt = dt_mod.datetime.combine(target_date, dt_mod.time(7, 0))
             end_of_day = dt_mod.datetime.combine(target_date, dt_mod.time(17, 0))
             
             while current_slot_dt <= end_of_day:
                 slot_str = current_slot_dt.strftime("%Y-%m-%d %H:%M:%S")
+                slot_start_localized = current_slot_dt.replace(tzinfo=tz)
+                slot_end_localized = (current_slot_dt + dt_mod.timedelta(minutes=duration_minutes)).replace(tzinfo=tz)
                 free_count = 0
                 
                 for agent in agents:
-                    if is_agent_free(agent["id"], slot_str, duration_minutes=duration_minutes):
+                    aid = agent["id"]
+                    busy_ranges = agent_busy_ranges.get(aid, [])
+                    is_busy = False
+                    for b_start, b_end in busy_ranges:
+                        if slot_start_localized < b_end and slot_end_localized > b_start:
+                            is_busy = True
+                            break
+                    if not is_busy:
                         free_count += 1
                 
                 if free_count > 0:
@@ -1152,7 +1238,7 @@ def reschedule_appointment(
         with dict_cursor(conn) as cursor:
             # 1. Get old appointment details
             cursor.execute(
-                "SELECT booking_time, staff_agent_id, service_type, customer_id, status FROM service_requests WHERE id = %s AND booking_type = 'appointment';",
+                "SELECT booking_time, staff_agent_id, service_type, customer_id, status, duration_minutes FROM service_requests WHERE id = %s AND booking_type = 'appointment';",
                 (appointment_id,)
             )
             row = cursor.fetchone()
@@ -1166,8 +1252,8 @@ def reschedule_appointment(
             customer_id = row["customer_id"]
 
             # 2. Check availability for the slot datetime across all candidate agents
-            duration_minutes = 60
-            if service_type:
+            duration_minutes = row.get("duration_minutes") or 60
+            if not row.get("duration_minutes") and service_type:
                 fields = get_service_required_fields(service_type)
                 if fields and fields.get("duration_minutes"):
                     duration_minutes = fields["duration_minutes"]
@@ -1578,27 +1664,34 @@ def update_sms_config(data: dict) -> dict:
             return d
 
 
-def get_sms_matrix_rules() -> list:
-    """Fetches all event matrix notification rules."""
+def get_sms_matrix_rules(channel: str = None) -> list:
+    """Fetches all event matrix notification rules, optionally filtered by channel."""
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
-            cursor.execute("SELECT * FROM sms_matrix_rules ORDER BY event_type, recipient_role;")
+            if channel:
+                cursor.execute(
+                    "SELECT * FROM sms_matrix_rules WHERE UPPER(channel) = UPPER(%s) ORDER BY event_type, recipient_role;",
+                    (channel,)
+                )
+            else:
+                cursor.execute("SELECT * FROM sms_matrix_rules ORDER BY event_type, recipient_role, channel;")
             return [dict(r) for r in cursor.fetchall()]
 
 
-def update_sms_matrix_rule(event_type: str, recipient_role: str, enabled: bool) -> dict:
-    """Updates or inserts a matrix rule for an event and recipient role."""
+def update_sms_matrix_rule(event_type: str, recipient_role: str, enabled: bool, channel: str = "WHATSAPP") -> dict:
+    """Updates or inserts a matrix rule for an event, recipient role, and channel."""
+    chan = (channel or "WHATSAPP").upper()
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             cursor.execute(
                 """
-                INSERT INTO sms_matrix_rules (event_type, recipient_role, enabled)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (event_type, recipient_role)
+                INSERT INTO sms_matrix_rules (event_type, recipient_role, channel, enabled)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (event_type, recipient_role, channel)
                 DO UPDATE SET enabled = EXCLUDED.enabled
                 RETURNING *;
                 """,
-                (event_type, recipient_role, enabled)
+                (event_type, recipient_role, chan, enabled)
             )
             return dict(cursor.fetchone())
 

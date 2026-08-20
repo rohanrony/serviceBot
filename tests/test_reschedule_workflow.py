@@ -22,6 +22,16 @@ def test_available_slots_weekday_with_db():
         assert "start_time" in slots[0]
         assert "available_agents_count" in slots[0]
 
+def test_available_slots_various_date_formats():
+    """Verify get_available_slots_for_date accepts YYYY-MM-DD, MM/DD/YYYY, and ISO format strings."""
+    with patch("serviceBot.services.google_calendar.fetch_agent_events", return_value=[]):
+        slots_iso = get_available_slots_for_date("2026-08-10")
+        slots_us = get_available_slots_for_date("08/10/2026")
+        slots_dt = get_available_slots_for_date("2026-08-10T17:00:00")
+        assert len(slots_iso) > 0
+        assert len(slots_us) == len(slots_iso)
+        assert len(slots_dt) == len(slots_iso)
+
 def test_get_available_slots_endpoint():
     """Test GET /api/v1/portal/available-slots endpoint."""
     with patch("serviceBot.db.queries.get_available_slots_for_date") as mock_get_slots:

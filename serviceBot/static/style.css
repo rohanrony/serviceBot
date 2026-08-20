@@ -700,6 +700,8 @@ body {
   font-family: var(--font-sans);
   font-size: 13.5px;
   transition: var(--transition-smooth);
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .form-input::placeholder {
@@ -725,6 +727,9 @@ body {
 
 textarea.form-input {
   resize: vertical;
+  min-height: 80px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .checkbox-group {
@@ -1424,9 +1429,9 @@ textarea.form-input {
 /* Toast Messages */
 .toast {
   position: fixed;
-  bottom: 24px;
+  top: 24px;
   left: 50%;
-  transform: translateX(-50%) translateY(20px);
+  transform: translateX(-50%) translateY(-20px);
   background-color: #0c0d0e;
   color: #fff;
   border: 1px solid var(--border-card);
@@ -1435,7 +1440,7 @@ textarea.form-input {
   font-size: 13px;
   font-weight: 500;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
-  z-index: 1000;
+  z-index: 9999;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s, transform 0.25s ease-out;
@@ -1941,7 +1946,7 @@ textarea.form-input {
   .toast {
     left: 12px;
     right: 12px;
-    transform: translateY(20px);
+    transform: translateY(-20px);
     width: auto;
   }
 
@@ -2769,4 +2774,97 @@ textarea.form-input {
 .dashboard-banner .banner-icon {
   color: var(--color-primary-hover);
   flex-shrink: 0;
+}
+
+/* ==========================================================================
+   CONFIG NAVIGATION RIBBON & SUBTABS
+   ========================================================================== */
+.config-nav-ribbon {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(22, 25, 31, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-card);
+  padding: 6px 8px;
+  border-radius: var(--border-radius-lg);
+  margin-bottom: 24px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+}
+
+.config-nav-ribbon::-webkit-scrollbar {
+  display: none;
+}
+
+.config-ribbon-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--border-radius-md);
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  user-select: none;
+}
+
+.config-ribbon-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-main);
+  border-color: rgba(255, 255, 255, 0.08);
+  transform: translateY(-1px);
+}
+
+.config-ribbon-item.active {
+  background: linear-gradient(135deg, rgba(94, 106, 210, 0.25) 0%, rgba(139, 92, 246, 0.2) 100%);
+  border-color: rgba(139, 92, 246, 0.45);
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 4px 14px rgba(94, 106, 210, 0.25);
+}
+
+.config-ribbon-item .ribbon-icon {
+  width: 15px;
+  height: 15px;
+  fill: currentColor;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.config-ribbon-item:hover .ribbon-icon {
+  transform: scale(1.1);
+}
+
+.config-ribbon-item.active .ribbon-icon {
+  fill: var(--color-primary-hover);
+}
+
+.config-subtab-pane {
+  display: none;
+  animation: fadeInSubtab 0.25s ease-out;
+}
+
+.config-subtab-pane.active {
+  display: block;
+}
+
+@keyframes fadeInSubtab {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }

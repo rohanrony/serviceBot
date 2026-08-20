@@ -181,7 +181,11 @@ async def inbound_call(request: Request = None):
             except Exception as e:
                 print(f"Error fetching recent booking context: {e}")
     
-    param_xml = f'        <Parameter name="recent_booking_context" value="{recent_booking_context}" />\n' if recent_booking_context else ""
+    param_xml = ""
+    if recent_booking_context:
+        param_xml += f'        <Parameter name="recent_booking_context" value="{recent_booking_context}" />\n'
+    if caller_phone:
+        param_xml += f'        <Parameter name="caller_phone" value="{caller_phone}" />\n'
     twiml_response = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Connect>

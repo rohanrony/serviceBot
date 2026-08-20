@@ -12,6 +12,7 @@ def test_html_dom_structure_for_sms_components():
     # 1. Nav items presence
     assert 'data-tab="sms-inbox"' in html_content
     assert 'data-tab="sms-config"' in html_content
+    assert 'Notifications Config' in html_content
 
     # 2. View sections presence
     assert 'id="sms-inbox-view"' in html_content

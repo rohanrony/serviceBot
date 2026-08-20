@@ -155,10 +155,17 @@ document.addEventListener('DOMContentLoaded', () => {
   if (documentDrawerOverlay) documentDrawerOverlay.addEventListener('click', closeDocumentDrawer);
   
   // Mapped View Titles & Subtitles
+  const CONFIG_SUBTABS = ['staff', 'gmail', 'sms-config', 'customer-onboarding', 'intents', 'keys'];
+  let activeConfigSubtab = 'staff';
+
   const TAB_METADATA = {
     'dashboard': {
       title: 'Dashboard Overview',
       subtitle: 'Real-time summaries, call metrics, and captured service request triage.'
+    },
+    'config': {
+      title: 'System Configuration',
+      subtitle: 'Manage system settings, AI prompts, notifications, calendars, and API integrations.'
     },
     'intents': {
       title: 'AI Agent Config',
@@ -189,7 +196,7 @@ document.addEventListener('DOMContentLoaded', () => {
       subtitle: 'Real-time 2-way customer SMS dispatch, quick reply templates, and human handoff queue.'
     },
     'sms-config': {
-      title: 'SMS Rules Config',
+      title: 'Notifications Config',
       subtitle: 'Global SMS support numbers, notification matrix rules, and test environment whitelist.'
     },
     'customer-onboarding': {
@@ -201,69 +208,134 @@ document.addEventListener('DOMContentLoaded', () => {
   const viewSubtitle = document.getElementById('current-view-subtitle');
 
   function switchTab(tabName, updateHash = true) {
-    if (!TAB_METADATA[tabName]) {
+    let isConfig = false;
+    let targetSubtab = null;
+
+    if (tabName === 'config') {
+      isConfig = true;
+      targetSubtab = activeConfigSubtab || 'staff';
+    } else if (CONFIG_SUBTABS.includes(tabName)) {
+      isConfig = true;
+      targetSubtab = tabName;
+      activeConfigSubtab = tabName;
+    } else if (!TAB_METADATA[tabName]) {
       tabName = 'dashboard';
     }
 
-    // Update sidebar nav items state
-    navItems.forEach(nav => {
-      if (nav.getAttribute('data-tab') === tabName) {
-        nav.classList.add('active');
-      } else {
-        nav.classList.remove('active');
+    if (isConfig) {
+      // Update sidebar nav items state
+      navItems.forEach(nav => {
+        if (nav.getAttribute('data-tab') === 'config') {
+          nav.classList.add('active');
+        } else {
+          nav.classList.remove('active');
+        }
+      });
+
+      // Toggle views visibility - show config-view
+      document.querySelectorAll('.view-section').forEach(section => {
+        if (section.id === 'config-view') {
+          section.classList.add('active');
+        } else {
+          section.classList.remove('active');
+        }
+      });
+
+      // Update config ribbon items active state
+      const ribbonItems = document.querySelectorAll('.config-ribbon-item');
+      ribbonItems.forEach(item => {
+        if (item.getAttribute('data-subtab') === targetSubtab) {
+          item.classList.add('active');
+        } else {
+          item.classList.remove('active');
+        }
+      });
+
+      // Update config subtab panes active state
+      const subtabPanes = document.querySelectorAll('.config-subtab-pane');
+      subtabPanes.forEach(pane => {
+        if (pane.getAttribute('data-subtab-pane') === targetSubtab || pane.id === `${targetSubtab}-view`) {
+          pane.classList.add('active');
+        } else {
+          pane.classList.remove('active');
+        }
+      });
+
+      // Update title & subtitle header text
+      const meta = TAB_METADATA[targetSubtab] || TAB_METADATA['config'];
+      if (viewTitle) viewTitle.textContent = meta.title;
+      if (viewSubtitle) viewSubtitle.textContent = meta.subtitle;
+
+      // Update URL hash
+      if (updateHash) {
+        if (window.location.hash !== `#config/${targetSubtab}` && window.location.hash !== `#${targetSubtab}`) {
+          window.history.pushState(null, '', `#config/${targetSubtab}`);
+        }
       }
-    });
 
-    // Toggle views visibility
-    document.querySelectorAll('.view-section').forEach(section => {
-      if (section.id === `${tabName}-view`) {
-        section.classList.add('active');
-      } else {
-        section.classList.remove('active');
+      // Trigger data loader for active subtab
+      if (targetSubtab === 'staff') {
+        loadStaffView();
+      } else if (targetSubtab === 'gmail') {
+        loadGmailConfig();
+      } else if (targetSubtab === 'sms-config') {
+        loadSMSConfig();
+        loadSMSMatrixRules();
+        loadSMSWhitelist();
+      } else if (targetSubtab === 'customer-onboarding') {
+        loadTwilioSandboxInfo();
+        loadOnboardedTestCustomers();
+      } else if (targetSubtab === 'intents') {
+        loadConfigData();
+      } else if (targetSubtab === 'keys') {
+        loadVoiceData();
       }
-    });
 
-    // Update title & subtitle header text
-    const meta = TAB_METADATA[tabName];
-    if (viewTitle) viewTitle.textContent = meta.title;
-    if (viewSubtitle) viewSubtitle.textContent = meta.subtitle;
+    } else {
+      // Main non-config tabs
+      navItems.forEach(nav => {
+        if (nav.getAttribute('data-tab') === tabName) {
+          nav.classList.add('active');
+        } else {
+          nav.classList.remove('active');
+        }
+      });
 
-    // Update URL hash if requested
-    if (updateHash && window.location.hash !== `#${tabName}`) {
-      window.history.pushState(null, '', `#${tabName}`);
-    }
+      document.querySelectorAll('.view-section').forEach(section => {
+        if (section.id === `${tabName}-view`) {
+          section.classList.add('active');
+        } else {
+          section.classList.remove('active');
+        }
+      });
 
-    // Trigger data loader for the active tab
-    if (tabName === 'dashboard') {
-      loadDashboardData();
-    } else if (tabName === 'intents') {
-      loadConfigData();
-    } else if (tabName === 'services') {
-      loadServicesData();
-    } else if (tabName === 'keys') {
-      loadVoiceData();
-    } else if (tabName === 'staff') {
-      loadStaffView();
-    } else if (tabName === 'knowledge') {
-      loadKBData();
-    } else if (tabName === 'gmail') {
-      loadGmailConfig();
-    } else if (tabName === 'sms-config') {
-      loadSMSConfig();
-      loadSMSMatrixRules();
-      loadSMSWhitelist();
-    } else if (tabName === 'sms-inbox') {
-      const filterEl = document.getElementById('sms-thread-filter');
-      loadSMSConversations(filterEl ? filterEl.value : 'all');
-    } else if (tabName === 'customer-onboarding') {
-      loadTwilioSandboxInfo();
-      loadOnboardedTestCustomers();
+      const meta = TAB_METADATA[tabName];
+      if (viewTitle) viewTitle.textContent = meta.title;
+      if (viewSubtitle) viewSubtitle.textContent = meta.subtitle;
+
+      if (updateHash && window.location.hash !== `#${tabName}`) {
+        window.history.pushState(null, '', `#${tabName}`);
+      }
+
+      if (tabName === 'dashboard') {
+        loadDashboardData();
+      } else if (tabName === 'services') {
+        loadServicesData();
+      } else if (tabName === 'knowledge') {
+        loadKBData();
+      } else if (tabName === 'sms-inbox') {
+        const filterEl = document.getElementById('sms-thread-filter');
+        loadSMSConversations(filterEl ? filterEl.value : 'all');
+      }
     }
   }
 
   window.handleUrlHash = function() {
     const rawHash = (window.location.hash || '').replace(/^#/, '').trim();
-    if (rawHash && TAB_METADATA[rawHash]) {
+    if (rawHash.startsWith('config/')) {
+      const sub = rawHash.split('/')[1];
+      switchTab(sub || 'staff', false);
+    } else if (rawHash && TAB_METADATA[rawHash]) {
       switchTab(rawHash, false);
     } else {
       switchTab('dashboard', false);
@@ -276,6 +348,16 @@ document.addEventListener('DOMContentLoaded', () => {
       e.preventDefault();
       const tabName = item.getAttribute('data-tab');
       switchTab(tabName, true);
+    });
+  });
+
+  // Config Ribbon Navigation Switching
+  const configRibbonItems = document.querySelectorAll('.config-ribbon-item');
+  configRibbonItems.forEach(item => {
+    item.addEventListener('click', (e) => {
+      e.preventDefault();
+      const subtabName = item.getAttribute('data-subtab');
+      switchTab(subtabName, true);
     });
   });
 
@@ -303,17 +385,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Show Toast Alert helper
   function showToast(message, type = 'success') {
-    toast.textContent = message;
+    let displayMsg = message;
+    if (typeof message === 'object' && message !== null) {
+      if (Array.isArray(message)) {
+        displayMsg = message.map(item => item.msg || item.detail || JSON.stringify(item)).join('; ');
+      } else {
+        displayMsg = message.detail || message.message || JSON.stringify(message);
+      }
+    }
+    toast.textContent = displayMsg;
     toast.className = 'toast active';
-    if (type === 'error') {
-      toast.style.borderColor = 'var(--color-danger)';
+    if (type === 'error' || type === 'danger') {
+      toast.style.borderColor = '#ef4444';
+      toast.style.backgroundColor = '#1f1315';
+      toast.style.color = '#fca5a5';
+    } else if (type === 'warning') {
+      toast.style.borderColor = '#f59e0b';
+      toast.style.backgroundColor = '#1e1b13';
+      toast.style.color = '#fde047';
     } else {
       toast.style.borderColor = 'var(--border-card)';
+      toast.style.backgroundColor = '#0c0d0e';
+      toast.style.color = '#fff';
     }
     
     setTimeout(() => {
       toast.classList.remove('active');
-    }, 3000);
+    }, 4000);
   }
 
   // --- VIEW 1: DASHBOARD RETRIEVAL ---
@@ -1266,6 +1364,13 @@ document.addEventListener('DOMContentLoaded', () => {
   if (addServiceForm) {
     addServiceForm.addEventListener('submit', async (e) => {
       e.preventDefault();
+      const submitBtn = addServiceForm.querySelector('button[type="submit"]');
+      if (submitBtn && submitBtn.disabled) return;
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.dataset.origText = submitBtn.textContent;
+        submitBtn.textContent = 'Creating...';
+      }
       
       const payload = {
         name: document.getElementById('new-service-name').value,
@@ -1294,6 +1399,11 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (err) {
         console.error(err);
         showToast('Error creating service: ' + err.message, 'error');
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = submitBtn.dataset.origText || 'Create Service';
+        }
       }
     });
   }
@@ -2407,6 +2517,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!response.ok) throw new Error('Failed to fetch Gmail configurations');
       const config = await response.json();
       
+      document.getElementById('enable-agent-selection').checked = !!config.enable_agent_selection;
       document.getElementById('gmail-enabled').checked = !!config.gmail_enabled;
       document.getElementById('gmail-auth-type').value = config.gmail_auth_type || 'app_password';
       document.getElementById('gmail-sender').value = config.gmail_sender || '';
@@ -2482,6 +2593,7 @@ document.addEventListener('DOMContentLoaded', () => {
       
       const payload = {
         gmail_enabled: document.getElementById('gmail-enabled').checked,
+        enable_agent_selection: document.getElementById('enable-agent-selection').checked,
         gmail_auth_type: document.getElementById('gmail-auth-type').value,
         gmail_sender: document.getElementById('gmail-sender').value.trim(),
         gmail_password: document.getElementById('gmail-password').value,
@@ -2515,6 +2627,7 @@ document.addEventListener('DOMContentLoaded', () => {
     testGmailBtn.addEventListener('click', async () => {
       const payload = {
         gmail_enabled: document.getElementById('gmail-enabled').checked,
+        enable_agent_selection: document.getElementById('enable-agent-selection').checked,
         gmail_auth_type: document.getElementById('gmail-auth-type').value,
         gmail_sender: document.getElementById('gmail-sender').value.trim(),
         gmail_password: document.getElementById('gmail-password').value,
@@ -3644,13 +3757,41 @@ document.addEventListener('DOMContentLoaded', () => {
   const slotsDropdown = document.getElementById('sr-slots-dropdown');
   const consentWrapper = document.getElementById('sr-consent-wrapper');
   const consentCheck = document.getElementById('sr-customer-consent-check');
+  const srBookingTypeSelect = document.getElementById('sr-booking-type');
+  const srDurationGroup = document.getElementById('sr-duration-group');
+  const srDurationSelect = document.getElementById('sr-duration-minutes');
+
+  if (srBookingTypeSelect) {
+    srBookingTypeSelect.addEventListener('change', () => {
+      if (srBookingTypeSelect.value === 'callback') {
+        if (srDurationSelect) srDurationSelect.value = '15';
+        if (srDurationGroup) srDurationGroup.style.display = 'none';
+      } else {
+        if (srDurationGroup) srDurationGroup.style.display = 'block';
+        if (srDurationSelect && srDurationSelect.value === '15') srDurationSelect.value = '60';
+      }
+    });
+  }
 
   if (checkSlotsBtn) {
     checkSlotsBtn.addEventListener('click', async () => {
       let currentVal = document.getElementById('sr-booking-time').value;
       let targetDate = '';
       if (currentVal) {
-        targetDate = currentVal.substring(0, 10);
+        let matchISO = currentVal.match(/\d{4}-\d{2}-\d{2}/);
+        if (matchISO) {
+          targetDate = matchISO[0];
+        } else {
+          let matchSlash = currentVal.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+          if (matchSlash) {
+            let m = matchSlash[1].padStart(2, '0');
+            let d = matchSlash[2].padStart(2, '0');
+            let y = matchSlash[3];
+            targetDate = `${y}-${m}-${d}`;
+          } else {
+            targetDate = currentVal.substring(0, 10);
+          }
+        }
       } else {
         const today = new Date();
         targetDate = today.toISOString().substring(0, 10);
@@ -3658,7 +3799,18 @@ document.addEventListener('DOMContentLoaded', () => {
       
       try {
         checkSlotsBtn.textContent = 'Checking...';
-        const res = await fetch(`/api/v1/portal/available-slots?date=${targetDate}`);
+        
+        const bType = srBookingTypeSelect ? srBookingTypeSelect.value : 'appointment';
+        const durVal = srDurationSelect ? parseInt(srDurationSelect.value) : 60;
+        const durationMinutes = (bType === 'callback') ? 15 : (durVal || 60);
+
+        let url = `/api/v1/portal/available-slots?date=${targetDate}&duration_minutes=${durationMinutes}`;
+        const agentSelect = document.getElementById('sr-agent-select');
+        if (agentSelect && agentSelect.value) {
+          url += `&staff_agent_id=${agentSelect.value}`;
+        }
+        
+        const res = await fetch(url);
         if (res.ok) {
           const data = await res.json();
           const slots = data.available_slots || [];
@@ -3772,8 +3924,13 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('sr-cust-phone').disabled = true;
     document.getElementById('sr-service-type').disabled = true;
 
-    // Populate booking time if available
+    // Populate booking time, booking type, and duration if available
     document.getElementById('sr-booking-time').value = origBt;
+    const bookingTypeVal = req.booking_type || 'appointment';
+    const durationMinutesVal = req.duration_minutes || (bookingTypeVal === 'callback' ? 15 : 60);
+    if (srBookingTypeSelect) srBookingTypeSelect.value = bookingTypeVal;
+    if (srDurationSelect) srDurationSelect.value = String(durationMinutesVal);
+    if (srDurationGroup) srDurationGroup.style.display = (bookingTypeVal === 'callback') ? 'none' : 'block';
 
     if (srModal) srModal.style.display = 'block';
     if (srModalOverlay) srModalOverlay.style.display = 'block';
@@ -3781,7 +3938,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const btnNewRequest = document.getElementById('btn-new-request');
   if (btnNewRequest) {
-    btnNewRequest.addEventListener('click', () => {
+    btnNewRequest.addEventListener('click', async () => {
       document.getElementById('sr-modal-title').textContent = 'New Service Request';
       document.getElementById('sr-form-id').value = '';
       if (srForm) srForm.dataset.originalBookingTime = '';
@@ -3789,6 +3946,18 @@ document.addEventListener('DOMContentLoaded', () => {
       if (slotsContainer) slotsContainer.style.display = 'none';
       if (consentCheck) consentCheck.checked = false;
       if (consentWrapper) consentWrapper.style.display = 'none';
+
+      if (srBookingTypeSelect) srBookingTypeSelect.value = 'appointment';
+      if (srDurationSelect) srDurationSelect.value = '60';
+      if (srDurationGroup) srDurationGroup.style.display = 'block';
+
+      // Reset agent selection UI
+      const agentSelectContainer = document.getElementById('sr-agent-select-container');
+      const autoAssignText = document.getElementById('sr-auto-assign-text');
+      const agentSelect = document.getElementById('sr-agent-select');
+      if (agentSelectContainer) agentSelectContainer.style.display = 'none';
+      if (autoAssignText) autoAssignText.style.display = 'block';
+      if (agentSelect) agentSelect.value = '';
 
       // Enable all fields
       document.getElementById('sr-cust-name').disabled = false;
@@ -3798,6 +3967,21 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('sr-booking-time').value = '';
       if (srModal) srModal.style.display = 'block';
       if (srModalOverlay) srModalOverlay.style.display = 'block';
+
+      // Check if manual agent selection is enabled
+      try {
+        const configRes = await fetch('/api/v1/portal/gmail-config');
+        if (configRes.ok) {
+          const config = await configRes.json();
+          if (config.enable_agent_selection) {
+            if (agentSelectContainer) agentSelectContainer.style.display = 'block';
+            if (autoAssignText) autoAssignText.style.display = 'none';
+            await populateAgentsDropdown('sr-agent-select');
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load config for agent selection:', e);
+      }
     });
   }
 
@@ -3827,6 +4011,9 @@ document.addEventListener('DOMContentLoaded', () => {
     srForm.addEventListener('submit', (e) => {
       e.preventDefault();
       
+      const submitBtn = srForm.querySelector('button[type="submit"]') || document.getElementById('sr-save-btn');
+      if (submitBtn && submitBtn.disabled) return;
+      
       const reqId = document.getElementById('sr-form-id').value;
       const isEdit = !!reqId;
       
@@ -3845,12 +4032,34 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
+      if (!isEdit) {
+        const phoneVal = document.getElementById('sr-cust-phone').value;
+        if (phoneVal) {
+          const digits = phoneVal.replace(/\\D/g, '');
+          if (digits.length !== 10 && !(digits.length === 11 && digits.startsWith('1'))) {
+            showToast('Phone number must be a valid 10-digit number.', 'warning');
+            return;
+          }
+        } else {
+          showToast('Customer phone number is required.', 'warning');
+          return;
+        }
+      }
+
       const actionText = isEdit ? (isTimeChanged ? 'Reschedule this appointment?' : 'Update service request?') : 'Create new service request?';
       let msg = 'This will save the changes.';
       if (bookingTimeStr) msg += ' A booking notification SMS will be sent to the customer.';
 
       openConfirmModal(actionText, msg, async () => {
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.dataset.origText = submitBtn.textContent;
+          submitBtn.textContent = 'Saving...';
+        }
         try {
+          const selectedBookingType = srBookingTypeSelect ? srBookingTypeSelect.value : 'appointment';
+          const selectedDurationMinutes = selectedBookingType === 'callback' ? 15 : (srDurationSelect ? parseInt(srDurationSelect.value) || 60 : 60);
+
           const payload = {
             vehicle_details: {
               make: document.getElementById('sr-veh-make').value,
@@ -3859,6 +4068,8 @@ document.addEventListener('DOMContentLoaded', () => {
               vin: document.getElementById('sr-veh-vin').value || null
             },
             booking_time: bookingTimeStr || null,
+            booking_type: selectedBookingType,
+            duration_minutes: selectedDurationMinutes,
             customer_consent_obtained: isConsentChecked,
             issue_description: formatIssueDescription(document.getElementById('sr-issue-desc').value)
           };
@@ -3872,6 +4083,10 @@ document.addEventListener('DOMContentLoaded', () => {
           } else {
             url = `/api/v1/portal/service-requests`;
             method = 'POST';
+            
+            const agentSelect = document.getElementById('sr-agent-select');
+            const selectedAgentId = agentSelect && agentSelect.value ? parseInt(agentSelect.value) : null;
+            
             finalPayload = {
               customer: {
                 name: document.getElementById('sr-cust-name').value,
@@ -3881,7 +4096,10 @@ document.addEventListener('DOMContentLoaded', () => {
               service_request: {
                 service_type: document.getElementById('sr-service-type').value,
                 issue_description: payload.issue_description,
-                booking_time: payload.booking_time
+                booking_time: payload.booking_time,
+                booking_type: selectedBookingType,
+                duration_minutes: selectedDurationMinutes,
+                staff_agent_id: selectedAgentId
               }
             };
           }
@@ -3895,13 +4113,18 @@ document.addEventListener('DOMContentLoaded', () => {
           if (res.ok) {
             showToast('Service Request saved successfully!', 'success');
             closeSRModal();
-            fetchData(); // reload dashboard
+            loadDashboardData(); // reload dashboard
           } else {
             const err = await res.json();
             showToast(err.detail || 'Failed to save request.', 'danger');
           }
         } catch (err) {
           showToast('An error occurred.', 'danger');
+        } finally {
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = submitBtn.dataset.origText || 'Save Request';
+          }
         }
       });
     });
