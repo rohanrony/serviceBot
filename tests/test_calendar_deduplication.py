@@ -1,8 +1,18 @@
+import datetime as dt_mod
 import pytest
 from unittest.mock import patch, MagicMock
 from serviceBot.services.gmail import delete_admin_calendar_event
 from serviceBot.services.outbox_worker import _dispatch_outbox_event
-from serviceBot.db.queries import reschedule_appointment
+from serviceBot.db.connection import dict_cursor, get_db_connection
+from serviceBot.db.queries import book_appointment, reschedule_appointment
+
+
+def _next_business_date() -> dt_mod.date:
+    candidate = dt_mod.date.today() + dt_mod.timedelta(days=1)
+    while candidate.weekday() > 4:
+        candidate += dt_mod.timedelta(days=1)
+    return candidate
+
 
 
 @patch("serviceBot.services.gmail.get_gmail_access_token")
@@ -89,57 +99,53 @@ def test_outbox_agent_reassignment_cleans_up_old_events(
     assert mock_create_admin.called
 
 
-@patch("serviceBot.db.queries.get_service_required_fields")
-@patch("serviceBot.db.queries.get_db_connection")
-@patch("serviceBot.services.google_calendar.delete_agent_calendar_event")
-@patch("serviceBot.services.gmail.delete_admin_calendar_event")
-@patch("serviceBot.services.google_calendar.create_agent_calendar_event")
 @patch("serviceBot.services.gmail.create_admin_calendar_event")
-@patch("serviceBot.services.google_calendar.is_agent_free")
-def test_reschedule_appointment_cleans_up_old_events(
-    mock_free,
-    mock_create_admin,
-    mock_create_agent,
-    mock_delete_admin,
-    mock_delete_agent,
-    mock_db_conn,
-    mock_req_fields
+@patch("serviceBot.services.google_calendar.create_agent_calendar_event")
+@patch("serviceBot.services.google_calendar.delete_agent_calendar_event")
+def test_reschedule_appointment_queues_calendar_reconciliation(
+    delete_agent, create_agent, create_admin
 ):
-    """Verify reschedule_appointment deletes old slot events for agent & admin before booking new slot."""
-    mock_free.return_value = True
-    mock_req_fields.return_value = {"duration_minutes": 60}
+    """A successful reschedule commits local state and queues provider work without inline calls."""
+    date = _next_business_date()
+    first_slot = f"{date.isoformat()} 10:00:00"
+    second_slot = f"{date.isoformat()} 12:00:00"
 
-    # Setup DB cursor mocks
-    mock_cursor = MagicMock()
-    mock_conn = MagicMock()
-    mock_conn.__enter__.return_value = mock_conn
-    mock_db_conn.return_value = mock_conn
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                "INSERT INTO customers (name, phone) VALUES ('Reschedule Contract', '+15550119999') RETURNING id;"
+            )
+            customer_id = cursor.fetchone()["id"]
+            cursor.execute(
+                "INSERT INTO vehicles (customer_id, make, model, year) VALUES (%s, 'Honda', 'Civic', 2020);",
+                (customer_id,),
+            )
 
-    # Sequence of cursor.fetchone calls:
-    # 1. Fetch old appointment row
-    # 2. Fetch customer name
-    # 3. Fetch issue description
-    # 4. Fetch staff agent name
-    mock_cursor.fetchone.side_effect = [
-        {"booking_time": "2026-08-10 10:00:00", "staff_agent_id": 888, "service_type": "Oil Change", "customer_id": 888},
-        {"name": "Reschedule Customer"},
-        {"issue_description": "Routine Oil Change"},
-        {"name": "Tech 888"}
+    appointment_id = book_appointment(customer_id, None, first_slot, "Oil Change")
+    assert reschedule_appointment(appointment_id, second_slot) is True
+
+    create_agent.assert_not_called()
+    create_admin.assert_not_called()
+    delete_agent.assert_not_called()
+
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                """
+                SELECT event_type,
+                       payload ->> 'old_booking_time_str' AS old_booking_time,
+                       payload ->> 'notification_event' AS notification_event
+                FROM outbox_notifications
+                WHERE request_id = %s
+                ORDER BY id;
+                """,
+                (appointment_id,),
+            )
+            events = cursor.fetchall()
+
+    assert [row["event_type"] for row in events] == [
+        "calendar_projection", "booking_notification",
+        "calendar_projection", "booking_notification",
     ]
-    mock_cursor.fetchall.return_value = [
-        {"id": 1, "slot_datetime": "2026-08-11 14:00:00", "staff_agent_id": 888, "is_booked": False}
-    ]
-
-    with patch("serviceBot.db.queries.dict_cursor") as mock_dict_cursor:
-        mock_dict_cursor.return_value.__enter__.return_value = mock_cursor
-        result = reschedule_appointment(888, "2026-08-11 14:00:00")
-
-    assert result is True
-
-    # Verify old event deletion was called for 2026-08-10 10:00:00
-    mock_delete_agent.assert_called_once_with(888, "2026-08-10 10:00:00", duration_minutes=60)
-    mock_delete_admin.assert_called_once_with("2026-08-10 10:00:00", duration_minutes=60)
-
-    # Verify new event creation was called for 2026-08-11 14:00:00
-    assert mock_create_agent.called
-    assert mock_create_admin.called
+    assert events[-2]["old_booking_time"] == first_slot
+    assert events[-1]["notification_event"] == "RESCHEDULED"

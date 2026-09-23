@@ -1,3 +1,4 @@
+from datetime import date, timedelta
 import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch
@@ -6,31 +7,53 @@ from serviceBot.db.connection import get_db_connection
 
 client = TestClient(app)
 
+
+def _next_business_slot(hour: int) -> str:
+    candidate = date.today() + timedelta(days=1)
+    while candidate.weekday() > 4:
+        candidate += timedelta(days=1)
+    return f"{candidate.isoformat()} {hour:02d}:00:00"
+
+
 def test_create_callback_request_query():
     """Test that callback requests can be created in the database and queried."""
     from serviceBot.db.queries import create_callback_request
     from serviceBot.db.connection import dict_cursor
-    
+
+    phone = "+15550001111"
+    reservation_time = _next_business_slot(16)
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
-            # Ensure a customer exists for testing
-            cursor.execute("INSERT INTO customers (id, name, phone) VALUES (10, 'Test Customer', '555-000-1111') ON CONFLICT (id) DO NOTHING;")
-            cursor.execute("INSERT INTO vehicles (id, customer_id, make, model, year) VALUES (20, 10, 'Toyota', 'Corolla', 2015) ON CONFLICT (id) DO NOTHING;")
-            cursor.execute("INSERT INTO service_requests (id, customer_id, vehicle_id, service_type, issue_description) VALUES (20, 10, 20, 'Oil Change', 'General service') ON CONFLICT (id) DO NOTHING;")
-            conn.commit()
+            cursor.execute("DELETE FROM service_requests WHERE customer_id IN (SELECT id FROM customers WHERE phone = %s);", (phone,))
+            cursor.execute("DELETE FROM customers WHERE phone = %s;", (phone,))
+            cursor.execute("INSERT INTO customers (name, phone) VALUES ('Test Customer', %s) RETURNING id;", (phone,))
+            customer_id = cursor.fetchone()["id"]
+            cursor.execute("INSERT INTO vehicles (customer_id, make, model, year) VALUES (%s, 'Toyota', 'Corolla', 2015) RETURNING id;", (customer_id,))
+            vehicle_id = cursor.fetchone()["id"]
+            cursor.execute("INSERT INTO service_requests (customer_id, vehicle_id, service_type, issue_description) VALUES (%s, %s, 'Oil Change', 'General service') RETURNING id;", (customer_id, vehicle_id))
+            request_id = cursor.fetchone()["id"]
 
-    # Create callback
-    cb_id = create_callback_request(customer_id=10, service_request_id=20, preferred_time="Today at 4 PM")
-    assert cb_id is not None
+    try:
+        cb_id = create_callback_request(
+            customer_id=customer_id,
+            service_request_id=request_id,
+            preferred_time=reservation_time,
+        )
+        assert cb_id is not None
 
-    with get_db_connection() as conn:
-        with dict_cursor(conn) as cursor:
-            cursor.execute("SELECT * FROM service_requests WHERE id = %s;", (cb_id,))
-            row = cursor.fetchone()
-            assert row is not None
-            assert row["customer_id"] == 10
-            assert row["booking_type"] == "callback"
-            assert row["booking_time"] == "Today at 4 PM"
+        with get_db_connection() as conn:
+            with dict_cursor(conn) as cursor:
+                cursor.execute("SELECT * FROM service_requests WHERE id = %s;", (cb_id,))
+                row = cursor.fetchone()
+                assert row is not None
+                assert row["customer_id"] == customer_id
+                assert row["booking_type"] == "callback"
+                assert row["booking_time"] == reservation_time
+    finally:
+        with get_db_connection() as conn:
+            with dict_cursor(conn) as cursor:
+                cursor.execute("DELETE FROM service_requests WHERE customer_id = %s;", (customer_id,))
+                cursor.execute("DELETE FROM customers WHERE id = %s;", (customer_id,))
 
 
 def test_get_callbacks_endpoint():
@@ -69,7 +92,7 @@ def test_voice_tools_request_callback():
             "model": "F-150",
             "year": 2018,
             "issue_description": "AC blows hot air",
-            "preferred_time": "Today at 3 PM"
+            "preferred_time": _next_business_slot(15),
         }
     }
     
@@ -97,4 +120,4 @@ def test_voice_tools_request_callback():
         assert row["phone"] == "4242704893"
         assert row["service_type"] == "AC Service & Repair"
         assert row["issue_description"] == "AC blows hot air"
-        assert row["booking_time"] == "Today at 3 PM"
+        assert row["booking_time"] == _next_business_slot(15)

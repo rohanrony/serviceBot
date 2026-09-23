@@ -8,6 +8,7 @@ import threading
 import sys
 
 from dotenv import load_dotenv
+from serviceBot.db.migrations import apply_migrations
 from serviceBot.logger import get_logger
 
 logger = get_logger("db.connection")
@@ -356,6 +357,10 @@ def init_db(db_url: str = None, force: bool = False):
                 except Exception as exc:
                     logger.debug(f"DDL statement skipped: {exc}")
         conn.commit()
+
+        applied_migrations = apply_migrations(conn)
+        if applied_migrations:
+            logger.info("Applied database migrations: %s", ", ".join(applied_migrations))
 
         # Auto-migrations for existing tables
         for col, col_def in [

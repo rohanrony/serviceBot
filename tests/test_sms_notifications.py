@@ -382,10 +382,8 @@ class TestVoiceToolsSMSTriggers:
 
         assert response.status_code == 200
         assert response.json()["result"]["success"] is True
-        instance.process_event.assert_called_once()
-        evt_call = instance.process_event.call_args.kwargs
-        assert evt_call["event_type"] == "BOOKING"
-        assert evt_call["appointment_id"] == 201
+        assert "queued" in response.json()["result"]["message"].lower()
+        instance.process_event.assert_not_called()
 
     @patch("serviceBot.api.telephony.get_booking_details")
     @patch("serviceBot.api.telephony.create_service_request")
@@ -429,9 +427,8 @@ class TestVoiceToolsSMSTriggers:
 
         assert response.status_code == 200
         assert response.json()["result"]["success"] is True
-        instance.process_event.assert_called_once()
-        evt_call = instance.process_event.call_args.kwargs
-        assert evt_call["event_type"] == "BOOKING"
+        assert "queued" in response.json()["result"]["message"].lower()
+        instance.process_event.assert_not_called()
 
     @patch("serviceBot.api.telephony.get_booking_details")
     @patch("serviceBot.api.telephony.book_appointment")
@@ -476,10 +473,8 @@ class TestVoiceToolsSMSTriggers:
 
         assert response.status_code == 200
         assert response.json()["result"]["success"] is True
-        instance.process_event.assert_called_once()
-        evt_call = instance.process_event.call_args.kwargs
-        assert evt_call["event_type"] == "BOOKING"
-        assert evt_call["appointment_id"] == 300
+        assert "queued" in response.json()["result"]["message"].lower()
+        instance.process_event.assert_not_called()
 
     @patch("serviceBot.api.telephony.get_booking_details")
     @patch("serviceBot.api.telephony.create_callback_request")
@@ -524,9 +519,8 @@ class TestVoiceToolsSMSTriggers:
 
         assert response.status_code == 200
         assert response.json()["result"]["success"] is True
-        instance.process_event.assert_called_once()
-        evt_call = instance.process_event.call_args.kwargs
-        assert evt_call["event_type"] == "BOOKING"
+        assert "queued" in response.json()["result"]["message"].lower()
+        instance.process_event.assert_not_called()
 
     @patch("serviceBot.api.telephony.get_booking_details")
     @patch("serviceBot.api.telephony.reschedule_appointment")
@@ -566,10 +560,8 @@ class TestVoiceToolsSMSTriggers:
 
         assert response.status_code == 200
         assert response.json()["result"]["success"] is True
-        instance.process_event.assert_called_once()
-        evt_call = instance.process_event.call_args.kwargs
-        assert evt_call["event_type"] == "RESCHEDULED"
-        assert evt_call["appointment_id"] == 500
+        assert "queued" in response.json()["result"]["message"].lower()
+        instance.process_event.assert_not_called()
 
 
 # ===========================================================================
@@ -624,3 +616,4 @@ class TestSMSFailureIsolation:
         # Booking must still succeed even if SMS blows up
         assert response.status_code == 200
         assert response.json()["result"]["success"] is True
+        instance.process_event.assert_not_called()

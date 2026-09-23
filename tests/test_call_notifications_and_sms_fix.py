@@ -12,10 +12,18 @@ client = TestClient(app)
 
 @pytest.fixture(autouse=True)
 def clean_db():
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM crm_notes WHERE call_id = 'conv_test_dup_123';")
+        cursor.execute("DELETE FROM webhook_events WHERE provider = 'elevenlabs' AND event_id = 'conv_test_dup_123';")
+        cursor.execute("DELETE FROM service_requests WHERE customer_id IN (SELECT id FROM customers WHERE phone = '+15558889999');")
+        cursor.execute("DELETE FROM customers WHERE phone = '+15558889999';")
+        conn.commit()
     yield
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("DELETE FROM crm_notes WHERE call_id = 'conv_test_dup_123';")
+        cursor.execute("DELETE FROM webhook_events WHERE provider = 'elevenlabs' AND event_id = 'conv_test_dup_123';")
         cursor.execute("DELETE FROM service_requests WHERE customer_id IN (SELECT id FROM customers WHERE phone = '+15558889999');")
         cursor.execute("DELETE FROM customers WHERE phone = '+15558889999';")
         conn.commit()

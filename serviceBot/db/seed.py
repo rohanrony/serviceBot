@@ -38,6 +38,8 @@ def seed_db(force: bool = False):
                     services, 
                     user_google_accounts, 
                     oauth_states,
+                    outbox_notifications,
+                    webhook_events,
                     sms_config,
                     sms_matrix_rules,
                     sms_whitelist,

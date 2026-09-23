@@ -12,6 +12,13 @@ from serviceBot.db.queries import (
 from serviceBot.services.calendar_sync import _generate_slot_strings
 
 
+def _next_business_date() -> datetime.date:
+    candidate = datetime.date.today() + datetime.timedelta(days=1)
+    while candidate.weekday() > 4:
+        candidate += datetime.timedelta(days=1)
+    return candidate
+
+
 def test_generate_slot_strings_has_15_min_intervals():
     """Verify that _generate_slot_strings generates 15-minute interval slots (0, 15, 30, 45)."""
     slots = _generate_slot_strings(days=7, hours=[10])
@@ -25,7 +32,7 @@ def test_generate_slot_strings_has_15_min_intervals():
 def test_check_availability_appointment_returns_only_30_min_intervals():
     """Verify check_availability for appointments only returns slots at :00 and :30 minute marks."""
     # Test tomorrow date
-    tomorrow_str = (datetime.date.today() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+    tomorrow_str = _next_business_date().strftime("%Y-%m-%d")
     
     slots = check_availability(service_type="Oil Change", preferred_date=tomorrow_str, booking_type="appointment")
     for s in slots:
@@ -35,7 +42,7 @@ def test_check_availability_appointment_returns_only_30_min_intervals():
 
 def test_check_availability_callback_returns_15_min_intervals():
     """Verify check_availability for callbacks can return 15-minute interval slots (:00, :15, :30, :45)."""
-    tomorrow_str = (datetime.date.today() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+    tomorrow_str = _next_business_date().strftime("%Y-%m-%d")
     
     slots = check_availability(service_type="Callback", preferred_date=tomorrow_str, booking_type="callback")
     assert len(slots) > 0
@@ -46,40 +53,33 @@ def test_check_availability_callback_returns_15_min_intervals():
 
 def test_callback_asap_resolution():
     """Verify booking a callback with ASAP resolves preferred_time to a valid 15-min future slot timestamp."""
-    with patch("serviceBot.services.google_calendar.create_agent_calendar_event") as mock_cal_event, \
-         patch("serviceBot.services.gmail.create_admin_calendar_event") as mock_admin_event:
-        mock_cal_event.return_value = True
-        mock_admin_event.return_value = True
-        
-        sr_id = create_callback_request(
-            customer_id=1,
-            preferred_time="ASAP",
-            vehicle_details={"make": "Honda", "model": "Civic", "year": 2020}
-        )
-        assert sr_id is not None
+    sr_id = create_callback_request(
+        customer_id=1,
+        preferred_time="ASAP",
+        vehicle_details={"make": "Honda", "model": "Civic", "year": 2020},
+    )
+    assert sr_id is not None
 
-        from serviceBot.db.connection import get_db_connection, dict_cursor
-        with get_db_connection() as conn:
-            with dict_cursor(conn) as cursor:
-                cursor.execute("SELECT booking_type, booking_time FROM service_requests WHERE id = %s;", (sr_id,))
-                row = cursor.fetchone()
-                assert row["booking_type"] == "callback"
-                assert row["booking_time"] != "ASAP", "ASAP should be resolved to a specific slot timestamp!"
-                
-                # Check parsed datetime
-                dt = datetime.datetime.strptime(row["booking_time"], "%Y-%m-%d %H:%M:%S")
-                assert dt.minute in (0, 15, 30, 45)
+    from serviceBot.db.connection import get_db_connection, dict_cursor
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT booking_type, booking_time FROM service_requests WHERE id = %s;", (sr_id,))
+            row = cursor.fetchone()
+            assert row["booking_type"] == "callback"
+            assert row["booking_time"] != "ASAP", "ASAP should be resolved to a specific slot timestamp!"
+
+            # Check parsed datetime and durable projection intent.
+            dt = datetime.datetime.strptime(row["booking_time"], "%Y-%m-%d %H:%M:%S")
+            assert dt.minute in (0, 15, 30, 45)
+            cursor.execute("SELECT COUNT(*) AS total FROM outbox_notifications WHERE request_id = %s AND event_type = 'calendar_projection';", (sr_id,))
+            assert cursor.fetchone()["total"] == 1
 
 
 def test_callback_calendar_event_type_and_duration():
-    """Verify creating a callback triggers Google Calendar event with 15-min duration and Callback summary."""
+    """Verify creating a callback queues, rather than directly performs, its 15-min projection."""
     with patch("serviceBot.services.google_calendar.create_agent_calendar_event") as mock_agent_event, \
          patch("serviceBot.services.gmail.create_admin_calendar_event") as mock_admin_event:
-        mock_agent_event.return_value = True
-        mock_admin_event.return_value = True
-
-        tomorrow_str = (datetime.date.today() + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
-        slot_str = f"{tomorrow_str} 11:15:00"
+        slot_str = f"{_next_business_date().isoformat()} 11:15:00"
 
         sr_id = create_service_request(
             customer_id=1,
@@ -91,10 +91,17 @@ def test_callback_calendar_event_type_and_duration():
         )
 
         assert sr_id is not None
-        # Verify call to create_agent_calendar_event received duration_minutes=15 and booking_type='callback'
-        if mock_agent_event.called:
-            kwargs = mock_agent_event.call_args.kwargs
-            assert kwargs.get("duration_minutes") == 15 or mock_agent_event.call_args[0][5] == 15 or kwargs.get("booking_type") == "callback"
+        mock_agent_event.assert_not_called()
+        mock_admin_event.assert_not_called()
+        from serviceBot.db.connection import get_db_connection, dict_cursor
+        with get_db_connection() as conn:
+            with dict_cursor(conn) as cursor:
+                cursor.execute("SELECT duration_minutes, booking_type FROM service_requests WHERE id = %s;", (sr_id,))
+                request = cursor.fetchone()
+                assert request["duration_minutes"] == 15
+                assert request["booking_type"] == "callback"
+                cursor.execute("SELECT event_type FROM outbox_notifications WHERE request_id = %s ORDER BY event_type;", (sr_id,))
+                assert [row["event_type"] for row in cursor.fetchall()] == ["booking_notification", "calendar_projection"]
 
 
 if __name__ == "__main__":

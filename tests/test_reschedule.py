@@ -1,9 +1,18 @@
+import datetime as dt_mod
+
 import pytest
 from fastapi.testclient import TestClient
 from serviceBot.main import app
-from serviceBot.db.connection import get_db_connection
+from serviceBot.db.connection import dict_cursor, get_db_connection
 
 client = TestClient(app)
+
+
+def _future_business_datetime(hour: int, days_ahead: int) -> str:
+    candidate = dt_mod.date.today() + dt_mod.timedelta(days=days_ahead)
+    while candidate.weekday() > 4:
+        candidate += dt_mod.timedelta(days=1)
+    return f"{candidate.isoformat()} {hour:02d}:00:00"
 
 def test_get_customer_appointments_query():
     """Test retrieving active appointments by customer phone number."""
@@ -27,58 +36,111 @@ def test_get_customer_appointments_query():
 
 
 def test_reschedule_appointment_query():
-    """Test rescheduling an appointment to a new available slot."""
-    from serviceBot.db.queries import reschedule_appointment
-    
+    """Rescheduling moves a real reservation transactionally to a future local slot."""
+    from serviceBot.db.queries import book_appointment, reschedule_appointment
+
+    old_time = _future_business_datetime(10, days_ahead=35)
+    new_time = _future_business_datetime(12, days_ahead=35)
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        # Seed customer, appointment and slot
-        cursor.execute("INSERT INTO staff_agents (id, name, role) VALUES (1, 'Agent 1', 'Advisor') ON CONFLICT (id) DO NOTHING;")
-        cursor.execute("INSERT INTO customers (id, name, phone) VALUES (16, 'Resched Customer 2', '555-999-7777') ON CONFLICT (id) DO NOTHING;")
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                "INSERT INTO customers (name, phone) VALUES ('Resched Customer 2', '+15550123331') RETURNING id;"
+            )
+            customer_id = cursor.fetchone()["id"]
+            cursor.execute(
+                "INSERT INTO vehicles (customer_id, make, model, year) VALUES (%s, 'Honda', 'Accord', 2022) RETURNING id;",
+                (customer_id,),
+            )
+            vehicle_id = cursor.fetchone()["id"]
+            cursor.execute(
+                """
+                INSERT INTO service_requests (customer_id, vehicle_id, service_type, issue_description, status)
+                VALUES (%s, %s, 'Oil Change', 'General repair', 'pending')
+                RETURNING id;
+                """,
+                (customer_id, vehicle_id),
+            )
+            request_id = cursor.fetchone()["id"]
 
-        cursor.execute("INSERT INTO service_requests (id, customer_id, vehicle_id, service_type, issue_description, booking_type, booking_time, staff_agent_id) VALUES (51, 16, 1, 'Oil Change', 'General repair', 'appointment', '2026-06-15 14:00:00', 1) ON CONFLICT (id) DO NOTHING;")
-        conn.commit()
+    appointment_id = book_appointment(
+        customer_id=customer_id,
+        service_request_id=request_id,
+        appointment_datetime=old_time,
+        service_type="Oil Change",
+    )
+    assert appointment_id == request_id
+    assert reschedule_appointment(appointment_id=appointment_id, new_datetime=new_time) is True
 
-    # Reschedule
-    success = reschedule_appointment(appointment_id=51, new_datetime="2026-06-15 16:00:00")
-    assert success is True
-
-    # Verify slots and appointment status
     with get_db_connection() as conn:
-        cursor = conn.cursor()
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                "SELECT booking_time FROM service_requests WHERE id = %s;",
+                (appointment_id,),
+            )
+            row = cursor.fetchone()
+            assert row["booking_time"] == new_time
 
-        # Appointment should be updated
-        cursor.execute("SELECT booking_time FROM service_requests WHERE id = 51")
-        row = cursor.fetchone()
-        assert row["booking_time"] == "2026-06-15 16:00:00"
-
+            cursor.execute("DELETE FROM outbox_notifications WHERE request_id = %s;", (appointment_id,))
+            cursor.execute("DELETE FROM service_requests WHERE id = %s;", (appointment_id,))
+            cursor.execute("DELETE FROM vehicles WHERE id = %s;", (vehicle_id,))
+            cursor.execute("DELETE FROM customers WHERE id = %s;", (customer_id,))
 
 def test_voice_tools_reschedule_appointment_flat():
-    """Test that voice tool reschedule_appointment flat payload executes correctly."""
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        # Seed database state
-        cursor.execute("INSERT INTO staff_agents (id, name, role) VALUES (1, 'Agent 1', 'Advisor') ON CONFLICT (id) DO NOTHING;")
-        cursor.execute("INSERT INTO customers (id, name, phone) VALUES (17, 'Resched Customer 3', '424-270-4893') ON CONFLICT (id) DO NOTHING;")
-        cursor.execute("INSERT INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES ('2026-06-16 10:00:00', TRUE, 1) ON CONFLICT DO NOTHING;")
-        cursor.execute("INSERT INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES ('2026-06-16 11:00:00', FALSE, 1) ON CONFLICT DO NOTHING;")
-        cursor.execute("INSERT INTO service_requests (id, customer_id, vehicle_id, service_type, issue_description, booking_type, booking_time, staff_agent_id) VALUES (52, 17, 1, 'Oil Change', 'General repair', 'appointment', '2026-06-16 10:00:00', 1) ON CONFLICT (id) DO NOTHING;")
-        conn.commit()
+    """The voice-tool reschedule path moves an existing future reservation."""
+    from serviceBot.db.queries import book_appointment
 
-    payload = {
-        "phone": "424-270-4893",
-        "new_appointment_datetime": "2026-06-16 11:00:00"
-    }
-    
-    response = client.post("/api/v1/voice/tools?name=reschedule_appointment", json=payload)
+    old_time = _future_business_datetime(10, days_ahead=42)
+    new_time = _future_business_datetime(12, days_ahead=42)
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                "INSERT INTO customers (name, phone) VALUES ('Resched Customer 3', '+15550124441') RETURNING id;"
+            )
+            customer_id = cursor.fetchone()["id"]
+            cursor.execute(
+                "INSERT INTO vehicles (customer_id, make, model, year) VALUES (%s, 'Toyota', 'Camry', 2021) RETURNING id;",
+                (customer_id,),
+            )
+            vehicle_id = cursor.fetchone()["id"]
+            cursor.execute(
+                """
+                INSERT INTO service_requests (customer_id, vehicle_id, service_type, issue_description, status)
+                VALUES (%s, %s, 'Oil Change', 'General repair', 'pending')
+                RETURNING id;
+                """,
+                (customer_id, vehicle_id),
+            )
+            request_id = cursor.fetchone()["id"]
+
+    appointment_id = book_appointment(
+        customer_id=customer_id,
+        service_request_id=request_id,
+        appointment_datetime=old_time,
+        service_type="Oil Change",
+    )
+
+    response = client.post(
+        "/api/v1/voice/tools?name=reschedule_appointment",
+        json={
+            "phone": "+15550124441",
+            "new_appointment_datetime": new_time,
+        },
+    )
     assert response.status_code == 200
     data = response.json()
     assert data["result"]["success"] is True
-    assert data["result"]["appointment_id"] == 52
-    
-    # Verify DB update
+    assert data["result"]["appointment_id"] == appointment_id
+
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT booking_time FROM service_requests WHERE id = 52")
-        row = cursor.fetchone()
-        assert row["booking_time"] == "2026-06-16 11:00:00"
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                "SELECT booking_time FROM service_requests WHERE id = %s;",
+                (appointment_id,),
+            )
+            row = cursor.fetchone()
+            assert row["booking_time"] == new_time
+
+            cursor.execute("DELETE FROM outbox_notifications WHERE request_id = %s;", (appointment_id,))
+            cursor.execute("DELETE FROM service_requests WHERE id = %s;", (appointment_id,))
+            cursor.execute("DELETE FROM vehicles WHERE id = %s;", (vehicle_id,))
+            cursor.execute("DELETE FROM customers WHERE id = %s;", (customer_id,))

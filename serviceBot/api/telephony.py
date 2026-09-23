@@ -157,12 +157,24 @@ async def inbound_call(request: Request = None):
     agent_id = os.getenv("ELEVENLABS_AGENT_ID", "default-agent-id")
     
     caller_phone = None
+    form_dict = {}
     if request:
         try:
             form_data = await request.form()
+            form_dict = {key: value for key, value in form_data.items()}
             caller_phone = form_data.get("From") or form_data.get("Caller") or request.query_params.get("From")
         except Exception:
-            pass
+            form_dict = {}
+
+        from serviceBot.services.webhook_security import (
+            WebhookVerificationError,
+            verify_twilio_request,
+        )
+
+        try:
+            verify_twilio_request(request, form_dict)
+        except WebhookVerificationError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
 
     recent_booking_context = ""
     if caller_phone:
@@ -253,70 +265,164 @@ def extract_callback_from_transcript(transcript: str) -> Optional[dict]:
     return None
 
 
+def _record_callback_for_staff_review(
+    customer_id: int,
+    customer: Optional[dict],
+    callback_info: dict,
+) -> Optional[int]:
+    """Record an AI-extracted callback preference without scheduling a reservation."""
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                """
+                SELECT id FROM service_requests
+                WHERE customer_id = %s
+                  AND created_at >= NOW() - INTERVAL '5 minutes'
+                LIMIT 1;
+                """,
+                (customer_id,),
+            )
+            if cursor.fetchone():
+                return None
+
+            candidate_id = (customer or {}).get("open_sr_id")
+            if candidate_id:
+                cursor.execute(
+                    """
+                    SELECT id FROM service_requests
+                    WHERE id = %s AND customer_id = %s AND booking_type IS NULL
+                    FOR UPDATE;
+                    """,
+                    (candidate_id, customer_id),
+                )
+                if not cursor.fetchone():
+                    candidate_id = None
+            if not candidate_id:
+                cursor.execute(
+                    """
+                    SELECT id FROM service_requests
+                    WHERE customer_id = %s AND status = 'pending' AND booking_type IS NULL
+                    ORDER BY id DESC LIMIT 1 FOR UPDATE;
+                    """,
+                    (customer_id,),
+                )
+                row = cursor.fetchone()
+                candidate_id = row["id"] if row else None
+
+            issue = callback_info.get("issue_description") or "Callback requested from call transcript."
+            if candidate_id:
+                cursor.execute(
+                    """
+                    UPDATE service_requests
+                    SET booking_type = 'callback',
+                        booking_time = NULL,
+                        staff_agent_id = NULL,
+                        issue_description = %s,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s;
+                    """,
+                    (issue, candidate_id),
+                )
+                request_id = candidate_id
+            else:
+                cursor.execute(
+                    "SELECT id FROM vehicles WHERE customer_id = %s ORDER BY id DESC LIMIT 1;",
+                    (customer_id,),
+                )
+                vehicle = cursor.fetchone()
+                vehicle_id = vehicle["id"] if vehicle else None
+                if not vehicle_id:
+                    cursor.execute(
+                        """
+                        INSERT INTO vehicles (customer_id, make, model, year)
+                        VALUES (%s, 'Unknown', 'Unknown', 2000)
+                        RETURNING id;
+                        """,
+                        (customer_id,),
+                    )
+                    vehicle_id = cursor.fetchone()["id"]
+                cursor.execute(
+                    """
+                    INSERT INTO service_requests
+                    (customer_id, vehicle_id, service_type, issue_description, status, booking_type)
+                    VALUES (%s, %s, 'Callback / Phone Consultation', %s, 'pending', 'callback')
+                    RETURNING id;
+                    """,
+                    (customer_id, vehicle_id, issue),
+                )
+                request_id = cursor.fetchone()["id"]
+
+            cursor.execute(
+                """
+                INSERT INTO service_request_audit_log
+                (request_id, triggered_by, from_status, to_status, notes)
+                VALUES (%s, 'elevenlabs_webhook', NULL, 'pending',
+                        'Callback preference extracted; staff confirmation is required before scheduling.');
+                """,
+                (request_id,),
+            )
+            return request_id
+
+
 @router.post("/webhook")
 async def post_call_webhook(request: Request = None, payload: Dict[str, Any] = None):
-    print(f"\n--- ElevenLabs Webhook Received ---")
-    import json
-    import traceback
-    from datetime import datetime
-    
-    import sys
-    is_testing = "pytest" in sys.modules or any("pytest" in arg or "unittest" in arg for arg in sys.argv)
-    if is_testing:
-        os.makedirs("./scratch", exist_ok=True)
-        log_file = "./scratch/webhook_activity.log"
-    else:
-        log_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "webhook_activity.log")
-
-    
-    def log_to_file(msg: str):
-        try:
-            with open(log_file, "a") as lf:
-                lf.write(msg)
-        except Exception as e:
-            print(f"Log write failed: {e}")
-
+    event_store = None
+    event_id = None
+    event_claimed = False
+    raw_event_payload = payload or {}
     try:
         if isinstance(request, dict):
             payload = request
             request = None
-            
+            raw_event_payload = payload
         if request is not None:
             body_bytes = await request.body()
-            body_str = body_bytes.decode("utf-8")
-            
-            log_to_file(f"\n[{datetime.now().isoformat()}] --- Webhook Request Received ---\n")
-            log_to_file(f"Headers: {dict(request.headers)}\n")
-            log_to_file(f"Body: {body_str}\n")
-                
-            if body_str.strip():
-                payload = json.loads(body_str)
-        else:
-            log_to_file(f"\n[{datetime.now().isoformat()}] --- Direct Function Call ---\n")
-            log_to_file(f"Payload: {json.dumps(payload)}\n")
-            
+            raw_event_payload = body_bytes
+            from serviceBot.services.webhook_security import (
+                WebhookVerificationError,
+                verify_elevenlabs_request,
+            )
+            try:
+                verify_elevenlabs_request(
+                    body_bytes,
+                    request.headers.get("ElevenLabs-Signature"),
+                )
+            except WebhookVerificationError as exc:
+                raise HTTPException(status_code=401, detail=str(exc)) from exc
+            if body_bytes.strip():
+                try:
+                    payload = json.loads(body_bytes)
+                except json.JSONDecodeError as exc:
+                    raise HTTPException(status_code=400, detail="Webhook body must be valid JSON.") from exc
+
         if payload is None:
             payload = {}
         
         event_type = payload.get("type")
         if event_type != "post_call_transcription":
-            print(f"Ignored webhook event type: {event_type}")
-            log_to_file(f"Ignored event type: {event_type}\n")
             return {"success": False, "message": f"Ignored event type: {event_type}"}
             
         data = payload.get("data") or {}
         conversation_id = data.get("conversation_id")
         if not conversation_id:
-            print("Error: Missing conversation_id in webhook data payload.")
-            log_to_file("Error: Missing conversation_id in webhook data payload.\n")
             raise HTTPException(status_code=400, detail="Missing conversation_id in data payload.")
+
+        from serviceBot.services.webhook_security import (
+            WebhookEventStore,
+            WebhookReplayConflictError,
+        )
+        event_store = WebhookEventStore()
+        event_id = conversation_id
+        try:
+            event_claimed = event_store.begin("elevenlabs", event_id, raw_event_payload)
+        except WebhookReplayConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if not event_claimed:
+            return {"success": True, "duplicate": True}
             
         metadata = data.get("metadata") or {}
         phone_call = metadata.get("phone_call") or {}
         from_number = phone_call.get("external_number") or metadata.get("from_number") or data.get("user_id") or "Unknown"
-        
-        print(f"Processing call {conversation_id} from {from_number}...")
-        log_to_file(f"Processing call {conversation_id} from {from_number}...\n")
         
         # Format the turn-by-turn conversation transcript
         transcript_arr = data.get("transcript") or []
@@ -359,116 +465,30 @@ async def post_call_webhook(request: Request = None, payload: Dict[str, Any] = N
             summary=summary,
             transcript=transcript_text
         )
-        print(f"CRM note created successfully for call {conversation_id}!")
-        log_to_file(f"CRM note created successfully for call {conversation_id}!\n")
         
-        # Fallback callback creation: check if callback request was requested in the call
-        # and if it wasn't already logged in the last 5 minutes.
+        # Transcript extraction is advisory: staff must confirm a callback time before
+        # capacity is reserved or any notification is sent.
         callback_info = extract_callback_from_transcript(transcript_text)
         if callback_info:
-            print("Extracted callback info from transcript, updating/creating service request...")
-            log_to_file(f"Extracted callback info: {callback_info}\n")
-            with get_db_connection() as conn:
-                with dict_cursor(conn) as cursor:
-                    cursor.execute("""
-                        SELECT id FROM service_requests 
-                        WHERE customer_id = %s AND created_at >= NOW() - INTERVAL '5 minutes'
-                    """, (customer_id,))
-                    exists = cursor.fetchone()
-                    if not exists:
-                        sr_id = None
-                        if customer:
-                            sr_id = customer.get("open_sr_id")
-                        if not sr_id:
-                            cursor.execute("""
-                                SELECT id FROM service_requests 
-                                WHERE customer_id = %s 
-                                ORDER BY id DESC LIMIT 1
-                            """, (customer_id,))
-                            sr_row = cursor.fetchone()
-                            if sr_row:
-                                sr_id = sr_row["id"]
-                        
-                        if sr_id:
-                            # Select a staff agent to assign the callback to (default to ID 1 or the first agent)
-                            cursor.execute("SELECT id FROM staff_agents ORDER BY id ASC LIMIT 1;")
-                            agent_row = cursor.fetchone()
-                            staff_agent_id = agent_row["id"] if agent_row else None
-                            
-                            cursor.execute("""
-                                UPDATE service_requests 
-                                SET booking_type = 'callback', booking_time = %s, staff_agent_id = %s, updated_at = CURRENT_TIMESTAMP
-                                WHERE id = %s;
-                            """, (callback_info.get("preferred_time"), staff_agent_id, sr_id))
-                        else:
-                            cursor.execute("SELECT id FROM vehicles WHERE customer_id = %s ORDER BY id DESC LIMIT 1;", (customer_id,))
-                            v_row = cursor.fetchone()
-                            v_id = v_row["id"] if v_row else None
-                            if not v_id:
-                                cursor.execute("INSERT INTO vehicles (customer_id, make, model, year) VALUES (%s, 'Unknown', 'Unknown', 2000) RETURNING id;", (customer_id,))
-                                v_id = cursor.fetchone()["id"]
-                            
-                            # Select a staff agent to assign the callback to (default to ID 1 or the first agent)
-                            cursor.execute("SELECT id FROM staff_agents ORDER BY id ASC LIMIT 1;")
-                            agent_row = cursor.fetchone()
-                            staff_agent_id = agent_row["id"] if agent_row else None
-                            
-                            cursor.execute("""
-                                INSERT INTO service_requests (customer_id, vehicle_id, service_type, issue_description, status, booking_type, booking_time, staff_agent_id)
-                                VALUES (%s, %s, 'Repair', 'Callback requested from transcript.', 'pending', 'callback', %s, %s) RETURNING id;
-                            """, (customer_id, v_id, callback_info.get("preferred_time"), staff_agent_id))
-                            sr_id = cursor.fetchone()["id"]
-                        conn.commit()
-                        print("Service request callback logged successfully!")
-                        log_to_file("Service request callback logged successfully!\n")
-                        
-                        # Trigger Gmail notification for callback request
-                        try:
-                            agent_email = None
-                            agent_name = None
-                            if staff_agent_id:
-                                cursor.execute("""
-                                    SELECT sa.name, COALESCE(uga.email, sa.email) AS email
-                                    FROM staff_agents sa
-                                    LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id
-                                    WHERE sa.id = %s;
-                                """, (staff_agent_id,))
-                                a_row = cursor.fetchone()
-                                if a_row:
-                                    agent_name = a_row["name"]
-                                    agent_email = a_row["email"]
-                                
-                            details = get_booking_details(customer_id, sr_id)
-                            details["time"] = callback_info.get("preferred_time") or "ASAP"
-                            try:
-                                from serviceBot.services.gmail import send_booking_notification, send_admin_notification
-                                send_booking_notification("callback", details, agent_email=agent_email)
-                                send_admin_notification("callback", details, mechanic_name=agent_name, mechanic_email=agent_email)
-                            except Exception as email_err:
-                                print(f"Error triggering webhook callback email: {email_err}")
-                            # SMS: notify customer + agent on callback booking
-                            try:
-                                from serviceBot.services.sms_router import SMSNotificationRouter
-                                SMSNotificationRouter().process_event(
-                                    event_type="BOOKING",
-                                    appointment_id=sr_id,
-                                    customer_phone=details.get("phone"),
-                                    agent_phone=None,
-                                    booking_time=details.get("time")
-                                )
-                            except Exception as sms_err:
-                                print(f"Error sending SMS notification (webhook callback): {sms_err}")
-                        except Exception as notify_err:
-                            print(f"Error processing notifications: {notify_err}")
+            _record_callback_for_staff_review(customer_id, customer, callback_info)
 
-        
+        event_store.complete("elevenlabs", event_id)
         return {"success": True}
-    except Exception as err:
-        print(f"ERROR: Exception while processing ElevenLabs post-call webhook: {err}")
-        tb_str = traceback.format_exc()
-        print(tb_str)
-        log_to_file(f"ERROR: {str(err)}\n{tb_str}\n")
-        raise HTTPException(status_code=500, detail=str(err))
+    except HTTPException:
+        if event_claimed and event_store and event_id:
+            try:
+                event_store.fail("elevenlabs", event_id)
+            except Exception as state_err:
+                logger.warning("Could not record ElevenLabs webhook failure: %s", state_err)
+        raise
+    except Exception:
+        if event_claimed and event_store and event_id:
+            try:
+                event_store.fail("elevenlabs", event_id)
+            except Exception as state_err:
+                logger.warning("Could not record ElevenLabs webhook failure: %s", state_err)
+        logger.exception("ElevenLabs post-call webhook processing failed")
+        raise HTTPException(status_code=500, detail="Webhook processing failed.")
 
 
 class ElevenLabsToolCall(BaseModel):
@@ -712,24 +732,16 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
                         "service_request_id": sr_id,
                         "booking_type": "appointment",
                         "is_uncataloged": is_uncataloged,
-                        "message": f"Service request booked as an appointment successfully. The estimated rate for this service is {price_range}. Please inform the customer of this rate."
+                        "message": f"Service request booked as an appointment successfully. Calendar projection and notifications are queued. The estimated rate for this service is {price_range}. Please inform the customer of this rate."
                     }
-                    if background_tasks:
-                        background_tasks.add_task(_send_booking_notifications_bg, "appointment", customer_id, sr_id, booking_time, service_type)
-                    else:
-                        _send_booking_notifications_bg("appointment", customer_id, sr_id, booking_time, service_type)
                 elif booking_type in ("callback", "appointment_and_callback"):
                     result = {
                         "success": True,
                         "service_request_id": sr_id,
                         "booking_type": booking_type,
                         "is_uncataloged": is_uncataloged,
-                        "message": "Service request callback recorded successfully."
+                        "message": "Service request callback recorded successfully. Calendar projection and notifications are queued."
                     }
-                    if background_tasks:
-                        background_tasks.add_task(_send_booking_notifications_bg, "callback", customer_id, sr_id, booking_time, service_type)
-                    else:
-                        _send_booking_notifications_bg("callback", customer_id, sr_id, booking_time, service_type)
                 else:
                     result = {
                         "success": True,
@@ -815,13 +827,8 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
                     result = {
                         "success": True,
                         "appointment_id": appt_id,
-                        "message": f"Appointment booked successfully. The estimated rate for this service is {price_range}. Please inform the customer of this rate."
+                        "message": f"Appointment booked successfully. Calendar projection and notifications are queued. The estimated rate for this service is {price_range}. Please inform the customer of this rate."
                     }
-
-                    if background_tasks:
-                        background_tasks.add_task(_send_booking_notifications_bg, "appointment", customer_id, appt_id, appointment_datetime, service_type)
-                    else:
-                        _send_booking_notifications_bg("appointment", customer_id, appt_id, appointment_datetime, service_type)
                 except ValueError as val_err:
                     result = {
                         "success": False,
@@ -913,13 +920,8 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
                         result = {
                             "success": True,
                             "callback_id": cb_id,
-                            "message": "Callback request captured successfully."
+                            "message": "Callback request captured successfully. Calendar projection and notifications are queued."
                         }
-                        
-                        if background_tasks:
-                            background_tasks.add_task(_send_booking_notifications_bg, "callback", customer_id, cb_id, preferred_time, "Repair")
-                        else:
-                            _send_booking_notifications_bg("callback", customer_id, cb_id, preferred_time, "Repair")
                     except ValueError as val_err:
                         result = {
                             "success": False,
@@ -1025,23 +1027,6 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
                         appt_id = appts[0]["id"]
                     
                     try:
-                        previous_agent_phone = None
-                        try:
-                            with get_db_connection() as conn:
-                                with dict_cursor(conn) as cursor:
-                                    cursor.execute("""
-                                        SELECT sa.phone_number
-                                        FROM service_requests sr
-                                        JOIN staff_agents sa ON sr.staff_agent_id = sa.id
-                                        WHERE sr.id = %s;
-                                    """, (appt_id,))
-                                    old_row = cursor.fetchone()
-                                    if old_row:
-                                        previous_agent_phone = old_row["phone_number"]
-                        except Exception:
-                            pass
-                            
-                        # Attempt to reschedule
                         reschedule_appointment(
                             appointment_id=appt_id, 
                             new_datetime=new_datetime, 
@@ -1051,62 +1036,8 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
                         result = {
                             "success": True,
                             "appointment_id": appt_id,
-                            "message": f"Appointment rescheduled to {new_datetime} successfully."
+                            "message": f"Appointment rescheduled to {new_datetime} successfully. Calendar projection and notifications are queued."
                         }
-                        
-                        # Trigger email notification
-                        try:
-                            cust_id = None
-                            c_data = lookup_customer_by_phone(phone)
-                            if c_data:
-                                cust_id = c_data.get("customer_id") or c_data.get("id")
-                            if cust_id:
-                                agent_email = None
-                                agent_name = None
-                                with get_db_connection() as conn:
-                                    with dict_cursor(conn) as cursor:
-                                        cursor.execute("""
-                                            SELECT sa.name, sa.phone_number, COALESCE(uga.email, sa.email) AS email
-                                            FROM service_requests sr
-                                            JOIN staff_agents sa ON sr.staff_agent_id = sa.id
-                                            LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id
-                                            WHERE sr.id = %s;
-                                        """, (appt_id,))
-                                        a_row = cursor.fetchone()
-                                        agent_phone = None
-                                        if a_row:
-                                            agent_name = a_row["name"]
-                                            agent_email = a_row["email"]
-                                            agent_phone = a_row["phone_number"]
-
-
-                                details = get_booking_details(cust_id, appt_id)
-                                details["time"] = new_datetime
-                                try:
-                                    from serviceBot.services.gmail import send_booking_notification, send_admin_notification
-                                    send_booking_notification("reschedule", details, agent_email=agent_email)
-                                    send_admin_notification("reschedule", details, mechanic_name=agent_name, mechanic_email=agent_email)
-                                except Exception as email_err:
-                                    print(f"Error triggering reschedule email: {email_err}")
-                                # SMS: notify customer on reschedule
-                                try:
-                                    from serviceBot.services.sms_router import SMSNotificationRouter
-                                    event_type = "RESCHEDULED"
-                                    if previous_agent_phone and agent_phone and previous_agent_phone != agent_phone:
-                                        event_type = "RESCHEDULED_REASSIGNED"
-                                        
-                                    SMSNotificationRouter().process_event(
-                                        event_type=event_type,
-                                        appointment_id=appt_id,
-                                        customer_phone=details.get("phone"),
-                                        agent_phone=agent_phone,
-                                        previous_agent_phone=previous_agent_phone,
-                                        booking_time=new_datetime
-                                    )
-                                except Exception as sms_err:
-                                    print(f"Error sending SMS notification (reschedule): {sms_err}")
-                        except Exception as notify_err:
-                            print(f"Notification processing failed (reschedule): {notify_err}")
                     except Exception as e:
                         result = {
                             "success": False,
@@ -1181,34 +1112,45 @@ async def inbound_sms_webhook(request: Request):
     """
     form_data = await request.form()
     form_dict = {k: v for k, v in form_data.items()}
+    from serviceBot.services.webhook_security import (
+        WebhookEventStore,
+        WebhookReplayConflictError,
+        WebhookVerificationError,
+        verify_twilio_request,
+    )
+
+    try:
+        verify_twilio_request(request, form_dict)
+    except WebhookVerificationError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
     from_phone = form_dict.get("From", "").strip()
     body = form_dict.get("Body", "").strip()
     message_sid = form_dict.get("MessageSid", "")
+    if not message_sid:
+        raise HTTPException(status_code=400, detail="Missing Twilio MessageSid.")
 
-    # Validate Twilio Signature if configured
-    auth_token = os.getenv("TWILIO_AUTH_TOKEN", "")
-    signature = request.headers.get("X-Twilio-Signature")
-    is_testing = any(k in os.environ for k in ["PYTEST_CURRENT_TEST", "TESTING"])
-
-    if auth_token and signature and not is_testing:
-        try:
-            from twilio.request_validator import RequestValidator
-            validator = RequestValidator(auth_token)
-            url = str(request.url)
-            if not validator.validate(url, form_dict, signature):
-                raise HTTPException(status_code=403, detail="Invalid Twilio request signature.")
-        except HTTPException:
-            raise
-        except Exception as e:
-            print(f"[inbound_sms_webhook] Signature validation error: {e}")
-
-    if from_phone and body:
-        from serviceBot.services.sms_classifier import process_inbound_sms
-        process_inbound_sms(from_phone=from_phone, body=body, twilio_message_sid=message_sid)
+    event_store = WebhookEventStore()
+    try:
+        event_claimed = event_store.begin("twilio_sms_inbound", message_sid, form_dict)
+    except WebhookReplayConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     twiml_response = '<?xml version="1.0" encoding="UTF-8"?><Response></Response>'
-    return Response(content=twiml_response, media_type="text/xml")
+    if not event_claimed:
+        return Response(content=twiml_response, media_type="text/xml")
+    try:
+        if from_phone and body:
+            from serviceBot.services.sms_classifier import process_inbound_sms
+            process_inbound_sms(from_phone=from_phone, body=body, twilio_message_sid=message_sid)
+        event_store.complete("twilio_sms_inbound", message_sid)
+        return Response(content=twiml_response, media_type="text/xml")
+    except Exception:
+        try:
+            event_store.fail("twilio_sms_inbound", message_sid)
+        except Exception as state_err:
+            logger.warning("Could not record Twilio inbound webhook failure: %s", state_err)
+        raise
 
 
 @router.post("/sms/status")
@@ -1218,36 +1160,71 @@ async def sms_status_callback_webhook(request: Request):
     Updates sms_log record status (DELIVERED, FAILED) based on Twilio callbacks.
     """
     form_data = await request.form()
-    message_sid = form_data.get("MessageSid")
-    message_status = form_data.get("MessageStatus", "").upper()
-    error_code = form_data.get("ErrorCode")
-    error_message = form_data.get("ErrorMessage")
+    form_dict = {key: value for key, value in form_data.items()}
+    from serviceBot.services.webhook_security import (
+        WebhookEventStore,
+        WebhookReplayConflictError,
+        WebhookVerificationError,
+        verify_twilio_request,
+    )
 
-    if message_sid and message_status:
+    try:
+        verify_twilio_request(request, form_dict)
+    except WebhookVerificationError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+    message_sid = form_dict.get("MessageSid")
+    message_status = form_dict.get("MessageStatus", "").upper()
+    error_code = form_dict.get("ErrorCode")
+    error_message = form_dict.get("ErrorMessage")
+    if not message_sid or not message_status:
+        raise HTTPException(status_code=400, detail="Missing Twilio status callback identifier.")
+
+    event_store = WebhookEventStore()
+    event_id = f"{message_sid}:{message_status}"
+    try:
+        event_claimed = event_store.begin("twilio_sms_status", event_id, form_dict)
+    except WebhookReplayConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if not event_claimed:
+        return {"status": "recorded", "duplicate": True}
+
+    try:
         from serviceBot.db.connection import get_db_connection, dict_cursor
         from serviceBot.db.queries import update_sms_log_status
 
         status_mapping = {
-            "DELIVERED": "DELIVERED",
+            "ACCEPTED": "SENT",
+            "QUEUED": "SENT",
+            "SENDING": "SENT",
             "SENT": "SENT",
+            "DELIVERED": "DELIVERED",
+            "READ": "DELIVERED",
             "FAILED": "FAILED",
-            "UNDELIVERED": "FAILED"
+            "UNDELIVERED": "FAILED",
         }
-        mapped_status = status_mapping.get(message_status, message_status)
+        mapped_status = status_mapping.get(message_status)
+        if mapped_status:
+            with get_db_connection() as conn:
+                with dict_cursor(conn) as cursor:
+                    cursor.execute("SELECT id FROM sms_log WHERE twilio_message_sid = %s;", (message_sid,))
+                    row = cursor.fetchone()
+                    if row:
+                        update_sms_log_status(
+                            log_id=row["id"],
+                            status=mapped_status,
+                            error_code=error_code,
+                            error_message=error_message,
+                        )
 
-        with get_db_connection() as conn:
-            with dict_cursor(conn) as cursor:
-                cursor.execute("SELECT id FROM sms_log WHERE twilio_message_sid = %s;", (message_sid,))
-                row = cursor.fetchone()
-                if row:
-                    update_sms_log_status(
-                        log_id=row["id"],
-                        status=mapped_status,
-                        error_code=error_code,
-                        error_message=error_message
-                    )
-
-    return {"status": "recorded"}
+        event_store.complete("twilio_sms_status", event_id)
+        return {"status": "recorded"}
+    except Exception:
+        try:
+            event_store.fail("twilio_sms_status", event_id)
+        except Exception as state_err:
+            logger.warning("Could not record Twilio status webhook failure: %s", state_err)
+        raise
 
 
 @router.get("/api/v1/render-logs")

@@ -55,35 +55,33 @@ class TestTimeSlotChecking(unittest.TestCase):
             self.assertGreaterEqual(dt.hour, 12)
 
     def test_check_availability_afternoon_returns_afternoon_slots(self):
-        mock_slots_data = [
-            {"id": 1, "slot_datetime": "2026-08-06 08:00:00", "staff_agent_id": 1, "is_booked": False},
-            {"id": 2, "slot_datetime": "2026-08-06 09:00:00", "staff_agent_id": 1, "is_booked": False},
-            {"id": 3, "slot_datetime": "2026-08-06 13:00:00", "staff_agent_id": 1, "is_booked": False},
-            {"id": 4, "slot_datetime": "2026-08-06 14:00:00", "staff_agent_id": 1, "is_booked": False},
-            {"id": 5, "slot_datetime": "2026-08-06 15:00:00", "staff_agent_id": 1, "is_booked": False},
-        ]
-        
+        target_date = datetime.date.today() + datetime.timedelta(days=7)
+        while target_date.weekday() > 4:
+            target_date += datetime.timedelta(days=1)
+        target_date_str = target_date.isoformat()
+
         with patch("serviceBot.db.queries.get_db_connection") as mock_get_conn:
             mock_conn = MagicMock()
             mock_cursor = MagicMock()
             mock_get_conn.return_value.__enter__.return_value = mock_conn
-            
-            mock_cursor.fetchall.side_effect = [
-                mock_slots_data,
-                []  # no connected google accounts
-            ]
-            
+            mock_cursor.fetchall.return_value = [{"id": 1}]
+
             with patch("serviceBot.db.queries.dict_cursor") as mock_dict_cursor:
                 mock_dict_cursor.return_value.__enter__.return_value = mock_cursor
-                
-                slots = check_availability(preferred_date="August 6 afternoon")
-                
-                self.assertGreater(len(slots), 0)
-                for s in slots:
-                    dt = datetime.datetime.strptime(s, "%Y-%m-%d %H:%M:%S")
-                    self.assertEqual(dt.strftime("%Y-%m-%d"), "2026-08-06")
-                    self.assertGreaterEqual(dt.hour, 12)
-                    self.assertLess(dt.hour, 18)
+                with patch(
+                    "serviceBot.services.google_calendar.fetch_agent_events",
+                    return_value=[],
+                ):
+                    slots = check_availability(
+                        preferred_date=f"{target_date_str} afternoon"
+                    )
+
+        self.assertGreater(len(slots), 0)
+        for slot in slots:
+            slot_dt = datetime.datetime.strptime(slot, "%Y-%m-%d %H:%M:%S")
+            self.assertEqual(slot_dt.strftime("%Y-%m-%d"), target_date_str)
+            self.assertGreaterEqual(slot_dt.hour, 12)
+            self.assertLess(slot_dt.hour, 18)
 
 if __name__ == "__main__":
     unittest.main()

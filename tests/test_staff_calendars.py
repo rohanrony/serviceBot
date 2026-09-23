@@ -1,10 +1,19 @@
+import datetime as dt_mod
+
 import pytest
 from fastapi.testclient import TestClient
 from serviceBot.main import app
-from serviceBot.db.connection import get_db_connection
+from serviceBot.db.connection import dict_cursor, get_db_connection
 from serviceBot.db.queries import check_availability, book_appointment
 
 client = TestClient(app)
+
+
+def _future_business_datetime(hour: int, days_ahead: int = 28) -> str:
+    candidate = dt_mod.date.today() + dt_mod.timedelta(days=days_ahead)
+    while candidate.weekday() > 4:
+        candidate += dt_mod.timedelta(days=1)
+    return f"{candidate.isoformat()} {hour:02d}:00:00"
 
 @pytest.fixture(autouse=True)
 def clean_db():
@@ -96,55 +105,100 @@ def test_create_and_delete_staff_agent_endpoint():
     names = [a["name"] for a in agents]
     assert "Alice Williams" not in names
 
-def test_reschedule_appointment_checks_google_calendar(monkeypatch):
+def test_reschedule_appointment_falls_back_to_local_agent_without_google(monkeypatch):
+    """Rescheduling prefers the prior agent but falls back using committed local reservations."""
     from serviceBot.db.queries import reschedule_appointment
-    # Clean up and seed
+    from serviceBot.services.booking import BookingService
+
+    old_time = _future_business_datetime(10)
+    target_time = _future_business_datetime(12)
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM vehicles WHERE customer_id = 999;")
-        cursor.execute("DELETE FROM service_requests WHERE customer_id = 999;")
-        cursor.execute("DELETE FROM customers WHERE id = 999;")
-        cursor.execute("INSERT INTO staff_agents (id, name, role) VALUES (1, 'Agent 1', 'Advisor') ON CONFLICT (id) DO NOTHING;")
-        cursor.execute("INSERT INTO staff_agents (id, name, role) VALUES (2, 'Agent 2', 'Advisor') ON CONFLICT (id) DO NOTHING;")
-        # Insert customer
-        cursor.execute("INSERT INTO customers (id, name, phone, email) VALUES (999, 'Test Reschedule Customer', '555-999-9999', 'cust@example.com');")
-        # Insert vehicle
-        cursor.execute("INSERT INTO vehicles (id, customer_id, make, model, year) VALUES (999, 999, 'Honda', 'Civic', 2020);")
-        # Insert service request
-        cursor.execute("""
-            INSERT INTO service_requests (id, customer_id, vehicle_id, service_type, issue_description, status, booking_type, booking_time, staff_agent_id)
-            VALUES (999, 999, 999, 'Oil Change', 'Needs oil change', 'pending', 'appointment', '2026-06-12 10:00:00', 1);
-        """)
-        conn.commit()
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                "INSERT INTO customers (name, phone) VALUES ('Reschedule Primary', '+15550121111') RETURNING id;"
+            )
+            primary_customer_id = cursor.fetchone()["id"]
+            cursor.execute(
+                "INSERT INTO vehicles (customer_id, make, model, year) VALUES (%s, 'Honda', 'Civic', 2020) RETURNING id;",
+                (primary_customer_id,),
+            )
+            primary_vehicle_id = cursor.fetchone()["id"]
+            cursor.execute(
+                """
+                INSERT INTO service_requests (customer_id, vehicle_id, service_type, issue_description, status)
+                VALUES (%s, %s, 'Oil Change', 'Needs oil change', 'pending')
+                RETURNING id;
+                """,
+                (primary_customer_id, primary_vehicle_id),
+            )
+            primary_request_id = cursor.fetchone()["id"]
 
-    # Mock google_calendar check: agent 1 is busy, agent 2 is free.
-    called_agents = []
-    def mock_is_agent_free(agent_id, slot_datetime_str, duration_minutes=60):
-        called_agents.append(agent_id)
-        if agent_id == 1:
-            return False # busy
-        return True # agent 2 is free
+            cursor.execute(
+                "INSERT INTO customers (name, phone) VALUES ('Reschedule Blocker', '+15550122222') RETURNING id;"
+            )
+            blocker_customer_id = cursor.fetchone()["id"]
+            cursor.execute(
+                "INSERT INTO vehicles (customer_id, make, model, year) VALUES (%s, 'Ford', 'Focus', 2020) RETURNING id;",
+                (blocker_customer_id,),
+            )
+            blocker_vehicle_id = cursor.fetchone()["id"]
+            cursor.execute(
+                """
+                INSERT INTO service_requests (customer_id, vehicle_id, service_type, issue_description, status)
+                VALUES (%s, %s, 'Oil Change', 'Blocks the first agent', 'pending')
+                RETURNING id;
+                """,
+                (blocker_customer_id, blocker_vehicle_id),
+            )
+            blocker_request_id = cursor.fetchone()["id"]
 
-    monkeypatch.setattr("serviceBot.services.google_calendar.is_agent_free", mock_is_agent_free)
-    monkeypatch.setattr("serviceBot.services.google_calendar.create_agent_calendar_event", lambda *args, **kwargs: True)
+    booking = BookingService()
+    booking.reserve_or_create(
+        customer_id=primary_customer_id,
+        service_request_id=primary_request_id,
+        appointment_datetime=old_time,
+        service_type="Oil Change",
+        requested_agent_id=1,
+    )
+    booking.reserve_or_create(
+        customer_id=blocker_customer_id,
+        service_request_id=blocker_request_id,
+        appointment_datetime=target_time,
+        service_type="Oil Change",
+        requested_agent_id=1,
+    )
 
-    success = reschedule_appointment(appointment_id=999, new_datetime="2026-06-12 11:00:00")
-    assert success is True
+    def provider_must_not_be_called(*_args, **_kwargs):
+        raise AssertionError("Provider availability must not participate in local rescheduling.")
 
-    # Check database changes
+    monkeypatch.setattr("serviceBot.services.google_calendar.is_agent_free", provider_must_not_be_called)
+
+    assert reschedule_appointment(primary_request_id, target_time) is True
+
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        
-        # Verify service request details updated with agent 2 at new time
-        cursor.execute("SELECT booking_time, staff_agent_id FROM service_requests WHERE id = 999;")
-        row = cursor.fetchone()
-        assert row["booking_time"] == "2026-06-12 11:00:00"
-        assert row["staff_agent_id"] == 2
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                "SELECT booking_time, staff_agent_id FROM service_requests WHERE id = %s;",
+                (primary_request_id,),
+            )
+            row = cursor.fetchone()
+            assert row["booking_time"] == target_time
+            assert row["staff_agent_id"] == 2
 
-    # Clean up
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM service_requests WHERE id = 999;")
-        cursor.execute("DELETE FROM customers WHERE id = 999;")
-        conn.commit()
+            cursor.execute(
+                "DELETE FROM outbox_notifications WHERE request_id IN (%s, %s);",
+                (primary_request_id, blocker_request_id),
+            )
+            cursor.execute(
+                "DELETE FROM service_requests WHERE id IN (%s, %s);",
+                (primary_request_id, blocker_request_id),
+            )
+            cursor.execute(
+                "DELETE FROM vehicles WHERE id IN (%s, %s);",
+                (primary_vehicle_id, blocker_vehicle_id),
+            )
+            cursor.execute(
+                "DELETE FROM customers WHERE id IN (%s, %s);",
+                (primary_customer_id, blocker_customer_id),
+            )
 

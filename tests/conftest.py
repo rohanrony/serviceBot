@@ -2,6 +2,13 @@ import os
 import pytest
 import shutil
 import sys
+import tempfile
+from pathlib import Path
+
+TEST_ARTIFACTS_DIR = Path(os.getenv("TEST_ARTIFACTS_DIR") or tempfile.gettempdir()) / "voice_service_tests"
+TEST_ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+TEST_LOG_FILE = os.getenv("TEST_LOG_FILE") or str(TEST_ARTIFACTS_DIR / "test.log")
+os.environ["LOG_FILE"] = TEST_LOG_FILE
 
 sys.dont_write_bytecode = True
 
@@ -12,15 +19,19 @@ if os.path.exists(env_path):
             line = line.strip()
             if line and not line.startswith("#") and "=" in line:
                 k, v = line.split("=", 1)
-                os.environ[k.strip()] = v.strip().strip("'\"")
+                # Test runners and CI must be able to override local developer
+                # settings. Importing the app initializes its logger, so
+                # replacing LOG_FILE here can make collection fail.
+                os.environ.setdefault(k.strip(), v.strip().strip("'\""))
 
 test_db_url = os.getenv("TEST_DATABASE_URL") or "postgresql://localhost/voice_service_test"
 os.environ["DATABASE_URL"] = test_db_url
+
 os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
 
 # Redirect KB_DIR to writeable workspace scratch path
 import serviceBot.api.portal as portal_mod
-WORKSPACE_SCRATCH = os.getenv("TEST_KB_DIR") or "/Users/rohanroy/.gemini/antigravity-ide/scratch/test_kb_documents"
+WORKSPACE_SCRATCH = os.getenv("TEST_KB_DIR") or str(TEST_ARTIFACTS_DIR / "kb_documents")
 portal_mod.KB_DIR = WORKSPACE_SCRATCH
 try:
     os.makedirs(portal_mod.KB_DIR, exist_ok=True)

@@ -1,9 +1,20 @@
-import pytest
-from playwright.sync_api import sync_playwright
+import datetime as dt_mod
 import threading
 import time
+
+import pytest
 import uvicorn
+from playwright.sync_api import sync_playwright
+
 from serviceBot.main import app
+
+
+def _future_business_datetime() -> str:
+    candidate = dt_mod.date.today() + dt_mod.timedelta(days=28)
+    while candidate.weekday() > 4:
+        candidate += dt_mod.timedelta(days=1)
+    return f"{candidate.isoformat()}T10:00"
+
 
 def run_server():
     uvicorn.run(app, host="127.0.0.1", port=8003, log_level="critical")
@@ -38,7 +49,7 @@ def test_save_new_service_request_with_booking_time_dom():
         page.fill("#sr-issue-desc", "Regular oil change and tire inspection")
         
         # Fill Booking Time slot
-        page.fill("#sr-booking-time", "2026-08-10T10:00")
+        page.fill("#sr-booking-time", _future_business_datetime())
         
         # Click Save Request button
         page.click("#sr-save-btn")
@@ -49,10 +60,10 @@ def test_save_new_service_request_with_booking_time_dom():
         # Confirm submission
         page.click("#confirm-modal-yes")
         
-        # Wait for response processing
-        time.sleep(1)
-        
-        # Verify success toast appears
+        # Wait for response processing and verify the success toast.
+        page.wait_for_function(
+            "document.getElementById('app-toast').textContent.toLowerCase().includes('successfully')"
+        )
         toast = page.locator("#app-toast")
         toast_text = toast.inner_text()
         print("TOAST TEXT:", toast_text)

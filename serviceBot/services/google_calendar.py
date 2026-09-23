@@ -145,7 +145,7 @@ def get_agent_google_access_token(agent_id: int) -> Optional[str]:
 def is_agent_free(agent_id: int, slot_datetime_str: str, duration_minutes: int = 60) -> bool:
     """
     Queries the agent's Google Calendar to see if they have overlapping events at the given slot time.
-    Returns True if free (or not connected to Google Calendar/insufficient scopes), False if busy.
+    Returns True only after a successful provider query confirms no overlap.
     """
     try:
         creds = get_user_google_credentials(agent_id)
@@ -160,7 +160,7 @@ def is_agent_free(agent_id: int, slot_datetime_str: str, duration_minutes: int =
         }
         if not (scopes & required):
             print(f"Agent {agent_id} Calendar: Insufficient scopes to check availability. Granted: {scopes}")
-            return True
+            return False
 
         try:
             tz = zoneinfo.ZoneInfo("America/New_York")
@@ -194,14 +194,14 @@ def is_agent_free(agent_id: int, slot_datetime_str: str, duration_minutes: int =
                 response = httpx.get(url, headers=headers, params=params, timeout=10.0)
             except Exception as ref_err:
                 print(f"Forced token refresh for agent {agent_id} failed: {ref_err}")
-                return True
+                return False
 
         if response.status_code == 403:
             print(f"Agent {agent_id} Google Calendar forbidden (403): Workspace admin block or scope disabled.")
-            return True
+            return False
         elif response.status_code != 200:
             print(f"Failed to query agent {agent_id} calendar events (HTTP {response.status_code}): {response.text}")
-            return True
+            return False
             
         data = response.json()
         events = data.get("items", [])
@@ -214,7 +214,7 @@ def is_agent_free(agent_id: int, slot_datetime_str: str, duration_minutes: int =
         return True
     except Exception as e:
         print(f"Exception checking calendar events for agent {agent_id}: {str(e)}")
-        return True
+        return False
 
 def create_agent_calendar_event(
     agent_id: int, 
@@ -223,7 +223,8 @@ def create_agent_calendar_event(
     issue_description: str, 
     slot_datetime_str: str, 
     duration_minutes: int = 60,
-    booking_type: str = "appointment"
+    booking_type: str = "appointment",
+    external_event_id: str = None,
 ) -> bool:
     """
     Inserts a booked appointment or callback event into the agent's connected Google Calendar.
@@ -288,9 +289,13 @@ def create_agent_calendar_event(
             },
             "attendees": attendees
         }
+        if external_event_id:
+            payload["id"] = external_event_id
         
         response = httpx.post(url, headers=headers, params=params, json=payload, timeout=10.0)
-        if response.status_code in [200, 201]:
+        if response.status_code in [200, 201] or (
+            external_event_id and response.status_code == 409
+        ):
             print(f"Google Calendar event created successfully for agent {agent_id}!")
             return True
             
@@ -344,13 +349,13 @@ def fetch_agent_events(agent_id: int, start_iso: str, end_iso: str) -> Optional[
                 response = httpx.get(url, headers=headers, params=params, timeout=10.0)
             except Exception as ref_err:
                 print(f"Forced token refresh for agent {agent_id} failed: {ref_err}")
-                return []
+                return None
 
         if response.status_code == 403:
             raise GoogleAuthException("Workspace admin blocked access or calendar API is disabled.")
         elif response.status_code != 200:
             print(f"Failed to pre-fetch agent {agent_id} calendar events (HTTP {response.status_code}): {response.text}")
-            return []
+            return None
             
         data = response.json()
         events = data.get("items", [])
@@ -362,7 +367,7 @@ def fetch_agent_events(agent_id: int, start_iso: str, end_iso: str) -> Optional[
     except Exception as e:
         print(f"Exception pre-fetching calendar events for agent {agent_id}: {str(e)}")
         print(traceback.format_exc())
-        return []
+        return None
 
 def list_upcoming_events(agent_id: int, max_results: int = 10) -> list:
     """

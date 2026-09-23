@@ -1,8 +1,9 @@
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from serviceBot.main import app
+from serviceBot.services.booking import BookingValidationError
 from serviceBot.db.queries import get_available_slots_for_date
 
 client = TestClient(app)
@@ -47,62 +48,41 @@ def test_get_available_slots_endpoint():
 
 def test_edit_service_request_reschedule_without_consent_fails():
     """Test PUT /api/v1/portal/service-requests/{id} fails 400 when consent is not obtained."""
-    with patch("serviceBot.db.connection.get_db_connection") as mock_conn:
-        mock_cursor = MagicMock()
-        mock_conn.return_value.__enter__.return_value = mock_conn
-        mock_conn.dict_cursor.return_value.__enter__.return_value = mock_cursor
-        
-        # Existing request with different booking time
-        mock_cursor.fetchone.return_value = {
-            "customer_id": 1,
-            "issue_description": "Oil Change",
-            "status": "pending",
-            "booking_time": "2026-08-07 10:00:00",
-            "vehicle_id": 10
-        }
-
-        payload = {
-            "issue_description": "Oil Change",
-            "vehicle_details": {"make": "Toyota", "model": "Camry", "year": 2020, "vin": ""},
-            "booking_time": "2026-08-10 14:00:00",
-            "customer_consent_obtained": False
-        }
-
+    payload = {
+        "issue_description": "Oil Change",
+        "vehicle_details": {"make": "Toyota", "model": "Camry", "year": 2020, "vin": ""},
+        "booking_time": "2026-08-10 14:00:00",
+        "customer_consent_obtained": False,
+    }
+    with patch("serviceBot.services.booking.BookingService") as booking_class:
+        booking_class.return_value.apply_portal_edit.side_effect = BookingValidationError(
+            "Customer consent is required when rescheduling an appointment."
+        )
         res = client.put("/api/v1/portal/service-requests/100", json=payload)
-        assert res.status_code == 400
-        assert "Customer consent is required" in res.json()["detail"]
+
+    assert res.status_code == 400
+    assert "Customer consent is required" in res.json()["detail"]
+    booking_class.return_value.apply_portal_edit.assert_called_once()
 
 def test_edit_service_request_reschedule_with_consent_success():
     """Test PUT /api/v1/portal/service-requests/{id} succeeds 200 when consent is obtained."""
-    with patch("serviceBot.db.connection.get_db_connection") as mock_conn:
-        mock_cursor = MagicMock()
-        mock_conn.return_value.__enter__.return_value = mock_conn
-        mock_conn.dict_cursor.return_value.__enter__.return_value = mock_cursor
-        
-        mock_cursor.fetchone.side_effect = [
-            # 1. SELECT SR
-            {"customer_id": 1, "issue_description": "Oil Change", "status": "pending", "booking_time": "2026-08-07 10:00:00"},
-            # 2. RETURNING vehicle_id
-            {"vehicle_id": 10},
-            # 3. SELECT customer phone
-            {"phone": "+15551234567", "name": "David"}
-        ]
+    payload = {
+        "issue_description": "Oil Change",
+        "vehicle_details": {"make": "Toyota", "model": "Camry", "year": 2020, "vin": ""},
+        "booking_time": "2026-08-10 14:00:00",
+        "customer_consent_obtained": True,
+    }
+    with patch("serviceBot.services.booking.BookingService") as booking_class:
+        res = client.put("/api/v1/portal/service-requests/100", json=payload)
 
-        with patch("serviceBot.db.queries.reschedule_appointment", return_value=True) as mock_reschedule:
-            with patch("serviceBot.services.twilio_sms.TwilioSMSClient.send_sms") as mock_sms:
-                payload = {
-                    "issue_description": "Oil Change",
-                    "vehicle_details": {"make": "Toyota", "model": "Camry", "year": 2020, "vin": ""},
-                    "booking_time": "2026-08-10 14:00:00",
-                    "customer_consent_obtained": True
-                }
-
-                res = client.put("/api/v1/portal/service-requests/100", json=payload)
-                assert res.status_code == 200
-                assert res.json()["success"] is True
-                mock_reschedule.assert_called_once_with(
-                    appointment_id=100,
-                    new_datetime="2026-08-10 14:00:00",
-                    customer_consent_obtained=True,
-                    triggered_by="portal_staff"
-                )
+    assert res.status_code == 200
+    assert res.json()["success"] is True
+    booking_class.return_value.apply_portal_edit.assert_called_once_with(
+        request_id=100,
+        issue_description="Oil Change",
+        vehicle_details={"make": "Toyota", "model": "Camry", "year": 2020, "vin": ""},
+        booking_time="2026-08-10 14:00:00",
+        booking_type=None,
+        duration_minutes=None,
+        customer_consent_obtained=True,
+    )

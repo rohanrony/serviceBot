@@ -10,10 +10,18 @@ from unittest.mock import patch
 @pytest.fixture(autouse=True)
 def clean_db():
     # Setup: clean test customer and CRM notes
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM crm_notes WHERE call_id = 'conv_test_123';")
+        cursor.execute("DELETE FROM webhook_events WHERE provider = 'elevenlabs' AND event_id = 'conv_test_123';")
+        cursor.execute("DELETE FROM service_requests WHERE customer_id IN (SELECT id FROM customers WHERE phone = '+15559998888');")
+        cursor.execute("DELETE FROM customers WHERE phone = '+15559998888';")
+        conn.commit()
     yield
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("DELETE FROM crm_notes WHERE call_id = 'conv_test_123';")
+        cursor.execute("DELETE FROM webhook_events WHERE provider = 'elevenlabs' AND event_id = 'conv_test_123';")
         cursor.execute("DELETE FROM service_requests WHERE customer_id IN (SELECT id FROM customers WHERE phone = '+15559998888');")
         cursor.execute("DELETE FROM customers WHERE phone = '+15559998888';")
         conn.commit()
@@ -121,5 +129,6 @@ def test_post_call_webhook_extracts_callback(mock_summarize, mock_extract_callba
             cursor.execute("SELECT customer_id, booking_time, booking_type FROM service_requests WHERE customer_id = %s;", (customer_id,))
             callback = cursor.fetchone()
             assert callback is not None
-            assert callback["booking_time"] == "tomorrow morning at 8:00 AM"
+            # LLM-extracted prose is review-only and never reserves capacity.
+            assert callback["booking_time"] is None
             assert callback["booking_type"] == "callback"

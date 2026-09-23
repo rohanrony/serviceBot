@@ -1,4 +1,5 @@
 import pytest
+import datetime as dt_mod
 import time
 from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock
@@ -9,6 +10,13 @@ from serviceBot.db.queries import check_availability, book_appointment
 from serviceBot.services.google_calendar import is_agent_free, create_agent_calendar_event
 
 client = TestClient(app)
+
+
+def _next_business_date() -> dt_mod.date:
+    candidate = dt_mod.date.today() + dt_mod.timedelta(days=1)
+    while candidate.weekday() > 4:
+        candidate += dt_mod.timedelta(days=1)
+    return candidate
 
 @pytest.fixture(autouse=True)
 def clean_db_agent():
@@ -173,16 +181,13 @@ def test_is_agent_free_busy(mock_get, mock_creds):
 
 @patch("serviceBot.services.google_calendar.fetch_agent_events")
 def test_check_availability_filtering(mock_fetch):
-    # If the agent is busy, 07:00 slot should not be returned in check_availability
-    mock_fetch.return_value = [{"id": "event1", "status": "confirmed", "start": {"dateTime": "2026-08-17T07:00:00-04:00"}, "end": {"dateTime": "2026-08-17T08:00:00-04:00"}}]
-    slots = check_availability(preferred_date="2026-08-17 07:00:00")
-    # Should not find 2026-08-17 07:00:00 because the single agent is busy
-    assert "2026-08-17 07:00:00" not in slots
+    slot = f"{_next_business_date().isoformat()} 07:00:00"
+    event_date = f"{_next_business_date().isoformat()}T07:00:00-04:00"
+    mock_fetch.return_value = [{"id": "event1", "status": "confirmed", "start": {"dateTime": event_date}, "end": {"dateTime": event_date.replace("07:00:00", "08:00:00")}}]
+    assert slot not in check_availability(preferred_date=slot)
 
-    # If the agent is free, slot should be returned
     mock_fetch.return_value = []
-    slots = check_availability(preferred_date="2026-08-17 07:00:00")
-    assert "2026-08-17 07:00:00" in slots
+    assert slot in check_availability(preferred_date=slot)
 
 @patch("serviceBot.services.google_calendar.is_agent_free")
 @patch("serviceBot.services.google_calendar.create_agent_calendar_event")
@@ -190,6 +195,7 @@ def test_check_availability_filtering(mock_fetch):
 def test_booking_notifications(mock_notify, mock_event, mock_free):
     mock_free.return_value = True
     mock_event.return_value = True
+    booking_time = f"{_next_business_date().isoformat()} 11:00:00"
     
     # We must insert a mock vehicle for Sarah Johnson (id=1) as it is now required
     with get_db_connection() as conn:
@@ -200,7 +206,7 @@ def test_booking_notifications(mock_notify, mock_event, mock_free):
     appt_id = book_appointment(
         customer_id=1,
         service_request_id=None,
-        appointment_datetime="2026-06-25 11:00:00",
+        appointment_datetime=booking_time,
         service_type="Oil Change"
     )
     assert appt_id is not None
@@ -211,5 +217,5 @@ def test_booking_notifications(mock_notify, mock_event, mock_free):
         cursor.execute("SELECT staff_agent_id, booking_time FROM service_requests WHERE id = %s;", (appt_id,))
         row = cursor.fetchone()
         assert row["staff_agent_id"] is not None
-        assert row["booking_time"] == "2026-06-25 11:00:00"
+        assert row["booking_time"] == booking_time
 

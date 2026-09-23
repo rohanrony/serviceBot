@@ -65,6 +65,74 @@ class SMSNotificationRouter:
             return True
         return False
 
+    def _enabled_channels(
+        self,
+        event_type: str,
+        recipient_role: str,
+        rules_list: list,
+        channel_overrides: dict = None,
+    ) -> list[str]:
+        """Return the configured delivery channels, with one safe default channel."""
+        override = (channel_overrides or {}).get(recipient_role)
+        if isinstance(override, bool):
+            return ["SMS"] if override else []
+        if isinstance(override, dict):
+            return [
+                channel
+                for channel in ("SMS", "WHATSAPP")
+                if bool(override.get(channel.lower(), override.get(channel, False)))
+            ]
+
+        configured = {
+            (rule.get("channel") or "WHATSAPP").upper()
+            for rule in rules_list
+            if rule.get("event_type") == event_type
+            and rule.get("recipient_role") == recipient_role
+            and bool(rule.get("enabled"))
+        }
+        selected = [channel for channel in ("SMS", "WHATSAPP") if channel in configured]
+        if selected:
+            return selected
+        if any(
+            rule.get("event_type") == event_type and rule.get("recipient_role") == recipient_role
+            for rule in rules_list
+        ):
+            return []
+        return ["SMS"] if self._is_rule_enabled(event_type, recipient_role, rules_list, channel="SMS") else []
+
+    def _dispatch_to(
+        self,
+        *,
+        recipient_type: str,
+        recipient_phone: str,
+        channels: list[str],
+        body: str,
+        template_type: str,
+        appointment_id: int,
+    ) -> list[dict]:
+        """Send each configured channel and retain its independent delivery outcome."""
+        dispatches = []
+        for channel in channels:
+            if channel == "WHATSAPP":
+                result = self.twilio_client.send_whatsapp(
+                    to=recipient_phone,
+                    body=body,
+                    template_type=template_type,
+                    appointment_id=appointment_id,
+                    recipient_type=recipient_type,
+                )
+            else:
+                result = self.twilio_client.send_sms(
+                    to=recipient_phone,
+                    body=body,
+                    template_type=template_type,
+                    appointment_id=appointment_id,
+                    recipient_type=recipient_type,
+                    channel="SMS",
+                )
+            dispatches.append({"recipient": recipient_type, "channel": channel, **result})
+        return dispatches
+
     def _fetch_details_if_missing(self, appointment_id: int, details: dict = None) -> dict:
         if details:
             return details
@@ -156,61 +224,71 @@ class SMSNotificationRouter:
             update_or_cancel_appointment_reminders(appointment_id)
 
         # 1. Customer Dispatch
-        if customer_phone and self._is_rule_enabled(event_type, "customer", rules, channel_overrides=channel_overrides):
-            if not get_customer_opt_in(customer_phone):
-                log_id = log_sms_dispatch(
-                    appointment_id=appointment_id,
-                    recipient_type="customer",
-                    recipient_phone=customer_phone,
-                    template_type=event_type.lower(),
-                    status="SKIPPED_OPT_OUT",
-                    error_message="Customer has opted out of SMS notifications."
+        customer_channels = self._enabled_channels(event_type, "customer", rules, channel_overrides)
+        if customer_phone and customer_channels:
+            if event_type in ("CANCELLED_BY_ADMIN", "CANCELLED_BY_CUSTOMER"):
+                customer_body = (
+                    f"❌ [APPOINTMENT CANCELLED] Appt #{appointment_id}\n"
+                    f"Service: {srv}\n"
+                    f"Vehicle: {veh}\n"
+                    f"Your appointment has been cancelled. Please contact us if you need to reschedule."
                 )
-                dispatches.append({"recipient": "customer", "status": "SKIPPED_OPT_OUT", "log_id": log_id})
+            elif event_type in ("RESCHEDULED", "RESCHEDULED_REASSIGNED"):
+                customer_body = (
+                    f"🗓️ [APPOINTMENT RESCHEDULED] Appt #{appointment_id}\n"
+                    f"Service: {srv}\n"
+                    f"New Slot: {slot_range_str}\n"
+                    f"Assigned Advisor: {new_ag}\n"
+                    f"Vehicle: {veh}"
+                )
+            else:
+                customer_body = (
+                    f"🚗 [CUSTOMER UPDATE] Appt #{appointment_id}\n"
+                    f"Service: {srv}\n"
+                    f"Slot: {slot_range_str}\n"
+                    f"Assigned Advisor: {new_ag}\n"
+                    f"Vehicle: {veh}"
+                )
+            if not get_customer_opt_in(customer_phone):
+                for channel in customer_channels:
+                    log_id = log_sms_dispatch(
+                        appointment_id=appointment_id,
+                        recipient_type="customer",
+                        recipient_phone=customer_phone,
+                        template_type=event_type.lower(),
+                        status="SKIPPED_OPT_OUT",
+                        error_message="Customer has opted out of SMS notifications.",
+                        body=customer_body,
+                        channel=channel,
+                    )
+                    dispatches.append({"recipient": "customer", "channel": channel, "status": "SKIPPED_OPT_OUT", "log_id": log_id})
             elif in_quiet:
                 rel_time = calculate_quiet_hours_release_time()
-                log_id = log_sms_dispatch(
-                    appointment_id=appointment_id,
+                for channel in customer_channels:
+                    log_id = log_sms_dispatch(
+                        appointment_id=appointment_id,
+                        recipient_type="customer",
+                        recipient_phone=customer_phone,
+                        template_type=event_type.lower(),
+                        status="QUEUED",
+                        scheduled_send_at=rel_time,
+                        body=customer_body,
+                        channel=channel,
+                    )
+                    dispatches.append({"recipient": "customer", "channel": channel, "status": "QUEUED", "scheduled_send_at": str(rel_time), "log_id": log_id})
+            else:
+                customer_dispatches = self._dispatch_to(
                     recipient_type="customer",
                     recipient_phone=customer_phone,
+                    channels=customer_channels,
+                    body=customer_body,
                     template_type=event_type.lower(),
-                    status="QUEUED",
-                    scheduled_send_at=rel_time
+                    appointment_id=appointment_id,
                 )
-                dispatches.append({"recipient": "customer", "status": "QUEUED", "scheduled_send_at": str(rel_time), "log_id": log_id})
-            else:
-                if event_type in ("CANCELLED_BY_ADMIN", "CANCELLED_BY_CUSTOMER"):
-                    body = (
-                        f"❌ [APPOINTMENT CANCELLED] Appt #{appointment_id}\n"
-                        f"Service: {srv}\n"
-                        f"Vehicle: {veh}\n"
-                        f"Your appointment has been cancelled. Please contact us if you need to reschedule."
-                    )
-                elif event_type in ("RESCHEDULED", "RESCHEDULED_REASSIGNED"):
-                    body = (
-                        f"🗓️ [APPOINTMENT RESCHEDULED] Appt #{appointment_id}\n"
-                        f"Service: {srv}\n"
-                        f"New Slot: {slot_range_str}\n"
-                        f"Assigned Advisor: {new_ag}\n"
-                        f"Vehicle: {veh}"
-                    )
-                else:
-                    body = (
-                        f"🚗 [CUSTOMER UPDATE] Appt #{appointment_id}\n"
-                        f"Service: {srv}\n"
-                        f"Slot: {slot_range_str}\n"
-                        f"Assigned Advisor: {new_ag}\n"
-                        f"Vehicle: {veh}"
-                    )
-                res = self.twilio_client.send_whatsapp(
-                    to=customer_phone,
-                    body=body,
-                    template_type=event_type.lower(),
-                    appointment_id=appointment_id
-                )
-                dispatches.append({"recipient": "customer", **res})
+                dispatches.extend(customer_dispatches)
 
-                if res.get("success"):
+                successful_dispatch = next((item for item in customer_dispatches if item.get("success")), None)
+                if successful_dispatch:
                     try:
                         from serviceBot.db.queries import get_or_create_sms_conversation, add_sms_message
                         conv = get_or_create_sms_conversation(customer_phone, context_appointment_id=appointment_id)
@@ -219,16 +297,17 @@ class SMSNotificationRouter:
                             direction="outbound",
                             sender_type="system",
                             sender_name="System Notification",
-                            body=body,
-                            twilio_message_sid=res.get("sid")
+                            body=customer_body,
+                            twilio_message_sid=successful_dispatch.get("sid"),
                         )
-                    except Exception as ex:
+                    except Exception:
                         pass
 
 
         # 2. Agent Dispatch (Current / New Agent)
-        if agent_phone and self._is_rule_enabled(event_type, "agent", rules, channel_overrides=channel_overrides):
-            body = (
+        agent_channels = self._enabled_channels(event_type, "agent", rules, channel_overrides)
+        if agent_phone and agent_channels:
+            agent_body = (
                 f"🚨 [NEW ADVISOR ALERT] Appt #{appointment_id}\n"
                 f"Status: {event_type}\n"
                 f"Customer: {cust_name} ({cust_ph})\n"
@@ -238,34 +317,38 @@ class SMSNotificationRouter:
                 f"Issue: {iss}"
             )
             if event_type == "REASSIGNED":
-                body += f"\nReassigned from: {old_ag}"
+                agent_body += f"\nReassigned from: {old_ag}"
 
-            res = self.twilio_client.send_whatsapp(
-                to=agent_phone,
-                body=body,
+            dispatches.extend(self._dispatch_to(
+                recipient_type="agent",
+                recipient_phone=agent_phone,
+                channels=agent_channels,
+                body=agent_body,
                 template_type=f"agent_{event_type.lower()}",
-                appointment_id=appointment_id
-            )
-            dispatches.append({"recipient": "agent", **res})
+                appointment_id=appointment_id,
+            ))
 
         # 3. Previous Agent Dispatch (on Reassignment)
-        if previous_agent_phone and self._is_rule_enabled(event_type, "previous_agent", rules, channel_overrides=channel_overrides):
-            body = (
+        previous_agent_channels = self._enabled_channels(event_type, "previous_agent", rules, channel_overrides)
+        if previous_agent_phone and previous_agent_channels:
+            previous_agent_body = (
                 f"ℹ️ [PREVIOUS ADVISOR NOTICE]\n"
                 f"Service Request #{appointment_id} ({srv} for {cust_name}) "
                 f"has been reassigned to {new_ag}.\n"
                 f"Slot: {slot_range_str}"
             )
-            res = self.twilio_client.send_whatsapp(
-                to=previous_agent_phone,
-                body=body,
+            dispatches.extend(self._dispatch_to(
+                recipient_type="previous_agent",
+                recipient_phone=previous_agent_phone,
+                channels=previous_agent_channels,
+                body=previous_agent_body,
                 template_type="unassignment",
-                appointment_id=appointment_id
-            )
-            dispatches.append({"recipient": "previous_agent", **res})
+                appointment_id=appointment_id,
+            ))
 
         # 4. Admin Dispatch
-        if self._is_rule_enabled(event_type, "admin", rules, channel_overrides=channel_overrides):
+        admin_channels = self._enabled_channels(event_type, "admin", rules, channel_overrides)
+        if admin_channels:
             target_admin_phone = admin_phone
             if not target_admin_phone:
                 from serviceBot.db.queries import get_sms_config
@@ -279,12 +362,13 @@ class SMSNotificationRouter:
                     f"Vehicle: {veh} | Service: {srv}\n"
                     f"Slot: {slot_range_str}"
                 )
-                res = self.twilio_client.send_whatsapp(
-                    to=target_admin_phone,
+                dispatches.extend(self._dispatch_to(
+                    recipient_type="admin",
+                    recipient_phone=target_admin_phone,
+                    channels=admin_channels,
                     body=body,
                     template_type=f"admin_{event_type.lower()}",
-                    appointment_id=appointment_id
-                )
-                dispatches.append({"recipient": "admin", **res})
+                    appointment_id=appointment_id,
+                ))
 
         return {"event_type": event_type, "appointment_id": appointment_id, "dispatches": dispatches}

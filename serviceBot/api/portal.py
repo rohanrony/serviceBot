@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Request
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
+from serviceBot.services.calendar_availability import CalendarAvailabilityService, CalendarConflictError, CalendarError
 from serviceBot.logger import get_logger
 
 logger = get_logger("api.portal")
@@ -505,6 +506,84 @@ class CalendarSlotCreate(BaseModel):
 class CalendarSlotUpdate(BaseModel):
     is_booked: Optional[bool] = None
     slot_datetime: Optional[str] = None
+class CalendarPopulatePayload(BaseModel):
+    days: int = 30
+    hours: Optional[list[int]] = None
+
+
+def _calendar_http_error(exc: CalendarError) -> HTTPException:
+    detail = str(exc)
+    status_code = 404 if "was not found" in detail else 400
+    if isinstance(exc, CalendarConflictError):
+        status_code = 409
+    return HTTPException(status_code=status_code, detail=detail)
+
+
+@router.get("/agents/{agent_id}/calendar")
+def get_agent_calendar_slots(agent_id: int):
+    try:
+        return CalendarAvailabilityService().list_slots(agent_id)
+    except CalendarError as exc:
+        raise _calendar_http_error(exc) from exc
+
+
+@router.post("/agents/{agent_id}/calendar", status_code=201)
+def create_agent_calendar_slot(agent_id: int, payload: CalendarSlotCreate):
+    try:
+        slot = CalendarAvailabilityService().create_slot(
+            agent_id,
+            payload.slot_datetime,
+            payload.is_booked,
+        )
+        return {"success": True, **slot}
+    except CalendarError as exc:
+        raise _calendar_http_error(exc) from exc
+
+
+@router.patch("/calendar/{slot_id}")
+def update_calendar_slot(slot_id: int, payload: CalendarSlotUpdate):
+    try:
+        slot = CalendarAvailabilityService().update_slot(
+            slot_id,
+            is_booked=payload.is_booked,
+            slot_datetime=payload.slot_datetime,
+        )
+        return {"success": True, **slot}
+    except CalendarError as exc:
+        raise _calendar_http_error(exc) from exc
+
+
+@router.delete("/calendar/{slot_id}")
+def delete_calendar_slot(slot_id: int):
+    try:
+        CalendarAvailabilityService().delete_slot(slot_id)
+        return {"id": slot_id, "success": True}
+    except CalendarError as exc:
+        raise _calendar_http_error(exc) from exc
+
+
+@router.post("/agents/{agent_id}/calendar/populate")
+def populate_agent_calendar_slots(agent_id: int, payload: CalendarPopulatePayload):
+    try:
+        result = CalendarAvailabilityService().populate_agent(
+            agent_id,
+            days=payload.days,
+            hours=payload.hours,
+        )
+        return {"success": True, **result}
+    except CalendarError as exc:
+        raise _calendar_http_error(exc) from exc
+
+
+@router.post("/calendar/sync-all")
+def sync_all_agent_calendars(days: int = 30):
+    try:
+        result = CalendarAvailabilityService().sync_all(days=days)
+        return {"success": True, **result}
+    except CalendarError as exc:
+        raise _calendar_http_error(exc) from exc
+
+
 
 @router.get("/agents")
 def get_staff_agents():
@@ -975,66 +1054,30 @@ async def get_service_requests(limit: Optional[int] = None, offset: Optional[int
 
 @router.post("/service-requests", status_code=201)
 async def create_service_request_endpoint(payload: ServiceRequestCreate):
-    from serviceBot.db.queries import lookup_customer_by_phone, normalize_e164_phone, book_appointment
-    from serviceBot.db.connection import get_db_connection, dict_cursor
-    from serviceBot.services.twilio_sms import TwilioSMSClient
+    from serviceBot.db.queries import normalize_e164_phone
     from serviceBot.api.telephony import clean_and_validate_phone
+    from serviceBot.services.booking import (
+        BookingConflictError,
+        BookingService,
+        BookingValidationError,
+    )
 
     validated_phone = clean_and_validate_phone(payload.customer.phone)
     if not validated_phone:
         raise HTTPException(status_code=400, detail="Phone number must be a valid 10-digit number.")
-        
     norm_phone = normalize_e164_phone(validated_phone)
-    
-    with get_db_connection() as conn:
-        with dict_cursor(conn) as cursor:
-            cursor.execute("INSERT INTO customers (name, phone) VALUES (%s, %s) ON CONFLICT (phone) DO NOTHING RETURNING id", (payload.customer.name, norm_phone))
-            res = cursor.fetchone()
-            if res:
-                customer_id = res["id"]
-            else:
-                cursor.execute("SELECT id FROM customers WHERE phone = %s", (norm_phone,))
-                customer_id = cursor.fetchone()["id"]
-            
-            cursor.execute("INSERT INTO vehicles (customer_id, make, model, year, vin) VALUES (%s, %s, %s, %s, %s) RETURNING id", 
-                (customer_id, payload.vehicle.make, payload.vehicle.model, payload.vehicle.year, payload.vehicle.vin))
-            vehicle_id = cursor.fetchone()["id"]
-            
-            svc_type = payload.service_request.get("service_type", "General Service")
-            issue_desc = payload.service_request.get("issue_description", "")
-            staff_agent_id = payload.service_request.get("staff_agent_id")
-            booking_type = payload.service_request.get("booking_type", "appointment")
-            duration_minutes = payload.service_request.get("duration_minutes") or (15 if booking_type == "callback" else 60)
-            
-            if staff_agent_id:
-                cursor.execute("""
-                    INSERT INTO service_requests (customer_id, vehicle_id, service_type, issue_description, status, staff_agent_id, booking_type, duration_minutes)
-                    VALUES (%s, %s, %s, %s, 'pending', %s, %s, %s) RETURNING id
-                """, (customer_id, vehicle_id, svc_type, issue_desc, staff_agent_id, booking_type, duration_minutes))
-            else:
-                cursor.execute("""
-                    INSERT INTO service_requests (customer_id, vehicle_id, service_type, issue_description, status, booking_type, duration_minutes)
-                    VALUES (%s, %s, %s, %s, 'pending', %s, %s) RETURNING id
-                """, (customer_id, vehicle_id, svc_type, issue_desc, booking_type, duration_minutes))
-            request_id = cursor.fetchone()["id"]
-            
-            # Audit log
-            cursor.execute("INSERT INTO service_request_audit_log (request_id, triggered_by, from_status, to_status, notes) VALUES (%s, %s, %s, %s, %s)",
-                           (request_id, 'system', None, 'pending', 'Manual request created from portal'))
-            conn.commit()
-            
-    # Booking logic (executed after initial DB commit so customer and request records exist across connections)
-    booking_time = payload.service_request.get("booking_time")
-    if booking_time:
-        try:
-            book_appointment(customer_id, request_id, booking_time, svc_type, payload.vehicle.model_dump(), booking_type=booking_type, duration_minutes=duration_minutes)
-            
-            # Dispatch BOOKING event notifications via SMSNotificationRouter to handle Customer, Agent, and Admin rules
-            from serviceBot.services.sms_router import SMSNotificationRouter
-            SMSNotificationRouter().process_event("BOOKING", appointment_id=request_id)
-        except ValueError as e:
-            raise HTTPException(status_code=409, detail=str(e))
-                
+    try:
+        result = BookingService().create_portal_request(
+            customer_name=payload.customer.name,
+            phone=norm_phone,
+            vehicle_details=payload.vehicle.model_dump(),
+            request_details=payload.service_request,
+        )
+    except BookingConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except BookingValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    request_id = result.request_id if hasattr(result, "request_id") else result["request_id"]
     return {"success": True, "request_id": request_id}
 
 @router.get("/available-slots")
@@ -1051,70 +1094,27 @@ async def get_available_slots_endpoint(date: str, duration_minutes: Optional[int
 
 @router.put("/service-requests/{request_id}")
 async def edit_service_request_endpoint(request_id: int, payload: ServiceRequestEdit):
-    from serviceBot.db.connection import get_db_connection, dict_cursor
-    from serviceBot.db.queries import reschedule_appointment
-    from serviceBot.services.twilio_sms import TwilioSMSClient
-    
-    with get_db_connection() as conn:
-        with dict_cursor(conn) as cursor:
-            cursor.execute("SELECT customer_id, issue_description, status, booking_time FROM service_requests WHERE id = %s", (request_id,))
-            sr = cursor.fetchone()
-            if not sr:
-                raise HTTPException(status_code=404, detail="Service request not found")
-                
-            # Update service request fields
-            update_sql = "UPDATE service_requests SET issue_description = %s"
-            update_params = [payload.issue_description]
-            if payload.booking_type:
-                update_sql += ", booking_type = %s"
-                update_params.append(payload.booking_type)
-            if payload.duration_minutes is not None:
-                update_sql += ", duration_minutes = %s"
-                update_params.append(payload.duration_minutes)
-            update_sql += " WHERE id = %s RETURNING vehicle_id"
-            update_params.append(request_id)
-            
-            cursor.execute(update_sql, tuple(update_params))
-            vehicle_id = cursor.fetchone()["vehicle_id"]
-            
-            # Audit log for description
-            if sr["issue_description"] != payload.issue_description:
-                cursor.execute("INSERT INTO service_request_audit_log (request_id, triggered_by, from_status, to_status, notes) VALUES (%s, %s, %s, %s, %s)",
-                               (request_id, 'portal_staff', None, sr["status"], 'Manual issue description update'))
-            
-            # Update vehicle details
-            cursor.execute("""
-                UPDATE vehicles SET make = %s, model = %s, year = %s, vin = %s WHERE id = %s
-            """, (payload.vehicle_details.make, payload.vehicle_details.model, payload.vehicle_details.year, payload.vehicle_details.vin, vehicle_id))
-            conn.commit()
-            
-    # Handle slot reassignment after committing vehicle / service request changes
-    if payload.booking_time and payload.booking_time != sr["booking_time"]:
-        if not payload.customer_consent_obtained:
-            raise HTTPException(status_code=400, detail="Customer consent is required when rescheduling an appointment.")
-            
-        dt_str = payload.booking_time
-        try:
-            reschedule_appointment(
-                appointment_id=request_id, 
-                new_datetime=dt_str, 
-                customer_consent_obtained=payload.customer_consent_obtained, 
-                triggered_by="portal_staff"
-            )
-            
-            with get_db_connection() as conn:
-                with dict_cursor(conn) as cursor:
-                    cursor.execute("SELECT phone, name FROM customers WHERE id = %s", (sr["customer_id"],))
-                    cust = cursor.fetchone()
-            
-            client = TwilioSMSClient()
-            client.send_sms(
-                to=cust["phone"],
-                body=f"Hi {cust['name']}, your appointment has been rescheduled to {dt_str}.",
-                appointment_id=request_id
-            )
-        except ValueError as e:
-            raise HTTPException(status_code=409, detail=str(e))
+    from serviceBot.services.booking import (
+        BookingConflictError,
+        BookingService,
+        BookingValidationError,
+    )
+
+    try:
+        BookingService().apply_portal_edit(
+            request_id=request_id,
+            issue_description=payload.issue_description,
+            vehicle_details=payload.vehicle_details.model_dump(),
+            booking_time=payload.booking_time,
+            booking_type=payload.booking_type,
+            duration_minutes=payload.duration_minutes,
+            customer_consent_obtained=bool(payload.customer_consent_obtained),
+        )
+    except BookingConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except BookingValidationError as exc:
+        status_code = 404 if str(exc) == "Service request not found" else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
     return {"success": True}
 
 @router.patch("/service-requests/{request_id}/status")
@@ -1145,10 +1145,13 @@ async def get_available_agents_for_request_endpoint(request_id: int):
 @router.patch("/service-requests/{request_id}/assign-agent")
 @router.put("/service-requests/{request_id}/assign-agent")
 async def assign_agent_endpoint(request_id: int, payload: AgentAssignPayload):
+    from serviceBot.services.booking import BookingConflictError
     from serviceBot.db.queries import assign_staff_agent_to_service_request
     try:
         updated = assign_staff_agent_to_service_request(request_id, payload.staff_agent_id)
         return {"success": True, "data": updated}
+    except BookingConflictError as conflict:
+        raise HTTPException(status_code=409, detail=str(conflict)) from conflict
     except ValueError as val_err:
         raise HTTPException(status_code=400, detail=str(val_err))
     except Exception as exc:

@@ -2,7 +2,7 @@ import datetime as dt_mod
 import zoneinfo
 import threading
 import time
-from serviceBot.db.queries import get_sms_config, get_due_queued_sms_logs, update_sms_log_status
+from serviceBot.db.queries import get_sms_config
 from serviceBot.services.twilio_sms import TwilioSMSClient
 
 TIMEZONE_NY = zoneinfo.ZoneInfo("America/New_York")
@@ -103,7 +103,7 @@ def run_quiet_hours_queue_worker_cycle():
             cursor.execute(
                 """
                 SELECT * FROM sms_log
-                WHERE status = 'QUEUED' AND scheduled_send_at <= CURRENT_TIMESTAMP
+                WHERE status = 'QUEUED' AND scheduled_send_at <= (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
                 ORDER BY scheduled_send_at ASC
                 FOR UPDATE SKIP LOCKED;
                 """
@@ -121,19 +121,22 @@ def run_quiet_hours_queue_worker_cycle():
     client = TwilioSMSClient()
     dispatched_count = 0
     for log_item in due_logs:
-        res = client.send_sms(
-            to=log_item["recipient_phone"],
-            body=f"Appointment Notification for Appointment #{log_item.get('appointment_id')}.",
-            template_type=log_item.get("template_type", "notification"),
-            appointment_id=log_item.get("appointment_id")
+        body = log_item.get("body") or (
+            f"Appointment Notification for Appointment #{log_item.get('appointment_id')}."
         )
-        update_sms_log_status(
-            log_id=log_item["id"],
-            status=res["status"],
-            twilio_message_sid=res.get("sid"),
-            error_code=res.get("error_code"),
-            error_message=res.get("error_message")
-        )
+        channel = (log_item.get("channel") or "SMS").upper()
+        kwargs = {
+            "to": log_item["recipient_phone"],
+            "body": body,
+            "template_type": log_item.get("template_type", "notification"),
+            "appointment_id": log_item.get("appointment_id"),
+            "recipient_type": log_item.get("recipient_type") or "customer",
+            "dispatch_log_id": log_item["id"],
+        }
+        if channel == "WHATSAPP":
+            client.send_whatsapp(**kwargs)
+        else:
+            client.send_sms(**kwargs, channel="SMS")
         dispatched_count += 1
     return dispatched_count
 

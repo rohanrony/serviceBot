@@ -328,20 +328,29 @@ def test_agent_availability_and_assignment_endpoints():
         assert "agents" in avail_data
         assert isinstance(avail_data["agents"], list)
 
-        # Test assign agent endpoint
-        if avail_data["agents"]:
-            target_agent_id = avail_data["agents"][0]["id"]
-            assign_res = client.patch(f"/api/v1/portal/service-requests/{req_id}/assign-agent", json={"staff_agent_id": target_agent_id})
-            assert assign_res.status_code == 200
-            assert assign_res.json()["success"] is True
-            assert assign_res.json()["data"]["staff_agent_id"] == target_agent_id
+        available_agent = next(
+            (agent for agent in avail_data["agents"] if agent["is_available"]),
+            None,
+        )
+        if available_agent is None:
+            assert all(not agent["is_available"] for agent in avail_data["agents"])
+            return
 
-            # Verify in service requests list
-            verify_res = client.get("/api/v1/portal/service-requests")
-            assert verify_res.status_code == 200
-            matched = [r for r in verify_res.json() if r["id"] == req_id]
-            if matched:
-                assert matched[0]["staff_agent_id"] == target_agent_id
+        target_agent_id = available_agent["id"]
+        assign_res = client.patch(
+            f"/api/v1/portal/service-requests/{req_id}/assign-agent",
+            json={"staff_agent_id": target_agent_id},
+        )
+        assert assign_res.status_code == 200, assign_res.text
+        assert assign_res.json()["success"] is True
+        assert assign_res.json()["data"]["staff_agent_id"] == target_agent_id
+
+        # Verify in service requests list
+        verify_res = client.get("/api/v1/portal/service-requests")
+        assert verify_res.status_code == 200
+        matched = [row for row in verify_res.json() if row["id"] == req_id]
+        if matched:
+            assert matched[0]["staff_agent_id"] == target_agent_id
 
 
 def test_cannot_assign_agent_for_completed_service_request():

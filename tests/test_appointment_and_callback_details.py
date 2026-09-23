@@ -1,10 +1,18 @@
 import os
 import json
+import datetime as dt_mod
 import pytest
 from unittest.mock import patch, MagicMock
 
 from serviceBot.db.queries import book_appointment, create_callback_request, create_service_request
 from serviceBot.db.connection import get_db_connection, dict_cursor
+
+
+def _next_business_datetime(hour: int) -> str:
+    candidate = dt_mod.date.today() + dt_mod.timedelta(days=1)
+    while candidate.weekday() > 4:
+        candidate += dt_mod.timedelta(days=1)
+    return f"{candidate.isoformat()} {hour:02d}:00:00"
 
 
 def test_system_prompts_mandate_detailed_descriptions():
@@ -53,7 +61,7 @@ def test_book_appointment_fallback_generates_detailed_description(mock_free, moc
             sa_row = cursor.fetchone()
             sa_id = sa_row["id"] if sa_row else 1
 
-            appt_datetime = "2026-08-10 09:00:00"
+            appt_datetime = _next_business_datetime(9)
             cursor.execute(
                 "INSERT INTO mock_calendar_slots (staff_agent_id, slot_datetime, is_booked) VALUES (%s, %s, FALSE) ON CONFLICT (staff_agent_id, slot_datetime) DO UPDATE SET is_booked = FALSE;",
                 (sa_id, appt_datetime)
@@ -92,7 +100,7 @@ def test_create_callback_request_fallback_generates_detailed_description(mock_ad
             cb_id = create_callback_request(
                 customer_id=cust_id,
                 service_request_id=None,
-                preferred_time="Tomorrow at 10 AM",
+                preferred_time=_next_business_datetime(10),
                 vehicle_details={"make": "Honda", "model": "Civic", "year": 2021}
             )
 

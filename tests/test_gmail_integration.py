@@ -1,5 +1,7 @@
-import pytest
+import datetime as dt_mod
+import json
 import os
+import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock
 
@@ -8,10 +10,18 @@ import serviceBot.api.portal
 serviceBot.api.portal.CONFIG_PATH = "/Users/rohanroy/.gemini/antigravity-ide/scratch/test_config.json"
 
 from serviceBot.main import app
-from serviceBot.db.connection import get_db_connection
+from serviceBot.db.connection import dict_cursor, get_db_connection
 from serviceBot.api.portal import load_config, save_config
 
 client = TestClient(app)
+
+
+def _future_business_datetime(hour: int = 14, days_ahead: int = 21) -> str:
+    candidate = dt_mod.date.today() + dt_mod.timedelta(days=days_ahead)
+    while candidate.weekday() > 4:
+        candidate += dt_mod.timedelta(days=1)
+    return f"{candidate.isoformat()} {hour:02d}:00:00"
+
 
 @pytest.fixture(autouse=True)
 def clean_gmail_config():
@@ -85,26 +95,64 @@ def test_gmail_connection_test_endpoint(mock_smtp):
     assert mock_instance.sendmail.called
 
 @patch("serviceBot.services.gmail.send_booking_notification")
-def test_appointment_booking_triggers_email(mock_send_email):
-    """Verify that booking an appointment through the voice tools endpoint triggers the email notification."""
-    # Ensure customer/service request exists and clean up conflicts
+def test_appointment_booking_queues_email_notification(mock_send_email):
+    """Booking commits locally and persists its email work for outbox delivery."""
+    booking_time = _future_business_datetime()
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM crm_notes WHERE customer_id = 15 OR customer_id IN (SELECT id FROM customers WHERE phone IN ('555-987-6543', '5559876543'))")
-        cursor.execute("DELETE FROM service_requests WHERE customer_id = 15 OR customer_id IN (SELECT id FROM customers WHERE phone IN ('555-987-6543', '5559876543'))")
-        cursor.execute("DELETE FROM vehicles WHERE customer_id = 15 OR customer_id IN (SELECT id FROM customers WHERE phone IN ('555-987-6543', '5559876543'))")
-        cursor.execute("DELETE FROM customers WHERE id = 15 OR phone IN ('555-987-6543', '5559876543')")
-        
-        cursor.execute("INSERT INTO customers (id, name, phone) VALUES (15, 'Booking Tester', '5559876543')")
-        cursor.execute("INSERT INTO vehicles (id, customer_id, make, model, year) VALUES (5, 15, 'Honda', 'Civic', 2018)")
-        cursor.execute("""
-            INSERT INTO service_requests (id, customer_id, vehicle_id, service_type, issue_description, status) 
-            VALUES (30, 15, 5, 'Brakes', 'Grinding noise', 'pending')
-        """)
-        # Seed staff agent
-        cursor.execute("UPDATE staff_agents SET email = 'john@example.com' WHERE id = 1;")
-        cursor.execute("INSERT INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id) VALUES ('2026-06-25 14:00:00', false, 1) ON CONFLICT (slot_datetime, staff_agent_id) DO NOTHING;")
-        cursor.execute("INSERT INTO services (id, name, description, price_range, duration_minutes) VALUES (2, 'Brake Service & Repair', 'Brake inspection and repair', '$199-450 per axle', 90) ON CONFLICT (id) DO NOTHING;")
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                """
+                DELETE FROM outbox_notifications
+                WHERE request_id IN (
+                    SELECT sr.id
+                    FROM service_requests sr
+                    JOIN customers c ON c.id = sr.customer_id
+                    WHERE c.phone IN ('555-987-6543', '5559876543')
+                );
+                """
+            )
+            cursor.execute("DELETE FROM crm_notes WHERE customer_id IN (SELECT id FROM customers WHERE phone IN ('555-987-6543', '5559876543'))")
+            cursor.execute("DELETE FROM service_requests WHERE customer_id IN (SELECT id FROM customers WHERE phone IN ('555-987-6543', '5559876543'))")
+            cursor.execute("DELETE FROM vehicles WHERE customer_id IN (SELECT id FROM customers WHERE phone IN ('555-987-6543', '5559876543'))")
+            cursor.execute("DELETE FROM customers WHERE phone IN ('555-987-6543', '5559876543')")
+
+            cursor.execute(
+                "INSERT INTO customers (name, phone) VALUES ('Booking Tester', '5559876543') RETURNING id;"
+            )
+            customer_id = cursor.fetchone()["id"]
+            cursor.execute(
+                """
+                INSERT INTO vehicles (customer_id, make, model, year)
+                VALUES (%s, 'Honda', 'Civic', 2018)
+                RETURNING id;
+                """,
+                (customer_id,),
+            )
+            vehicle_id = cursor.fetchone()["id"]
+            cursor.execute(
+                """
+                INSERT INTO service_requests (customer_id, vehicle_id, service_type, issue_description, status)
+                VALUES (%s, %s, 'Brakes', 'Grinding noise', 'pending')
+                RETURNING id;
+                """,
+                (customer_id, vehicle_id),
+            )
+            service_request_id = cursor.fetchone()["id"]
+            cursor.execute("UPDATE staff_agents SET email = 'john@example.com' WHERE id = 1;")
+            cursor.execute(
+                """
+                INSERT INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id)
+                VALUES (%s, false, 1)
+                ON CONFLICT (slot_datetime, staff_agent_id) DO NOTHING;
+                """,
+                (booking_time,),
+            )
+            cursor.execute(
+                """
+                INSERT INTO services (name, description, price_range, duration_minutes)
+                VALUES ('Brake Service & Repair', 'Brake inspection and repair', '$199-450 per axle', 90);
+                """
+            )
         conn.commit()
 
     payload = {
@@ -112,30 +160,53 @@ def test_appointment_booking_triggers_email(mock_send_email):
         "name": "book_appointment",
         "arguments": {
             "phone": "555-987-6543",
-            "appointment_datetime": "2026-06-25 14:00:00",
-            "service_type": "Brake Service & Repair"
-        }
+            "appointment_datetime": booking_time,
+            "service_type": "Brake Service & Repair",
+        },
     }
-    
+
     response = client.post("/api/v1/voice/tools", json=payload)
     assert response.status_code == 200
-    assert response.json()["result"]["success"] is True
-    
-    # Verify email notification was triggered with correct parameters
-    mock_send_email.assert_called_once()
-    args, kwargs = mock_send_email.call_args
-    assert args[0] == "appointment"
-    details = args[1]
-    assert details["customer_name"] == "Booking Tester"
-    assert details["phone"] == "5559876543"
-    assert details["vehicle"] == "2018 Honda Civic"
-    assert details["service_type"] == "Brake Service & Repair"
-    assert details["time"] == "2026-06-25 14:00:00"
+    result = response.json()["result"]
+    assert result["success"] is True
+    assert result["appointment_id"] == service_request_id
+    assert "queued" in result["message"].lower()
+    mock_send_email.assert_not_called()
 
-    # Clean up the inserted service to avoid side effects
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM services WHERE name = 'Brake Service & Repair';")
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                """
+                SELECT event_type, payload
+                FROM outbox_notifications
+                WHERE request_id = %s
+                ORDER BY id;
+                """,
+                (result["appointment_id"],),
+            )
+            queued = cursor.fetchall()
+
+    assert [row["event_type"] for row in queued] == [
+        "calendar_projection",
+        "booking_notification",
+    ]
+    booking_event = queued[-1]["payload"]
+    if isinstance(booking_event, str):
+        booking_event = json.loads(booking_event)
+
+    assert booking_event["agent_email"] == "john@example.com"
+    assert booking_event["booking_time_str"] == booking_time
+    assert booking_event["details"]["customer_name"] == "Booking Tester"
+    assert booking_event["details"]["phone"] == "5559876543"
+    assert booking_event["details"]["service_type"] == "Brake Service & Repair"
+
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("DELETE FROM outbox_notifications WHERE request_id = %s;", (result["appointment_id"],))
+            cursor.execute("DELETE FROM service_requests WHERE id = %s;", (service_request_id,))
+            cursor.execute("DELETE FROM vehicles WHERE id = %s;", (vehicle_id,))
+            cursor.execute("DELETE FROM customers WHERE id = %s;", (customer_id,))
+            cursor.execute("DELETE FROM services WHERE name = 'Brake Service & Repair';")
         conn.commit()
 
 @patch("serviceBot.services.encryption.decrypt_key")
@@ -271,4 +342,3 @@ def test_send_gmail_api_email_success(mock_get_token, mock_post):
     args, kwargs = mock_post.call_args
     assert "https://gmail.googleapis.com/gmail/v1/users/me/messages/send" in args[0]
     assert kwargs["headers"]["Authorization"] == "Bearer valid-token"
-

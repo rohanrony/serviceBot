@@ -1,6 +1,14 @@
 import pytest
+import datetime as dt_mod
 from unittest.mock import patch, MagicMock
 from serviceBot.db.queries import check_availability, book_appointment
+
+
+def _next_business_slot(hour: int = 16) -> str:
+    candidate = dt_mod.date.today() + dt_mod.timedelta(days=1)
+    while candidate.weekday() > 4:
+        candidate += dt_mod.timedelta(days=1)
+    return f"{candidate.isoformat()} {hour:02d}:00:00"
 
 @pytest.fixture
 def mock_db():
@@ -79,6 +87,8 @@ def mock_db():
             conn.commit()
             yield conn
 
+    seed_db(force=True)
+
 
 def test_check_availability_filters_past_slots(mock_db):
     """
@@ -104,7 +114,7 @@ def test_book_appointment_updates_is_booked(mock_db):
     """
     Assert book_appointment() updates the service request.
     """
-    slot = "2026-06-09 16:00:00"
+    slot = _next_business_slot()
     
     # Book the appointment
     appt_id = book_appointment(
@@ -132,9 +142,10 @@ def test_appointment_booking_node_success(mock_db):
     """
     from serviceBot.graph.nodes import appointment_booking_node
     from langchain_core.messages import HumanMessage, AIMessage
+    slot = _next_business_slot()
 
     initial_state = {
-        "messages": [HumanMessage(content="I want to book the slot at 2026-06-09 16:00:00")],
+        "messages": [HumanMessage(content=f"I want to book the slot at {slot}")],
         "customer": {
             "id": 1,
             "name": "Sarah Johnson",
@@ -163,6 +174,6 @@ def test_appointment_booking_node_success(mock_db):
         cursor.execute("SELECT booking_time, staff_agent_id FROM service_requests WHERE id = %s;", (1,))
         row = cursor.fetchone()
         assert row is not None
-        assert row["booking_time"] == "2026-06-09 16:00:00"
+        assert row["booking_time"] == slot
         assert row["staff_agent_id"] == 1
 

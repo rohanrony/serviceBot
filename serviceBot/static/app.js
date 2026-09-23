@@ -4035,7 +4035,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!isEdit) {
         const phoneVal = document.getElementById('sr-cust-phone').value;
         if (phoneVal) {
-          const digits = phoneVal.replace(/\\D/g, '');
+          const digits = phoneVal.replace(/\D/g, '');
           if (digits.length !== 10 && !(digits.length === 11 && digits.startsWith('1'))) {
             showToast('Phone number must be a valid 10-digit number.', 'warning');
             return;

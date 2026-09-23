@@ -1,3 +1,5 @@
+import datetime as dt_mod
+
 import pytest
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
@@ -9,6 +11,13 @@ from serviceBot.db.queries import (
     lookup_customer_by_phone,
 )
 from serviceBot.db.connection import get_db_connection, dict_cursor
+
+
+def _future_business_datetime(hour: int, days_ahead: int) -> str:
+    candidate = dt_mod.date.today() + dt_mod.timedelta(days=days_ahead)
+    while candidate.weekday() > 4:
+        candidate += dt_mod.timedelta(days=1)
+    return f"{candidate.isoformat()} {hour:02d}:00:00"
 
 
 
@@ -25,13 +34,14 @@ def test_create_uncataloged_issue_callback():
             conn.commit()
     print(f"--> STEP 2: AFTER CUSTOMER INSERT c_id={c_id}")
 
+    booking_time = _future_business_datetime(10, days_ahead=49)
     sr_id = create_service_request(
         customer_id=c_id,
         vehicle_details={"make": "Mustang", "model": "Fastback", "year": 1968},
         issue="Custom carburetor tuning and exhaust headers check",
         service_type="Custom Tuning",
         booking_type="callback",
-        booking_time="2026-06-25 10:00:00",
+        booking_time=booking_time,
         is_uncataloged=True,
         callback_priority="high",
         callback_number="555-999-8888"
@@ -47,6 +57,7 @@ def test_create_uncataloged_issue_callback():
             row = cursor.fetchone()
             assert row["is_uncataloged"] is True
             assert row["booking_type"] == "callback"
+            assert row["duration_minutes"] == 15
             assert row["callback_priority"] == "high"
             assert row["callback_number"] == "555-999-8888"
 
@@ -62,14 +73,15 @@ def test_create_dual_intake_request():
             c_id = cursor.fetchone()["id"]
             conn.commit()
 
+    booking_time = _future_business_datetime(14, days_ahead=56)
     res = create_dual_intake_request(
         customer_id=c_id,
         vehicle_details={"make": "Honda", "model": "Civic", "year": 2020},
         catalog_issue="Synthetic Oil Change",
         uncataloged_issue="Unexplained metallic clunking when turning left",
         service_type="Oil Change & Inspection",
-        time_slot="2026-08-10 14:00:00",
-        booking_time="2026-08-10 14:00:00",
+        time_slot=booking_time,
+        booking_time=booking_time,
         callback_priority="medium"
     )
 
@@ -85,6 +97,7 @@ def test_create_dual_intake_request():
             cursor.execute("SELECT * FROM service_requests WHERE id = %s;", (apt_id,))
             apt_row = cursor.fetchone()
             assert apt_row["booking_type"] == "appointment"
+            assert apt_row["duration_minutes"] == 30
             assert apt_row["is_uncataloged"] is False
 
             cursor.execute("SELECT * FROM service_requests WHERE id = %s;", (cb_id,))
@@ -106,13 +119,14 @@ def test_find_pending_callback_by_phone():
             conn.commit()
 
     # Create a pending callback
+    booking_time = _future_business_datetime(10, days_ahead=63)
     sr_id = create_service_request(
         customer_id=c_id,
         vehicle_details={"make": "Toyota", "model": "Camry", "year": 2018},
         issue="Dashboard rattle investigation",
         service_type="Diagnostic",
         booking_type="callback",
-        booking_time="2026-06-25 10:00:00",
+        booking_time=booking_time,
         is_uncataloged=True
     )
 

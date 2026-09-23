@@ -1,3 +1,5 @@
+import datetime as dt_mod
+
 import pytest
 from serviceBot.db.queries import (
     get_service_required_fields,
@@ -9,6 +11,13 @@ from serviceBot.services.sms_router import SMSNotificationRouter, format_time_sl
 from serviceBot.api.telephony import get_booking_details
 from serviceBot.db.connection import get_db_connection, dict_cursor
 from serviceBot.db.seed import seed_db
+
+
+def _future_business_datetime(hour: int = 9, days_ahead: int = 14) -> str:
+    candidate = dt_mod.date.today() + dt_mod.timedelta(days=days_ahead)
+    while candidate.weekday() > 4:
+        candidate += dt_mod.timedelta(days=1)
+    return f"{candidate.isoformat()} {hour:02d}:00:00"
 
 
 def test_get_service_required_fields_multi_service_sum():
@@ -44,7 +53,7 @@ def test_book_appointment_persists_duration_in_db():
     """Verify book_appointment stores total duration_minutes in service_requests table."""
     seed_db()
     multi_service = "Service Repair Estimates, Standard System Inspection"
-    time_slot = "2026-08-06 09:00:00"
+    time_slot = _future_business_datetime()
 
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:

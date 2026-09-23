@@ -21,6 +21,28 @@ from serviceBot.services.google_calendar import (
 logger = get_logger("outbox_worker")
 
 
+class NotificationDeliveryError(RuntimeError):
+    """Raised when an enabled notification dispatch failed and must be retried."""
+
+
+def _require_notification_delivery(result: dict) -> None:
+    """Treat actual channel failures as outbox failures; skips and queues are terminal states."""
+    failed = []
+    for dispatch in (result or {}).get("dispatches", []):
+        status = str(dispatch.get("status") or "").upper()
+        if status == "FAILED":
+            failed.append(dispatch.get("recipient") or "recipient")
+            continue
+        if dispatch.get("success") is False and not (
+            status.startswith("SKIPPED") or status == "QUEUED"
+        ):
+            failed.append(dispatch.get("recipient") or "recipient")
+    if failed:
+        raise NotificationDeliveryError(
+            f"Notification delivery failed for: {', '.join(sorted(set(failed)))}"
+        )
+
+
 def enqueue_outbox_event(cursor, event_type: str, request_id: Optional[int], payload: dict):
     """
     Inserts a new notification event into the outbox table within an existing DB transaction.
@@ -33,6 +55,50 @@ def enqueue_outbox_event(cursor, event_type: str, request_id: Optional[int], pay
         """,
         (event_type, request_id, json.dumps(payload))
     )
+
+
+def _set_calendar_projection_status(
+    request_id: Optional[int],
+    reservation_id: Optional[int],
+    status: str,
+    calendar_event_id: Optional[str],
+) -> None:
+    """Persist asynchronous provider state without changing the local reservation."""
+    if not request_id:
+        return
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                """
+                UPDATE service_requests
+                SET calendar_integration_status = %s,
+                    calendar_event_id = COALESCE(%s, calendar_event_id),
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s;
+                """,
+                (status, calendar_event_id, request_id),
+            )
+            if reservation_id:
+                cursor.execute(
+                    """
+                    UPDATE appointment_reservations
+                    SET calendar_integration_status = %s,
+                        calendar_event_id = COALESCE(%s, calendar_event_id),
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s;
+                    """,
+                    (status, calendar_event_id, reservation_id),
+                )
+            cursor.execute(
+                """
+                UPDATE mock_calendar_slots
+                SET calendar_integration_status = %s,
+                    calendar_event_id = COALESCE(%s, calendar_event_id),
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE service_request_id = %s;
+                """,
+                (status, calendar_event_id, request_id),
+            )
 
 
 def process_outbox_batch(batch_size: int = 10) -> int:
@@ -101,6 +167,13 @@ def process_outbox_batch(batch_size: int = 10) -> int:
                         )
                     except Exception as err:
                         err_msg = f"{type(err).__name__}: {str(err)}\n{traceback.format_exc()}"
+                        if event_type == "calendar_projection":
+                            try:
+                                _set_calendar_projection_status(
+                                    request_id, payload.get("reservation_id"), "FAILED", payload.get("calendar_event_id")
+                                )
+                            except Exception as status_err:
+                                logger.warning(f"Could not record calendar projection failure: {status_err}")
                         new_attempts = attempts + 1
 
                         # Hard failure error codes (30003, 30005, 30006, 21610) terminate retry loop immediately
@@ -174,7 +247,42 @@ def _dispatch_outbox_event(event_type: str, request_id: Optional[int], payload: 
     Executes external API side effects for a given outbox event.
     Raises an exception if any operation fails so the worker can retry or revert.
     """
-    if event_type == "agent_reassignment":
+    if event_type == "calendar_projection":
+        reservation_id = payload.get("reservation_id")
+        agent_id = payload.get("agent_id")
+        old_agent_id = payload.get("old_agent_id")
+        old_booking_time = payload.get("old_booking_time_str")
+        booking_time = payload.get("booking_time_str")
+        calendar_event_id = payload.get("calendar_event_id")
+        details = payload.get("details", {})
+        if not request_id or not reservation_id or not agent_id or not booking_time or not calendar_event_id:
+            raise ValueError("calendar_projection payload is missing a required reservation field")
+
+        if old_agent_id and old_booking_time:
+            try:
+                delete_agent_calendar_event(
+                    old_agent_id,
+                    str(old_booking_time)[:19],
+                    duration_minutes=payload.get("duration_minutes") or 60,
+                )
+            except Exception as exc:
+                logger.warning(f"Could not remove the previous calendar projection: {exc}")
+
+        created = create_agent_calendar_event(
+            agent_id=agent_id,
+            customer_name=details.get("customer_name") or "Customer",
+            service_type=details.get("service_type") or "Service Request",
+            issue_description=details.get("issue") or "",
+            slot_datetime_str=str(booking_time)[:19],
+            duration_minutes=payload.get("duration_minutes") or 60,
+            booking_type=payload.get("booking_type") or "appointment",
+            external_event_id=calendar_event_id,
+        )
+        if not created:
+            raise RuntimeError("Google Calendar did not confirm the booking projection")
+        _set_calendar_projection_status(request_id, reservation_id, "CREATED", calendar_event_id)
+
+    elif event_type == "agent_reassignment":
         old_agent_id = payload.get("old_agent_id")
         new_agent_id = payload.get("new_agent_id")
         booking_time_str = payload.get("booking_time_str")
@@ -245,7 +353,7 @@ def _dispatch_outbox_event(event_type: str, request_id: Optional[int], payload: 
             "previous_agent_name": old_agent_name
         }
         sms_router = SMSNotificationRouter()
-        sms_router.process_event(
+        sms_result = sms_router.process_event(
             event_type="REASSIGNED",
             appointment_id=request_id,
             customer_phone=details.get("phone"),
@@ -254,12 +362,15 @@ def _dispatch_outbox_event(event_type: str, request_id: Optional[int], payload: 
             booking_time=booking_time_str,
             details=reassign_details
         )
+        _require_notification_delivery(sms_result)
 
     elif event_type == "booking_notification":
         booking_type = payload.get("booking_type", "appointment")
+        notification_event = payload.get("notification_event")
         details = payload.get("details", {})
         agent_email = payload.get("agent_email")
         agent_name = payload.get("agent_name")
+        agent_phone = payload.get("agent_phone")
         slot_datetime_str = payload.get("booking_time_str")
 
         # Update notification_dispatched_at
@@ -271,7 +382,13 @@ def _dispatch_outbox_event(event_type: str, request_id: Optional[int], payload: 
 
         if agent_email:
             try:
-                send_booking_notification(booking_type, details, agent_email=agent_email)
+                send_booking_notification(
+                    "reschedule"
+                    if notification_event in {"RESCHEDULED", "RESCHEDULED_REASSIGNED"}
+                    else booking_type,
+                    details,
+                    agent_email=agent_email,
+                )
             except Exception as email_err:
                 logger.warning(f"[OUTBOX EMAIL WARNING] Failed to send booking notification email: {email_err}")
 
@@ -290,30 +407,41 @@ def _dispatch_outbox_event(event_type: str, request_id: Optional[int], payload: 
                 logger.warning(f"[OUTBOX CALENDAR WARNING] Failed to update admin calendar event: {cal_err}")
 
         try:
-            send_admin_notification(booking_type, details, agent_name=agent_name, agent_email=agent_email)
+            send_admin_notification(
+                "reschedule"
+                if notification_event in {"RESCHEDULED", "RESCHEDULED_REASSIGNED"}
+                else booking_type,
+                details,
+                agent_name=agent_name,
+                agent_email=agent_email,
+            )
         except Exception as admin_email_err:
             logger.warning(f"[OUTBOX EMAIL WARNING] Failed to send admin notification: {admin_email_err}")
 
         # SMS Notification (customer + agent)
-        agent_phone = payload.get("agent_phone")
         customer_phone = details.get("phone")
         if customer_phone or agent_phone:
-            sms_event = "BOOKING" if booking_type in ("appointment", "callback") else "RESCHEDULED"
+            sms_event = notification_event or (
+                "BOOKING" if booking_type in ("appointment", "callback") else "RESCHEDULED"
+            )
             from serviceBot.services.sms_router import SMSNotificationRouter
             sms_router = SMSNotificationRouter()
-            sms_router.process_event(
+            sms_result = sms_router.process_event(
                 event_type=sms_event,
                 appointment_id=request_id,
                 customer_phone=customer_phone,
                 agent_phone=agent_phone,
-                booking_time=slot_datetime_str
+                previous_agent_phone=payload.get("previous_agent_phone"),
+                booking_time=slot_datetime_str,
+                details=details,
             )
+            _require_notification_delivery(sms_result)
 
     elif event_type.startswith("sms_"):
         from serviceBot.services.sms_router import SMSNotificationRouter
         router_svc = SMSNotificationRouter()
         sms_event_type = payload.get("sms_event_type", event_type.replace("sms_", "").upper())
-        router_svc.process_event(
+        sms_result = router_svc.process_event(
             event_type=sms_event_type,
             appointment_id=request_id or payload.get("appointment_id"),
             customer_phone=payload.get("customer_phone"),
@@ -322,6 +450,7 @@ def _dispatch_outbox_event(event_type: str, request_id: Optional[int], payload: 
             admin_phone=payload.get("admin_phone"),
             booking_time=payload.get("booking_time")
         )
+        _require_notification_delivery(sms_result)
 
 
 def _execute_revert_compensation(conn, event_type: str, request_id: Optional[int], payload: dict, err_log: str):

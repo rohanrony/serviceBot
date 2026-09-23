@@ -1,6 +1,7 @@
 import pytest
 import time
 import zoneinfo
+import serviceBot.services.google_calendar as google_calendar
 from datetime import datetime
 from unittest.mock import patch, MagicMock
 from serviceBot.services.google_calendar import (
@@ -10,7 +11,6 @@ from serviceBot.services.google_calendar import (
     fetch_agent_events,
     list_upcoming_events,
     parse_google_datetime,
-    GoogleAuthException
 )
 from serviceBot.db.connection import get_db_connection
 from serviceBot.services.encryption import encrypt_key
@@ -29,7 +29,7 @@ def test_get_user_google_credentials_not_connected(mock_load):
         cursor.execute("DELETE FROM user_google_accounts WHERE agent_id = 999;")
         conn.commit()
         
-    with pytest.raises(GoogleAuthException) as excinfo:
+    with pytest.raises(google_calendar.GoogleAuthException) as excinfo:
         get_user_google_credentials(999)
     assert "not connected" in str(excinfo.value)
 

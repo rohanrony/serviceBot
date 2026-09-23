@@ -1,4 +1,5 @@
 from typing import Optional, Dict, Any, List, Tuple
+import json
 from serviceBot.db.connection import get_db_connection, dict_cursor
 from serviceBot.logger import get_logger, log_execution
 import datetime as dt_mod
@@ -77,32 +78,45 @@ def update_customer_name(customer_id: int, new_name: str) -> bool:
 
 def resolve_asap_callback_time(preferred_date: str = None) -> str:
     """
-    Finds the earliest available 15-minute slot for a callback request.
-    Returns a string in 'YYYY-MM-DD HH:MM:SS' format.
+    Finds the next operating 15-minute callback slot without consulting a provider.
+    Capacity is still claimed transactionally by BookingService after this hint is chosen.
     """
-    import sys, datetime as dt_mod
-    now = dt_mod.datetime.now()
-    minute = ((now.minute // 15) + 1) * 15
-    if minute >= 60:
-        now += dt_mod.timedelta(hours=1)
-        minute = 0
-    next_slot = now.replace(minute=minute, second=0, microsecond=0)
-    default_str = next_slot.strftime("%Y-%m-%d %H:%M:%S")
+    from zoneinfo import ZoneInfo
+    from serviceBot.services.calendar_sync import (
+        get_configured_business_days,
+        get_configured_business_hours,
+    )
 
-    if "pytest" in sys.modules or any("pytest" in arg for arg in sys.argv):
-        return default_str
+    business_days = set(get_configured_business_days())
+    business_hours = set(get_configured_business_hours())
+    if not business_days or not business_hours:
+        raise ValueError("No operating hours are configured for callbacks.")
 
-    try:
-        slots = check_availability(service_type="Callback", preferred_date=preferred_date, booking_type="callback")
-        if slots:
-            return slots[0]
-    except Exception:
-        pass
+    now = dt_mod.datetime.now(ZoneInfo("America/New_York")).replace(tzinfo=None)
+    candidate = now.replace(second=0, microsecond=0)
+    minutes_to_next_quarter = 15 - (candidate.minute % 15)
+    candidate += dt_mod.timedelta(minutes=minutes_to_next_quarter)
 
-    return default_str
+    if preferred_date:
+        try:
+            requested_date = dt_mod.date.fromisoformat(str(preferred_date)[:10])
+            if requested_date > candidate.date():
+                candidate = dt_mod.datetime.combine(
+                    requested_date,
+                    dt_mod.time(hour=min(business_hours)),
+                )
+        except ValueError:
+            pass
+
+    for _ in range(14 * 24 * 4):
+        if candidate.weekday() in business_days and candidate.hour in business_hours:
+            return candidate.strftime("%Y-%m-%d %H:%M:%S")
+        candidate += dt_mod.timedelta(minutes=15)
+
+    raise ValueError("No callback time is available in the next 14 days.")
 
 
-def create_service_request(
+def _create_service_request_legacy(
     customer_id: int,
     vehicle_details: dict,
     issue: str,
@@ -219,6 +233,83 @@ def create_service_request(
             logger.warning(f"Could not create calendar events for service request {sr_id}: {cal_err}")
 
     return sr_id
+
+
+def create_service_request(
+    customer_id: int,
+    vehicle_details: dict,
+    issue: str,
+    service_type: str = "Repair",
+    time_slot: str = None,
+    booking_type: str = None,
+    booking_time: str = None,
+    staff_agent_id: int = None,
+    is_uncataloged: bool = False,
+    linked_appointment_id: int = None,
+    callback_priority: str = "medium",
+    callback_number: str = None,
+) -> int:
+    """Create an intake request, reserving calendar capacity atomically when scheduled."""
+    fields = get_service_required_fields(service_type)
+    matched_service_name = fields["name"] if fields else (service_type or "Repair")
+    if not booking_time and time_slot:
+        from serviceBot.services.booking import BookingValidationError, parse_reservation_start
+
+        try:
+            parse_reservation_start(time_slot)
+        except BookingValidationError:
+            # A natural-language intake window is not a confirmed reservation.
+            pass
+        else:
+            booking_time = time_slot
+    if booking_time and booking_type is None:
+        booking_type = "appointment"
+
+    is_callback = booking_type in ("callback", "appointment_and_callback") or (
+        service_type and "callback" in str(service_type).lower()
+    )
+    if is_callback and booking_type != "appointment_and_callback":
+        booking_type = "callback"
+        if not booking_time or "asap" in str(booking_time).lower() or "as soon as possible" in str(booking_time).lower():
+            booking_time = resolve_asap_callback_time()
+
+    if booking_time and booking_type in ("appointment", "callback", "appointment_and_callback"):
+        from serviceBot.services.booking import BookingService, SLOT_MINUTES
+
+        duration_minutes = SLOT_MINUTES if is_callback else (
+            (fields.get("duration_minutes") or 60) if fields else 60
+        )
+        receipt = BookingService().reserve_or_create(
+            customer_id=customer_id,
+            service_request_id=None,
+            appointment_datetime=booking_time,
+            service_type=matched_service_name,
+            vehicle_details=vehicle_details,
+            issue_description=issue,
+            booking_type=booking_type,
+            duration_minutes=duration_minutes,
+            requested_agent_id=staff_agent_id,
+            is_uncataloged=is_uncataloged,
+            linked_appointment_id=linked_appointment_id,
+            callback_priority=callback_priority,
+            callback_number=callback_number,
+        )
+        return receipt.request_id
+
+    return _create_service_request_legacy(
+        customer_id=customer_id,
+        vehicle_details=vehicle_details,
+        issue=issue,
+        service_type=service_type,
+        time_slot=time_slot,
+        booking_type=booking_type,
+        booking_time=booking_time,
+        staff_agent_id=staff_agent_id,
+        is_uncataloged=is_uncataloged,
+        linked_appointment_id=linked_appointment_id,
+        callback_priority=callback_priority,
+        callback_number=callback_number,
+    )
 
 
 def find_pending_callback_by_phone(phone: str) -> dict:
@@ -423,6 +514,7 @@ def check_availability(service_type: str = None, preferred_date: str = None, boo
     from datetime import datetime, timedelta
     from concurrent.futures import ThreadPoolExecutor, as_completed
     from serviceBot.services.google_calendar import fetch_agent_events, parse_google_datetime
+    from serviceBot.services.booking import normalize_reservation_duration
 
     iso_date_str, time_window, start_time = parse_preferred_date_and_time(preferred_date)
 
@@ -437,6 +529,7 @@ def check_availability(service_type: str = None, preferred_date: str = None, boo
             if fields and fields.get("duration_minutes"):
                 duration_minutes = fields["duration_minutes"]
         valid_minutes = (0, 30)
+    duration_minutes = normalize_reservation_duration(duration_minutes)
 
     # --- Get all agents ---
     with get_db_connection() as conn:
@@ -477,12 +570,13 @@ def check_availability(service_type: str = None, preferred_date: str = None, boo
                 if events is not None:
                     agent_events_map[aid] = events
             except Exception as exc:
-                agent_events_map[aid] = []
+                agent_events_map[aid] = None
 
     def is_agent_free_live(agent_id: int, slot_dt_str: str) -> bool:
         """Returns True if agent has no Google Calendar event overlapping the slot."""
-        if agent_id not in agent_events_map:
-            return True
+        if agent_id not in agent_events_map or agent_events_map[agent_id] is None:
+            # A provider failure is unknown capacity, never a free slot.
+            return False
         slot_start = datetime.strptime(slot_dt_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=tz)
         slot_end = slot_start + timedelta(minutes=duration_minutes)
         for event in agent_events_map[agent_id]:
@@ -570,7 +664,7 @@ def validate_booking_time(booking_time: str) -> bool:
     return True
 
 
-def book_appointment(customer_id: int, service_request_id: int, appointment_datetime: str, service_type: str, vehicle_details: dict = None, booking_type: str = "appointment", duration_minutes: Optional[int] = None) -> int:
+def _book_appointment_legacy(customer_id: int, service_request_id: int, appointment_datetime: str, service_type: str, vehicle_details: dict = None, booking_type: str = "appointment", duration_minutes: Optional[int] = None) -> int:
     """
     Books an appointment or callback and sets staff_agent_id.
 
@@ -761,6 +855,43 @@ def book_appointment(customer_id: int, service_request_id: int, appointment_date
             return service_request_id
 
 
+def book_appointment(
+    customer_id: int,
+    service_request_id: int,
+    appointment_datetime: str,
+    service_type: str,
+    vehicle_details: dict = None,
+    booking_type: str = "appointment",
+    duration_minutes: Optional[int] = None,
+) -> int:
+    """Reserve a service request through the PostgreSQL authority, never a provider read."""
+    from serviceBot.services.booking import BookingService, SLOT_MINUTES
+
+    is_callback = booking_type == "callback" or (
+        service_type and "callback" in str(service_type).lower()
+    )
+    effective_type = "callback" if is_callback else "appointment"
+    fields = get_service_required_fields(service_type)
+    matched_service_name = fields["name"] if fields else (
+        service_type or ("Callback / Phone Consultation" if is_callback else "Repair")
+    )
+    effective_duration = (
+        SLOT_MINUTES
+        if is_callback
+        else int(duration_minutes or (fields.get("duration_minutes") if fields else 60))
+    )
+    receipt = BookingService().reserve_or_create(
+        customer_id=customer_id,
+        service_request_id=service_request_id,
+        appointment_datetime=appointment_datetime,
+        service_type=matched_service_name,
+        vehicle_details=vehicle_details,
+        booking_type=effective_type,
+        duration_minutes=effective_duration,
+    )
+    return receipt.request_id
+
+
 def find_best_service_match(query_name: str, services_list: list) -> dict:
     """
     Finds the best matching service from a list of services.
@@ -927,135 +1058,51 @@ def create_crm_note(call_id: str, customer_id: int, summary: str, transcript: st
 
 
 def create_callback_request(customer_id: int, service_request_id: int = None, preferred_time: str = None, vehicle_details: dict = None) -> int:
-    """
-    Inserts a callback request by updating the service_requests table.
-    """
-    # Enforce customer name, phone, and vehicle checks on the database/CRM request level
+    """Reserve callback capacity through the PostgreSQL booking authority."""
+    from serviceBot.services.booking import BookingService, SLOT_MINUTES
+
+    selected_request_id = None
+    service_type = "Callback / Phone Consultation"
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
-            # Check customer name
             cursor.execute("SELECT name, phone FROM customers WHERE id = %s;", (customer_id,))
-            cust = cursor.fetchone()
-            if not cust:
+            customer = cursor.fetchone()
+            if not customer:
                 raise ValueError("Customer record not found.")
-            if not cust["name"] or cust["name"] == "Unknown Customer" or cust["name"].strip() == "":
+            if not customer["name"] or customer["name"] in {"Unknown Customer", "Unknown"}:
                 raise ValueError("Customer name is required. Please collect the customer's name before arranging a callback.")
-            if not cust["phone"] or cust["phone"] == "Unknown" or len(cust["phone"].strip()) < 10:
+            if not customer["phone"] or customer["phone"] == "Unknown" or len(customer["phone"].strip()) < 10:
                 raise ValueError("Customer phone number is required and must be a valid 10-digit number.")
-                
-            # Resolve vehicle details
-            vehicle_id = None
-            if vehicle_details and vehicle_details.get("make") and vehicle_details.get("make") != "Unknown":
-                cursor.execute(
-                    "SELECT id FROM vehicles WHERE customer_id = %s AND make = %s AND model = %s AND year = %s;",
-                    (customer_id, vehicle_details.get("make"), vehicle_details.get("model"), vehicle_details.get("year"))
-                )
-                v_row = cursor.fetchone()
-                if v_row:
-                    vehicle_id = v_row["id"]
-                else:
-                    cursor.execute(
-                        "INSERT INTO vehicles (customer_id, make, model, year) VALUES (%s, %s, %s, %s) RETURNING id;",
-                        (customer_id, vehicle_details.get("make"), vehicle_details.get("model"), vehicle_details.get("year"))
-                    )
-                    vehicle_id = cursor.fetchone()["id"]
-
-            if not vehicle_id:
-                cursor.execute("SELECT id FROM vehicles WHERE customer_id = %s ORDER BY id DESC LIMIT 1;", (customer_id,))
-                v_row = cursor.fetchone()
-                vehicle_id = v_row["id"] if v_row else None
-                if not vehicle_id:
-                    cursor.execute("INSERT INTO vehicles (customer_id, make, model, year) VALUES (%s, 'Unknown', 'Unknown', 2000) RETURNING id;", (customer_id,))
-                    vehicle_id = cursor.fetchone()["id"]
-
-    if not preferred_time or "asap" in str(preferred_time).lower() or "as soon as possible" in str(preferred_time).lower():
-        cleaned_time = resolve_asap_callback_time()
-    else:
-        if not validate_booking_time(preferred_time):
-            raise ValueError(f"Callback preferred time {preferred_time} is outside company workhours (Monday to Friday, 7:00 AM to 6:00 PM).")
-        cleaned_time = preferred_time
-            
-    with get_db_connection() as conn:
-        with dict_cursor(conn) as cursor:
-            # If service_request_id is provided, verify it is not already booked
             if service_request_id:
                 cursor.execute(
-                    "SELECT id, booking_type FROM service_requests WHERE id = %s AND customer_id = %s;",
-                    (service_request_id, customer_id)
+                    """
+                    SELECT id, booking_type, service_type FROM service_requests
+                    WHERE id = %s AND customer_id = %s
+                    FOR UPDATE;
+                    """,
+                    (service_request_id, customer_id),
                 )
-                sr_row = cursor.fetchone()
-                if not sr_row or sr_row["booking_type"] is not None:
-                    service_request_id = None
-            
-            # If no service_request_id, find the last open raw intake one or create a new one
-            if not service_request_id:
-                cursor.execute(
-                    "SELECT id FROM service_requests WHERE customer_id = %s AND vehicle_id = %s AND status = 'pending' AND booking_type IS NULL ORDER BY id DESC LIMIT 1;",
-                    (customer_id, vehicle_id)
-                )
-                sr_row = cursor.fetchone()
-                if sr_row:
-                    service_request_id = sr_row["id"]
-                else:
-                    cb_fallback = "Phone consultation"
-                    cursor.execute(
-                        "INSERT INTO service_requests (customer_id, vehicle_id, service_type, issue_description, status) VALUES (%s, %s, 'Callback / Phone Consultation', %s, 'pending') RETURNING id;",
-                        (customer_id, vehicle_id, cb_fallback)
-                    )
-                    service_request_id = cursor.fetchone()["id"]
-                    
-            # Select a staff agent to assign the callback to (default to John Doe/ID 1 or the first agent)
-            cursor.execute("SELECT id FROM staff_agents ORDER BY id ASC LIMIT 1;")
-            agent_row = cursor.fetchone()
-            staff_agent_id = agent_row["id"] if agent_row else None
+                existing = cursor.fetchone()
+                if existing and existing.get("booking_type") in (None, "", "callback"):
+                    selected_request_id = existing["id"]
+                    service_type = existing.get("service_type") or service_type
 
-            cursor.execute(
-                "UPDATE service_requests SET booking_type = 'callback', booking_time = %s, staff_agent_id = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s;",
-                (cleaned_time, staff_agent_id, service_request_id)
-            )
+    if not preferred_time or "asap" in str(preferred_time).lower() or "as soon as possible" in str(preferred_time).lower():
+        reservation_time = resolve_asap_callback_time()
+    else:
+        reservation_time = str(preferred_time).strip()
 
-            # Create Google Calendar & Admin events
-            if staff_agent_id:
-                try:
-                    cursor.execute("SELECT name FROM customers WHERE id = %s;", (customer_id,))
-                    c_row = cursor.fetchone()
-                    c_name = c_row["name"] if c_row else "Customer"
-
-                    cursor.execute("SELECT service_type, issue_description FROM service_requests WHERE id = %s;", (service_request_id,))
-                    sr_info = cursor.fetchone()
-                    svc_type = sr_info["service_type"] if sr_info else "Callback / Phone Consultation"
-                    issue_desc = sr_info["issue_description"] if sr_info else "Callback requested."
-
-                    from serviceBot.services.google_calendar import create_agent_calendar_event
-                    create_agent_calendar_event(
-                        agent_id=staff_agent_id,
-                        customer_name=c_name,
-                        service_type=svc_type,
-                        issue_description=issue_desc,
-                        slot_datetime_str=cleaned_time if isinstance(cleaned_time, str) else cleaned_time.strftime("%Y-%m-%d %H:%M:%S"),
-                        duration_minutes=15,
-                        booking_type="callback"
-                    )
-
-                    from serviceBot.services.gmail import create_admin_calendar_event
-                    cursor.execute("SELECT name FROM staff_agents WHERE id = %s;", (staff_agent_id,))
-                    sa_row = cursor.fetchone()
-                    mech_name = sa_row["name"] if sa_row else f"Agent {staff_agent_id}"
-
-                    create_admin_calendar_event(
-                        customer_name=c_name,
-                        service_type=svc_type,
-                        issue_description=issue_desc,
-                        slot_datetime_str=cleaned_time if isinstance(cleaned_time, str) else cleaned_time.strftime("%Y-%m-%d %H:%M:%S"),
-                        mechanic_name=mech_name,
-                        duration_minutes=15,
-                        booking_type="callback"
-                    )
-                except Exception as cal_err:
-                    logger.warning(f"Could not create calendar events for callback {service_request_id}: {cal_err}")
-
-            conn.commit()
-            return service_request_id
+    receipt = BookingService().reserve_or_create(
+        customer_id=customer_id,
+        service_request_id=selected_request_id,
+        appointment_datetime=reservation_time,
+        service_type=service_type,
+        vehicle_details=vehicle_details,
+        issue_description="Callback requested / phone consultation.",
+        booking_type="callback",
+        duration_minutes=SLOT_MINUTES,
+    )
+    return receipt.request_id
 
 
 def get_customer_appointments(phone: str) -> list:
@@ -1097,6 +1144,8 @@ def get_available_slots_for_date(target_date_str: str, duration_minutes: int = 6
     import zoneinfo
     from unittest.mock import Mock
     from serviceBot.services.google_calendar import fetch_agent_events, parse_google_datetime, is_agent_free
+    from serviceBot.services.booking import normalize_reservation_duration
+    duration_minutes = normalize_reservation_duration(duration_minutes)
 
     clean_date_str = str(target_date_str).strip()
     if "T" in clean_date_str:
@@ -1166,7 +1215,7 @@ def get_available_slots_for_date(target_date_str: str, duration_minutes: int = 6
             def _load_agent_busy(agent_id):
                 events = fetch_agent_events(agent_id, start_iso, end_iso)
                 if events is None:
-                    return []
+                    return None
                 ranges = []
                 for ev in events:
                     s_dt = parse_google_datetime(ev.get("start"), tz)
@@ -1185,7 +1234,7 @@ def get_available_slots_for_date(target_date_str: str, duration_minutes: int = 6
                     try:
                         agent_busy_ranges[aid] = future.result()
                     except Exception:
-                        agent_busy_ranges[aid] = []
+                        agent_busy_ranges[aid] = None
 
             current_slot_dt = dt_mod.datetime.combine(target_date, dt_mod.time(7, 0))
             end_of_day = dt_mod.datetime.combine(target_date, dt_mod.time(17, 0))
@@ -1198,7 +1247,9 @@ def get_available_slots_for_date(target_date_str: str, duration_minutes: int = 6
                 
                 for agent in agents:
                     aid = agent["id"]
-                    busy_ranges = agent_busy_ranges.get(aid, [])
+                    busy_ranges = agent_busy_ranges.get(aid)
+                    if busy_ranges is None:
+                        continue
                     is_busy = False
                     for b_start, b_end in busy_ranges:
                         if slot_start_localized < b_end and slot_end_localized > b_start:
@@ -1220,7 +1271,7 @@ def get_available_slots_for_date(target_date_str: str, duration_minutes: int = 6
     return available_slots
 
 
-def reschedule_appointment(
+def _reschedule_appointment_legacy(
     appointment_id: int, 
     new_datetime: str, 
     customer_consent_obtained: bool = True, 
@@ -1355,6 +1406,24 @@ def reschedule_appointment(
             return True
 
 
+def reschedule_appointment(
+    appointment_id: int,
+    new_datetime: str,
+    customer_consent_obtained: bool = True,
+    triggered_by: str = "system",
+) -> bool:
+    """Move an appointment atomically, retaining the previous slot on conflict."""
+    from serviceBot.services.booking import BookingService
+
+    BookingService().reschedule(
+        request_id=appointment_id,
+        new_datetime=new_datetime,
+        customer_consent_obtained=customer_consent_obtained,
+        triggered_by=triggered_by,
+    )
+    return True
+
+
 ALLOWED_TRANSITIONS = {
     "pending": {"confirmed", "in_progress", "completed", "cancelled"},
     "confirmed": {"in_progress", "completed", "cancelled"},
@@ -1418,23 +1487,34 @@ def update_service_request_status(request_id: int, status: str, triggered_by: st
                     (request_id, current_status, normalized_status, triggered_by, notes)
                 )
 
-                # Dispatch customer notifications for critical statuses (cancelled and rescheduled)
-                try:
-                    if normalized_status == 'cancelled':
-                        event_type = "CANCELLED_BY_CUSTOMER" if raw_status == "cancelled_by_customer" or triggered_by == "customer" else "CANCELLED_BY_ADMIN"
-                        from serviceBot.services.sms_router import SMSNotificationRouter
-                        SMSNotificationRouter().process_event(event_type=event_type, appointment_id=request_id)
-                    elif raw_status == 'rescheduled':
-                        from serviceBot.services.sms_router import SMSNotificationRouter
-                        SMSNotificationRouter().process_event(event_type="RESCHEDULED", appointment_id=request_id)
-                except Exception as notify_err:
-                    import logging
-                    logging.getLogger("serviceBot").error(f"Error dispatching status change notification for SR #{request_id}: {notify_err}")
+                notification_event = None
+                if normalized_status == 'cancelled':
+                    notification_event = "CANCELLED_BY_CUSTOMER" if raw_status == "cancelled_by_customer" or triggered_by == "customer" else "CANCELLED_BY_ADMIN"
+                elif raw_status == 'rescheduled':
+                    notification_event = "RESCHEDULED"
+
+                if notification_event:
+                    cursor.execute(
+                        """
+                        INSERT INTO outbox_notifications
+                        (event_type, request_id, payload, status, next_retry_at)
+                        VALUES ('sms_status_change', %s, %s, 'PENDING', CURRENT_TIMESTAMP);
+                        """,
+                        (
+                            request_id,
+                            json.dumps(
+                                {
+                                    "sms_event_type": notification_event,
+                                    "appointment_id": request_id,
+                                }
+                            ),
+                        ),
+                    )
 
             return dict(row)
 
 
-def assign_staff_agent_to_service_request(request_id: int, staff_agent_id: int = None) -> dict:
+def _assign_staff_agent_to_service_request_legacy(request_id: int, staff_agent_id: int = None) -> dict:
     """
     Assigns or updates the assigned staff agent / technician for a service request.
     Triggers slot booking changes in mock_calendar_slots, cancels the old agent's Google Calendar invite,
@@ -1538,7 +1618,7 @@ def assign_staff_agent_to_service_request(request_id: int, staff_agent_id: int =
 
 
 
-def get_available_agents_for_request(request_id: int) -> list:
+def _get_available_agents_for_request_legacy(request_id: int) -> list:
     """
     Fetches all staff agents and checks their availability for the scheduled booking_time/time_slot
     of the given service request.
@@ -1616,6 +1696,223 @@ def get_available_agents_for_request(request_id: int) -> list:
 
     return agents
 
+
+def assign_staff_agent_to_service_request(request_id: int, staff_agent_id: int = None) -> dict:
+    """Assign scheduled work by moving its durable local reservation atomically."""
+    from serviceBot.services.booking import (
+        BUSINESS_TZ,
+        BookingValidationError,
+        BookingService,
+        parse_reservation_start,
+    )
+
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                """
+                SELECT sr.id, sr.status, sr.staff_agent_id, sr.booking_time, sr.time_slot,
+                       sr.updated_at, ar.id AS reservation_id,
+                       ar.staff_agent_id AS reservation_agent_id,
+                       ar.starts_at AS reservation_start
+                FROM service_requests sr
+                LEFT JOIN appointment_reservations ar
+                  ON ar.service_request_id = sr.id AND ar.status = 'ACTIVE'
+                WHERE sr.id = %s;
+                """,
+                (request_id,),
+            )
+            request = cursor.fetchone()
+            if not request:
+                raise ValueError(f"Service request with ID {request_id} was not found.")
+
+            current_status = (request.get("status") or "pending").lower()
+            if current_status in {"completed", "done", "cancelled", "cancelled_by_customer"}:
+                raise ValueError(
+                    f"Cannot reassign agent for service request #{request_id} as it is marked as {current_status}."
+                )
+            if staff_agent_id is not None:
+                cursor.execute("SELECT id FROM staff_agents WHERE id = %s;", (staff_agent_id,))
+                if not cursor.fetchone():
+                    raise ValueError(f"Staff agent with ID {staff_agent_id} does not exist.")
+
+    reservation_time = request.get("reservation_start") or request.get("booking_time") or request.get("time_slot")
+    starts_at = None
+    if reservation_time and str(reservation_time).upper() != "ASAP":
+        try:
+            starts_at = parse_reservation_start(reservation_time)
+        except BookingValidationError:
+            starts_at = None
+
+    active_reservation = request.get("reservation_id") is not None
+    requires_reservation = active_reservation or (
+        starts_at is not None
+        and starts_at > dt_mod.datetime.now(BUSINESS_TZ).replace(tzinfo=None)
+    )
+    if requires_reservation:
+        if staff_agent_id is None:
+            raise BookingValidationError("A scheduled reservation must have an assigned staff agent.")
+        if (
+            active_reservation
+            and request.get("staff_agent_id") == staff_agent_id
+            and request.get("reservation_agent_id") == staff_agent_id
+        ):
+            return {
+                "id": request_id,
+                "staff_agent_id": staff_agent_id,
+                "status": request.get("status"),
+                "updated_at": request.get("updated_at"),
+            }
+        if starts_at is None:
+            raise BookingValidationError("Scheduled reservation is missing a valid booking time.")
+        receipt = BookingService().reserve_existing(
+            request_id=request_id,
+            appointment_datetime=starts_at,
+            requested_agent_id=staff_agent_id,
+            allow_replace=True,
+            customer_consent_obtained=True,
+            triggered_by="portal_staff_reassignment",
+        )
+        return {
+            "id": receipt.request_id,
+            "staff_agent_id": receipt.staff_agent_id,
+            "status": request.get("status"),
+            "updated_at": request.get("updated_at"),
+        }
+
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                """
+                UPDATE service_requests
+                SET staff_agent_id = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                RETURNING id, staff_agent_id, status, updated_at;
+                """,
+                (staff_agent_id, request_id),
+            )
+            row = cursor.fetchone()
+            if not row:
+                raise ValueError(f"Service request with ID {request_id} was not found.")
+            return dict(row)
+
+
+def get_available_agents_for_request(request_id: int) -> list:
+    """Return candidates whose local reservation and provider state both permit assignment."""
+    from serviceBot.services.booking import (
+        BookingValidationError,
+        normalize_reservation_duration,
+        parse_reservation_start,
+        validate_bookable_window,
+    )
+    from serviceBot.services.google_calendar import fetch_agent_events, parse_google_datetime
+
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                """
+                SELECT id, booking_time, time_slot, duration_minutes, booking_start_at,
+                       booking_end_at
+                FROM service_requests
+                WHERE id = %s;
+                """,
+                (request_id,),
+            )
+            request = cursor.fetchone()
+            if not request:
+                raise ValueError(f"Service request with ID {request_id} was not found.")
+            cursor.execute(
+                "SELECT id, name, role, email, phone_number FROM staff_agents ORDER BY id ASC;"
+            )
+            agents = [dict(row) for row in cursor.fetchall()]
+
+    booking_time = request.get("booking_start_at") or request.get("booking_time") or request.get("time_slot")
+    if not booking_time or str(booking_time).upper() == "ASAP":
+        for agent in agents:
+            agent["is_available"] = True
+            agent["reason"] = "Available"
+        return agents
+
+    try:
+        starts_at = parse_reservation_start(booking_time)
+        duration_minutes = normalize_reservation_duration(
+            request.get("duration_minutes") or 60
+        )
+        segments = validate_bookable_window(starts_at, duration_minutes)
+    except BookingValidationError as exc:
+        for agent in agents:
+            agent["is_available"] = False
+            agent["reason"] = str(exc)
+        return agents
+
+    ends_at = starts_at + dt_mod.timedelta(minutes=duration_minutes)
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                """
+                SELECT DISTINCT staff_agent_id
+                FROM appointment_reservations
+                WHERE service_request_id != %s
+                  AND status = 'ACTIVE'
+                  AND starts_at < %s
+                  AND ends_at > %s;
+                """,
+                (request_id, ends_at, starts_at),
+            )
+            locally_reserved = {row["staff_agent_id"] for row in cursor.fetchall()}
+            cursor.execute(
+                """
+                SELECT DISTINCT staff_agent_id
+                FROM mock_calendar_slots
+                WHERE slot_datetime = ANY(%s)
+                  AND (reservation_status IN ('RESERVED', 'BLOCKED') OR is_booked = TRUE)
+                  AND service_request_id IS DISTINCT FROM %s;
+                """,
+                (segments, request_id),
+            )
+            locally_reserved.update(
+                row["staff_agent_id"] for row in cursor.fetchall()
+            )
+
+    try:
+        from zoneinfo import ZoneInfo
+
+        timezone = ZoneInfo("America/New_York")
+    except Exception:
+        timezone = dt_mod.timezone(dt_mod.timedelta(hours=-4))
+    provider_start = starts_at.replace(tzinfo=timezone)
+    provider_end = ends_at.replace(tzinfo=timezone)
+
+    for agent in agents:
+        agent_id = agent["id"]
+        try:
+            events = fetch_agent_events(
+                agent_id,
+                provider_start.isoformat(),
+                provider_end.isoformat(),
+            )
+        except Exception:
+            events = None
+
+        if events is None:
+            agent["is_available"] = False
+            agent["reason"] = "Calendar state unavailable"
+            continue
+        if agent_id in locally_reserved:
+            agent["is_available"] = False
+            agent["reason"] = "Reserved locally"
+            continue
+
+        is_busy = False
+        for event in events:
+            event_start = parse_google_datetime(event.get("start") or {}, timezone)
+            event_end = parse_google_datetime(event.get("end") or {}, timezone)
+            if event_start and event_end and provider_start < event_end and provider_end > event_start:
+                is_busy = True
+                break
+        agent["is_available"] = not is_busy
+        agent["reason"] = "Busy in Google Calendar" if is_busy else "Available"
+
+    return agents
 
 # --- SMS Notification System & Two-Way Handoff Queries ---
 
@@ -1791,9 +2088,11 @@ def log_sms_dispatch(
     error_code: str = None,
     error_message: str = None,
     retry_count: int = 0,
-    scheduled_send_at: dt_mod.datetime = None
+    scheduled_send_at: dt_mod.datetime = None,
+    body: str = None,
+    channel: str = "SMS",
 ) -> int:
-    """Logs an SMS dispatch attempt into the sms_log table."""
+    """Logs a channel-specific notification dispatch attempt into sms_log."""
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             valid_appt_id = None
@@ -1805,14 +2104,15 @@ def log_sms_dispatch(
             cursor.execute(
                 """
                 INSERT INTO sms_log 
-                (appointment_id, recipient_type, recipient_phone, template_type, twilio_message_sid, status, error_code, error_message, retry_count, scheduled_send_at, sent_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (appointment_id, recipient_type, recipient_phone, template_type, twilio_message_sid, status, error_code, error_message, retry_count, scheduled_send_at, sent_at, body, channel)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id;
                 """,
                 (
                     valid_appt_id, recipient_type, recipient_phone, template_type,
                     twilio_message_sid, status, error_code, error_message, retry_count,
-                    scheduled_send_at, dt_mod.datetime.utcnow() if status in ("SENT", "DELIVERED") else None
+                    scheduled_send_at, dt_mod.datetime.utcnow() if status in ("SENT", "DELIVERED") else None,
+                    body, (channel or "SMS").upper(),
                 )
             )
             return cursor.fetchone()["id"]
@@ -1996,7 +2296,7 @@ def get_due_queued_sms_logs() -> list:
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             cursor.execute(
-                "SELECT * FROM sms_log WHERE status = 'QUEUED' AND scheduled_send_at <= CURRENT_TIMESTAMP ORDER BY scheduled_send_at ASC;"
+                "SELECT * FROM sms_log WHERE status = 'QUEUED' AND scheduled_send_at <= (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') ORDER BY scheduled_send_at ASC;"
             )
             return [dict(r) for r in cursor.fetchall()]
 

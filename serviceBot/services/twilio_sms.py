@@ -1,6 +1,11 @@
 import os
 import re
-from serviceBot.db.queries import get_sms_config, is_phone_whitelisted, log_sms_dispatch
+from serviceBot.db.queries import (
+    get_sms_config,
+    is_phone_whitelisted,
+    log_sms_dispatch,
+    update_sms_log_status,
+)
 from serviceBot.logger import get_logger
 
 logger = get_logger("services.twilio_sms")
@@ -47,34 +52,86 @@ class TwilioSMSClient:
             "fallback_qr_url": fallback_qr_url
         }
 
-    def send_whatsapp(self, to: str, body: str, template_type: str = "whatsapp_verification", appointment_id: int = None) -> dict:
-        """Dispatches an explicit WhatsApp test/verification message."""
+    def send_whatsapp(
+        self,
+        to: str,
+        body: str,
+        template_type: str = "whatsapp_verification",
+        appointment_id: int = None,
+        recipient_type: str = "customer",
+        dispatch_log_id: int = None,
+    ) -> dict:
+        """Dispatch a WhatsApp message and persist it as WhatsApp, not SMS."""
         clean_to = to.strip() if to else ""
         if not clean_to.startswith("whatsapp:"):
             clean_to = f"whatsapp:{clean_to}"
-        return self.send_sms(to=clean_to, body=body, template_type=template_type, appointment_id=appointment_id)
+        return self.send_sms(
+            to=clean_to,
+            body=body,
+            template_type=template_type,
+            appointment_id=appointment_id,
+            recipient_type=recipient_type,
+            channel="WHATSAPP",
+            dispatch_log_id=dispatch_log_id,
+        )
 
-    def send_sms(self, to: str, body: str, template_type: str = "notification", appointment_id: int = None) -> dict:
+    def send_sms(
+        self,
+        to: str,
+        body: str,
+        template_type: str = "notification",
+        appointment_id: int = None,
+        recipient_type: str = "customer",
+        channel: str = "SMS",
+        dispatch_log_id: int = None,
+    ) -> dict:
+        """Dispatch one SMS/WhatsApp message and update its durable log state."""
         config = get_sms_config()
         env_mode = (config.get("environment") or os.getenv("ENVIRONMENT") or "PRODUCTION").upper()
-
-        # Clean destination phone
         clean_to = to.strip() if to else ""
+        normalized_channel = (channel or "SMS").upper()
+
+        def record(
+            status: str,
+            *,
+            sid: str = None,
+            error_code: str = None,
+            error_message: str = None,
+        ) -> int:
+            if dispatch_log_id:
+                update_sms_log_status(
+                    log_id=dispatch_log_id,
+                    status=status,
+                    twilio_message_sid=sid,
+                    error_code=error_code,
+                    error_message=error_message,
+                    increment_retry=status == "FAILED",
+                )
+                return dispatch_log_id
+            return log_sms_dispatch(
+                appointment_id=appointment_id,
+                recipient_type=recipient_type,
+                recipient_phone=clean_to,
+                template_type=template_type,
+                status=status,
+                twilio_message_sid=sid,
+                error_code=error_code,
+                error_message=error_message,
+                body=body,
+                channel=normalized_channel,
+            )
 
         # Test Whitelist validation in STAGING/TEST environment
         if env_mode in ("STAGING", "TEST") and not is_phone_whitelisted(clean_to):
-            log_id = log_sms_dispatch(
-                appointment_id=appointment_id,
-                recipient_type="customer",
-                recipient_phone=clean_to,
-                template_type=template_type,
-                status="SKIPPED_NOT_WHITELISTED",
-                error_message="Phone number is not present in test whitelist."
+            log_id = record(
+                "SKIPPED_NOT_WHITELISTED",
+                error_message="Phone number is not present in test whitelist.",
             )
             return {
                 "success": False,
                 "status": "SKIPPED_NOT_WHITELISTED",
                 "log_id": log_id,
+                "channel": normalized_channel,
                 "error_message": "Phone number is not whitelisted for staging."
             }
 
@@ -83,19 +140,13 @@ class TwilioSMSClient:
 
         if is_testing:
             mock_sid = f"SMmock_{os.urandom(8).hex()}"
-            log_id = log_sms_dispatch(
-                appointment_id=appointment_id,
-                recipient_type="customer",
-                recipient_phone=clean_to,
-                template_type=template_type,
-                status="SENT",
-                twilio_message_sid=mock_sid
-            )
+            log_id = record("SENT", sid=mock_sid)
             return {
                 "success": True,
                 "status": "SENT",
                 "sid": mock_sid,
-                "log_id": log_id
+                "log_id": log_id,
+                "channel": normalized_channel,
             }
 
         # Real Twilio API Call
@@ -104,11 +155,10 @@ class TwilioSMSClient:
             client = Client(self.account_sid, self.auth_token)
 
             # Handle channel formatting for SMS vs WhatsApp
-            target_to = clean_to
+            target_to = clean_to.replace("whatsapp:", "").strip()
             from_num = self.from_number.strip() if self.from_number else ""
 
-            is_whatsapp_sender = from_num.startswith("whatsapp:") or "4155238886" in from_num
-            if is_whatsapp_sender or target_to.startswith("whatsapp:"):
+            if normalized_channel == "WHATSAPP":
                 if not target_to.startswith("whatsapp:"):
                     target_to = f"whatsapp:{target_to}"
                 if not from_num.startswith("whatsapp:"):
@@ -126,20 +176,14 @@ class TwilioSMSClient:
 
             msg = client.messages.create(**kwargs)
             
-            log_id = log_sms_dispatch(
-                appointment_id=appointment_id,
-                recipient_type="customer",
-                recipient_phone=clean_to,
-                template_type=template_type,
-                status="SENT",
-                twilio_message_sid=msg.sid
-            )
-            logger.info(f"Twilio SMS dispatched successfully to {clean_to} (SID: {msg.sid}).")
+            log_id = record("SENT", sid=msg.sid)
+            logger.info("Twilio %s dispatched successfully (SID: %s).", normalized_channel, msg.sid)
             return {
                 "success": True,
                 "status": "SENT",
                 "sid": msg.sid,
-                "log_id": log_id
+                "log_id": log_id,
+                "channel": normalized_channel,
             }
         except Exception as e:
             error_str = str(e)
@@ -148,20 +192,13 @@ class TwilioSMSClient:
             if match:
                 error_code = match.group(1)
 
-            log_id = log_sms_dispatch(
-                appointment_id=appointment_id,
-                recipient_type="customer",
-                recipient_phone=clean_to,
-                template_type=template_type,
-                status="FAILED",
-                error_code=error_code,
-                error_message=error_str
-            )
-            logger.error(f"Twilio SMS dispatch failed to {clean_to} (code {error_code}): {error_str}", exc_info=e)
+            log_id = record("FAILED", error_code=error_code, error_message=error_str)
+            logger.error("Twilio %s dispatch failed (code %s): %s", normalized_channel, error_code, error_str, exc_info=e)
             return {
                 "success": False,
                 "status": "FAILED",
                 "error_code": error_code,
                 "error_message": error_str,
-                "log_id": log_id
+                "log_id": log_id,
+                "channel": normalized_channel,
             }

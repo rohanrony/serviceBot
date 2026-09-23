@@ -21,39 +21,43 @@ def create_test_data(cust_name="Notification Test User", phone="+15551234567"):
             sr_id = cursor.fetchone()["id"]
             return cust_id, veh_id, sr_id
 
-def test_status_update_triggers_notification_for_cancelled_and_rescheduled():
+def test_status_update_queues_notifications_for_cancelled_and_rescheduled():
     cust_id, veh_id, sr_id = create_test_data("Cancelled Test User", "+15551234567")
 
     with patch("serviceBot.services.sms_router.SMSNotificationRouter.process_event") as mock_process_event:
-        # 1. Status change to 'cancelled' should trigger CANCELLED_BY_ADMIN
         update_service_request_status(sr_id, "cancelled", triggered_by="admin")
-        mock_process_event.assert_called_once_with(
-            event_type="CANCELLED_BY_ADMIN",
-            appointment_id=sr_id
-        )
+        mock_process_event.assert_not_called()
+
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT event_type, payload ->> 'sms_event_type' AS sms_event_type FROM outbox_notifications WHERE request_id = %s ORDER BY id;", (sr_id,))
+            assert cursor.fetchall() == [{"event_type": "sms_status_change", "sms_event_type": "CANCELLED_BY_ADMIN"}]
+
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("UPDATE service_requests SET status = 'pending' WHERE id = %s;", (sr_id,))
 
     with patch("serviceBot.services.sms_router.SMSNotificationRouter.process_event") as mock_process_event:
-        # Reset status back to pending to allow transition to rescheduled
-        with get_db_connection() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute("UPDATE service_requests SET status = 'pending' WHERE id = %s;", (sr_id,))
-
-        # 2. Status change to 'rescheduled' should trigger RESCHEDULED
         update_service_request_status(sr_id, "rescheduled", triggered_by="admin")
-        mock_process_event.assert_called_once_with(
-            event_type="RESCHEDULED",
-            appointment_id=sr_id
-        )
+        mock_process_event.assert_not_called()
+
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT payload ->> 'sms_event_type' AS sms_event_type FROM outbox_notifications WHERE request_id = %s ORDER BY id;", (sr_id,))
+            assert [row["sms_event_type"] for row in cursor.fetchall()] == ["CANCELLED_BY_ADMIN", "RESCHEDULED"]
+
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("UPDATE service_requests SET status = 'pending' WHERE id = %s;", (sr_id,))
 
     with patch("serviceBot.services.sms_router.SMSNotificationRouter.process_event") as mock_process_event:
-        # Reset status back to pending
-        with get_db_connection() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute("UPDATE service_requests SET status = 'pending' WHERE id = %s;", (sr_id,))
-
-        # 3. Status change to 'confirmed' or 'in_progress' should NOT trigger notification
         update_service_request_status(sr_id, "confirmed", triggered_by="admin")
         mock_process_event.assert_not_called()
+
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT COUNT(*) AS total FROM outbox_notifications WHERE request_id = %s;", (sr_id,))
+            assert cursor.fetchone()["total"] == 2
 
 def test_sms_router_resolves_customer_phone_from_db():
     router = SMSNotificationRouter()
