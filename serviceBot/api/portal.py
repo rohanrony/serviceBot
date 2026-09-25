@@ -890,20 +890,9 @@ class ServiceRequestEdit(BaseModel):
 
 
 @router.get("/calls")
-async def get_calls(limit: Optional[int] = None, offset: Optional[int] = None, sync: bool = False):
+async def get_calls(limit: Optional[int] = None, offset: Optional[int] = None):
     from serviceBot.db.connection import get_db_connection, dict_cursor
     import re
-
-    # Opportunistically sync any unsynced calls from ElevenLabs in background
-    try:
-        from serviceBot.services.call_sync import sync_recent_elevenlabs_calls
-        if sync:
-            sync_recent_elevenlabs_calls(limit=10)
-        else:
-            import asyncio
-            asyncio.create_task(asyncio.to_thread(sync_recent_elevenlabs_calls, limit=10))
-    except Exception:
-        pass
 
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
