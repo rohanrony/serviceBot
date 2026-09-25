@@ -46,6 +46,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"[reminder_worker] Failed to launch reminder worker: {e}", exc_info=e)
 
+    try:
+        from serviceBot.services.call_sync import start_call_sync_worker
+        start_call_sync_worker(interval_seconds=60)
+        logger.info("[call_sync_worker] Started ElevenLabs call sync worker thread.")
+    except Exception as e:
+        logger.warning(f"[call_sync_worker] Failed to launch call sync worker: {e}", exc_info=e)
+
     yield
 
 
@@ -92,6 +99,17 @@ async def cron_process_reminders(authorization: str = Header(None)):
     logger.info("[cron_reminders] Executing cron SMS reminder check...")
     sent = check_and_send_due_reminders()
     return {"status": "success", "reminders_sent": sent}
+
+
+@app.post("/api/cron/calls")
+@app.get("/api/cron/calls")
+async def cron_sync_calls(authorization: str = Header(None)):
+    """Trigger ElevenLabs call synchronization for serverless platforms."""
+    _verify_cron_auth(authorization)
+    from serviceBot.services.call_sync import sync_recent_elevenlabs_calls
+    logger.info("[cron_calls] Executing ElevenLabs call synchronization...")
+    synced = sync_recent_elevenlabs_calls()
+    return {"status": "success", "synced_calls": synced}
 
 
 app.include_router(telephony_router)

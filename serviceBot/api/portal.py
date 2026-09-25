@@ -890,15 +890,28 @@ class ServiceRequestEdit(BaseModel):
 
 
 @router.get("/calls")
-async def get_calls(limit: Optional[int] = None, offset: Optional[int] = None):
+async def get_calls(limit: Optional[int] = None, offset: Optional[int] = None, sync: bool = False):
     from serviceBot.db.connection import get_db_connection, dict_cursor
     import re
+
+    # Opportunistically sync any unsynced calls from ElevenLabs in background
+    try:
+        from serviceBot.services.call_sync import sync_recent_elevenlabs_calls
+        if sync:
+            sync_recent_elevenlabs_calls(limit=10)
+        else:
+            import asyncio
+            asyncio.create_task(asyncio.to_thread(sync_recent_elevenlabs_calls, limit=10))
+    except Exception:
+        pass
+
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             query = """
-                SELECT cn.id, cn.call_id, c.name AS customer_name, c.phone, cn.summary, cn.transcript, cn.created_at
+                SELECT cn.id, cn.call_id, COALESCE(c.name, 'Unknown Caller') AS customer_name,
+                       COALESCE(c.phone, '--') AS phone, cn.summary, cn.transcript, cn.created_at
                 FROM crm_notes cn
-                JOIN customers c ON cn.customer_id = c.id
+                LEFT JOIN customers c ON cn.customer_id = c.id
                 ORDER BY cn.created_at DESC
             """
             params = []
