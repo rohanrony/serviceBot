@@ -16,44 +16,48 @@ from serviceBot.db.connection import get_db_connection
 from serviceBot.services.encryption import encrypt_key
 
 @patch("serviceBot.services.google_calendar.load_config")
-def test_get_user_google_credentials_not_connected(mock_load):
+@patch("serviceBot.services.google_calendar.get_db_connection")
+def test_get_user_google_credentials_not_connected(mock_db, mock_load):
     """Verify get_user_google_credentials raises GoogleAuthException if no account connected."""
     mock_load.return_value = {
         "gmail_client_id": encrypt_key("dummy_id"),
         "gmail_client_secret": encrypt_key("dummy_secret")
     }
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_cursor.fetchone.return_value = None
+    mock_conn.__enter__.return_value = mock_conn
+    mock_cursor.__enter__.return_value = mock_cursor
+    mock_db.return_value = mock_conn
     
-    # Run in clean DB context (no user google account)
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM user_google_accounts WHERE agent_id = 999;")
-        conn.commit()
-        
-    with pytest.raises(google_calendar.GoogleAuthException) as excinfo:
-        get_user_google_credentials(999)
-    assert "not connected" in str(excinfo.value)
+    with patch("serviceBot.db.connection.dict_cursor", return_value=mock_cursor):
+        with pytest.raises(google_calendar.GoogleAuthException) as excinfo:
+            get_user_google_credentials(999)
+        assert "not connected" in str(excinfo.value)
 
 @patch("serviceBot.services.google_calendar.load_config")
+@patch("serviceBot.services.google_calendar.get_db_connection")
 @patch("httpx.post")
-def test_get_user_google_credentials_expired_refresh(mock_post, mock_load):
+def test_get_user_google_credentials_expired_refresh(mock_post, mock_db, mock_load):
     """Verify get_user_google_credentials auto-refreshes using refresh token if expired."""
     mock_load.return_value = {
         "gmail_client_id": encrypt_key("dummy_id"),
         "gmail_client_secret": encrypt_key("dummy_secret")
     }
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_cursor.fetchone.return_value = {
+        "access_token": encrypt_key("old_access_token"),
+        "refresh_token": encrypt_key("my_refresh_token"),
+        "expires_at": time.time() - 100,
+        "granted_scopes": "https://www.googleapis.com/auth/calendar.events",
+        "email": "agent@test.com",
+        "google_account_id": "google_123"
+    }
+    mock_conn.__enter__.return_value = mock_conn
+    mock_cursor.__enter__.return_value = mock_cursor
+    mock_db.return_value = mock_conn
     
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        # Seed the foreign key reference staff_agent ID 999 first
-        cursor.execute("INSERT INTO staff_agents (id, name, role, email) VALUES (999, 'Test Agent 999', 'Advisor', 'agent@test.com') ON CONFLICT (id) DO NOTHING;")
-        cursor.execute("DELETE FROM user_google_accounts WHERE agent_id = 999;")
-        cursor.execute(
-            "INSERT INTO user_google_accounts (agent_id, provider, email, refresh_token, access_token, expires_at) "
-            "VALUES (999, 'google', 'agent@test.com', %s, %s, %s);",
-            (encrypt_key("my_refresh_token"), encrypt_key("old_access_token"), time.time() - 100) # already expired
-        )
-        conn.commit()
-        
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {
@@ -62,8 +66,9 @@ def test_get_user_google_credentials_expired_refresh(mock_post, mock_load):
     }
     mock_post.return_value = mock_response
     
-    creds = get_user_google_credentials(999)
-    assert creds["access_token"] == "brand_new_access_token"
+    with patch("serviceBot.db.connection.dict_cursor", return_value=mock_cursor):
+        creds = get_user_google_credentials(999)
+        assert creds["access_token"] == "brand_new_access_token"
 
 @patch("serviceBot.services.google_calendar.get_user_google_credentials")
 @patch("httpx.get")

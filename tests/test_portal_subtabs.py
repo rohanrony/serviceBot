@@ -135,3 +135,25 @@ def test_portal_gmail_config_endpoint():
         post_res = client.post("/api/v1/portal/gmail-config", json=payload)
         assert post_res.status_code == 200
         assert mock_save.called
+
+
+def test_app_js_handles_all_six_subtabs():
+    """Verify that app.js TAB_METADATA and switchTab correctly configure all 6 subtabs."""
+    with open(APP_JS_PATH, "r", encoding="utf-8") as f:
+        js = f.read()
+
+    subtabs = ['staff', 'gmail', 'sms-config', 'customer-onboarding', 'intents', 'keys']
+    for sub in subtabs:
+        assert f"'{sub}': {{" in js or f'"{sub}": {{' in js or f"targetSubtab === '{sub}'" in js, f"Missing subtab handler for {sub}"
+
+    # Verify switchTab activates config-subtab-pane
+    assert "subtabPanes.forEach" in js
+    assert "pane.classList.add('active')" in js
+    assert "ribbonItems.forEach" in js
+
+    # Verify loadSMSConfig null safety
+    assert "supportPhoneEl" in js
+    assert "adminPhoneEl" in js
+    assert "quietStartEl" in js
+    assert "quietEndEl" in js
+

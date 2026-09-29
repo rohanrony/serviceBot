@@ -2944,15 +2944,21 @@ document.addEventListener('DOMContentLoaded', () => {
       const config = await res.json();
       if (!config) return;
 
-      document.getElementById('sms-config-support-phone').value = config.support_phone_number || '';
-      if (document.getElementById('sms-config-admin-phone')) {
-        document.getElementById('sms-config-admin-phone').value = config.admin_phone_number || '';
+      const supportPhoneEl = document.getElementById('sms-config-support-phone');
+      if (supportPhoneEl) supportPhoneEl.value = config.support_phone_number || '';
+      const adminPhoneEl = document.getElementById('sms-config-admin-phone');
+      if (adminPhoneEl) adminPhoneEl.value = config.admin_phone_number || '';
+      const envEl = document.getElementById('sms-config-environment');
+      if (envEl) {
+        const envVal = (config.environment === 'TESTING' || config.environment === 'TEST') ? 'TEST' : (config.environment || 'TEST');
+        envEl.value = envVal;
       }
-      const envVal = (config.environment === 'TESTING' || config.environment === 'TEST') ? 'TEST' : (config.environment || 'TEST');
-      document.getElementById('sms-config-environment').value = envVal;
-      document.getElementById('sms-config-quiet-start').value = config.quiet_start_time || '21:00';
-      document.getElementById('sms-config-quiet-end').value = config.quiet_end_time || '08:00';
-      document.getElementById('sms-config-auto-responder').value = config.auto_responder_template || '';
+      const quietStartEl = document.getElementById('sms-config-quiet-start');
+      if (quietStartEl) quietStartEl.value = config.quiet_start_time || '21:00';
+      const quietEndEl = document.getElementById('sms-config-quiet-end');
+      if (quietEndEl) quietEndEl.value = config.quiet_end_time || '08:00';
+      const autoRespEl = document.getElementById('sms-config-auto-responder');
+      if (autoRespEl) autoRespEl.value = config.auto_responder_template || '';
     } catch (err) {
       console.error('Error loading SMS config:', err);
     }
