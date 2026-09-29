@@ -1,9 +1,9 @@
-/* Design Tokens & Theme Variables - Linear Inspired Dark UI */
+/* Design Tokens & Theme Variables - Executive Slate & Sapphire UI */
 :root {
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
   --font-display: 'Outfit', sans-serif;
 
-  /* Premium Graphite Dark Theme Palette */
+  /* Premium Executive Slate Dark Theme Palette */
   --bg-main: #0c0d0e;
   --bg-sidebar: #080809;
   --bg-card: #121315;
@@ -12,20 +12,20 @@
   --border-card: rgba(255, 255, 255, 0.06);
   --border-card-hover: rgba(255, 255, 255, 0.12);
   
-  /* Linear Indigo/Purple Accent */
-  --color-primary: #5e6ad2;
-  --color-primary-hover: #6e7be2;
-  --color-primary-rgb: 94, 106, 210;
+  /* Executive Sapphire Blue Accent */
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+  --color-primary-rgb: 37, 99, 235;
   
-  --gradient-primary: linear-gradient(135deg, #5e6ad2 0%, #4752b2 100%);
-  --gradient-primary-hover: linear-gradient(135deg, #6e7be2 0%, #5460c4 100%);
-  --gradient-success: linear-gradient(135deg, #10b981 0%, #059669 100%);
-  --gradient-warning: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  --gradient-primary: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
+  --gradient-primary-hover: linear-gradient(180deg, #1d4ed8 0%, #1e40af 100%);
+  --gradient-success: linear-gradient(180deg, #059669 0%, #047857 100%);
+  --gradient-warning: linear-gradient(180deg, #d97706 0%, #b45309 100%);
   
-  --color-success: #10b981;
-  --color-info: #3b82f6;
-  --color-warning: #f59e0b;
-  --color-danger: #ef4444;
+  --color-success: #059669;
+  --color-info: #2563eb;
+  --color-warning: #d97706;
+  --color-danger: #dc2626;
   
   --text-main: #f3f4f6;
   --text-muted: #8e939e;
@@ -49,9 +49,7 @@
 
 body {
   background-color: var(--bg-main);
-  background-image: 
-    radial-gradient(at 0% 0%, rgba(94, 106, 210, 0.08) 0px, transparent 45%),
-    radial-gradient(at 100% 100%, rgba(59, 130, 246, 0.03) 0px, transparent 40%);
+  background-image: none;
   background-attachment: fixed;
   color: var(--text-main);
   font-family: var(--font-sans);
@@ -237,7 +235,8 @@ body {
   height: 24px;
   background: var(--gradient-primary);
   border-radius: var(--border-radius-sm);
-  box-shadow: 0 0 10px rgba(94, 106, 210, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   position: relative;
 }
 
@@ -358,22 +357,18 @@ body {
 
 .status-indicator.connected::before {
   background-color: var(--color-success);
-  box-shadow: 0 0 6px var(--color-success);
-  animation: pulse-dot 2s infinite;
+  box-shadow: none;
+  animation: pulse-dot 2.5s ease-in-out infinite;
 }
 
 @keyframes pulse-dot {
-  0% {
-    transform: scale(0.9);
-    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4);
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
   }
-  70% {
-    transform: scale(1.1);
-    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
-  }
-  100% {
-    transform: scale(0.9);
-    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+  50% {
+    opacity: 0.6;
+    transform: scale(0.92);
   }
 }
 
@@ -429,8 +424,8 @@ body {
 
 .app-container.sidebar-hidden .sidebar-toggle-btn {
   color: var(--color-primary);
-  border-color: rgba(94, 106, 210, 0.4);
-  background: rgba(94, 106, 210, 0.12);
+  border-color: rgba(37, 99, 235, 0.35);
+  background: rgba(37, 99, 235, 0.1);
 }
 
 .app-header h2 {
@@ -502,7 +497,7 @@ body {
 
 .btn-primary:hover {
   background: var(--color-primary-hover);
-  box-shadow: 0 2px 8px rgba(94, 106, 210, 0.3);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .btn-secondary {
@@ -625,21 +620,21 @@ body {
 }
 
 .metric-badge.success {
-  background-color: rgba(16, 185, 129, 0.08);
-  border: 1px solid rgba(16, 185, 129, 0.15);
-  color: #34d399;
+  background-color: rgba(5, 150, 105, 0.1);
+  border: 1px solid rgba(5, 150, 105, 0.2);
+  color: #10b981;
 }
 
 .metric-badge.info {
-  background-color: rgba(59, 130, 246, 0.08);
-  border: 1px solid rgba(59, 130, 246, 0.15);
-  color: #60a5fa;
+  background-color: rgba(37, 99, 235, 0.1);
+  border: 1px solid rgba(37, 99, 235, 0.2);
+  color: #3b82f6;
 }
 
 .metric-badge.warning {
-  background-color: rgba(245, 158, 11, 0.08);
-  border: 1px solid rgba(245, 158, 11, 0.15);
-  color: #fbbf24;
+  background-color: rgba(217, 119, 6, 0.1);
+  border: 1px solid rgba(217, 119, 6, 0.2);
+  color: #d97706;
 }
 
 /* Main Cards layout */
@@ -711,7 +706,7 @@ body {
 .form-input:focus {
   outline: none;
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px rgba(94, 106, 210, 0.2);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25);
 }
 
 .form-input option {
@@ -955,54 +950,54 @@ textarea.form-input {
 }
 
 .status-select-badge:focus {
-  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.4);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25);
 }
 
 .status-select-badge:hover {
-  filter: brightness(1.15);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  filter: brightness(1.1);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
 }
 
 .status-select-badge.warning,
 .status-select-badge[data-status="pending"] {
   background-color: transparent;
-  color: #f59e0b;
+  color: #d97706;
   border-color: transparent;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23f59e0b'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23d97706'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
 }
 
 .status-select-badge.teal,
 .status-select-badge[data-status="confirmed"] {
   background-color: transparent;
-  color: #06b6d4;
+  color: #0284c7;
   border-color: transparent;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2306b6d4'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%230284c7'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
 }
 
 .status-select-badge.info,
 .status-select-badge[data-status="in_progress"] {
   background-color: transparent;
-  color: #3b82f6;
+  color: #2563eb;
   border-color: transparent;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%233b82f6'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%232563eb'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
 }
 
 .status-select-badge.success,
 .status-select-badge[data-status="completed"],
 .status-select-badge[data-status="done"] {
   background-color: transparent;
-  color: #10b981;
+  color: #059669;
   border-color: transparent;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2310b981'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23059669'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
 }
 
 .status-select-badge.danger,
 .status-select-badge[data-status="cancelled"],
 .status-select-badge[data-status="cancelled_by_customer"] {
   background-color: transparent;
-  color: #ef4444;
+  color: #dc2626;
   border-color: transparent;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ef4444'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23dc2626'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
 }
 
 .status-select-badge option {
@@ -1049,7 +1044,7 @@ textarea.form-input {
 }
 
 .agent-badge-wrapper:hover:not(.disabled) .agent-badge-display {
-  border-color: var(--color-primary, #6366f1);
+  border-color: var(--color-primary);
 }
 
 .agent-badge-wrapper.disabled {
@@ -1193,15 +1188,15 @@ textarea.form-input {
 }
 
 .badge.success {
-  background-color: rgba(16, 185, 129, 0.08);
-  border: 1px solid rgba(16, 185, 129, 0.15);
-  color: #34d399;
+  background-color: rgba(5, 150, 105, 0.1);
+  border: 1px solid rgba(5, 150, 105, 0.2);
+  color: #10b981;
 }
 
 .badge.warning {
-  background-color: rgba(245, 158, 11, 0.08);
-  border: 1px solid rgba(245, 158, 11, 0.15);
-  color: #fbbf24;
+  background-color: rgba(217, 119, 6, 0.1);
+  border: 1px solid rgba(217, 119, 6, 0.2);
+  color: #d97706;
 }
 
 /* Drag and Drop uploader */
@@ -1222,7 +1217,7 @@ textarea.form-input {
 .drop-zone:hover,
 .drop-zone.active {
   border-color: var(--color-primary);
-  background-color: rgba(94, 106, 210, 0.02);
+  background-color: rgba(37, 99, 235, 0.02);
 }
 
 .upload-icon {
@@ -1405,8 +1400,8 @@ textarea.form-input {
 
 .speech-bubble.agent {
   align-self: flex-end;
-  background: rgba(94, 106, 210, 0.08);
-  border: 1px solid rgba(94, 106, 210, 0.18);
+  background: rgba(37, 99, 235, 0.07);
+  border: 1px solid rgba(37, 99, 235, 0.18);
 }
 
 .bubble-sender {
@@ -1419,7 +1414,7 @@ textarea.form-input {
 }
 
 .bubble-sender.agent-label {
-  color: #818cf8;
+  color: #60a5fa;
 }
 
 .bubble-text {
@@ -2662,7 +2657,7 @@ textarea.form-input {
   height: 6px;
   border-radius: 50%;
   background: #25D366;
-  box-shadow: 0 0 6px rgba(37, 211, 102, 0.8);
+  box-shadow: none;
 }
 
 /* WhatsApp Sandbox Helper - Clean & Unobtrusive Theme */
@@ -2719,8 +2714,8 @@ textarea.form-input {
 
 .whatsapp-helper-box .helper-badge {
   font-size: 10px;
-  background: rgba(94, 106, 210, 0.15);
-  color: var(--color-primary-hover);
+  background: rgba(37, 99, 235, 0.1);
+  color: var(--color-primary);
   padding: 2px 6px;
   border-radius: 4px;
   font-weight: 500;
@@ -2756,8 +2751,9 @@ textarea.form-input {
   justify-content: space-between;
   margin-bottom: 20px;
   padding: 12px 18px;
-  background: rgba(94, 106, 210, 0.08);
-  border: 1px solid rgba(94, 106, 210, 0.25);
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-left: 3px solid var(--color-primary);
   border-radius: var(--border-radius-md);
   box-shadow: var(--glass-shadow);
   color: var(--text-main);
@@ -2826,11 +2822,11 @@ textarea.form-input {
 }
 
 .config-ribbon-item.active {
-  background: linear-gradient(135deg, rgba(94, 106, 210, 0.25) 0%, rgba(139, 92, 246, 0.2) 100%);
-  border-color: rgba(139, 92, 246, 0.45);
+  background: rgba(37, 99, 235, 0.12);
+  border-color: rgba(37, 99, 235, 0.35);
   color: #ffffff;
   font-weight: 600;
-  box-shadow: 0 4px 14px rgba(94, 106, 210, 0.25);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .config-ribbon-item .ribbon-icon {

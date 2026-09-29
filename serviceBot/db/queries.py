@@ -383,6 +383,72 @@ def create_dual_intake_request(
     }
 
 
+def parse_specific_time(preferred_date_str: str):
+    """
+    Extracts an explicit hour and minute from a string if present.
+    Returns datetime.time or None if only a general date or window was given.
+    """
+    if not preferred_date_str:
+        return None
+    import re
+    import datetime as dt_mod
+
+    raw = str(preferred_date_str).strip()
+    low = raw.lower()
+
+    # Strip ISO date (YYYY-MM-DD) if present
+    low_without_date = re.sub(r'\b\d{4}-\d{2}-\d{2}\b', '', low)
+    # Strip month date if present (e.g. 'august 6', 'august 6th, 2026')
+    low_without_date = re.sub(
+        r'\b(january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sep|sept|october|oct|november|nov|december|dec)\b[\s,]*(\d{1,2})(?:st|nd|rd|th)?(?:\s*,?\s*(\d{4}))?',
+        '',
+        low_without_date,
+    )
+
+    # 1. Check HH:MM(:SS)? (am/pm)? e.g. 10:00, 10:30:00, 2:30 pm, 14:00
+    m_time = re.search(r'\b(\d{1,2}):(\d{2})(?::\d{2})?\s*(am|pm|a\.m\.|p\.m\.)?\b', low_without_date)
+    if m_time:
+        h = int(m_time.group(1))
+        m = int(m_time.group(2))
+        meridiem = m_time.group(3)
+        if meridiem:
+            if 'p' in meridiem and h < 12:
+                h += 12
+            elif 'a' in meridiem and h == 12:
+                h = 0
+        elif 1 <= h <= 6:
+            h += 12  # in auto service workhours (7am-6pm), 1..6 without am/pm means PM
+        if 0 <= h <= 23 and 0 <= m <= 59:
+            return dt_mod.time(h, m)
+
+    # 2. Check H (am/pm) e.g. 10am, 2 pm, 9 a.m.
+    m_hour = re.search(r'\b(\d{1,2})\s*(am|pm|a\.m\.|p\.m\.)\b', low_without_date)
+    if m_hour:
+        h = int(m_hour.group(1))
+        meridiem = m_hour.group(2)
+        if 'p' in meridiem and h < 12:
+            h += 12
+        elif 'a' in meridiem and h == 12:
+            h = 0
+        if 0 <= h <= 23:
+            return dt_mod.time(h, 0)
+
+    # 3. Check 'at H' e.g. 'at 10', 'at 2'
+    m_at = re.search(r'\bat\s+(\d{1,2})\b', low_without_date)
+    if m_at:
+        h = int(m_at.group(1))
+        if 1 <= h <= 6:
+            h += 12
+        if 7 <= h <= 18:
+            return dt_mod.time(h, 0)
+
+    # 4. Check 'noon'
+    if re.search(r'\bnoon\b', low_without_date):
+        return dt_mod.time(12, 0)
+
+    return None
+
+
 def parse_preferred_date_and_time(preferred_date_str: str) -> tuple:
     """
     Parses a user or tool supplied date/time string into a tuple:
@@ -397,14 +463,25 @@ def parse_preferred_date_and_time(preferred_date_str: str) -> tuple:
     raw = str(preferred_date_str).strip()
     low = raw.lower()
 
+    # Check for specific time first
+    target_time = parse_specific_time(preferred_date_str)
+
     # 1. Determine time_window (afternoon, morning, evening)
     time_window = None
-    if any(w in low for w in ["afternoon", "pm", "p.m.", "noon"]):
-        time_window = "afternoon"
-    elif any(w in low for w in ["morning", "am", "a.m."]):
-        time_window = "morning"
-    elif any(w in low for w in ["evening", "night"]):
-        time_window = "evening"
+    if target_time:
+        if target_time.hour < 12:
+            time_window = "morning"
+        elif target_time.hour >= 17:
+            time_window = "evening"
+        else:
+            time_window = "afternoon"
+    else:
+        if any(w in low for w in ["afternoon", "pm", "p.m.", "noon"]):
+            time_window = "afternoon"
+        elif any(w in low for w in ["morning", "am", "a.m."]):
+            time_window = "morning"
+        elif any(w in low for w in ["evening", "night"]):
+            time_window = "evening"
 
     # 2. Extract ISO date (YYYY-MM-DD)
     iso_date_match = re.search(r'\b(\d{4}-\d{2}-\d{2})\b', raw)
@@ -419,7 +496,10 @@ def parse_preferred_date_and_time(preferred_date_str: str) -> tuple:
             "august": 8, "aug": 8, "september": 9, "sep": 9, "sept": 9, "october": 10, "oct": 10,
             "november": 11, "nov": 11, "december": 12, "dec": 12
         }
-        month_match = re.search(r'\b(january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sep|sept|october|oct|november|nov|december|dec)\b[\s,]*(\d{1,2})(?:st|nd|rd|th)?(?:\s*,?\s*(\d{4}))?', low)
+        month_match = re.search(
+            r'\b(january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sep|sept|october|oct|november|nov|december|dec)\b[\s,]*(\d{1,2})(?:st|nd|rd|th)?(?:\s*,?\s*(\d{4}))?',
+            low,
+        )
         if month_match:
             m_str = month_match.group(1)
             d_int = int(month_match.group(2))
@@ -431,10 +511,29 @@ def parse_preferred_date_and_time(preferred_date_str: str) -> tuple:
                 iso_date_str = dt_obj.strftime("%Y-%m-%d")
             except ValueError:
                 pass
+        elif "tomorrow" in low:
+            iso_date_str = (dt_mod.date.today() + dt_mod.timedelta(days=1)).strftime("%Y-%m-%d")
+        elif "today" in low:
+            iso_date_str = dt_mod.date.today().strftime("%Y-%m-%d")
+        else:
+            weekdays = {
+                "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+                "friday": 4, "saturday": 5, "sunday": 6
+            }
+            for day_name, day_num in weekdays.items():
+                if re.search(r'\b' + day_name + r'\b', low):
+                    today = dt_mod.date.today()
+                    days_ahead = (day_num - today.weekday()) % 7
+                    if days_ahead == 0:
+                        days_ahead = 7
+                    iso_date_str = (today + dt_mod.timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+                    break
 
     # 3. Construct start_timestamp_str (safe YYYY-MM-DD HH:MM:SS for SQL)
     if iso_date_str:
-        if time_window == "afternoon":
+        if target_time:
+            start_timestamp_str = f"{iso_date_str} {target_time.hour:02d}:{target_time.minute:02d}:00"
+        elif time_window == "afternoon":
             start_timestamp_str = f"{iso_date_str} 12:00:00"
         elif time_window == "evening":
             start_timestamp_str = f"{iso_date_str} 15:00:00"
@@ -638,13 +737,37 @@ def check_availability(service_type: str = None, preferred_date: str = None, boo
     if not all_free_slots:
         return []
 
-    # If caller specified a time window (e.g. morning, afternoon, evening), return first 3 in that window
-    if time_window:
-        return all_free_slots[:3]
-
-    # If general date inquiry without time window, provide a diverse spread across morning, midday, afternoon
     target_date_str = all_free_slots[0][:10]
     day_slots = [s for s in all_free_slots if s.startswith(target_date_str)]
+    if not day_slots:
+        day_slots = all_free_slots
+
+    specific_time = parse_specific_time(preferred_date)
+    if specific_time:
+        # Caller requested a specific target time (e.g. 10:00 AM, 2:30 PM, 14:00)
+        # Select slots on target date ranked by proximity to the requested target time
+        try:
+            target_date_obj = dt_mod.date.fromisoformat(target_date_str)
+        except Exception:
+            target_date_obj = dt_mod.date.today()
+        target_dt = dt_mod.datetime.combine(target_date_obj, specific_time)
+
+        def slot_distance(s_str):
+            s_dt = datetime.strptime(s_str, "%Y-%m-%d %H:%M:%S")
+            diff = abs((s_dt - target_dt).total_seconds())
+            tie_breaker = 0.0 if s_dt >= target_dt else 0.1
+            return diff + tie_breaker
+
+        sorted_by_proximity = sorted(day_slots, key=slot_distance)
+        selected = sorted_by_proximity[:3]
+        selected.sort()
+        return selected
+
+    # If caller specified a general time window (e.g. morning, afternoon, evening) without an exact time
+    if time_window:
+        return day_slots[:3]
+
+    # If general date inquiry without time window, provide a diverse spread across morning, midday, afternoon
     if len(day_slots) <= 3:
         return day_slots
 
@@ -2142,13 +2265,19 @@ def is_phone_whitelisted(phone_number: str) -> bool:
     import re
     if not phone_number:
         return False
-    clean = re.sub(r"\D", "", phone_number)
+    clean = re.sub(r"\D", "", str(phone_number))
+    if not clean:
+        return False
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             cursor.execute("SELECT phone_number FROM sms_whitelist;")
             for r in cursor.fetchall():
-                w_clean = re.sub(r"\D", "", r["phone_number"])
-                if w_clean == clean or (len(w_clean) == 10 and clean.endswith(w_clean)):
+                w_clean = re.sub(r"\D", "", r.get("phone_number") or "")
+                if not w_clean:
+                    continue
+                if w_clean == clean:
+                    return True
+                if len(w_clean) >= 10 and len(clean) >= 10 and w_clean[-10:] == clean[-10:]:
                     return True
             return False
 
@@ -2172,9 +2301,7 @@ def is_agent_whatsapp_connected(phone_number: str) -> bool:
                     continue
                 if w_clean == clean:
                     return True
-                if len(w_clean) == 10 and clean.endswith(w_clean):
-                    return True
-                if len(clean) == 10 and w_clean.endswith(clean):
+                if len(w_clean) >= 10 and len(clean) >= 10 and w_clean[-10:] == clean[-10:]:
                     return True
             return False
 
@@ -2233,7 +2360,7 @@ def disconnect_agent_whatsapp(agent_id: int) -> dict:
             
             clean = re.sub(r"\D", "", phone)
             cursor.execute(
-                """
+                r"""
                 UPDATE sms_whitelist
                 SET whatsapp_onboarded = FALSE, whatsapp_onboarded_at = NULL
                 WHERE phone_number = %s

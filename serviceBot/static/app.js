@@ -396,13 +396,13 @@ document.addEventListener('DOMContentLoaded', () => {
     toast.textContent = displayMsg;
     toast.className = 'toast active';
     if (type === 'error' || type === 'danger') {
-      toast.style.borderColor = '#ef4444';
-      toast.style.backgroundColor = '#1f1315';
+      toast.style.borderColor = '#dc2626';
+      toast.style.backgroundColor = '#1c1314';
       toast.style.color = '#fca5a5';
     } else if (type === 'warning') {
-      toast.style.borderColor = '#f59e0b';
-      toast.style.backgroundColor = '#1e1b13';
-      toast.style.color = '#fde047';
+      toast.style.borderColor = '#d97706';
+      toast.style.backgroundColor = '#1c1813';
+      toast.style.color = '#fcd34d';
     } else {
       toast.style.borderColor = 'var(--border-card)';
       toast.style.backgroundColor = '#0c0d0e';
@@ -708,7 +708,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const vehicleStr = `${req.year} ${req.make} ${req.model}`;
         const baseDesc = formatIssueDescription(req.issue_description);
         const cleanDesc = req.booking_type === 'callback'
-          ? `<span style="color: var(--color-teal, #38bdf8); font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 4px;">Callback</span>${baseDesc}`
+          ? `<span style="color: var(--color-teal, #0284c7); font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 4px;">Callback</span>${baseDesc}`
           : baseDesc;
         
         let currentStatus = req.status;
@@ -3575,13 +3575,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let reasonHtml = '';
         if (isNotWhitelisted) {
-          reasonHtml = `<div style="font-size: 12px; color: var(--text-muted); border-left: 2px solid #fbbf24; padding-left: 8px; margin-top: 4px; line-height: 1.4;"><strong style="color: #fbbf24;">Skip Reason:</strong> Recipient phone number is not on the staging whitelist. Add number to SMS Config Whitelist to enable delivery.</div>`;
+          reasonHtml = `<div style="font-size: 12px; color: var(--text-muted); border-left: 2px solid #d97706; padding-left: 8px; margin-top: 4px; line-height: 1.4;"><strong style="color: #d97706;">Skip Reason:</strong> Recipient phone number is not on the staging whitelist. Add number to SMS Config Whitelist to enable delivery.</div>`;
         } else if (isOptOut) {
-          reasonHtml = `<div style="font-size: 12px; color: var(--text-muted); border-left: 2px solid #fbbf24; padding-left: 8px; margin-top: 4px; line-height: 1.4;"><strong style="color: #fbbf24;">Skip Reason:</strong> Customer has opted out of receiving automated SMS alerts.</div>`;
+          reasonHtml = `<div style="font-size: 12px; color: var(--text-muted); border-left: 2px solid #d97706; padding-left: 8px; margin-top: 4px; line-height: 1.4;"><strong style="color: #d97706;">Skip Reason:</strong> Customer has opted out of receiving automated SMS alerts.</div>`;
         } else if (isFailed) {
-          reasonHtml = `<div style="font-size: 12px; color: var(--text-muted); border-left: 2px solid #f87171; padding-left: 8px; margin-top: 4px; line-height: 1.4;"><strong style="color: #f87171;">Error Details:</strong> ${l.error_message || l.error_code || 'Twilio delivery failed.'}</div>`;
+          reasonHtml = `<div style="font-size: 12px; color: var(--text-muted); border-left: 2px solid #dc2626; padding-left: 8px; margin-top: 4px; line-height: 1.4;"><strong style="color: #dc2626;">Error Details:</strong> ${l.error_message || l.error_code || 'Twilio delivery failed.'}</div>`;
         } else if (isQueued && l.scheduled_send_at) {
-          reasonHtml = `<div style="font-size: 12px; color: var(--text-muted); border-left: 2px solid #60a5fa; padding-left: 8px; margin-top: 4px; line-height: 1.4;"><strong style="color: #60a5fa;">Quiet Hours Queue:</strong> Scheduled for release at ${formatLocalTimestamp(l.scheduled_send_at)}</div>`;
+          reasonHtml = `<div style="font-size: 12px; color: var(--text-muted); border-left: 2px solid #2563eb; padding-left: 8px; margin-top: 4px; line-height: 1.4;"><strong style="color: #2563eb;">Quiet Hours Queue:</strong> Scheduled for release at ${formatLocalTimestamp(l.scheduled_send_at)}</div>`;
         }
 
         const canRetry = isFailed || isNotWhitelisted || isOptOut;
@@ -3830,17 +3830,17 @@ document.addEventListener('DOMContentLoaded', () => {
       if (roleBadge) {
         roleBadge.textContent = cleanRole;
         if (cleanRole === 'ADMIN') {
-          roleBadge.style.background = 'rgba(59, 130, 246, 0.15)';
-          roleBadge.style.color = '#3b82f6';
-          roleBadge.style.borderColor = 'rgba(59, 130, 246, 0.3)';
+          roleBadge.style.background = 'rgba(37, 99, 235, 0.12)';
+          roleBadge.style.color = '#2563eb';
+          roleBadge.style.borderColor = 'rgba(37, 99, 235, 0.25)';
         } else if (cleanRole === 'AGENT') {
-          roleBadge.style.background = 'rgba(245, 158, 11, 0.15)';
-          roleBadge.style.color = '#f59e0b';
-          roleBadge.style.borderColor = 'rgba(245, 158, 11, 0.3)';
+          roleBadge.style.background = 'rgba(217, 119, 6, 0.12)';
+          roleBadge.style.color = '#d97706';
+          roleBadge.style.borderColor = 'rgba(217, 119, 6, 0.25)';
         } else {
-          roleBadge.style.background = 'rgba(37, 211, 102, 0.15)';
-          roleBadge.style.color = '#25D366';
-          roleBadge.style.borderColor = 'rgba(37, 211, 102, 0.3)';
+          roleBadge.style.background = 'rgba(5, 150, 105, 0.12)';
+          roleBadge.style.color = '#059669';
+          roleBadge.style.borderColor = 'rgba(5, 150, 105, 0.25)';
         }
       }
 

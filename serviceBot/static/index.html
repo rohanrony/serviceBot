@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
   <!-- Stylesheets -->
-  <link rel="stylesheet" href="style.css?v=18">
+  <link rel="stylesheet" href="style.css?v=19">
 </head>
 <body>
 
@@ -593,7 +593,7 @@
                 </div>
                 
                 <div class="staff-header-actions">
-                  <button type="button" class="btn btn-secondary btn-sm" id="sync-calendar-btn" title="Refresh all connected agents' slots from Google Calendar now" style="display: flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: 12px; border-color: #10b981; color: #10b981;">
+                  <button type="button" class="btn btn-secondary btn-sm" id="sync-calendar-btn" title="Refresh all connected agents' slots from Google Calendar now" style="display: flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: 12px; border-color: var(--color-success); color: var(--color-success);">
                     <svg viewBox="0 0 24 24" style="width: 13px; height: 13px; fill: currentColor; flex-shrink: 0;"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
                     Sync Calendar
                   </button>
@@ -887,7 +887,7 @@
             </div>
             
             <!-- Instructions/Help Card -->
-            <div class="content-card flex-1" style="background: linear-gradient(135deg, rgba(94, 106, 210, 0.03) 0%, rgba(0, 0, 0, 0) 100%);">
+            <div class="content-card flex-1">
               <div class="card-header">
                 <h3>Connection Help</h3>
                 <p class="text-muted">How to configure email notifications.</p>
@@ -1482,7 +1482,7 @@
       </div>
       <div style="display: flex; justify-content: space-between;">
         <span style="color: var(--text-muted);">Join Message:</span>
-        <code id="qr-modal-join" style="color: #10b981; background: rgba(16,185,129,0.1); padding: 1px 6px; border-radius: 4px;">join evidence-lips</code>
+        <code id="qr-modal-join" style="color: var(--color-success); background: rgba(5,150,105,0.1); padding: 1px 6px; border-radius: 4px;">join evidence-lips</code>
       </div>
     </div>
 
@@ -1585,9 +1585,9 @@
           </div>
           <p class="text-muted" style="font-size: 11px; margin-bottom: 8px;">Agent will be automatically assigned based on Google Calendar availability.</p>
 
-          <div id="sr-consent-wrapper" style="display: none; margin-top: 10px; padding: 10px; background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 6px;">
-            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12px; font-weight: 500; color: #60a5fa; margin: 0;">
-              <input type="checkbox" id="sr-customer-consent-check" style="width: 16px; height: 16px; accent-color: #3b82f6;">
+          <div id="sr-consent-wrapper" style="display: none; margin-top: 10px; padding: 10px; background: rgba(37, 99, 235, 0.08); border: 1px solid rgba(37, 99, 235, 0.25); border-radius: 6px;">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12px; font-weight: 500; color: #93c5fd; margin: 0;">
+              <input type="checkbox" id="sr-customer-consent-check" style="width: 16px; height: 16px; accent-color: var(--color-primary);">
               <span>Customer consent sought and obtained for rescheduling</span>
             </label>
           </div>

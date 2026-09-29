@@ -596,10 +596,24 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
             service_type = args.get("service_type") or args.get("serviceType") or args.get("service") or args.get("issue_description") or args.get("issue")
             booking_type = args.get("booking_type") or args.get("bookingType") or "appointment"
             slots = check_availability(service_type=service_type, preferred_date=preferred_date, booking_type=booking_type)
+            if slots:
+                msg = (
+                    f"Recommended available slots: {', '.join(slots)}. "
+                    f"Clearly suggest 2 to 3 of these options to the caller. "
+                    f"NOTE TO AGENT: These are recommended options around the caller's requested time/date. "
+                    f"Additional slots are also available throughout the day if the caller prefers another specific time. "
+                    f"Never tell or imply to the caller that these are the only available slots for the day. If the caller requests a different time, "
+                    f"call check_availability with their preferred time."
+                )
+            else:
+                msg = (
+                    "I apologize, but there are no open appointment slots available in our schedule around that time/date right now. "
+                    "Please apologize to the caller for the inconvenience and offer to check another date or arrange a callback."
+                )
             result = {
                 "success": True,
                 "available_slots": slots,
-                "message": f"Found {len(slots)} available slots on/after {preferred_date}." if slots else "I apologize, but there are no open appointment slots available in our schedule right now. Please apologize to the caller for the inconvenience and offer to arrange a callback without checking further dates."
+                "message": msg
             }
 
         elif tool_name in ["cba_webbook", "cba_webhook", "transfer_call", "handoff"]:

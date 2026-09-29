@@ -137,11 +137,11 @@ If a specific service is requested (such as an oil change, brake inspection, or 
 
 Once all mandatory details are collected, ask:
 "Would you like to book an appointment for this service now, or would you prefer to arrange a callback?"
-- If they prefer a callback: If they ask for callback availability or when an advisor can call, call `check_availability` with `booking_type="callback"` and their preferred date/time window (checks 15-minute callback slots). Callback calls are made during business hours (Monday–Friday 7:00 AM – 6:00 PM ET). Confirm their preferred day and time window, then immediately call `create_service_request` with `booking_type="callback"` and `booking_time` set to their confirmed time. MANDATORY: Keep `issue_description` (or `issue`) concise and focused ONLY on the requested services or reported symptoms (e.g., "Windshield repair", "Oil change"). Do NOT repeat caller name, phone, vehicle details, or preferred time inside `issue_description`, as those are tracked in separate fields. NEVER verbally confirm a callback or end the call without executing the `create_service_request` tool call!
+- If they prefer a callback: Callback calls are made during business hours (Monday–Friday 7:00 AM – 6:00 PM ET). If the caller mentions a preferred day or time window (e.g. "tomorrow morning" or "around 2 PM"), confirm it and book directly without needing an availability check. Only call `check_availability` with `booking_type="callback"` if the caller explicitly asks when an advisor is free or asks for callback slot options. Confirm their preferred day and time window, then immediately call `create_service_request` with `booking_type="callback"` and `booking_time` set to their confirmed time. MANDATORY: Keep `issue_description` (or `issue`) concise and focused ONLY on the requested services or reported symptoms (e.g., "Windshield repair", "Oil change"). Do NOT repeat caller name, phone, vehicle details, or preferred time inside `issue_description`, as those are tracked in separate fields. NEVER verbally confirm a callback or end the call without executing the `create_service_request` tool call!
 - If they want to book an appointment: Proceed to the Appointment Booking steps below.
 
 ### 3. APPOINTMENT BOOKING & RESCHEDULING
-- **Checking Availability:** Always check open calendar slots first by calling `check_availability` with their preferred date or time window (e.g. morning, afternoon, or specific date). Suggest the best available slots clearly. If no slots are available for that timeframe: Inform the customer politely (e.g., *"I apologize, but we don't have any open appointment slots for that specific time."*). If the customer asks for another specific time window or day (e.g. "What about afternoon?" or "What about Friday?"), call `check_availability` for their new request. If no slots work, smoothly transition to arranging an advisor callback. Do NOT loop autonomously through unrequested dates.
+- **Checking Availability:** Always check open calendar slots first by calling `check_availability` with their preferred date, time window, or specific time (e.g., "10:00 AM", morning, afternoon, or specific date). Present 2 to 3 of the recommended options clearly. Note that these are highlighted recommendations centered around their request; additional slots are open across the day. NEVER tell or imply to the caller that the returned slots are the "only" available slots for the entire day. If the caller requests a different specific time, call `check_availability` for their preferred time. If no slots are available for that timeframe: Inform the customer politely (e.g., *"I apologize, but we don't have any open appointment slots for that specific time."*). If the customer asks for another specific time window or day (e.g. "What about afternoon?" or "What about Friday?"), call `check_availability` for their new request. If no slots work, smoothly transition to arranging an advisor callback. Do NOT loop autonomously through unrequested dates.
 - **Mandatory Price & Duration Quote Before Booking:** BEFORE calling `create_service_request` or `book_appointment` for an appointment, you MUST look up the service's estimated cost and time duration in our knowledge base (using `query_knowledge_base` if needed). Quote both clearly to the caller (for example: *"An oil change is typically $79 to $119 and takes about 45 minutes"*). Ask for their explicit confirmation to proceed at that rate. Only call the booking tool after they explicitly confirm. MANDATORY: Keep `issue_description` (or `issue`) concise and focused ONLY on the requested services or reported symptoms. Do NOT repeat caller name, phone, vehicle details, or appointment date/time in `issue_description`, as those are tracked in separate fields. Never leave the description generic or empty.
 - **Rescheduling:** First call `get_customer_appointments` using their phone number to check current bookings. State their existing appointment time, then call `check_availability` for their preferred new date/time. Once confirmed, call `reschedule_appointment`.
 
@@ -1500,7 +1500,7 @@ async def gmail_oauth_callback(request: Request, code: str = None, error: str = 
         <body style="font-family: sans-serif; background-color: #0c0d0e; color: #ef4444; padding: 50px; text-align: center;">
             <h2>Authentication Failed</h2>
             <p>{error}</p>
-            <button onclick="window.close()" style="padding: 10px 20px; background: #5e6ad2; color: white; border: none; border-radius: 6px; cursor: pointer; margin-top: 20px;">Close Window</button>
+            <button onclick="window.close()" style="padding: 10px 20px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; margin-top: 20px;">Close Window</button>
         </body>
         </html>
         """)
@@ -1537,7 +1537,7 @@ async def gmail_oauth_callback(request: Request, code: str = None, error: str = 
                     <body style="font-family: sans-serif; background-color: #0c0d0e; color: #ef4444; padding: 50px; text-align: center;">
                         <h2>Authentication Failed</h2>
                         <p>Invalid or expired state parameter. Please request connection again.</p>
-                        <button onclick="window.close()" style="padding: 10px 20px; background: #5e6ad2; color: white; border: none; border-radius: 6px; cursor: pointer; margin-top: 20px;">Close Window</button>
+                        <button onclick="window.close()" style="padding: 10px 20px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; margin-top: 20px;">Close Window</button>
                     </body>
                     </html>
                     """)
@@ -1575,7 +1575,7 @@ async def gmail_oauth_callback(request: Request, code: str = None, error: str = 
             <body style="font-family: sans-serif; background-color: #0c0d0e; color: #ef4444; padding: 50px; text-align: center;">
                 <h2>Token Exchange Failed</h2>
                 <p>{response.text}</p>
-                <button onclick="window.close()" style="padding: 10px 20px; background: #5e6ad2; color: white; border: none; border-radius: 6px; cursor: pointer; margin-top: 20px;">Close Window</button>
+                <button onclick="window.close()" style="padding: 10px 20px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; margin-top: 20px;">Close Window</button>
             </body>
             </html>
             """)
@@ -1654,10 +1654,10 @@ async def gmail_oauth_callback(request: Request, code: str = None, error: str = 
             return HTMLResponse(content=f"""
             <html>
             <body style="font-family: sans-serif; background-color: #0c0d0e; color: #f3f4f6; padding: 50px; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 80vh;">
-                <div style="background-color: #121315; border: 1px solid rgba(255,255,255,0.06); padding: 40px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); border-top: 4px solid #10b981; max-width: 400px;">
-                    <h2 style="color: #10b981; margin-bottom: 10px;">{title_text}</h2>
+                <div style="background-color: #121315; border: 1px solid rgba(255,255,255,0.06); padding: 40px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); border-top: 4px solid #059669; max-width: 400px;">
+                    <h2 style="color: #059669; margin-bottom: 10px;">{title_text}</h2>
                     <p style="color: #8e939e; margin-bottom: 20px; font-size: 14px;">{body_text}</p>
-                    <button onclick="window.close()" style="padding: 10px 24px; background: #5e6ad2; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 500; font-size: 13.5px;">Close Window</button>
+                    <button onclick="window.close()" style="padding: 10px 24px; background: #2563eb; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 500; font-size: 13.5px;">Close Window</button>
                 </div>
                 <script>
                     try {{
@@ -1697,10 +1697,10 @@ async def gmail_oauth_callback(request: Request, code: str = None, error: str = 
         return HTMLResponse(content="""
         <html>
         <body style="font-family: sans-serif; background-color: #0c0d0e; color: #f3f4f6; padding: 50px; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 80vh;">
-            <div style="background-color: #121315; border: 1px solid rgba(255,255,255,0.06); padding: 40px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); border-top: 4px solid #10b981; max-width: 400px;">
-                <h2 style="color: #10b981; margin-bottom: 10px;">Google Account Connected!</h2>
+            <div style="background-color: #121315; border: 1px solid rgba(255,255,255,0.06); padding: 40px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); border-top: 4px solid #059669; max-width: 400px;">
+                <h2 style="color: #059669; margin-bottom: 10px;">Google Account Connected!</h2>
                 <p style="color: #8e939e; margin-bottom: 20px; font-size: 14px;">Gmail integration authorized successfully. You can close this window now.</p>
-                <button onclick="window.close()" style="padding: 10px 24px; background: #5e6ad2; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 500; font-size: 13.5px;">Close Window</button>
+                <button onclick="window.close()" style="padding: 10px 24px; background: #2563eb; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 500; font-size: 13.5px;">Close Window</button>
             </div>
             <script>
                 try {
@@ -1719,7 +1719,7 @@ async def gmail_oauth_callback(request: Request, code: str = None, error: str = 
         <body style="font-family: sans-serif; background-color: #0c0d0e; color: #ef4444; padding: 50px; text-align: center;">
             <h2>Exception Occurred</h2>
             <p>{str(e)}</p>
-            <button onclick="window.close()" style="padding: 10px 20px; background: #5e6ad2; color: white; border: none; border-radius: 6px; cursor: pointer; margin-top: 20px;">Close Window</button>
+            <button onclick="window.close()" style="padding: 10px 20px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; margin-top: 20px;">Close Window</button>
         </body>
         </html>
         """)
@@ -1738,7 +1738,7 @@ async def test_gmail_config(payload: GmailConfigPayload):
         <meta charset="utf-8">
         <style>
             body { font-family: -apple-system, sans-serif; padding: 24px; background-color: #f3f4f6; color: #1f2937; }
-            .card { background: #fff; padding: 24px; border-radius: 8px; border-top: 4px solid #5e6ad2; max-width: 500px; margin: 0 auto; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+            .card { background: #fff; padding: 24px; border-radius: 8px; border-top: 4px solid #2563eb; max-width: 500px; margin: 0 auto; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
         </style>
     </head>
     <body>
