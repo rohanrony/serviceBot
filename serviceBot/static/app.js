@@ -738,11 +738,16 @@ document.addEventListener('DOMContentLoaded', () => {
           initialAgentRole = 'Unassigned';
         }
 
+        const waDisconnectedNotice = (req.staff_agent_id && req.staff_agent_whatsapp_connected === false)
+          ? `<div style="font-size: 10px; color: #ef4444; margin-top: 2px;" title="Assigned agent has not connected WhatsApp. Outbound notification will fail delivery.">⚠️ WhatsApp Disconnected</div>`
+          : '';
+
         const agentSelectHtml = `
           <div class="agent-badge-wrapper ${isDone ? 'disabled' : ''}">
             <div class="agent-badge-display">
               <div class="agent-name-line">${initialAgentName}</div>
               <div class="agent-role-line">${initialAgentRole}</div>
+              ${waDisconnectedNotice}
             </div>
             <select class="agent-select-badge" data-id="${req.id}" ${isDone ? 'disabled title="Agent cannot be changed for completed or cancelled tasks"' : ''}>
               <option value="" data-name="${initialAgentName}" data-role="${initialAgentRole}">${req.staff_agent_name || 'Select Agent'}</option>
@@ -842,8 +847,9 @@ document.addEventListener('DOMContentLoaded', () => {
                   const isSel = (req.assigned_staff_id && Number(req.assigned_staff_id) === Number(a.id)) || (req.staff_agent_name === a.name);
                   const isUnavailable = a.is_available === false;
                   const labelSuffix = isUnavailable ? ` (Unavailable - ${a.reason || 'Busy'})` : '';
+                  const waSuffix = a.whatsapp_connected === false ? ' (⚠️ WhatsApp Disconnected)' : '';
                   const disabledAttr = (isUnavailable && !isSel) ? 'disabled' : '';
-                  optionsHtml += `<option value="${a.id}" data-name="${a.name}" data-role="${a.role || ''}" ${isSel ? 'selected' : ''} ${disabledAttr}>${a.name} - ${a.role}${labelSuffix}</option>`;
+                  optionsHtml += `<option value="${a.id}" data-name="${a.name}" data-role="${a.role || ''}" data-whatsapp-connected="${a.whatsapp_connected ? 'true' : 'false'}" ${isSel ? 'selected' : ''} ${disabledAttr}>${a.name} - ${a.role}${waSuffix}${labelSuffix}</option>`;
                 });
                 agentSelect.innerHTML = optionsHtml;
                 if (isDone) {
@@ -1793,11 +1799,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const gmailBadge = document.getElementById('agent-gmail-status-badge');
     const connectGmailBtn = document.getElementById('connect-agent-gmail-btn');
     const agentEmailDisplay = document.getElementById('agent-email-status-display');
+    const whatsappBadge = document.getElementById('agent-whatsapp-status-badge');
+    const connectWhatsappBtn = document.getElementById('connect-agent-whatsapp-btn');
+    const whatsappWarning = document.getElementById('agent-whatsapp-warning');
     
     if (!calendarBadge || !connectCalendarBtn || !gmailBadge || !connectGmailBtn) return;
     
     const selectedOpt = Array.from(staffAgentSelector.options || []).find(opt => opt.value == selectedAgentId);
     const fallbackEmail = selectedOpt ? selectedOpt.dataset.email : '';
+    const agentPhone = selectedOpt ? selectedOpt.dataset.phone : '';
 
     if (!selectedAgentId) {
       calendarBadge.className = 'badge danger';
@@ -1817,6 +1827,16 @@ document.addEventListener('DOMContentLoaded', () => {
       connectGmailBtn.style.color = '#fff';
       connectGmailBtn.dataset.isConnected = 'false';
       connectGmailBtn.disabled = true;
+
+      if (whatsappBadge) {
+        whatsappBadge.className = 'badge danger';
+        whatsappBadge.textContent = 'Disconnected';
+      }
+      if (connectWhatsappBtn) {
+        connectWhatsappBtn.textContent = 'Connect';
+        connectWhatsappBtn.disabled = true;
+      }
+      if (whatsappWarning) whatsappWarning.style.display = 'none';
       
       if (deleteAgentProfileBtn) deleteAgentProfileBtn.disabled = true;
       if (agentEmailDisplay) agentEmailDisplay.textContent = 'No agent selected';
@@ -1902,6 +1922,64 @@ document.addEventListener('DOMContentLoaded', () => {
         connectGmailBtn.style.color = '#fff';
         connectGmailBtn.dataset.isConnected = 'false';
       }
+
+      // WhatsApp Connection UI
+      const hasPhone = Boolean(status.has_phone !== undefined ? status.has_phone : agentPhone);
+      const whatsappConnected = Boolean(status.whatsapp_connected);
+
+      if (whatsappBadge) {
+        if (!hasPhone) {
+          whatsappBadge.className = 'badge danger';
+          whatsappBadge.textContent = 'No Phone';
+          whatsappBadge.title = 'No phone number configured for this agent';
+        } else if (whatsappConnected) {
+          whatsappBadge.className = 'badge success';
+          whatsappBadge.textContent = 'Connected';
+          whatsappBadge.title = 'Agent WhatsApp is verified and onboarded';
+        } else {
+          whatsappBadge.className = 'badge danger';
+          whatsappBadge.textContent = 'Disconnected';
+          whatsappBadge.title = 'Agent phone not onboarded to WhatsApp';
+        }
+      }
+
+      if (connectWhatsappBtn) {
+        connectWhatsappBtn.disabled = false;
+        if (!hasPhone) {
+          connectWhatsappBtn.textContent = 'Add Phone';
+          connectWhatsappBtn.classList.add('btn-secondary');
+          connectWhatsappBtn.style.borderColor = 'var(--color-primary)';
+          connectWhatsappBtn.style.color = '#fff';
+          connectWhatsappBtn.dataset.isConnected = 'false';
+          connectWhatsappBtn.dataset.action = 'add_phone';
+        } else if (whatsappConnected) {
+          connectWhatsappBtn.textContent = 'Disconnect';
+          connectWhatsappBtn.classList.add('btn-secondary');
+          connectWhatsappBtn.style.borderColor = 'var(--color-danger)';
+          connectWhatsappBtn.style.color = 'var(--color-danger)';
+          connectWhatsappBtn.dataset.isConnected = 'true';
+          connectWhatsappBtn.dataset.action = 'disconnect';
+        } else {
+          connectWhatsappBtn.textContent = 'Connect';
+          connectWhatsappBtn.classList.add('btn-secondary');
+          connectWhatsappBtn.style.borderColor = '#25D366';
+          connectWhatsappBtn.style.color = '#25D366';
+          connectWhatsappBtn.dataset.isConnected = 'false';
+          connectWhatsappBtn.dataset.action = 'connect';
+        }
+      }
+
+      if (whatsappWarning) {
+        if (!hasPhone) {
+          whatsappWarning.style.display = 'block';
+          whatsappWarning.textContent = '⚠️ Agent has no phone configured. WhatsApp notifications cannot be sent.';
+        } else if (!whatsappConnected) {
+          whatsappWarning.style.display = 'block';
+          whatsappWarning.textContent = '⚠️ Agent WhatsApp not connected. Booking & assignment alerts will fail delivery.';
+        } else {
+          whatsappWarning.style.display = 'none';
+        }
+      }
     } catch (err) {
       console.error('Error fetching Google connection status:', err);
       if (agentEmailDisplay) {
@@ -1937,12 +2015,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const opt = document.createElement('option');
         opt.value = agent.id;
         const emailSuffix = agent.email ? ` - ${agent.email}` : '';
-        opt.textContent = `${agent.name} (${agent.role || 'Service Agent'})${emailSuffix}`;
+        const waSuffix = agent.whatsapp_connected === false ? ' [No WA]' : '';
+        opt.textContent = `${agent.name} (${agent.role || 'Service Agent'})${emailSuffix}${waSuffix}`;
         opt.dataset.email = agent.email || '';
         opt.dataset.dbEmail = agent.db_email || agent.email || '';
         opt.dataset.name = agent.name || '';
         opt.dataset.role = agent.role || '';
         opt.dataset.phone = agent.phone_number || '';
+        opt.dataset.whatsappConnected = agent.whatsapp_connected ? 'true' : 'false';
         staffAgentSelector.appendChild(opt);
       });
       
@@ -2103,6 +2183,42 @@ document.addEventListener('DOMContentLoaded', () => {
           });
         }
 
+        // Connect / Disconnect agent WhatsApp handler
+        const connectWhatsappBtn = document.getElementById('connect-agent-whatsapp-btn');
+        if (connectWhatsappBtn) {
+          connectWhatsappBtn.addEventListener('click', async () => {
+            const agentId = staffAgentSelector.value;
+            if (!agentId) return;
+            const action = connectWhatsappBtn.dataset.action;
+            const selectedOpt = Array.from(staffAgentSelector.options || []).find(opt => opt.value == agentId);
+            const phone = selectedOpt ? selectedOpt.dataset.phone : '';
+            const name = selectedOpt ? selectedOpt.dataset.name : '';
+
+            if (action === 'add_phone') {
+              if (editAgentProfileBtn) editAgentProfileBtn.click();
+              return;
+            }
+
+            if (action === 'disconnect') {
+              if (!confirm(`Are you sure you want to disconnect WhatsApp notifications for ${name || 'this staff member'}?`)) return;
+              try {
+                const res = await fetch(`/api/v1/portal/agents/${agentId}/whatsapp/disconnect`, { method: 'POST' });
+                if (!res.ok) throw new Error('Disconnect failed');
+                showToast('Agent WhatsApp disconnected.');
+                await updateAgentConnectionUI();
+                await loadStaffView(agentId);
+                if (typeof loadSMSWhitelist === 'function') loadSMSWhitelist();
+              } catch (err) {
+                console.error(err);
+                showToast('Error disconnecting WhatsApp: ' + err.message, 'error');
+              }
+            } else {
+              // Connect action: open QR code modal with agent's info
+              showQRCodeModal('AGENT', phone, name || 'Service Agent');
+            }
+          });
+        }
+
         // Attach form submission for adding slot
         if (addSlotForm) {
           addSlotForm.addEventListener('submit', async (e) => {
@@ -2249,6 +2365,21 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('edit-agent-role').value = role || 'Service Advisor';
             document.getElementById('edit-agent-email').value = email || '';
             document.getElementById('edit-agent-phone').value = phone || '';
+
+            const editWaBadge = document.getElementById('edit-agent-whatsapp-badge');
+            if (editWaBadge) {
+              const isWaConn = selectedOpt ? selectedOpt.dataset.whatsappConnected === 'true' : false;
+              if (!phone) {
+                editWaBadge.className = 'badge danger';
+                editWaBadge.textContent = 'No Phone';
+              } else if (isWaConn) {
+                editWaBadge.className = 'badge success';
+                editWaBadge.textContent = 'Connected';
+              } else {
+                editWaBadge.className = 'badge danger';
+                editWaBadge.textContent = 'Disconnected';
+              }
+            }
 
             openEditAgentDrawer();
           });
@@ -2517,13 +2648,40 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!response.ok) throw new Error('Failed to fetch Gmail configurations');
       const config = await response.json();
       
-      document.getElementById('enable-agent-selection').checked = !!config.enable_agent_selection;
-      document.getElementById('gmail-enabled').checked = !!config.gmail_enabled;
-      document.getElementById('gmail-auth-type').value = config.gmail_auth_type || 'app_password';
-      document.getElementById('gmail-sender').value = config.gmail_sender || '';
-      document.getElementById('gmail-recipient').value = config.gmail_recipient || '';
-      document.getElementById('gmail-smtp-server').value = config.gmail_smtp_server || 'smtp.gmail.com';
-      document.getElementById('gmail-smtp-port').value = config.gmail_smtp_port || 587;
+      const enableAgentSelectEl = document.getElementById('enable-agent-selection');
+      if (enableAgentSelectEl) {
+        enableAgentSelectEl.checked = !!config.enable_agent_selection;
+      }
+
+      const gmailEnabledEl = document.getElementById('gmail-enabled');
+      if (gmailEnabledEl) {
+        gmailEnabledEl.checked = !!config.gmail_enabled;
+      }
+
+      const authTypeEl = document.getElementById('gmail-auth-type');
+      if (authTypeEl) {
+        authTypeEl.value = config.gmail_auth_type || 'app_password';
+      }
+
+      const senderEl = document.getElementById('gmail-sender');
+      if (senderEl) {
+        senderEl.value = config.gmail_sender || '';
+      }
+
+      const recipientEl = document.getElementById('gmail-recipient');
+      if (recipientEl) {
+        recipientEl.value = config.gmail_recipient || '';
+      }
+
+      const smtpServerEl = document.getElementById('gmail-smtp-server');
+      if (smtpServerEl) {
+        smtpServerEl.value = config.gmail_smtp_server || 'smtp.gmail.com';
+      }
+
+      const smtpPortEl = document.getElementById('gmail-smtp-port');
+      if (smtpPortEl) {
+        smtpPortEl.value = config.gmail_smtp_port || 587;
+      }
       
       // Load Google Client ID
       const clientIdInput = document.getElementById('gmail-client-id');
@@ -2591,18 +2749,30 @@ document.addEventListener('DOMContentLoaded', () => {
     gmailConfigForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       
+      const gmailEnabledEl = document.getElementById('gmail-enabled');
+      const enableAgentSelectEl = document.getElementById('enable-agent-selection');
+      const authTypeEl = document.getElementById('gmail-auth-type');
+      const senderEl = document.getElementById('gmail-sender');
+      const passwordEl = document.getElementById('gmail-password');
+      const recipientEl = document.getElementById('gmail-recipient');
+      const adminPhoneEl = document.getElementById('admin-sms-phone');
+      const smtpServerEl = document.getElementById('gmail-smtp-server');
+      const smtpPortEl = document.getElementById('gmail-smtp-port');
+      const clientIdEl = document.getElementById('gmail-client-id');
+      const clientSecretEl = document.getElementById('gmail-client-secret');
+
       const payload = {
-        gmail_enabled: document.getElementById('gmail-enabled').checked,
-        enable_agent_selection: document.getElementById('enable-agent-selection').checked,
-        gmail_auth_type: document.getElementById('gmail-auth-type').value,
-        gmail_sender: document.getElementById('gmail-sender').value.trim(),
-        gmail_password: document.getElementById('gmail-password').value,
-        gmail_recipient: document.getElementById('gmail-recipient').value.trim(),
-        admin_phone_number: document.getElementById('admin-sms-phone') ? document.getElementById('admin-sms-phone').value.trim() : null,
-        gmail_smtp_server: document.getElementById('gmail-smtp-server').value.trim() || 'smtp.gmail.com',
-        gmail_smtp_port: parseInt(document.getElementById('gmail-smtp-port').value, 10) || 587,
-        gmail_client_id: document.getElementById('gmail-client-id').value.trim(),
-        gmail_client_secret: document.getElementById('gmail-client-secret').value
+        gmail_enabled: gmailEnabledEl ? gmailEnabledEl.checked : false,
+        enable_agent_selection: enableAgentSelectEl ? enableAgentSelectEl.checked : false,
+        gmail_auth_type: authTypeEl ? authTypeEl.value : 'app_password',
+        gmail_sender: senderEl ? senderEl.value.trim() : '',
+        gmail_password: passwordEl ? passwordEl.value : '',
+        gmail_recipient: recipientEl ? recipientEl.value.trim() : '',
+        admin_phone_number: adminPhoneEl ? adminPhoneEl.value.trim() : null,
+        gmail_smtp_server: (smtpServerEl ? smtpServerEl.value.trim() : '') || 'smtp.gmail.com',
+        gmail_smtp_port: parseInt(smtpPortEl ? smtpPortEl.value : '587', 10) || 587,
+        gmail_client_id: clientIdEl ? clientIdEl.value.trim() : '',
+        gmail_client_secret: clientSecretEl ? clientSecretEl.value : ''
       };
       
       try {
@@ -2625,17 +2795,28 @@ document.addEventListener('DOMContentLoaded', () => {
   const testGmailBtn = document.getElementById('test-gmail-btn');
   if (testGmailBtn) {
     testGmailBtn.addEventListener('click', async () => {
+      const gmailEnabledEl = document.getElementById('gmail-enabled');
+      const enableAgentSelectEl = document.getElementById('enable-agent-selection');
+      const authTypeEl = document.getElementById('gmail-auth-type');
+      const senderEl = document.getElementById('gmail-sender');
+      const passwordEl = document.getElementById('gmail-password');
+      const recipientEl = document.getElementById('gmail-recipient');
+      const smtpServerEl = document.getElementById('gmail-smtp-server');
+      const smtpPortEl = document.getElementById('gmail-smtp-port');
+      const clientIdEl = document.getElementById('gmail-client-id');
+      const clientSecretEl = document.getElementById('gmail-client-secret');
+
       const payload = {
-        gmail_enabled: document.getElementById('gmail-enabled').checked,
-        enable_agent_selection: document.getElementById('enable-agent-selection').checked,
-        gmail_auth_type: document.getElementById('gmail-auth-type').value,
-        gmail_sender: document.getElementById('gmail-sender').value.trim(),
-        gmail_password: document.getElementById('gmail-password').value,
-        gmail_recipient: document.getElementById('gmail-recipient').value.trim(),
-        gmail_smtp_server: document.getElementById('gmail-smtp-server').value.trim() || 'smtp.gmail.com',
-        gmail_smtp_port: parseInt(document.getElementById('gmail-smtp-port').value, 10) || 587,
-        gmail_client_id: document.getElementById('gmail-client-id').value.trim(),
-        gmail_client_secret: document.getElementById('gmail-client-secret').value
+        gmail_enabled: gmailEnabledEl ? gmailEnabledEl.checked : false,
+        enable_agent_selection: enableAgentSelectEl ? enableAgentSelectEl.checked : false,
+        gmail_auth_type: authTypeEl ? authTypeEl.value : 'app_password',
+        gmail_sender: senderEl ? senderEl.value.trim() : '',
+        gmail_password: passwordEl ? passwordEl.value : '',
+        gmail_recipient: recipientEl ? recipientEl.value.trim() : '',
+        gmail_smtp_server: (smtpServerEl ? smtpServerEl.value.trim() : '') || 'smtp.gmail.com',
+        gmail_smtp_port: parseInt(smtpPortEl ? smtpPortEl.value : '587', 10) || 587,
+        gmail_client_id: clientIdEl ? clientIdEl.value.trim() : '',
+        gmail_client_secret: clientSecretEl ? clientSecretEl.value : ''
       };
       
       if (!payload.gmail_sender || !payload.gmail_recipient) {
@@ -2845,14 +3026,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
       whitelist.forEach(item => {
         const tr = document.createElement('tr');
+        const isWhatsApp = item.whatsapp_onboarded;
+        const statusBadge = isWhatsApp
+          ? `<span class="badge-whatsapp">WhatsApp Verified</span>`
+          : (item.twilio_verified ? `<span class="badge-verified">Whitelisted</span>` : `<span class="badge-unverified">Pending</span>`);
+
         tr.innerHTML = `
           <td><code style="font-size: 12.5px; background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px;">${item.phone_number}</code></td>
-          <td><strong>${item.friendly_name || '--'}</strong></td>
           <td>
-            <span class="${item.twilio_verified ? 'badge-verified' : 'badge-unverified'}">
-              ${item.twilio_verified ? 'Verified' : 'Pending'}
-            </span>
+            <strong>${item.friendly_name || '--'}</strong>
+            ${item.recipient_role ? `<span class="badge" style="font-size: 9px; margin-left: 6px; padding: 1px 4px; background: rgba(255,255,255,0.08);">${item.recipient_role}</span>` : ''}
           </td>
+          <td>${statusBadge}</td>
           <td>
             <button class="btn btn-sm btn-danger delete-whitelist-btn" data-id="${item.id}">
               <svg class="btn-icon" viewBox="0 0 24 24" width="14" height="14"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
@@ -3692,10 +3877,49 @@ document.addEventListener('DOMContentLoaded', () => {
     agentQrOnboardBtn.addEventListener('click', () => {
       const staffSelector = document.getElementById('staff-agent-selector');
       let agentName = '';
+      let phone = '';
       if (staffSelector && staffSelector.selectedIndex >= 0) {
-        agentName = staffSelector.options[staffSelector.selectedIndex].text;
+        const opt = staffSelector.options[staffSelector.selectedIndex];
+        agentName = opt.dataset.name || opt.text;
+        phone = opt.dataset.phone || '';
       }
-      showQRCodeModal('AGENT', '', agentName || 'Service Agent');
+      showQRCodeModal('AGENT', phone, agentName || 'Service Agent');
+    });
+  }
+
+  // QR Modal Verify Button Event
+  const qrModalVerifyBtn = document.getElementById('qr-modal-verify-btn');
+  if (qrModalVerifyBtn) {
+    qrModalVerifyBtn.addEventListener('click', async () => {
+      const role = document.getElementById('qr-modal-role-badge') ? document.getElementById('qr-modal-role-badge').textContent.trim() : 'AGENT';
+      const staffSelector = document.getElementById('staff-agent-selector');
+      let phone = '';
+      let name = '';
+      if (role === 'AGENT' && staffSelector && staffSelector.selectedIndex >= 0) {
+        const opt = staffSelector.options[staffSelector.selectedIndex];
+        phone = opt.dataset.phone || '';
+        name = opt.dataset.name || 'Staff Member';
+      } else if (role === 'ADMIN') {
+        const adminInput = document.getElementById('admin-sms-phone');
+        phone = adminInput ? adminInput.value.trim() : '';
+        name = 'Admin';
+      } else {
+        const custInput = document.getElementById('onboard-customer-phone');
+        phone = custInput ? custInput.value.trim() : '';
+        name = 'Customer';
+      }
+      if (!phone) {
+        showToast('No phone number specified to verify.', 'error');
+        return;
+      }
+      await sendWhatsAppTestPing(phone, name, role);
+      if (typeof updateAgentConnectionUI === 'function') await updateAgentConnectionUI();
+      if (typeof loadStaffView === 'function') {
+        const currId = staffSelector ? staffSelector.value : null;
+        await loadStaffView(currId);
+      }
+      if (typeof loadSMSWhitelist === 'function') loadSMSWhitelist();
+      hideQRCodeModal();
     });
   }
 

@@ -1824,6 +1824,8 @@ def get_available_agents_for_request(request_id: int) -> list:
                 "SELECT id, name, role, email, phone_number FROM staff_agents ORDER BY id ASC;"
             )
             agents = [dict(row) for row in cursor.fetchall()]
+            for a in agents:
+                a["whatsapp_connected"] = is_agent_whatsapp_connected(a.get("phone_number"))
 
     booking_time = request.get("booking_start_at") or request.get("booking_time") or request.get("time_slot")
     if not booking_time or str(booking_time).upper() == "ASAP":
@@ -2076,6 +2078,98 @@ def is_phone_whitelisted(phone_number: str) -> bool:
                 if w_clean == clean or (len(w_clean) == 10 and clean.endswith(w_clean)):
                     return True
             return False
+
+
+def is_agent_whatsapp_connected(phone_number: str) -> bool:
+    """Checks whether an agent's phone number is whitelisted and onboarded to WhatsApp."""
+    import re
+    if not phone_number:
+        return False
+    clean = re.sub(r"\D", "", str(phone_number))
+    if not clean:
+        return False
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT phone_number, whatsapp_onboarded FROM sms_whitelist WHERE whatsapp_onboarded = TRUE;")
+            for r in cursor.fetchall():
+                if r.get("whatsapp_onboarded") is False:
+                    continue
+                w_clean = re.sub(r"\D", "", r.get("phone_number") or "")
+                if not w_clean:
+                    continue
+                if w_clean == clean:
+                    return True
+                if len(w_clean) == 10 and clean.endswith(w_clean):
+                    return True
+                if len(clean) == 10 and w_clean.endswith(clean):
+                    return True
+            return False
+
+
+def get_agent_whatsapp_status(agent_id: int) -> dict:
+    """Returns WhatsApp onboarding status and phone info for a specific staff agent."""
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT id, name, phone_number FROM staff_agents WHERE id = %s;", (agent_id,))
+            agent = cursor.fetchone()
+            if not agent:
+                return {
+                    "agent_id": agent_id,
+                    "has_phone": False,
+                    "phone_number": None,
+                    "is_connected": False,
+                    "whatsapp_onboarded_at": None,
+                }
+            phone = agent.get("phone_number")
+            if not phone:
+                return {
+                    "agent_id": agent_id,
+                    "has_phone": False,
+                    "phone_number": None,
+                    "is_connected": False,
+                    "whatsapp_onboarded_at": None,
+                }
+            is_connected = is_agent_whatsapp_connected(phone)
+            cursor.execute(
+                "SELECT whatsapp_onboarded_at FROM sms_whitelist WHERE phone_number = %s AND whatsapp_onboarded = TRUE LIMIT 1;",
+                (phone,)
+            )
+            wl_row = cursor.fetchone()
+            onboarded_at = wl_row["whatsapp_onboarded_at"] if wl_row else None
+            return {
+                "agent_id": agent_id,
+                "has_phone": True,
+                "phone_number": phone,
+                "is_connected": is_connected,
+                "whatsapp_onboarded_at": onboarded_at.isoformat() if onboarded_at else None,
+            }
+
+
+def disconnect_agent_whatsapp(agent_id: int) -> dict:
+    """Marks an agent's phone as not onboarded to WhatsApp in the whitelist."""
+    import re
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT id, name, phone_number FROM staff_agents WHERE id = %s;", (agent_id,))
+            agent = cursor.fetchone()
+            if not agent:
+                return {"success": False, "error": "Agent not found", "is_connected": False}
+            phone = agent.get("phone_number")
+            if not phone:
+                return {"success": True, "agent_id": agent_id, "is_connected": False}
+            
+            clean = re.sub(r"\D", "", phone)
+            cursor.execute(
+                """
+                UPDATE sms_whitelist
+                SET whatsapp_onboarded = FALSE, whatsapp_onboarded_at = NULL
+                WHERE phone_number = %s
+                   OR (LENGTH(%s) >= 10 AND regexp_replace(phone_number, '\D', '', 'g') LIKE '%%' || RIGHT(%s, 10));
+                """,
+                (phone, clean, clean)
+            )
+            conn.commit()
+            return {"success": True, "agent_id": agent_id, "phone_number": phone, "is_connected": False}
 
 
 def log_sms_dispatch(

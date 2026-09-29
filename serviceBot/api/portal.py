@@ -137,12 +137,12 @@ If a specific service is requested (such as an oil change, brake inspection, or 
 
 Once all mandatory details are collected, ask:
 "Would you like to book an appointment for this service now, or would you prefer to arrange a callback?"
-- If they prefer a callback: Ask for their preferred day and time window, then call `create_service_request` (or `request_callback`). MANDATORY: Keep `issue_description` (or `issue`) concise and focused ONLY on the requested services or reported symptoms (e.g., "Windshield repair", "Oil change"). Do NOT repeat caller name, phone, vehicle details, or preferred time inside `issue_description`, as those are tracked in separate fields.
+- If they prefer a callback: Ask for their preferred day and time window, then immediately call `create_service_request` with `booking_type="callback"` and `booking_time` set to their preferred time. MANDATORY: Keep `issue_description` (or `issue`) concise and focused ONLY on the requested services or reported symptoms (e.g., "Windshield repair", "Oil change"). Do NOT repeat caller name, phone, vehicle details, or preferred time inside `issue_description`, as those are tracked in separate fields. NEVER verbally confirm a callback or end the call without executing the `create_service_request` tool call!
 - If they want to book an appointment: Proceed to the Appointment Booking steps below.
 
 ### 3. APPOINTMENT BOOKING & RESCHEDULING
-- **Checking Availability:** Always check open calendar slots first by calling `check_availability` with their preferred date or time window. Suggest the best available slots clearly.
-- **Mandatory Price & Duration Quote Before Booking:** BEFORE calling `create_service_request` or `book_appointment`, you MUST look up the service's estimated cost and time duration in our knowledge base (using `query_knowledge_base` if needed). Quote both clearly to the caller (for example: *"An oil change is typically $79 to $119 and takes about 45 minutes"*). Ask for their explicit confirmation to proceed at that rate. Only call the booking tool after they explicitly confirm. MANDATORY: Keep `issue_description` (or `issue`) concise and focused ONLY on the requested services or reported symptoms. Do NOT repeat caller name, phone, vehicle details, or appointment date/time in `issue_description`, as those are tracked in separate fields. Never leave the description generic or empty.
+- **Checking Availability:** Always check open calendar slots first by calling `check_availability` ONCE with their preferred date or time window. Suggest the best available slots clearly. If no slots are found or available: Do NOT loop or repeatedly check multiple dates. Politely apologize to the customer (for example: *"I apologize, but we don't have any open appointment slots available right now. I can arrange for a service advisor to call you back to get you scheduled."*). Do NOT mention technical details, sync status, or internal errors. Transition smoothly to arranging a callback.
+- **Mandatory Price & Duration Quote Before Booking:** BEFORE calling `create_service_request` or `book_appointment` for an appointment, you MUST look up the service's estimated cost and time duration in our knowledge base (using `query_knowledge_base` if needed). Quote both clearly to the caller (for example: *"An oil change is typically $79 to $119 and takes about 45 minutes"*). Ask for their explicit confirmation to proceed at that rate. Only call the booking tool after they explicitly confirm. MANDATORY: Keep `issue_description` (or `issue`) concise and focused ONLY on the requested services or reported symptoms. Do NOT repeat caller name, phone, vehicle details, or appointment date/time in `issue_description`, as those are tracked in separate fields. Never leave the description generic or empty.
 - **Rescheduling:** First call `get_customer_appointments` using their phone number to check current bookings. State their existing appointment time, then call `check_availability` for their preferred new date/time. Once confirmed, call `reschedule_appointment`.
 
 ### 4. FAQ & KNOWLEDGE BASE
@@ -157,7 +157,10 @@ Whenever you call any tool or perform a database/server lookup (`check_availabil
 - Looking up info/FAQ: *"Let me look that up for you..."*, *"Checking our service catalog, just a moment..."*, *"Let me check our details on that..."*
 - Booking/Saving: *"Getting that appointment booked for you now..."*, *"Saving those details for you, one moment..."*
 - Transferring: *"Connecting you with a service advisor now, please hold..."*
-Speak the filler naturally as part of the conversation so the caller experiences zero dead air."""
+Speak the filler naturally as part of the conversation so the caller experiences zero dead air.
+**STRICT RULES FOR FILLERS:**
+- NEVER repeat the same filler phrase back-to-back.
+- NEVER repeatedly call `check_availability` across multiple dates in a row. Call it ONCE for the caller's requested timeframe. If no slots are available, immediately apologize and offer a callback without re-checking."""
 
     defaults = {
         "handoff_phone_number": "+14242704893",
@@ -588,6 +591,7 @@ def sync_all_agent_calendars(days: int = 30):
 @router.get("/agents")
 def get_staff_agents():
     from serviceBot.db.connection import get_db_connection, dict_cursor
+    from serviceBot.db.queries import is_agent_whatsapp_connected
     try:
         with get_db_connection() as conn:
             with dict_cursor(conn) as cursor:
@@ -609,7 +613,8 @@ def get_staff_agents():
                         "role": row["role"],
                         "email": resolved_email,
                         "phone_number": row["phone_number"],
-                        "is_connected": bool(row["google_email"])
+                        "is_connected": bool(row["google_email"]),
+                        "whatsapp_connected": is_agent_whatsapp_connected(row["phone_number"])
                     }
                     agents.append(d)
                 return agents
@@ -620,6 +625,7 @@ def get_staff_agents():
 @router.get("/agents/{agent_id}")
 async def get_staff_agent(agent_id: int):
     from serviceBot.db.connection import get_db_connection, dict_cursor
+    from serviceBot.db.queries import is_agent_whatsapp_connected
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             cursor.execute("""
@@ -641,7 +647,8 @@ async def get_staff_agent(agent_id: int):
                 "email": resolved_email,
                 "db_email": row["db_email"],
                 "phone_number": row["phone_number"],
-                "is_connected": bool(row["google_email"])
+                "is_connected": bool(row["google_email"]),
+                "whatsapp_connected": is_agent_whatsapp_connected(row["phone_number"])
             }
 
 @router.put("/agents/{agent_id}")
@@ -801,6 +808,7 @@ async def get_agent_oauth_url(agent_id: int, request: Request):
 @router.get("/agents/{agent_id}/google/status")
 async def get_agent_google_status(agent_id: int):
     from serviceBot.db.connection import get_db_connection, dict_cursor
+    from serviceBot.db.queries import get_agent_whatsapp_status
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             cursor.execute("SELECT id, email FROM staff_agents WHERE id = %s;", (agent_id,))
@@ -815,8 +823,17 @@ async def get_agent_google_status(agent_id: int):
     system_email = config.get("gmail_sender") or os.getenv("GMAIL_SENDER") or None
 
     db_email = sa_row["email"] if sa_row else None
+    wa_status = get_agent_whatsapp_status(agent_id)
     if not row:
-        return {"is_connected": False, "is_expired": False, "email": db_email or system_email, "scopes": []}
+        return {
+            "is_connected": False,
+            "is_expired": False,
+            "email": db_email or system_email,
+            "scopes": [],
+            "whatsapp_connected": wa_status["is_connected"],
+            "whatsapp_phone": wa_status["phone_number"],
+            "has_phone": wa_status["has_phone"]
+        }
         
     scopes = row["granted_scopes"].split() if row["granted_scopes"] else []
     
@@ -833,8 +850,23 @@ async def get_agent_google_status(agent_id: int):
         "is_connected": True,
         "is_expired": is_expired,
         "email": row["email"] or db_email or system_email,
-        "scopes": scopes
+        "scopes": scopes,
+        "whatsapp_connected": wa_status["is_connected"],
+        "whatsapp_phone": wa_status["phone_number"],
+        "has_phone": wa_status["has_phone"]
     }
+
+@router.get("/agents/{agent_id}/whatsapp/status")
+async def get_agent_whatsapp_status_endpoint(agent_id: int):
+    from serviceBot.db.queries import get_agent_whatsapp_status
+    status = get_agent_whatsapp_status(agent_id)
+    return {"success": True, **status}
+
+@router.post("/agents/{agent_id}/whatsapp/disconnect")
+async def disconnect_agent_whatsapp_endpoint(agent_id: int):
+    from serviceBot.db.queries import disconnect_agent_whatsapp
+    result = disconnect_agent_whatsapp(agent_id)
+    return result
 
 @router.post("/agents/{agent_id}/google/disconnect")
 async def disconnect_agent_google(agent_id: int):
@@ -996,7 +1028,7 @@ async def get_service_requests(limit: Optional[int] = None, offset: Optional[int
                        sr.notification_dispatched_at, sr.sla_expires_at,
                        c.name AS customer_name, c.phone,
                        v.make, v.model, v.year,
-                       sa.name AS staff_agent_name, sa.role AS staff_agent_role,
+                       sa.name AS staff_agent_name, sa.role AS staff_agent_role, sa.phone_number AS staff_agent_phone,
                        COALESCE((SELECT (status = 'FAILED') FROM sms_log WHERE appointment_id = sr.id ORDER BY created_at DESC, id DESC LIMIT 1), FALSE) AS has_failed_sms,
                        COALESCE((SELECT (status = 'FAILED_REVERTED') FROM outbox_notifications WHERE request_id = sr.id ORDER BY created_at DESC, id DESC LIMIT 1), FALSE) AS has_failed_email
                 FROM service_requests sr
@@ -1019,6 +1051,13 @@ async def get_service_requests(limit: Optional[int] = None, offset: Optional[int
                 r = dict(row)
                 if not isinstance(r["created_at"], str) and r["created_at"]:
                     r["created_at"] = r["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+
+                from serviceBot.db.queries import is_agent_whatsapp_connected
+                if r.get("staff_agent_id"):
+                    sa_phone = r.get("staff_agent_phone")
+                    r["staff_agent_whatsapp_connected"] = is_agent_whatsapp_connected(sa_phone) if sa_phone else False
+                else:
+                    r["staff_agent_whatsapp_connected"] = None
 
                 duration = r.get("duration_minutes")
                 if not duration:

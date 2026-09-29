@@ -599,7 +599,7 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
             result = {
                 "success": True,
                 "available_slots": slots,
-                "message": f"Found {len(slots)} available slots on/after {preferred_date}." if slots else "No slots found."
+                "message": f"Found {len(slots)} available slots on/after {preferred_date}." if slots else "I apologize, but there are no open appointment slots available in our schedule right now. Please apologize to the caller for the inconvenience and offer to arrange a callback without checking further dates."
             }
 
         elif tool_name in ["cba_webbook", "cba_webhook", "transfer_call", "handoff"]:
