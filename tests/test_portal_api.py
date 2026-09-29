@@ -166,14 +166,66 @@ def test_api_key_encryption_decryption():
     decrypted = decrypt_key(encrypted)
     assert decrypted == raw_key
 
+def test_extract_vehicle_from_summary_variations():
+    from serviceBot.api.portal import extract_vehicle_from_summary
+
+    test_cases = [
+        ("- Vehicle information: 2021 Tesla Model 3.", "2021 Tesla Model 3"),
+        ("- Vehicle details: 2020 Toyota Corolla.", "2020 Toyota Corolla"),
+        ("- Vehicle: 2021 BMW X3.", "2021 BMW X3"),
+        ("- Vehicle info: 2022 Ford F-150.", "2022 Ford F-150"),
+        ("- Vehicle (Make, Model, Year): 2021 Tesla Model 3.", "2021 Tesla Model 3"),
+        ("- Asset details: 2021 Honda Civic.", "2021 Honda Civic"),
+        ("- Asset information: 2019 Subaru Outback.", "2019 Subaru Outback"),
+        ("- Asset info: 2020 Audi A4.", "2020 Audi A4"),
+        ("- Asset: 2023 Chevy Bolt.", "2023 Chevy Bolt"),
+        ("- Customer's vehicle: 2018 Toyota Camry.", "2018 Toyota Camry"),
+        ("- Customer's asset: 2017 Honda Accord.", "2017 Honda Accord"),
+        ("- Vehicle details: None", ""),
+        ("- Vehicle details: N/A", ""),
+        ("- Vehicle details: Not mentioned", ""),
+        ("Call ended before completion; no service details were gathered.", ""),
+        ("", "")
+    ]
+    for text, expected in test_cases:
+        assert extract_vehicle_from_summary(text) == expected
+
+
 def test_get_calls_endpoint():
-    response = client.get("/api/v1/portal/calls")
-    assert response.status_code == 200
-    calls = response.json()
-    assert isinstance(calls, list)
-    if calls:
-        for call in calls:
-            assert "vehicle" in call
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_conn.__enter__.return_value = mock_conn
+    mock_cursor.__enter__.return_value = mock_cursor
+    mock_cursor.fetchall.return_value = [
+        {
+            "id": 21,
+            "call_id": "conv_9101m3q29xnhez2at9r793btep72",
+            "customer_name": "Rohan Roy",
+            "phone": "424-270-4893",
+            "summary": "- Customer's primary concern: Cracked windshield.\n- Vehicle information: 2021 Tesla Model 3.\n- Scheduled callback: Tomorrow at 9:00 AM.",
+            "transcript": "Agent: Hello...",
+            "created_at": "2026-09-29 17:16:37"
+        },
+        {
+            "id": 16,
+            "call_id": "conv_8501kx9rb99sfpb97jgjfgpz2gek",
+            "customer_name": "Jane Doe",
+            "phone": "555-123-4567",
+            "summary": "- Customer's primary concern: AC service.\n- Vehicle details: 2020 Toyota Corolla.\n- Scheduled callback: July 13th.",
+            "transcript": "Agent: Hello...",
+            "created_at": "2026-07-13 10:00:00"
+        }
+    ]
+
+    with patch("serviceBot.db.connection.get_db_connection", return_value=mock_conn), \
+         patch("serviceBot.db.connection.dict_cursor", return_value=mock_cursor):
+        response = client.get("/api/v1/portal/calls")
+        assert response.status_code == 200
+        calls = response.json()
+        assert isinstance(calls, list)
+        assert len(calls) == 2
+        assert calls[0]["vehicle"] == "2021 Tesla Model 3"
+        assert calls[1]["vehicle"] == "2020 Toyota Corolla"
 
 @patch("serviceBot.services.rag.FAQService.index_text")
 def test_kb_upload_endpoint(mock_index_text):

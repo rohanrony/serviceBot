@@ -79,7 +79,7 @@ def generate_service_summary(transcript: str) -> str:
             "specifically tailored to an automotive service intake.\n\n"
             "Include the following details where mentioned:\n"
             "- The customer's primary concern or vehicle issue (e.g. grinding brakes, AC blowing warm air).\n"
-            "- The vehicle's Make, Model, and Year.\n"
+            "- The vehicle/asset details (Make, Model, and Year) formatted as 'Vehicle details: <Year Make Model>' (or 'None' if not specified).\n"
             "- Any scheduled appointments or booking times.\n"
             "- Additional context (e.g., if shuttle was requested, warranty questions).\n\n"
             "Format the summary as clean bullet points. Keep it professional and focused on the service intake details.\n\n"

@@ -137,11 +137,11 @@ If a specific service is requested (such as an oil change, brake inspection, or 
 
 Once all mandatory details are collected, ask:
 "Would you like to book an appointment for this service now, or would you prefer to arrange a callback?"
-- If they prefer a callback: Ask for their preferred day and time window, then immediately call `create_service_request` with `booking_type="callback"` and `booking_time` set to their preferred time. MANDATORY: Keep `issue_description` (or `issue`) concise and focused ONLY on the requested services or reported symptoms (e.g., "Windshield repair", "Oil change"). Do NOT repeat caller name, phone, vehicle details, or preferred time inside `issue_description`, as those are tracked in separate fields. NEVER verbally confirm a callback or end the call without executing the `create_service_request` tool call!
+- If they prefer a callback: If they ask for callback availability or when an advisor can call, call `check_availability` with `booking_type="callback"` and their preferred date/time window (checks 15-minute callback slots). Callback calls are made during business hours (Monday–Friday 7:00 AM – 6:00 PM ET). Confirm their preferred day and time window, then immediately call `create_service_request` with `booking_type="callback"` and `booking_time` set to their confirmed time. MANDATORY: Keep `issue_description` (or `issue`) concise and focused ONLY on the requested services or reported symptoms (e.g., "Windshield repair", "Oil change"). Do NOT repeat caller name, phone, vehicle details, or preferred time inside `issue_description`, as those are tracked in separate fields. NEVER verbally confirm a callback or end the call without executing the `create_service_request` tool call!
 - If they want to book an appointment: Proceed to the Appointment Booking steps below.
 
 ### 3. APPOINTMENT BOOKING & RESCHEDULING
-- **Checking Availability:** Always check open calendar slots first by calling `check_availability` ONCE with their preferred date or time window. Suggest the best available slots clearly. If no slots are found or available: Do NOT loop or repeatedly check multiple dates. Politely apologize to the customer (for example: *"I apologize, but we don't have any open appointment slots available right now. I can arrange for a service advisor to call you back to get you scheduled."*). Do NOT mention technical details, sync status, or internal errors. Transition smoothly to arranging a callback.
+- **Checking Availability:** Always check open calendar slots first by calling `check_availability` with their preferred date or time window (e.g. morning, afternoon, or specific date). Suggest the best available slots clearly. If no slots are available for that timeframe: Inform the customer politely (e.g., *"I apologize, but we don't have any open appointment slots for that specific time."*). If the customer asks for another specific time window or day (e.g. "What about afternoon?" or "What about Friday?"), call `check_availability` for their new request. If no slots work, smoothly transition to arranging an advisor callback. Do NOT loop autonomously through unrequested dates.
 - **Mandatory Price & Duration Quote Before Booking:** BEFORE calling `create_service_request` or `book_appointment` for an appointment, you MUST look up the service's estimated cost and time duration in our knowledge base (using `query_knowledge_base` if needed). Quote both clearly to the caller (for example: *"An oil change is typically $79 to $119 and takes about 45 minutes"*). Ask for their explicit confirmation to proceed at that rate. Only call the booking tool after they explicitly confirm. MANDATORY: Keep `issue_description` (or `issue`) concise and focused ONLY on the requested services or reported symptoms. Do NOT repeat caller name, phone, vehicle details, or appointment date/time in `issue_description`, as those are tracked in separate fields. Never leave the description generic or empty.
 - **Rescheduling:** First call `get_customer_appointments` using their phone number to check current bookings. State their existing appointment time, then call `check_availability` for their preferred new date/time. Once confirmed, call `reschedule_appointment`.
 
@@ -160,7 +160,7 @@ Whenever you call any tool or perform a database/server lookup (`check_availabil
 Speak the filler naturally as part of the conversation so the caller experiences zero dead air.
 **STRICT RULES FOR FILLERS:**
 - NEVER repeat the same filler phrase back-to-back.
-- NEVER repeatedly call `check_availability` across multiple dates in a row. Call it ONCE for the caller's requested timeframe. If no slots are available, immediately apologize and offer a callback without re-checking."""
+- NEVER enter an autonomous loop checking multiple dates without the caller asking. Call `check_availability` for the timeframe the caller requests. If the caller asks for a different time window (such as morning vs afternoon) or a different date, call `check_availability` for that updated request."""
 
     defaults = {
         "handoff_phone_number": "+14242704893",
@@ -921,10 +921,34 @@ class ServiceRequestEdit(BaseModel):
 
 
 
+def extract_vehicle_from_summary(summary: str) -> str:
+    """Extract vehicle/asset string from an AI call summary."""
+    import re
+    if not summary:
+        return ""
+    match = re.search(
+        r"(?:(?:Customer'?s?\s+)?(?:Vehicle|Asset))(?:\s+(?:information|details|info))?(?:\s*\([^)]*\))?:\s*([^\n\r]+)",
+        summary,
+        re.IGNORECASE,
+    )
+    if match:
+        vehicle = match.group(1).strip(" .\t")
+        if vehicle.lower() in [
+            "none",
+            "n/a",
+            "not mentioned",
+            "unknown",
+            "none mentioned",
+            "not provided",
+        ]:
+            return ""
+        return vehicle
+    return ""
+
+
 @router.get("/calls")
 async def get_calls(limit: Optional[int] = None, offset: Optional[int] = None):
     from serviceBot.db.connection import get_db_connection, dict_cursor
-    import re
 
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
@@ -950,17 +974,8 @@ async def get_calls(limit: Optional[int] = None, offset: Optional[int] = None):
                 if not isinstance(r["created_at"], str) and r["created_at"]:
                     r["created_at"] = r["created_at"].strftime("%Y-%m-%d %H:%M:%S")
                 
-                # Extract vehicle from AI summary instead of listing all registered vehicles
-                vehicle_match = re.search(r"Vehicle(?: details)?:\s*([^\n\r]+)", r.get("summary", ""), re.IGNORECASE)
-                if vehicle_match:
-                    vehicle = vehicle_match.group(1).strip(" .")
-                    if vehicle.lower() in ["none", "n/a", "not mentioned", "unknown"]:
-                        r["vehicle"] = ""
-                    else:
-                        r["vehicle"] = vehicle
-                else:
-                    r["vehicle"] = ""
-                    
+                # Extract vehicle/asset from AI summary instead of listing all registered vehicles
+                r["vehicle"] = extract_vehicle_from_summary(r.get("summary", ""))
                 res.append(r)
             return res
 

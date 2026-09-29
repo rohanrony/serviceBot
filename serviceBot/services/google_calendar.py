@@ -305,6 +305,24 @@ def create_agent_calendar_event(
         print(f"Exception creating calendar event for agent {agent_id}: {str(e)}")
         return False
 
+
+def _normalize_iso_timezone(iso_str: str) -> str:
+    """Ensure an ISO datetime string has a timezone offset before sending to Google Calendar API."""
+    if not iso_str:
+        return iso_str
+    # If already has timezone (Z, z, +HH:MM, or -HH:MM after date)
+    if "Z" in iso_str or "z" in iso_str or "+" in iso_str or (len(iso_str) > 10 and "-" in iso_str[10:]):
+        return iso_str
+    try:
+        from serviceBot.services.calendar_sync import TZ
+        dt = datetime.fromisoformat(iso_str)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=TZ)
+        return dt.isoformat()
+    except Exception:
+        return iso_str
+
+
 def fetch_agent_events(agent_id: int, start_iso: str, end_iso: str) -> Optional[list]:
     """
     Fetches events for a given agent in a given ISO time range.
@@ -312,6 +330,8 @@ def fetch_agent_events(agent_id: int, start_iso: str, end_iso: str) -> Optional[
       - None if the agent is not connected (no Google credentials/revoked).
       - List of dicts representing active events if connected.
     """
+    start_iso = _normalize_iso_timezone(start_iso)
+    end_iso = _normalize_iso_timezone(end_iso)
     try:
         creds = get_user_google_credentials(agent_id)
         if creds.get("access_token", "").startswith("dummy_"):

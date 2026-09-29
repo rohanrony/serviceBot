@@ -572,12 +572,55 @@ def check_availability(service_type: str = None, preferred_date: str = None, boo
             except Exception as exc:
                 agent_events_map[aid] = None
 
+    blocked_mock_slots = set()
+    reserved_segments = set()
+    try:
+        with get_db_connection() as conn:
+            with dict_cursor(conn) as cursor:
+                cursor.execute(
+                    """
+                    SELECT staff_agent_id, slot_datetime
+                    FROM mock_calendar_slots
+                    WHERE (reservation_status IN ('RESERVED', 'BLOCKED') OR is_booked = TRUE)
+                      AND slot_datetime >= %s AND slot_datetime <= %s;
+                    """,
+                    (min_dt.replace(tzinfo=None), max_dt.replace(tzinfo=None)),
+                )
+                for r in cursor.fetchall():
+                    s_dt = r["slot_datetime"]
+                    dt_str = s_dt.strftime("%Y-%m-%d %H:%M:%S") if hasattr(s_dt, "strftime") else str(s_dt)[:19]
+                    blocked_mock_slots.add((r["staff_agent_id"], dt_str))
+
+                cursor.execute(
+                    """
+                    SELECT staff_agent_id, segment_start
+                    FROM appointment_reservation_segments
+                    WHERE segment_start >= %s AND segment_start <= %s;
+                    """,
+                    (min_dt.replace(tzinfo=None), max_dt.replace(tzinfo=None)),
+                )
+                for r in cursor.fetchall():
+                    s_dt = r["segment_start"]
+                    dt_str = s_dt.strftime("%Y-%m-%d %H:%M:%S") if hasattr(s_dt, "strftime") else str(s_dt)[:19]
+                    reserved_segments.add((r["staff_agent_id"], dt_str))
+    except Exception as db_err:
+        pass
+
     def is_agent_free_live(agent_id: int, slot_dt_str: str) -> bool:
-        """Returns True if agent has no Google Calendar event overlapping the slot."""
+        """Returns True if agent has no Google Calendar or local DB conflict for the slot."""
         if agent_id not in agent_events_map or agent_events_map[agent_id] is None:
             # A provider failure is unknown capacity, never a free slot.
             return False
-        slot_start = datetime.strptime(slot_dt_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=tz)
+
+        # Check local DB blocks & reservations across all 15-minute segments of the slot
+        slot_dt_naive = datetime.strptime(slot_dt_str, "%Y-%m-%d %H:%M:%S")
+        for seg_offset in range(0, duration_minutes, 15):
+            seg_time = slot_dt_naive + timedelta(minutes=seg_offset)
+            seg_str = seg_time.strftime("%Y-%m-%d %H:%M:%S")
+            if (agent_id, seg_str) in blocked_mock_slots or (agent_id, seg_str) in reserved_segments:
+                return False
+
+        slot_start = slot_dt_naive.replace(tzinfo=tz)
         slot_end = slot_start + timedelta(minutes=duration_minutes)
         for event in agent_events_map[agent_id]:
             evt_start = parse_google_datetime(event.get("start"), tz)
@@ -587,15 +630,45 @@ def check_availability(service_type: str = None, preferred_date: str = None, boo
                     return False
         return True
 
-    available_datetimes = []
+    all_free_slots = []
     for slot_dt_str in candidate_slots:
-        if len(available_datetimes) >= 3:
-            break
-        any_free = any(is_agent_free_live(aid, slot_dt_str) for aid in all_agent_ids)
-        if any_free:
-            available_datetimes.append(slot_dt_str)
+        if any(is_agent_free_live(aid, slot_dt_str) for aid in all_agent_ids):
+            all_free_slots.append(slot_dt_str)
 
-    return available_datetimes
+    if not all_free_slots:
+        return []
+
+    # If caller specified a time window (e.g. morning, afternoon, evening), return first 3 in that window
+    if time_window:
+        return all_free_slots[:3]
+
+    # If general date inquiry without time window, provide a diverse spread across morning, midday, afternoon
+    target_date_str = all_free_slots[0][:10]
+    day_slots = [s for s in all_free_slots if s.startswith(target_date_str)]
+    if len(day_slots) <= 3:
+        return day_slots
+
+    morning_slots = [s for s in day_slots if int(s[11:13]) < 12]
+    midday_slots = [s for s in day_slots if 12 <= int(s[11:13]) < 15]
+    afternoon_slots = [s for s in day_slots if int(s[11:13]) >= 15]
+
+    selected = []
+    if morning_slots:
+        selected.append(morning_slots[0])
+    if midday_slots:
+        selected.append(midday_slots[0])
+    if afternoon_slots:
+        selected.append(afternoon_slots[0])
+
+    if len(selected) < 3:
+        for s in day_slots:
+            if s not in selected:
+                selected.append(s)
+            if len(selected) >= 3:
+                break
+
+    selected.sort()
+    return selected[:3]
 
 
 def validate_booking_time(booking_time: str) -> bool:

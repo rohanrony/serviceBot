@@ -225,10 +225,13 @@ class CalendarAvailabilityService:
         events = None
         if first and last:
             try:
+                from serviceBot.services.calendar_sync import TZ
+                first_localized = first.replace(tzinfo=TZ)
+                last_localized = (last + dt_mod.timedelta(minutes=15)).replace(tzinfo=TZ)
                 events = self._fetch_events(
                     agent_id,
-                    first.isoformat(),
-                    (last + dt_mod.timedelta(minutes=15)).isoformat(),
+                    first_localized.isoformat(),
+                    last_localized.isoformat(),
                 )
             except Exception:
                 events = None
@@ -237,35 +240,51 @@ class CalendarAvailabilityService:
         blocked = 0
         provider_available = events is not None
         events = events or []
+        records = []
+
         with self._connection_factory() as conn:
             with self._cursor_factory(conn) as cursor:
                 self._assert_agent(cursor, agent_id)
+                cursor.execute(
+                    "SELECT slot_datetime FROM mock_calendar_slots WHERE staff_agent_id = %s;",
+                    (agent_id,),
+                )
+                existing_slots = {
+                    r["slot_datetime"].strftime("%Y-%m-%d %H:%M:%S")
+                    if hasattr(r["slot_datetime"], "strftime")
+                    else str(r["slot_datetime"])[:19]
+                    for r in cursor.fetchall()
+                }
+
                 for raw_slot in slot_strings:
                     starts_at = parse_slot_datetime(raw_slot)
                     is_blocked = not provider_available or any(
                         provider_event_overlaps_slot(event, starts_at) for event in events
                     )
                     reservation_status = "BLOCKED" if is_blocked else "AVAILABLE"
-                    cursor.execute(
-                        """
-                        SELECT id FROM mock_calendar_slots
-                        WHERE staff_agent_id = %s AND slot_datetime = %s
-                        FOR UPDATE;
-                        """,
-                        (agent_id, raw_slot),
-                    )
-                    exists = cursor.fetchone()
-                    if not exists:
+                    if raw_slot not in existing_slots:
                         created += 1
                     if is_blocked:
                         blocked += 1
-                    cursor.execute(
+
+                    records.append((
+                        raw_slot,
+                        is_blocked,
+                        agent_id,
+                        reservation_status,
+                        "CREATED" if provider_available else "FAILED",
+                    ))
+
+                if records:
+                    from psycopg2.extras import execute_values
+                    execute_values(
+                        cursor,
                         """
                         INSERT INTO mock_calendar_slots (
                             slot_datetime, is_booked, staff_agent_id, reservation_status,
                             calendar_integration_status
                         )
-                        VALUES (%s, %s, %s, %s, %s)
+                        VALUES %s
                         ON CONFLICT (slot_datetime, staff_agent_id) DO UPDATE
                         SET is_booked = CASE
                                 WHEN mock_calendar_slots.reservation_status = 'RESERVED'
@@ -284,13 +303,8 @@ class CalendarAvailabilityService:
                             END,
                             updated_at = CURRENT_TIMESTAMP;
                         """,
-                        (
-                            raw_slot,
-                            is_blocked,
-                            agent_id,
-                            reservation_status,
-                            "CREATED" if provider_available else "FAILED",
-                        ),
+                        records,
+                        template="(%s, %s, %s, %s, %s)",
                     )
                 conn.commit()
 
