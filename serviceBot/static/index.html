@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
   <!-- Stylesheets -->
-  <link rel="stylesheet" href="style.css?v=19">
+  <link rel="stylesheet" href="style.css?v=22">
 </head>
 <body>
 
@@ -108,25 +108,25 @@
             <div class="metric-card">
               <span class="metric-label">Total Calls</span>
               <h3 class="metric-value" id="stat-total-calls">--</h3>
-              <div class="metric-badge success" id="stat-calls-badge">Past 7 days • 100% answer rate</div>
+              <div class="metric-badge" id="stat-calls-badge"><span class="badge-dot success"></span>Past 7 days • 100% answer rate</div>
             </div>
             
             <div class="metric-card">
               <span class="metric-label">Callbacks Requested</span>
               <h3 class="metric-value" id="stat-callbacks">--</h3>
-              <div class="metric-badge info">As soon as possible</div>
+              <div class="metric-badge"><span class="badge-dot info"></span>As soon as possible</div>
             </div>
             
             <div class="metric-card">
               <span class="metric-label">Booked Appointments</span>
               <h3 class="metric-value" id="stat-appointments">--</h3>
-              <div class="metric-badge success" id="stat-calendar-free">-- slots open</div>
+              <div class="metric-badge" id="stat-calendar-free"><span class="badge-dot neutral"></span>-- slots open</div>
             </div>
             
             <div class="metric-card">
               <span class="metric-label">Captured Service Requests</span>
               <h3 class="metric-value" id="stat-requests">--</h3>
-              <div class="metric-badge warning" id="stat-requests-badge">-- pending triage</div>
+              <div class="metric-badge" id="stat-requests-badge"><span class="badge-dot warning"></span>-- pending triage</div>
             </div>
           </div>
           
@@ -1448,7 +1448,7 @@
 
   <!-- QR Code Onboarding Modal -->
   <div class="drawer-overlay" id="qr-modal-overlay"></div>
-  <div class="modal-card" id="qr-onboard-modal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1100; max-width: 440px; width: 90%; background: #161a23; border: 1px solid var(--border-card); border-radius: 12px; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.6);">
+  <div class="modal-card" id="qr-onboard-modal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1100; max-width: 440px; width: 90%; background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 12px; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.6);">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
       <div style="display: flex; align-items: center; gap: 8px;">
         <span id="qr-modal-role-badge" class="badge" style="background: rgba(37, 211, 102, 0.15); color: #25D366; border: 1px solid rgba(37, 211, 102, 0.3); font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: 600; text-transform: uppercase;">CUSTOMER</span>
@@ -1502,7 +1502,7 @@
 
   <!-- Create/Edit Service Request Modal -->
   <div class="drawer-overlay" id="sr-modal-overlay"></div>
-  <div class="modal-card" id="sr-modal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1100; max-width: 600px; width: 90%; background: #161a23; border: 1px solid var(--border-card); border-radius: 12px; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.6); max-height: 90vh; overflow-y: auto;">
+  <div class="modal-card" id="sr-modal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1100; max-width: 600px; width: 90%; background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 12px; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.6); max-height: 90vh; overflow-y: auto;">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
       <h3 id="sr-modal-title" style="margin: 0; font-size: 18px; color: #fff;">New Service Request</h3>
       <button class="btn-close" id="close-sr-modal-btn">
@@ -1585,9 +1585,9 @@
           </div>
           <p class="text-muted" style="font-size: 11px; margin-bottom: 8px;">Agent will be automatically assigned based on Google Calendar availability.</p>
 
-          <div id="sr-consent-wrapper" style="display: none; margin-top: 10px; padding: 10px; background: rgba(37, 99, 235, 0.08); border: 1px solid rgba(37, 99, 235, 0.25); border-radius: 6px;">
-            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12px; font-weight: 500; color: #93c5fd; margin: 0;">
-              <input type="checkbox" id="sr-customer-consent-check" style="width: 16px; height: 16px; accent-color: var(--color-primary);">
+          <div id="sr-consent-wrapper" style="display: none; margin-top: 10px; padding: 10px; background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px;">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12px; font-weight: 500; color: var(--text-main); margin: 0;">
+              <input type="checkbox" id="sr-customer-consent-check" style="width: 16px; height: 16px; accent-color: #ffffff;">
               <span>Customer consent sought and obtained for rescheduling</span>
             </label>
           </div>
@@ -1603,7 +1603,7 @@
 
   <!-- Confirmation Modal -->
   <div class="drawer-overlay" id="confirm-modal-overlay"></div>
-  <div class="modal-card" id="confirm-modal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1200; max-width: 400px; width: 90%; background: #161a23; border: 1px solid var(--border-card); border-radius: 12px; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.6);">
+  <div class="modal-card" id="confirm-modal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1200; max-width: 400px; width: 90%; background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 12px; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.6);">
       <h3 id="confirm-modal-title" style="margin-top: 0; color: #fff;">Are you sure?</h3>
       <p id="confirm-modal-msg" style="color: var(--text-muted); margin-bottom: 24px;">This action cannot be undone.</p>
       <div style="display: flex; justify-content: flex-end; gap: 12px;">
@@ -1616,6 +1616,6 @@
   <div class="toast" id="app-toast">Action completed successfully</div>
 
   <!-- Javascript Logic -->
-  <script src="app.js?v=29"></script>
+  <script src="app.js?v=31"></script>
 </body>
 </html>

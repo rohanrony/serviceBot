@@ -1500,7 +1500,7 @@ async def gmail_oauth_callback(request: Request, code: str = None, error: str = 
         <body style="font-family: sans-serif; background-color: #0c0d0e; color: #ef4444; padding: 50px; text-align: center;">
             <h2>Authentication Failed</h2>
             <p>{error}</p>
-            <button onclick="window.close()" style="padding: 10px 20px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; margin-top: 20px;">Close Window</button>
+            <button onclick="window.close()" style="padding: 10px 20px; background: #ffffff; color: #000000; border: none; border-radius: 6px; cursor: pointer; font-weight: 550; margin-top: 20px;">Close Window</button>
         </body>
         </html>
         """)
@@ -1537,7 +1537,7 @@ async def gmail_oauth_callback(request: Request, code: str = None, error: str = 
                     <body style="font-family: sans-serif; background-color: #0c0d0e; color: #ef4444; padding: 50px; text-align: center;">
                         <h2>Authentication Failed</h2>
                         <p>Invalid or expired state parameter. Please request connection again.</p>
-                        <button onclick="window.close()" style="padding: 10px 20px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; margin-top: 20px;">Close Window</button>
+                        <button onclick="window.close()" style="padding: 10px 20px; background: #ffffff; color: #000000; border: none; border-radius: 6px; cursor: pointer; font-weight: 550; margin-top: 20px;">Close Window</button>
                     </body>
                     </html>
                     """)
@@ -1575,7 +1575,7 @@ async def gmail_oauth_callback(request: Request, code: str = None, error: str = 
             <body style="font-family: sans-serif; background-color: #0c0d0e; color: #ef4444; padding: 50px; text-align: center;">
                 <h2>Token Exchange Failed</h2>
                 <p>{response.text}</p>
-                <button onclick="window.close()" style="padding: 10px 20px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; margin-top: 20px;">Close Window</button>
+                <button onclick="window.close()" style="padding: 10px 20px; background: #ffffff; color: #000000; border: none; border-radius: 6px; cursor: pointer; font-weight: 550; margin-top: 20px;">Close Window</button>
             </body>
             </html>
             """)
@@ -1657,7 +1657,7 @@ async def gmail_oauth_callback(request: Request, code: str = None, error: str = 
                 <div style="background-color: #121315; border: 1px solid rgba(255,255,255,0.06); padding: 40px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); border-top: 4px solid #059669; max-width: 400px;">
                     <h2 style="color: #059669; margin-bottom: 10px;">{title_text}</h2>
                     <p style="color: #8e939e; margin-bottom: 20px; font-size: 14px;">{body_text}</p>
-                    <button onclick="window.close()" style="padding: 10px 24px; background: #2563eb; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 500; font-size: 13.5px;">Close Window</button>
+                    <button onclick="window.close()" style="padding: 10px 24px; background: #ffffff; color: #000000; border: none; border-radius: 8px; cursor: pointer; font-weight: 550; font-size: 13.5px;">Close Window</button>
                 </div>
                 <script>
                     try {{
@@ -1700,7 +1700,7 @@ async def gmail_oauth_callback(request: Request, code: str = None, error: str = 
             <div style="background-color: #121315; border: 1px solid rgba(255,255,255,0.06); padding: 40px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); border-top: 4px solid #059669; max-width: 400px;">
                 <h2 style="color: #059669; margin-bottom: 10px;">Google Account Connected!</h2>
                 <p style="color: #8e939e; margin-bottom: 20px; font-size: 14px;">Gmail integration authorized successfully. You can close this window now.</p>
-                <button onclick="window.close()" style="padding: 10px 24px; background: #2563eb; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 500; font-size: 13.5px;">Close Window</button>
+                <button onclick="window.close()" style="padding: 10px 24px; background: #ffffff; color: #000000; border: none; border-radius: 8px; cursor: pointer; font-weight: 550; font-size: 13.5px;">Close Window</button>
             </div>
             <script>
                 try {
@@ -1719,7 +1719,7 @@ async def gmail_oauth_callback(request: Request, code: str = None, error: str = 
         <body style="font-family: sans-serif; background-color: #0c0d0e; color: #ef4444; padding: 50px; text-align: center;">
             <h2>Exception Occurred</h2>
             <p>{str(e)}</p>
-            <button onclick="window.close()" style="padding: 10px 20px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; margin-top: 20px;">Close Window</button>
+            <button onclick="window.close()" style="padding: 10px 20px; background: #ffffff; color: #000000; border: none; border-radius: 6px; cursor: pointer; font-weight: 550; margin-top: 20px;">Close Window</button>
         </body>
         </html>
         """)
@@ -1738,7 +1738,7 @@ async def test_gmail_config(payload: GmailConfigPayload):
         <meta charset="utf-8">
         <style>
             body { font-family: -apple-system, sans-serif; padding: 24px; background-color: #f3f4f6; color: #1f2937; }
-            .card { background: #fff; padding: 24px; border-radius: 8px; border-top: 4px solid #2563eb; max-width: 500px; margin: 0 auto; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+            .card { background: #fff; padding: 24px; border-radius: 8px; border-top: 4px solid #18181b; max-width: 500px; margin: 0 auto; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
         </style>
     </head>
     <body>

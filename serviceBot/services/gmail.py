@@ -349,8 +349,8 @@ def send_booking_notification(booking_type: str, details: dict, agent_email: Opt
                 border-radius: 9999px;
                 font-size: 12px;
                 font-weight: 600;
-                background-color: rgba(37, 99, 235, 0.1);
-                color: #2563eb;
+                background-color: #f3f4f6;
+                color: #111827;
             }}
             .footer {{
                 padding: 16px;

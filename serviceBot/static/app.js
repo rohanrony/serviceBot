@@ -587,8 +587,9 @@ document.addEventListener('DOMContentLoaded', () => {
             if (reqsStatEl) reqsStatEl.textContent = stats.total_requests;
             const reqsBadgeEl = document.getElementById('stat-requests-badge');
             if (reqsBadgeEl && stats.pending_requests !== undefined) {
-              reqsBadgeEl.textContent = `${stats.pending_requests} pending triage`;
-              reqsBadgeEl.className = stats.pending_requests === 0 ? 'metric-badge success' : 'metric-badge warning';
+              const dotClass = stats.pending_requests === 0 ? 'success' : 'warning';
+              reqsBadgeEl.innerHTML = `<span class="badge-dot ${dotClass}"></span>${stats.pending_requests} pending triage`;
+              reqsBadgeEl.className = 'metric-badge';
             }
             const callbacksStatEl = document.getElementById('stat-callbacks');
             if (callbacksStatEl) callbacksStatEl.textContent = stats.total_callbacks;
@@ -708,7 +709,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const vehicleStr = `${req.year} ${req.make} ${req.model}`;
         const baseDesc = formatIssueDescription(req.issue_description);
         const cleanDesc = req.booking_type === 'callback'
-          ? `<span style="color: var(--color-teal, #0284c7); font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 4px;">Callback</span>${baseDesc}`
+          ? `<span class="booking-type-tag callback">Callback</span>${baseDesc}`
           : baseDesc;
         
         let currentStatus = req.status;
@@ -766,9 +767,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const diffMs = Date.now() - new Date(safeDateStr).getTime();
             const diffMins = diffMs / 60000;
             if (diffMins > 60) {
-              slaBadgeHtml = `<div style="font-size: 10px; color: #ef4444; margin-top: 4px; font-weight: bold;">⚠️ SLA Overdue</div>`;
+              slaBadgeHtml = `<div class="sla-warning-badge overdue"><span class="sla-dot"></span> SLA Overdue</div>`;
             } else if (diffMins > 15) {
-              slaBadgeHtml = `<div style="font-size: 10px; color: #f59e0b; margin-top: 4px; font-weight: bold;">⚠️ Unconfirmed</div>`;
+              slaBadgeHtml = `<div class="sla-warning-badge unconfirmed"><span class="sla-dot"></span> Unconfirmed</div>`;
             }
           }
         }
@@ -799,7 +800,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const actionsHtml = `
           <div class="actions-cell-container">
             ${failedIndicator}
-            <button type="button" class="btn btn-primary btn-sm edit-sr-btn" data-id="${req.id}" style="margin-right: 4px;">Edit</button>
+            <button type="button" class="btn btn-secondary btn-sm edit-sr-btn" data-id="${req.id}">Edit</button>
             <button type="button" class="btn btn-secondary btn-sm details-sms-log-btn" data-id="${req.id}">Details</button>
           </div>
         `;
@@ -1119,7 +1120,8 @@ document.addEventListener('DOMContentLoaded', () => {
             'all': 'All time'
           };
           const labelText = labels[currentCallsTimeframe] || 'Past 7 days';
-          callsBadgeEl.textContent = `${labelText} • 100% answer rate`;
+          callsBadgeEl.innerHTML = `<span class="badge-dot success"></span>${labelText} • 100% answer rate`;
+          callsBadgeEl.className = 'metric-badge';
         }
         
         const callbacksStatEl = document.getElementById('stat-callbacks');
@@ -1132,12 +1134,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (reqsStatEl) reqsStatEl.textContent = stats.total_requests;
         const reqsBadgeEl = document.getElementById('stat-requests-badge');
         if (reqsBadgeEl && stats.pending_requests !== undefined) {
-          reqsBadgeEl.textContent = `${stats.pending_requests} pending triage`;
-          reqsBadgeEl.className = stats.pending_requests === 0 ? 'metric-badge success' : 'metric-badge warning';
+          const dotClass = stats.pending_requests === 0 ? 'success' : 'warning';
+          reqsBadgeEl.innerHTML = `<span class="badge-dot ${dotClass}"></span>${stats.pending_requests} pending triage`;
+          reqsBadgeEl.className = 'metric-badge';
         }
         
         const calFreeEl = document.getElementById('stat-calendar-free');
-        if (calFreeEl) calFreeEl.textContent = `${stats.open_slots} slots open`;
+        if (calFreeEl) {
+          calFreeEl.innerHTML = `<span class="badge-dot neutral"></span>${stats.open_slots} slots open`;
+          calFreeEl.className = 'metric-badge';
+        }
       }
     } catch (statsErr) {
       console.error('Error fetching stats:', statsErr);
@@ -3581,7 +3587,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (isFailed) {
           reasonHtml = `<div style="font-size: 12px; color: var(--text-muted); border-left: 2px solid #dc2626; padding-left: 8px; margin-top: 4px; line-height: 1.4;"><strong style="color: #dc2626;">Error Details:</strong> ${l.error_message || l.error_code || 'Twilio delivery failed.'}</div>`;
         } else if (isQueued && l.scheduled_send_at) {
-          reasonHtml = `<div style="font-size: 12px; color: var(--text-muted); border-left: 2px solid #2563eb; padding-left: 8px; margin-top: 4px; line-height: 1.4;"><strong style="color: #2563eb;">Quiet Hours Queue:</strong> Scheduled for release at ${formatLocalTimestamp(l.scheduled_send_at)}</div>`;
+          reasonHtml = `<div style="font-size: 12px; color: var(--text-muted); border-left: 2px solid #38bdf8; padding-left: 8px; margin-top: 4px; line-height: 1.4;"><strong style="color: #38bdf8;">Quiet Hours Queue:</strong> Scheduled for release at ${formatLocalTimestamp(l.scheduled_send_at)}</div>`;
         }
 
         const canRetry = isFailed || isNotWhitelisted || isOptOut;
@@ -3830,9 +3836,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (roleBadge) {
         roleBadge.textContent = cleanRole;
         if (cleanRole === 'ADMIN') {
-          roleBadge.style.background = 'rgba(37, 99, 235, 0.12)';
-          roleBadge.style.color = '#2563eb';
-          roleBadge.style.borderColor = 'rgba(37, 99, 235, 0.25)';
+          roleBadge.style.background = 'rgba(255, 255, 255, 0.1)';
+          roleBadge.style.color = '#ffffff';
+          roleBadge.style.borderColor = 'rgba(255, 255, 255, 0.2)';
         } else if (cleanRole === 'AGENT') {
           roleBadge.style.background = 'rgba(217, 119, 6, 0.12)';
           roleBadge.style.color = '#d97706';
