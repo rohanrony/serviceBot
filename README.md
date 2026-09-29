@@ -108,6 +108,7 @@ Create a `.env` file in the root directory:
 DATABASE_URL=voice_service.db
 ELEVENLABS_API_KEY=your_elevenlabs_key
 ELEVENLABS_AGENT_ID=your_agent_id
+ELEVENLABS_WEBHOOK_SECRET=your_elevenlabs_webhook_secret
 OPENAI_API_KEY=your_openai_key
 ANTHROPIC_API_KEY=your_claude_key
 GOOGLE_CLIENT_ID=your_google_oauth_client_id

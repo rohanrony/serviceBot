@@ -14,6 +14,11 @@ from serviceBot.db.connection import dict_cursor, get_db_connection
 class WebhookVerificationError(ValueError):
     """Raised when a provider request cannot be authenticated safely."""
 
+    def __init__(self, message: str, *, code: str = "verification_failed", status_code: int = 401):
+        super().__init__(message)
+        self.code = code
+        self.status_code = status_code
+
 
 class WebhookReplayConflictError(ValueError):
     """Raised when an event identifier is reused with a different payload."""
@@ -58,15 +63,24 @@ def _elevenlabs_secret() -> str:
     )
 
 
+def elevenlabs_webhook_secret_configured() -> bool:
+    """Return whether production has a secret available for ElevenLabs signatures."""
+    return bool(_elevenlabs_secret())
+
+
 def verify_elevenlabs_request(raw_body: bytes, signature_header: str | None) -> None:
     """Verify ElevenLabs' t=<unix>,v0=<hmac> signature over timestamp.body."""
     if is_test_environment():
         return
     secret = _elevenlabs_secret()
     if not secret:
-        raise WebhookVerificationError("ELEVENLABS_WEBHOOK_SECRET must be configured for webhook verification.")
+        raise WebhookVerificationError(
+            "ElevenLabs webhook verification is not configured.",
+            code="missing_secret",
+            status_code=503,
+        )
     if not signature_header:
-        raise WebhookVerificationError("Missing ElevenLabs-Signature header.")
+        raise WebhookVerificationError("Missing ElevenLabs-Signature header.", code="missing_signature")
 
     fields: dict[str, list[str]] = {}
     for component in signature_header.split(","):
@@ -77,19 +91,35 @@ def verify_elevenlabs_request(raw_body: bytes, signature_header: str | None) -> 
     timestamp_values = fields.get("t") or []
     signatures = fields.get("v0") or []
     if len(timestamp_values) != 1 or not signatures:
-        raise WebhookVerificationError("Malformed ElevenLabs-Signature header.")
+        raise WebhookVerificationError("Malformed ElevenLabs-Signature header.", code="malformed_signature_header")
     try:
         timestamp = int(timestamp_values[0])
     except ValueError as exc:
-        raise WebhookVerificationError("Malformed ElevenLabs signature timestamp.") from exc
-    tolerance = int(os.getenv("ELEVENLABS_WEBHOOK_TOLERANCE_SECONDS", "300"))
+        raise WebhookVerificationError("Malformed ElevenLabs signature timestamp.", code="malformed_timestamp") from exc
+    try:
+        tolerance = int(os.getenv("ELEVENLABS_WEBHOOK_TOLERANCE_SECONDS", "300"))
+    except ValueError as exc:
+        raise WebhookVerificationError(
+            "ElevenLabs webhook tolerance is misconfigured.",
+            code="invalid_tolerance_config",
+            status_code=503,
+        ) from exc
+    if tolerance <= 0:
+        raise WebhookVerificationError(
+            "ElevenLabs webhook tolerance is misconfigured.",
+            code="invalid_tolerance_config",
+            status_code=503,
+        )
     if abs(time.time() - timestamp) > tolerance:
-        raise WebhookVerificationError("ElevenLabs webhook timestamp is outside the permitted tolerance.")
+        raise WebhookVerificationError(
+            "ElevenLabs webhook timestamp is outside the permitted tolerance.",
+            code="stale_timestamp",
+        )
 
     signed_payload = str(timestamp).encode("utf-8") + b"." + raw_body
     expected = hmac.new(secret.encode("utf-8"), signed_payload, hashlib.sha256).hexdigest()
     if not any(hmac.compare_digest(expected, signature) for signature in signatures):
-        raise WebhookVerificationError("Invalid ElevenLabs request signature.")
+        raise WebhookVerificationError("Invalid ElevenLabs request signature.", code="invalid_signature")
 
 
 class WebhookEventStore:

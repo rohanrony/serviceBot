@@ -388,7 +388,13 @@ async def post_call_webhook(request: Request = None, payload: Dict[str, Any] = N
                     request.headers.get("ElevenLabs-Signature"),
                 )
             except WebhookVerificationError as exc:
-                raise HTTPException(status_code=401, detail=str(exc)) from exc
+                if exc.status_code >= 500:
+                    logger.error("ElevenLabs webhook verification unavailable: reason=%s", exc.code)
+                    detail = "Webhook temporarily unavailable."
+                else:
+                    logger.warning("Rejected ElevenLabs webhook: reason=%s", exc.code)
+                    detail = "Webhook authentication failed."
+                raise HTTPException(status_code=exc.status_code, detail=detail) from exc
             if body_bytes.strip():
                 try:
                     payload = json.loads(body_bytes)
@@ -1275,6 +1281,5 @@ async def receive_render_logs(request: Request):
     except Exception as e:
         logger.error(f"[render_logs] Error processing Render log payload: {e}", exc_info=e)
         return {"status": "error", "detail": str(e)}
-
 
 

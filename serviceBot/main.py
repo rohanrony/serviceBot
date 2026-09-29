@@ -46,7 +46,37 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"[reminder_worker] Failed to launch reminder worker: {e}", exc_info=e)
 
+    from serviceBot.services.webhook_security import elevenlabs_webhook_secret_configured
+    if not elevenlabs_webhook_secret_configured():
+        logger.error(
+            "[webhook_config] ELEVENLABS_WEBHOOK_SECRET is missing; "
+            "ElevenLabs post-call webhooks will be rejected."
+        )
+
+    api_key_present = bool(os.getenv("ELEVENLABS_API_KEY", "").strip())
+    agent_id_present = bool(os.getenv("ELEVENLABS_AGENT_ID", "").strip())
+    if api_key_present and agent_id_present:
+        try:
+            from serviceBot.services.call_sync import start_call_sync_worker
+            start_call_sync_worker(interval_seconds=300)
+            logger.info("[call_sync_worker] Started ElevenLabs reconciliation worker (interval=300s).")
+        except Exception as e:
+            logger.exception("[call_sync_worker] Failed to start ElevenLabs reconciliation worker: %s", e)
+    else:
+        missing = []
+        if not api_key_present:
+            missing.append("ELEVENLABS_API_KEY")
+        if not agent_id_present:
+            missing.append("ELEVENLABS_AGENT_ID")
+        logger.error("[call_sync_worker] Reconciliation disabled; missing %s.", ", ".join(missing))
+
     yield
+
+    try:
+        from serviceBot.services.call_sync import stop_call_sync_worker
+        stop_call_sync_worker()
+    except Exception as e:
+        logger.warning("[call_sync_worker] Failed to stop reconciliation worker: %s", e)
 
 
 app = FastAPI(
