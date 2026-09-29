@@ -1378,7 +1378,11 @@ async def get_gmail_config():
     from serviceBot.services.encryption import decrypt_key
     from serviceBot.db.queries import get_sms_config
     
-    sms_cfg = get_sms_config()
+    try:
+        sms_cfg = get_sms_config()
+    except Exception as e:
+        logger.warning(f"Could not load sms_config for admin phone: {e}")
+        sms_cfg = {}
     admin_phone = sms_cfg.get("admin_phone_number") or config.get("admin_phone_number") or ""
     
     client_id_decrypted = decrypt_key(config.get("gmail_client_id", ""))
@@ -1420,15 +1424,18 @@ async def update_gmail_config(payload: GmailConfigPayload):
     
     if payload.admin_phone_number is not None:
         config["admin_phone_number"] = payload.admin_phone_number
-        from serviceBot.db.queries import update_sms_config, add_sms_whitelist
-        update_sms_config({"admin_phone_number": payload.admin_phone_number})
-        if payload.admin_phone_number.strip():
-            add_sms_whitelist(
-                phone_number=payload.admin_phone_number.strip(),
-                friendly_name="Admin Notification Contact",
-                twilio_verified=True,
-                recipient_role="ADMIN"
-            )
+        try:
+            from serviceBot.db.queries import update_sms_config, add_sms_whitelist
+            update_sms_config({"admin_phone_number": payload.admin_phone_number})
+            if payload.admin_phone_number.strip():
+                add_sms_whitelist(
+                    phone_number=payload.admin_phone_number.strip(),
+                    friendly_name="Admin Notification Contact",
+                    twilio_verified=True,
+                    recipient_role="ADMIN"
+                )
+        except Exception as e:
+            logger.warning(f"Could not persist admin phone to database: {e}")
         
     if payload.gmail_password and payload.gmail_password != "••••••••••••••••":
         config["gmail_password"] = encrypt_key(payload.gmail_password)
