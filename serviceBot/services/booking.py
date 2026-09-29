@@ -1022,3 +1022,50 @@ class BookingService:
                 """,
                 (event_type, request_id, json.dumps(payload)),
             )
+
+
+# In-flight booking session tracking for call deduplication
+_IN_FLIGHT_BOOKING_SESSIONS: dict[str, dict[str, Any]] = {}
+
+
+def track_session_booking(
+    session_key: str,
+    service_request_id: int,
+    booking_time: str,
+    duration_minutes: int = 60,
+    phone: Optional[str] = None,
+    vehicle: Optional[dict[str, Any]] = None,
+) -> None:
+    """Records an active in-flight booking within a call session."""
+    if not session_key:
+        return
+    record = {
+        "service_request_id": service_request_id,
+        "booking_time": booking_time,
+        "duration_minutes": duration_minutes,
+        "phone": phone,
+        "vehicle": vehicle or {},
+        "created_at": dt_mod.datetime.now(),
+    }
+    _IN_FLIGHT_BOOKING_SESSIONS[session_key] = record
+
+
+def get_session_booking(session_key: str, max_age_seconds: int = 900) -> Optional[dict[str, Any]]:
+    """Retrieves an active in-flight booking for a session if not expired."""
+    if not session_key:
+        return None
+    data = _IN_FLIGHT_BOOKING_SESSIONS.get(session_key)
+    if not data:
+        return None
+    created = data.get("created_at")
+    if created and (dt_mod.datetime.now() - created).total_seconds() > max_age_seconds:
+        _IN_FLIGHT_BOOKING_SESSIONS.pop(session_key, None)
+        return None
+    return data
+
+
+def clear_session_booking(session_key: str) -> None:
+    """Removes a session booking record upon call completion."""
+    if not session_key:
+        return
+    _IN_FLIGHT_BOOKING_SESSIONS.pop(session_key, None)

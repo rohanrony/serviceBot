@@ -227,6 +227,8 @@ Looks up active scheduled/rescheduled appointments for a customer by phone numbe
         "id": 12,
         "appointment_datetime": "2026-06-12 15:00:00",
         "service_type": "Oil Change",
+        "issue_description": "Engine oil change and filter replacement",
+        "duration_minutes": 45,
         "status": "pending",
         "year": 2020,
         "make": "Honda",
@@ -261,17 +263,47 @@ Looks up a service in the catalog (fuzzy matching supported) and returns its det
   {
     "success": true,
     "service_found": true,
-    "service_name": "Brake Repair",
-    "description": "Front/Rear brake pad replacement",
-    "price_range": "$150-400",
-    "duration_minutes": 90,
+    "service_name": "Oil Change",
+    "description": "Standard oil change service",
+    "price_range": "$79-$119",
+    "duration_minutes": 45,
     "required_fields": {
       "customer_name": true,
       "phone_number": true,
       "vehicle_details": true,
       "issue_description": true,
-      "location": false
+      "location": true
     }
+  }
+  ```
+
+##### 10. `consolidate_appointment_service`
+Consolidates an additional service or symptom into an existing upcoming appointment for the same vehicle, recalculating total duration, checking contiguous technician schedule capacity, and updating the reservation.
+* **Arguments:**
+  - `appointment_id` (integer)
+  - `phone` (string)
+  - `additional_issue` (string)
+  - `additional_service_type` (string, optional)
+  - `additional_duration_minutes` (integer, optional, default: 30)
+* **Response Result (Capacity Available):**
+  ```json
+  {
+    "success": true,
+    "appointment_id": 12,
+    "combined_issues": "Oil Change; Brake squeak check",
+    "new_duration_minutes": 90,
+    "start_time": "2026-06-12 15:00:00",
+    "expected_end_time": "2026-06-12 16:30:00",
+    "message": "Appointment 12 successfully consolidated. Total scheduled duration is now 90 minutes (3:00 PM to 4:30 PM). Calendar reservation extended. Please advise the customer that the visit is booked for this window but is likely to extend."
+  }
+  ```
+* **Response Result (Capacity Blocked):**
+  ```json
+  {
+    "success": false,
+    "capacity_blocked": true,
+    "appointment_id": 12,
+    "message": "Technician schedule cannot accommodate the extra 45 minutes contiguous with this appointment. Please offer the customer to either: 1) Move the combined 90-minute visit to an open slot, or 2) Book a separate appointment for Brake squeak check."
   }
   ```
 

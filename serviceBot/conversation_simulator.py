@@ -135,6 +135,24 @@ VOICE_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "consolidate_appointment_service",
+            "description": "Consolidate an additional service or symptom into an existing upcoming appointment for the same vehicle, recalculating total duration and adjusting the calendar event.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "appointment_id": {"type": "integer", "description": "ID of the existing appointment to consolidate."},
+                    "phone": {"type": "string", "description": "Customer 10-digit phone number."},
+                    "additional_issue": {"type": "string", "description": "Description of the additional issue or service requested."},
+                    "additional_service_type": {"type": "string", "description": "Optional service type category for the additional work."},
+                    "additional_duration_minutes": {"type": "integer", "description": "Estimated duration in minutes for the additional work (default: 30)."}
+                },
+                "required": ["appointment_id", "additional_issue"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "query_knowledge_base",
             "description": "Search the knowledge base / FAQ for general business information (hours, location, warranty, shuttle, services).",
             "parameters": {
@@ -235,6 +253,7 @@ class ConversationSimulator:
             "book_appointment": {"success": True, "appointment_id": 202, "message": "Appointment booked successfully."},
             "request_callback": {"success": True, "callback_id": 303, "message": "Callback scheduled."},
             "query_knowledge_base": {"success": True, "answer": "We are open Monday through Friday from 7:00 AM to 6:00 PM. Shuttle service is available upon request."},
+            "consolidate_appointment_service": {"success": True, "appointment_id": arguments.get("appointment_id", 101), "combined_issues": "Consolidated service", "new_duration_minutes": 90, "message": "Appointment consolidated successfully."},
             "cba_webhook": {"success": True, "message": "Transferring call to human service advisor (+14242704893)."}
         }
 

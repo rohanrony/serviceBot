@@ -1304,7 +1304,7 @@ def create_callback_request(customer_id: int, service_request_id: int = None, pr
 def get_customer_appointments(phone: str) -> list:
     """
     Looks up all scheduled/rescheduled appointments for a customer by phone number,
-    including vehicle make, model, and year.
+    including vehicle make, model, year, issue description, and duration.
     """
     import re
     cleaned_phone = re.sub(r"\D", "", phone) if phone else ""
@@ -1312,8 +1312,9 @@ def get_customer_appointments(phone: str) -> list:
         cleaned_phone = cleaned_phone[1:]
 
     query = """
-    SELECT sr.id, sr.booking_time AS appointment_datetime, sr.service_type, sr.status,
-           v.year, v.make, v.model
+    SELECT sr.id, sr.booking_time AS appointment_datetime, sr.service_type,
+           sr.issue_description, COALESCE(sr.duration_minutes, 60) AS duration_minutes,
+           sr.status, v.year, v.make, v.model
     FROM service_requests sr
     JOIN customers c ON sr.customer_id = c.id
     LEFT JOIN vehicles v ON sr.vehicle_id = v.id
@@ -1325,6 +1326,34 @@ def get_customer_appointments(phone: str) -> list:
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             cursor.execute(query, (phone, cleaned_phone))
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+
+
+def get_customer_service_history(phone: str, limit: int = 5) -> list:
+    """
+    Looks up recent service requests and callbacks for a customer by phone number,
+    including completed, in-progress, or pending records with issue descriptions.
+    """
+    import re
+    cleaned_phone = re.sub(r"\D", "", phone) if phone else ""
+    if len(cleaned_phone) == 11 and cleaned_phone.startswith("1"):
+        cleaned_phone = cleaned_phone[1:]
+
+    query = """
+    SELECT sr.id, sr.booking_type, sr.booking_time, sr.service_type, sr.issue_description,
+           COALESCE(sr.duration_minutes, 60) AS duration_minutes, sr.status, sr.created_at,
+           v.year, v.make, v.model
+    FROM service_requests sr
+    JOIN customers c ON sr.customer_id = c.id
+    LEFT JOIN vehicles v ON sr.vehicle_id = v.id
+    WHERE (c.phone = %s OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(c.phone, '-', ''), ' ', ''), '(', ''), ')', ''), '+1', '') = %s)
+    ORDER BY sr.created_at DESC
+    LIMIT %s;
+    """
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(query, (phone, cleaned_phone, limit))
             rows = cursor.fetchall()
             return [dict(row) for row in rows]
 
@@ -2763,5 +2792,101 @@ def get_customer_opt_in(phone: str) -> bool:
             if row and row["sms_opt_in"] is not None:
                 return row["sms_opt_in"]
             return True
+
+
+def consolidate_appointment_service(
+    appointment_id: int,
+    additional_issue: str,
+    additional_service_type: str = None,
+    additional_duration_minutes: int = 30,
+) -> dict:
+    """
+    Consolidates an additional service or symptom into an existing appointment.
+    Appends the additional issue description and extends duration_minutes.
+    Updates any linked calendar reservations accordingly.
+    """
+    import datetime as dt_mod
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                """
+                SELECT sr.id, sr.customer_id, sr.booking_time, sr.issue_description, sr.service_type,
+                       COALESCE(sr.duration_minutes, 60) AS duration_minutes, sr.vehicle_id,
+                       v.year, v.make, v.model
+                FROM service_requests sr
+                LEFT JOIN vehicles v ON sr.vehicle_id = v.id
+                WHERE sr.id = %s;
+                """,
+                (appointment_id,)
+            )
+            sr = cursor.fetchone()
+            if not sr:
+                raise ValueError(f"Appointment #{appointment_id} not found.")
+
+            existing_desc = sr.get("issue_description") or ""
+            existing_duration = sr.get("duration_minutes") or 60
+            booking_time = sr.get("booking_time")
+
+            clean_add = additional_issue.strip() if additional_issue else ""
+            if existing_desc and clean_add:
+                combined_issues = f"{existing_desc}; {clean_add}"
+            elif clean_add:
+                combined_issues = clean_add
+            else:
+                combined_issues = existing_desc
+
+            new_duration = existing_duration + additional_duration_minutes
+            new_service_type = sr.get("service_type")
+            if additional_service_type and additional_service_type not in (new_service_type or ""):
+                new_service_type = f"{new_service_type}, {additional_service_type}"
+
+            cursor.execute(
+                """
+                UPDATE service_requests
+                SET issue_description = %s,
+                    duration_minutes = %s,
+                    service_type = %s,
+                    updated_at = NOW()
+                WHERE id = %s;
+                """,
+                (combined_issues, new_duration, new_service_type, appointment_id)
+            )
+
+            # Update calendar reservation if present
+            if booking_time:
+                try:
+                    if isinstance(booking_time, str):
+                        b_clean = booking_time.replace("T", " ")[:19]
+                        start_dt = dt_mod.datetime.strptime(b_clean, "%Y-%m-%d %H:%M:%S")
+                    else:
+                        start_dt = booking_time
+                    new_end_dt = start_dt + dt_mod.timedelta(minutes=new_duration)
+                    cursor.execute(
+                        """
+                        UPDATE calendar_reservations
+                        SET ends_at = %s,
+                            service_type = %s,
+                            updated_at = NOW()
+                        WHERE linked_service_request_id = %s;
+                        """,
+                        (new_end_dt.strftime("%Y-%m-%d %H:%M:%S"), new_service_type, appointment_id)
+                    )
+                except Exception:
+                    pass
+
+            conn.commit()
+
+            return {
+                "appointment_id": appointment_id,
+                "combined_issues": combined_issues,
+                "new_duration_minutes": new_duration,
+                "booking_time": str(booking_time),
+                "vehicle": {
+                    "year": sr.get("year"),
+                    "make": sr.get("make"),
+                    "model": sr.get("model")
+                }
+            }
+
 
 

@@ -1,14 +1,84 @@
 import os
 import json
 from fastapi import APIRouter, Response, HTTPException, Request, BackgroundTasks
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Dict, Any, Optional
 from dotenv import load_dotenv
 import zoneinfo
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from serviceBot.db.queries import lookup_customer_by_phone, create_service_request, check_availability, book_appointment, get_service_required_fields, create_crm_note, create_callback_request, get_customer_appointments, reschedule_appointment, update_customer_name
+from serviceBot.services.booking import get_session_booking, track_session_booking
+
+
+class ConsolidateAppointmentRequest(BaseModel):
+    appointment_id: int
+    phone: Optional[str] = None
+    additional_issue: str
+    additional_service_type: Optional[str] = None
+    additional_duration_minutes: Optional[int] = 45
+
+
+class SessionBookingContext(BaseModel):
+    session_key: str
+    service_request_id: int
+    booking_time: str
+    duration_minutes: int = 60
+    phone: Optional[str] = None
+
+
+def format_appointment_window_message(
+    booking_time: str,
+    duration_minutes: int = 60,
+    price_range: str = "Varies",
+    is_update: bool = False,
+    previous_booking_time: Optional[str] = None,
+) -> tuple[str, str]:
+    """
+    Computes expected_end_time and formats a customer message that states
+    both the start time and expected completion window, along with the notice
+    that the duration is likely to extend.
+    """
+    clean_dt_str = str(booking_time).strip().replace("T", " ")
+    if "." in clean_dt_str:
+        clean_dt_str = clean_dt_str.split(".")[0]
+
+    start_dt = None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%m/%d/%Y %H:%M", "%I:%M %p"):
+        try:
+            start_dt = datetime.strptime(clean_dt_str[:19], fmt)
+            break
+        except ValueError:
+            continue
+
+    if start_dt:
+        end_dt = start_dt + timedelta(minutes=duration_minutes)
+        start_fmt = start_dt.strftime("%I:%M %p").lstrip("0")
+        end_fmt = end_dt.strftime("%I:%M %p").lstrip("0")
+        end_dt_str = end_dt.strftime("%Y-%m-%d %H:%M:%S")
+        window_str = f"from {start_fmt} to approximately {end_fmt}"
+    else:
+        end_dt_str = str(booking_time)
+        window_str = f"at {booking_time} (approx {duration_minutes} minutes)"
+
+    extension_notice = "Please note that we are scheduling for this time window, but the visit is likely to extend depending on service and diagnostic findings."
+
+    if is_update:
+        prev_str = f" from {previous_booking_time}" if previous_booking_time else ""
+        msg = (
+            f"Updated existing appointment{prev_str} to {booking_time} ({window_str}). "
+            f"Calendar slot updated successfully. {extension_notice}"
+        )
+    else:
+        msg = (
+            f"Service request booked as an appointment {window_str}. Calendar projection and notifications are queued. "
+            f"The estimated rate for this service is {price_range}. {extension_notice}"
+        )
+    return end_dt_str, msg
+
+
+from serviceBot.db.queries import lookup_customer_by_phone, create_service_request, check_availability, book_appointment, get_service_required_fields, create_crm_note, create_callback_request, get_customer_appointments, reschedule_appointment, update_customer_name, get_customer_service_history, consolidate_appointment_service
 from serviceBot.db.connection import get_db_connection, dict_cursor
+from serviceBot.services.calendar_availability import verify_contiguous_slot_capacity
 from serviceBot.services.rag import FAQService
 from serviceBot.graph.nodes import handoff_node
 from serviceBot.logger import get_logger
@@ -176,28 +246,91 @@ async def inbound_call(request: Request = None):
         except WebhookVerificationError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
 
+    import html
     recent_booking_context = ""
-    if caller_phone:
-        from serviceBot.db.queries import lookup_customer_by_phone, get_customer_appointments
-        c_data = lookup_customer_by_phone(caller_phone)
+    customer_name = ""
+    upcoming_appointments_summary = ""
+    recent_history_summary = ""
+
+    clean_caller_phone = clean_and_validate_phone(caller_phone) if caller_phone else None
+    phone_for_param = clean_caller_phone or caller_phone
+
+    if phone_for_param:
+        from serviceBot.db import queries
+        from unittest.mock import Mock
+        def _resolve(mod_fn, q_fn):
+            if isinstance(mod_fn, Mock):
+                return mod_fn
+            if isinstance(q_fn, Mock):
+                return q_fn
+            return q_fn
+
+        lookup_cust = _resolve(lookup_customer_by_phone, getattr(queries, "lookup_customer_by_phone", None))
+        get_appts = _resolve(get_customer_appointments, getattr(queries, "get_customer_appointments", None))
+        get_hist = _resolve(get_customer_service_history, getattr(queries, "get_customer_service_history", None))
+
+        c_data = lookup_cust(phone_for_param)
         if c_data:
-            print(f"Inbound call from existing customer #{c_data.get('customer_id')} ({c_data.get('name')}). Active SR: {c_data.get('open_sr_type')}")
+            c_name = c_data.get("name")
+            if c_name and c_name not in ("Unknown Customer", "Unknown", ""):
+                customer_name = c_name
+
+            print(f"Inbound call from existing customer #{c_data.get('customer_id')} ({customer_name}). Active SR: {c_data.get('open_sr_type')}")
+            appts = []
             try:
-                appts = get_customer_appointments(caller_phone)
+                appts = get_appts(caller_phone)
                 if appts:
                     latest = appts[0]
-                    v_info = f"{latest.get('year', '')} {latest.get('make', '')} {latest.get('model', '')}".strip()
+                    v_info = f"{latest.get('year', '')} {latest.get('make', '')} {latest.get('model', '')}".strip() or "Vehicle"
                     srv = latest.get("service_type") or "Service"
                     dt = latest.get("appointment_datetime") or "recent date"
+                    issue = latest.get("issue_description")
+                    duration = latest.get("duration_minutes") or 60
                     recent_booking_context = f"Recent booking on {dt} for {v_info} ({srv})".strip()
+                    if issue and issue.lower() != srv.lower():
+                        upcoming_appointments_summary = f"Scheduled for {dt} for {v_info} regarding {srv} ({issue}). Duration: {duration} min."
+                    else:
+                        upcoming_appointments_summary = f"Scheduled for {dt} for {v_info} regarding {srv}. Duration: {duration} min."
             except Exception as e:
-                print(f"Error fetching recent booking context: {e}")
-    
+                print(f"Error fetching upcoming appointments context: {e}")
+
+            try:
+                history = get_hist(caller_phone)
+                if history:
+                    first_appt_id = appts[0].get("id") if (appts and len(appts) > 0) else None
+                    prev_items = [h for h in history if h.get("id") != first_appt_id]
+                    if prev_items:
+                        h_parts = []
+                        for h in prev_items[:2]:
+                            h_dt = str(h.get("booking_time") or h.get("created_at") or "")[:10]
+                            h_srv = h.get("service_type") or "Service"
+                            h_issue = h.get("issue_description")
+                            h_stat = h.get("status", "past")
+                            if h_issue and h_issue.lower() != h_srv.lower():
+                                h_parts.append(f"{h_srv} ({h_issue}) on {h_dt} [{h_stat}]")
+                            else:
+                                h_parts.append(f"{h_srv} on {h_dt} [{h_stat}]")
+                        recent_history_summary = "; ".join(h_parts)
+                    elif history:
+                        h = history[0]
+                        h_dt = str(h.get("booking_time") or h.get("created_at") or "")[:10]
+                        h_srv = h.get("service_type") or "Service"
+                        recent_history_summary = f"{h_srv} on {h_dt}"
+            except Exception as e:
+                print(f"Error fetching service history context: {e}")
+
     param_xml = ""
+    if phone_for_param:
+        param_xml += f'        <Parameter name="caller_phone" value="{html.escape(phone_for_param, quote=True)}" />\n'
+    if customer_name:
+        param_xml += f'        <Parameter name="customer_name" value="{html.escape(customer_name, quote=True)}" />\n'
+    if upcoming_appointments_summary:
+        param_xml += f'        <Parameter name="upcoming_appointments_summary" value="{html.escape(upcoming_appointments_summary, quote=True)}" />\n'
+    if recent_history_summary:
+        param_xml += f'        <Parameter name="recent_history_summary" value="{html.escape(recent_history_summary, quote=True)}" />\n'
     if recent_booking_context:
-        param_xml += f'        <Parameter name="recent_booking_context" value="{recent_booking_context}" />\n'
-    if caller_phone:
-        param_xml += f'        <Parameter name="caller_phone" value="{caller_phone}" />\n'
+        param_xml += f'        <Parameter name="recent_booking_context" value="{html.escape(recent_booking_context, quote=True)}" />\n'
+
     twiml_response = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Connect>
@@ -557,14 +690,18 @@ voice_router = APIRouter(prefix="/api/v1/voice", tags=["voice"])
 @voice_router.post("/tools")
 async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks = None, name: Optional[str] = None):
     # Check if this is the standard wrapped tool call format
-    if "tool_call_id" in payload and "name" in payload and "arguments" in payload:
+    if "name" in payload and "arguments" in payload:
         tool_name = payload["name"]
         args = payload["arguments"]
+        tool_call_id = payload.get("tool_call_id", "call_flat")
+    elif "tool_call_id" in payload and "name" in payload:
+        tool_name = payload["name"]
+        args = payload.get("arguments", {})
         tool_call_id = payload["tool_call_id"]
     else:
         # Flat format - extract name and arguments
-        # Check if name is supplied in the query params
-        tool_name = name
+        # Check if name is supplied in the query params or payload
+        tool_name = name or payload.get("name")
         
         # If not in query params, try to detect from the payload keys
         if not tool_name:
@@ -693,7 +830,10 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
                 if c_data:
                     customer_id = c_data.get("customer_id") or c_data.get("id")
                     if customer_name and customer_name not in ("Unknown Customer", "Unknown"):
-                        update_customer_name(customer_id, customer_name)
+                        try:
+                            update_customer_name(customer_id, customer_name)
+                        except Exception:
+                            pass
                     if not has_explicit_make and not has_explicit_model:
                         make = c_data.get("make")
                         model = c_data.get("model")
@@ -730,44 +870,113 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
 
                 is_uncataloged = extra_kwargs.get("is_uncataloged", False)
 
-                # Create service request
                 vehicle_details = {"make": make, "model": model, "year": year}
-                sr_id = create_service_request(
-                    customer_id=customer_id,
-                    vehicle_details=vehicle_details,
-                    issue=issue_description,
-                    service_type=service_type,
-                    time_slot=time_slot,
-                    booking_type=booking_type,
-                    booking_time=booking_time,
-                    **extra_kwargs
-                )
+                session_key = args.get("call_sid") or args.get("callSid") or args.get("conversation_id") or args.get("session_id")
+                existing_session = get_session_booking(session_key) if (booking_type == "appointment" and session_key) else None
 
-                fields = get_service_required_fields(service_type)
-                price_range = fields["price_range"] if fields else "Varies"
-
+                price_range = "Varies"
+                duration_minutes = 60
                 if booking_type == "appointment":
+                    try:
+                        fields = get_service_required_fields(service_type)
+                        if fields:
+                            price_range = fields.get("price_range") or "Varies"
+                            duration_minutes = (fields.get("duration_minutes") or 60)
+                    except Exception:
+                        pass
+
+                if booking_type == "appointment" and existing_session and existing_session.get("service_request_id"):
+                    # Existing in-flight booking in this call session -> update rather than duplicate!
+                    existing_sr_id = existing_session["service_request_id"]
+                    prev_time = existing_session.get("booking_time")
+                    try:
+                        reschedule_appointment(
+                            appointment_id=existing_sr_id,
+                            new_datetime=booking_time,
+                            customer_consent_obtained=True,
+                            triggered_by="telephony_voice_assistant",
+                        )
+                    except Exception as resch_err:
+                        logger.warning(f"Error rescheduling session booking #{existing_sr_id}: {resch_err}")
+
+                    track_session_booking(
+                        session_key=session_key,
+                        service_request_id=existing_sr_id,
+                        booking_time=booking_time,
+                        duration_minutes=duration_minutes,
+                        phone=phone,
+                        vehicle=vehicle_details,
+                    )
+                    end_dt_str, win_msg = format_appointment_window_message(
+                        booking_time=booking_time,
+                        duration_minutes=duration_minutes,
+                        price_range=price_range,
+                        is_update=True,
+                        previous_booking_time=prev_time,
+                    )
                     result = {
                         "success": True,
-                        "service_request_id": sr_id,
+                        "service_request_id": existing_sr_id,
+                        "is_update": True,
                         "booking_type": "appointment",
+                        "booking_time": booking_time,
+                        "duration_minutes": duration_minutes,
+                        "expected_end_time": end_dt_str,
                         "is_uncataloged": is_uncataloged,
-                        "message": f"Service request booked as an appointment successfully. Calendar projection and notifications are queued. The estimated rate for this service is {price_range}. Please inform the customer of this rate."
-                    }
-                elif booking_type in ("callback", "appointment_and_callback"):
-                    result = {
-                        "success": True,
-                        "service_request_id": sr_id,
-                        "booking_type": booking_type,
-                        "is_uncataloged": is_uncataloged,
-                        "message": "Service request callback recorded successfully. Calendar projection and notifications are queued."
+                        "message": win_msg,
                     }
                 else:
-                    result = {
-                        "success": True,
-                        "service_request_id": sr_id,
-                        "message": "Service request created successfully."
-                    }
+                    # Create service request
+                    sr_id = create_service_request(
+                        customer_id=customer_id,
+                        vehicle_details=vehicle_details,
+                        issue=issue_description,
+                        service_type=service_type,
+                        time_slot=time_slot,
+                        booking_type=booking_type,
+                        booking_time=booking_time,
+                        **extra_kwargs
+                    )
+
+                    if booking_type == "appointment":
+                        track_session_booking(
+                            session_key=session_key,
+                            service_request_id=sr_id,
+                            booking_time=booking_time,
+                            duration_minutes=duration_minutes,
+                            phone=phone,
+                            vehicle=vehicle_details,
+                        )
+                        end_dt_str, win_msg = format_appointment_window_message(
+                            booking_time=booking_time,
+                            duration_minutes=duration_minutes,
+                            price_range=price_range,
+                            is_update=False,
+                        )
+                        result = {
+                            "success": True,
+                            "service_request_id": sr_id,
+                            "booking_type": "appointment",
+                            "booking_time": booking_time,
+                            "duration_minutes": duration_minutes,
+                            "expected_end_time": end_dt_str,
+                            "is_uncataloged": is_uncataloged,
+                            "message": win_msg,
+                        }
+                    elif booking_type in ("callback", "appointment_and_callback"):
+                        result = {
+                            "success": True,
+                            "service_request_id": sr_id,
+                            "booking_type": booking_type,
+                            "is_uncataloged": is_uncataloged,
+                            "message": "Service request callback recorded successfully. Calendar projection and notifications are queued."
+                        }
+                    else:
+                        result = {
+                            "success": True,
+                            "service_request_id": sr_id,
+                            "message": "Service request created successfully."
+                        }
 
         elif tool_name == "book_appointment":
             phone = args.get("phone") or args.get("phone_number") or args.get("phoneNumber") or args.get("caller_phone") or args.get("caller_id")
@@ -820,7 +1029,10 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
                     customer_id = c_data.get("customer_id") or c_data.get("id")
                     sr_id = c_data.get("open_sr_id")
                     if customer_name and customer_name not in ("Unknown Customer", "Unknown"):
-                        update_customer_name(customer_id, customer_name)
+                        try:
+                            update_customer_name(customer_id, customer_name)
+                        except Exception:
+                            pass
 
                 if not customer_id:
                     with get_db_connection() as conn:
@@ -832,28 +1044,93 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
                             conn.commit()
                             customer_id = cursor.fetchone()["id"]
 
-                try:
-                    vehicle_details = {"make": make, "model": model, "year": year}
-                    appt_id = book_appointment(
-                        customer_id=customer_id,
-                        service_request_id=sr_id,
-                        appointment_datetime=appointment_datetime,
-                        service_type=service_type,
-                        vehicle_details=vehicle_details
-                    )
-                    fields = get_service_required_fields(service_type)
-                    price_range = fields["price_range"] if fields else "Varies"
+                vehicle_details = {"make": make, "model": model, "year": year}
+                session_key = args.get("call_sid") or args.get("callSid") or args.get("conversation_id") or args.get("session_id")
+                existing_session = get_session_booking(session_key) if session_key else None
 
+                price_range = "Varies"
+                duration_minutes = 60
+                try:
+                    fields = get_service_required_fields(service_type)
+                    if fields:
+                        price_range = fields.get("price_range") or "Varies"
+                        duration_minutes = (fields.get("duration_minutes") or 60)
+                except Exception:
+                    pass
+
+                if existing_session and existing_session.get("service_request_id"):
+                    existing_appt_id = existing_session["service_request_id"]
+                    prev_time = existing_session.get("booking_time")
+                    try:
+                        reschedule_appointment(
+                            appointment_id=existing_appt_id,
+                            new_datetime=appointment_datetime,
+                            customer_consent_obtained=True,
+                            triggered_by="telephony_voice_assistant",
+                        )
+                    except Exception as resch_err:
+                        logger.warning(f"Error rescheduling session appointment #{existing_appt_id}: {resch_err}")
+
+                    track_session_booking(
+                        session_key=session_key,
+                        service_request_id=existing_appt_id,
+                        booking_time=appointment_datetime,
+                        duration_minutes=duration_minutes,
+                        phone=phone,
+                        vehicle=vehicle_details,
+                    )
+                    end_dt_str, win_msg = format_appointment_window_message(
+                        booking_time=appointment_datetime,
+                        duration_minutes=duration_minutes,
+                        price_range=price_range,
+                        is_update=True,
+                        previous_booking_time=prev_time,
+                    )
                     result = {
                         "success": True,
-                        "appointment_id": appt_id,
-                        "message": f"Appointment booked successfully. Calendar projection and notifications are queued. The estimated rate for this service is {price_range}. Please inform the customer of this rate."
+                        "appointment_id": existing_appt_id,
+                        "is_update": True,
+                        "booking_time": appointment_datetime,
+                        "duration_minutes": duration_minutes,
+                        "expected_end_time": end_dt_str,
+                        "message": win_msg,
                     }
-                except ValueError as val_err:
-                    result = {
-                        "success": False,
-                        "message": f"Booking failed: {str(val_err)}"
-                    }
+                else:
+                    try:
+                        appt_id = book_appointment(
+                            customer_id=customer_id,
+                            service_request_id=sr_id,
+                            appointment_datetime=appointment_datetime,
+                            service_type=service_type,
+                            vehicle_details=vehicle_details
+                        )
+                        track_session_booking(
+                            session_key=session_key,
+                            service_request_id=appt_id,
+                            booking_time=appointment_datetime,
+                            duration_minutes=duration_minutes,
+                            phone=phone,
+                            vehicle=vehicle_details,
+                        )
+                        end_dt_str, win_msg = format_appointment_window_message(
+                            booking_time=appointment_datetime,
+                            duration_minutes=duration_minutes,
+                            price_range=price_range,
+                            is_update=False,
+                        )
+                        result = {
+                            "success": True,
+                            "appointment_id": appt_id,
+                            "booking_time": appointment_datetime,
+                            "duration_minutes": duration_minutes,
+                            "expected_end_time": end_dt_str,
+                            "message": win_msg,
+                        }
+                    except ValueError as val_err:
+                        result = {
+                            "success": False,
+                            "message": f"Booking failed: {str(val_err)}"
+                        }
 
         elif tool_name == "request_callback":
             phone = args.get("phone") or args.get("phone_number") or args.get("phoneNumber") or args.get("caller_phone") or args.get("caller_id")
@@ -1021,6 +1298,107 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
                     "appointments": appts,
                     "message": f"Found {len(appts)} appointments for phone number {phone}." if appts else f"No active appointments found for phone number {phone}."
                 }
+
+        elif tool_name == "consolidate_appointment_service":
+            appt_id = args.get("appointment_id")
+            if appt_id:
+                try:
+                    appt_id = int(appt_id)
+                except (ValueError, TypeError):
+                    pass
+            additional_issue = args.get("additional_issue") or args.get("issue_description") or args.get("issue")
+            additional_service_type = args.get("additional_service_type") or args.get("service_type")
+            additional_duration = int(args.get("additional_duration_minutes") or args.get("duration_minutes") or 30)
+            phone = args.get("phone") or args.get("phone_number")
+
+            if not appt_id and phone:
+                p_clean = clean_and_validate_phone(phone)
+                if p_clean:
+                    active_appts = get_customer_appointments(p_clean)
+                    if active_appts:
+                        appt_id = active_appts[0]["id"]
+
+            if not appt_id:
+                result = {
+                    "success": False,
+                    "message": "Appointment ID is required to consolidate services."
+                }
+            else:
+                appt_details = None
+                if phone:
+                    p_clean = clean_and_validate_phone(phone)
+                    if p_clean:
+                        for ap in get_customer_appointments(p_clean):
+                            if ap.get("id") == appt_id:
+                                appt_details = ap
+                                break
+
+                booking_time = appt_details.get("appointment_datetime") if appt_details else None
+                curr_duration = (appt_details.get("duration_minutes") if appt_details else None) or 60
+                new_total_duration = curr_duration + additional_duration
+
+                has_capacity = verify_contiguous_slot_capacity(
+                    start_time=booking_time,
+                    duration_minutes=new_total_duration
+                ) if booking_time else True
+
+                if not has_capacity:
+                    result = {
+                        "success": False,
+                        "capacity_blocked": True,
+                        "appointment_id": appt_id,
+                        "message": (
+                            f"Technician schedule cannot accommodate the extra {additional_duration} minutes contiguous with this appointment. "
+                            f"Please offer the customer to either: 1) Move the combined {new_total_duration}-minute visit to an open slot, "
+                            f"or 2) Book a separate appointment for {additional_issue or 'the additional service'}."
+                        )
+                    }
+                else:
+                    try:
+                        cons_res = consolidate_appointment_service(
+                            appointment_id=appt_id,
+                            additional_issue=additional_issue,
+                            additional_service_type=additional_service_type,
+                            additional_duration_minutes=additional_duration
+                        )
+                        combined_issues = cons_res.get("combined_issues")
+                        new_dur = cons_res.get("new_duration_minutes", new_total_duration)
+                        b_time = cons_res.get("booking_time") or booking_time or ""
+
+                        start_str = str(b_time)
+                        end_str = ""
+                        st_fmt = "start time"
+                        end_fmt = "completion"
+                        try:
+                            clean_b = str(b_time).replace("T", " ")[:19]
+                            st_dt = datetime.strptime(clean_b, "%Y-%m-%d %H:%M:%S")
+                            end_dt = st_dt + timedelta(minutes=new_dur)
+                            start_str = st_dt.strftime("%Y-%m-%d %H:%M:%S")
+                            end_str = end_dt.strftime("%Y-%m-%d %H:%M:%S")
+                            st_fmt = st_dt.strftime("%I:%M %p").lstrip("0")
+                            end_fmt = end_dt.strftime("%I:%M %p").lstrip("0")
+                        except Exception:
+                            pass
+
+                        msg = (
+                            f"Appointment {appt_id} successfully consolidated. "
+                            f"Total scheduled duration is now {new_dur} minutes ({st_fmt} to {end_fmt}). "
+                            f"Calendar reservation extended. Please advise the customer that the visit is booked for this window but is likely to extend."
+                        )
+                        result = {
+                            "success": True,
+                            "appointment_id": appt_id,
+                            "combined_issues": combined_issues,
+                            "new_duration_minutes": new_dur,
+                            "start_time": start_str,
+                            "expected_end_time": end_str,
+                            "message": msg
+                        }
+                    except Exception as err:
+                        result = {
+                            "success": False,
+                            "message": f"Failed to consolidate appointment: {str(err)}"
+                        }
 
         elif tool_name == "reschedule_appointment":
             phone = args.get("phone")

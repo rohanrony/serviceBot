@@ -20,8 +20,8 @@
 
 **Purpose**: Establish call session tracking and in-flight booking state management.
 
-- [ ] T001 Setup in-flight booking session tracking dictionary and helper functions in `serviceBot/services/booking.py`
-- [ ] T002 [P] Define Pydantic request models for session booking context and consolidation in `serviceBot/api/telephony.py`
+- [x] T001 Setup in-flight booking session tracking dictionary and helper functions in `serviceBot/services/booking.py`
+- [x] T002 [P] Define Pydantic request models for session booking context and consolidation in `serviceBot/api/telephony.py`
 
 ---
 
@@ -29,9 +29,9 @@
 
 **Purpose**: Core database query enhancements and calendar capacity checking that MUST be complete before user stories can execute.
 
-- [ ] T003 Update `get_customer_appointments` query in `serviceBot/db/queries.py` to include `sr.issue_description` and `sr.duration_minutes`
-- [ ] T004 [P] Implement `get_customer_service_history` query in `serviceBot/db/queries.py` to fetch recent service requests and callbacks with issue notes
-- [ ] T005 [P] Implement contiguous calendar slot capacity checker `verify_contiguous_slot_capacity` in `serviceBot/services/calendar_availability.py`
+- [x] T003 Update `get_customer_appointments` query in `serviceBot/db/queries.py` to include `sr.issue_description` and `sr.duration_minutes`
+- [x] T004 [P] Implement `get_customer_service_history` query in `serviceBot/db/queries.py` to fetch recent service requests and callbacks with issue notes
+- [x] T005 [P] Implement contiguous calendar slot capacity checker `verify_contiguous_slot_capacity` in `serviceBot/services/calendar_availability.py`
 
 **Checkpoint**: Foundation ready - user story implementation can now begin.
 
@@ -47,15 +47,15 @@
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T006 [P] [US1] Create automated unit/integration tests for single booking on time shift and session deduplication in `tests/test_booking_confirmation_guard.py`
-- [ ] T007 [P] [US1] Create unit tests verifying start/end time disclosure and extension notice in `tests/test_booking_confirmation_guard.py`
+- [x] T006 [P] [US1] Create automated unit/integration tests for single booking on time shift and session deduplication in `tests/test_booking_confirmation_guard.py`
+- [x] T007 [P] [US1] Create unit tests verifying start/end time disclosure and extension notice in `tests/test_booking_confirmation_guard.py`
 
 ### Implementation for User Story 1
 
-- [ ] T008 [US1] Implement session deduplication and in-place update logic for `create_service_request` and `book_appointment` in `serviceBot/api/telephony.py`
-- [ ] T009 [US1] Update `serviceBot/system_prompt.txt` to strictly defer booking tool calls until explicit end-of-call confirmation and require start/end time window disclosure with the "likely to extend" notice
-- [ ] T010 [US1] Synchronize ElevenLabs agent prompt in `serviceBot/config.json` with deferred booking rules and start/end time disclosure
-- [ ] T011 [US1] Run and verify User Story 1 test suite via `pytest tests/test_booking_confirmation_guard.py`
+- [x] T008 [US1] Implement session deduplication and in-place update logic for `create_service_request` and `book_appointment` in `serviceBot/api/telephony.py`
+- [x] T009 [US1] Update `serviceBot/system_prompt.txt` to strictly defer booking tool calls until explicit end-of-call confirmation and require start/end time window disclosure with the "likely to extend" notice
+- [x] T010 [US1] Synchronize ElevenLabs agent prompt in `serviceBot/config.json` with deferred booking rules and start/end time disclosure
+- [x] T011 [US1] Run and verify User Story 1 test suite via `pytest tests/test_booking_confirmation_guard.py`
 
 **Checkpoint**: User Story 1 is fully functional and independently testable. Duplicate bookings on time shifts are eliminated.
 
@@ -69,14 +69,14 @@
 
 ### Tests for User Story 2 (TDD) ⚠️
 
-- [ ] T012 [P] [US2] Create automated integration tests for inbound TwiML parameter injection and `get_customer_appointments` issue descriptions in `tests/test_customer_history_context.py`
+- [x] T012 [P] [US2] Create automated integration tests for inbound TwiML parameter injection and `get_customer_appointments` issue descriptions in `tests/test_customer_history_context.py`
 
 ### Implementation for User Story 2
 
-- [ ] T013 [US2] Enrich `inbound_call` endpoint in `serviceBot/api/telephony.py` with `customer_name`, `upcoming_appointments_summary`, and `recent_history_summary` parameters in TwiML
-- [ ] T014 [US2] Update `get_customer_appointments` tool handler in `serviceBot/api/telephony.py` to return `issue_description`, `duration_minutes`, and vehicle specs
-- [ ] T015 [US2] Update `serviceBot/system_prompt.txt` and `serviceBot/config.json` with returning caller greeting protocol (greet warmly by name first; recall appointment and vehicle context when issue or car is mentioned)
-- [ ] T016 [US2] Run and verify User Story 2 test suite via `pytest tests/test_customer_history_context.py`
+- [x] T013 [US2] Enrich `inbound_call` endpoint in `serviceBot/api/telephony.py` with `customer_name`, `upcoming_appointments_summary`, and `recent_history_summary` parameters in TwiML
+- [x] T014 [US2] Update `get_customer_appointments` tool handler in `serviceBot/api/telephony.py` to return `issue_description`, `duration_minutes`, and vehicle specs
+- [x] T015 [US2] Update `serviceBot/system_prompt.txt` and `serviceBot/config.json` with returning caller greeting protocol (greet warmly by name first; recall appointment and vehicle context when issue or car is mentioned)
+- [x] T016 [US2] Run and verify User Story 2 test suite via `pytest tests/test_customer_history_context.py`
 
 **Checkpoint**: User Stories 1 AND 2 are independently functional and integrated. Returning callers receive high-touch contextual service.
 
@@ -90,15 +90,15 @@
 
 ### Tests for User Story 3 (TDD) ⚠️
 
-- [ ] T017 [P] [US3] Create automated integration tests for consolidating multiple issues and duration extension in `tests/test_consolidate_appointment_issues.py`
+- [x] T017 [P] [US3] Create automated integration tests for consolidating multiple issues and duration extension in `tests/test_consolidate_appointment_issues.py`
 
 ### Implementation for User Story 3
 
-- [ ] T018 [US3] Implement `consolidate_appointment_service` query function in `serviceBot/db/queries.py` to append issue descriptions and update duration
-- [ ] T019 [US3] Implement `consolidate_appointment_service` tool endpoint in `serviceBot/api/telephony.py` with contiguous slot verification
-- [ ] T020 [US3] Register `consolidate_appointment_service` in `serviceBot/conversation_simulator.py` and tool schemas
-- [ ] T021 [US3] Update `serviceBot/system_prompt.txt` and `serviceBot/config.json` with conversational rules to offer consolidating additional issues into existing appointments for the same vehicle
-- [ ] T022 [US3] Run and verify User Story 3 test suite via `pytest tests/test_consolidate_appointment_issues.py`
+- [x] T018 [US3] Implement `consolidate_appointment_service` query function in `serviceBot/db/queries.py` to append issue descriptions and update duration
+- [x] T019 [US3] Implement `consolidate_appointment_service` tool endpoint in `serviceBot/api/telephony.py` with contiguous slot verification
+- [x] T020 [US3] Register `consolidate_appointment_service` in `serviceBot/conversation_simulator.py` and tool schemas
+- [x] T021 [US3] Update `serviceBot/system_prompt.txt` and `serviceBot/config.json` with conversational rules to offer consolidating additional issues into existing appointments for the same vehicle
+- [x] T022 [US3] Run and verify User Story 3 test suite via `pytest tests/test_consolidate_appointment_issues.py`
 
 **Checkpoint**: All three user stories are complete, independently verified, and seamlessly cooperative.
 
@@ -108,9 +108,9 @@
 
 **Purpose**: End-to-end scenario validation and regression testing across the entire codebase.
 
-- [ ] T023 [P] Execute quickstart validation scenarios 1 through 4 from `specs/001-booking-confirmation-history/quickstart.md`
-- [ ] T024 Run full local test suite via `./run_tests.sh` to ensure zero regressions across existing telephony, portal, and calendar suites
-- [ ] T025 [P] Update API and telephony documentation in `docs/specs/api_spec.md` reflecting new tool responses and consolidation semantics
+- [x] T023 [P] Execute quickstart validation scenarios 1 through 4 from `specs/001-booking-confirmation-history/quickstart.md`
+- [x] T024 Run full local test suite via `./run_tests.sh` to ensure zero regressions across existing telephony, portal, and calendar suites
+- [x] T025 [P] Update API and telephony documentation in `docs/specs/api_spec.md` reflecting new tool responses and consolidation semantics
 
 ---
 
