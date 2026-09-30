@@ -1299,10 +1299,64 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
             else:
                 phone = validated_phone
                 appts = get_customer_appointments(phone)
+
+                try:
+                    tz = zoneinfo.ZoneInfo("America/New_York")
+                except Exception:
+                    tz = None
+                now_dt = datetime.now(tz) if tz else datetime.now()
+                today_str = now_dt.strftime("%Y-%m-%d")
+
+                upcoming = []
+                past = []
+                unscheduled = []
+
+                for a in appts:
+                    dt = a.get("appointment_datetime")
+                    btype = "appointment" if a.get("booking_type") == "appointment" else "callback"
+                    a["kind"] = "in-shop appointment" if btype == "appointment" else "advisor callback"
+                    if not dt:
+                        unscheduled.append(a)
+                    elif str(dt)[:10] >= today_str:
+                        upcoming.append(a)
+                    else:
+                        past.append(a)
+
+                if not appts:
+                    msg = f"No active appointments or service requests found for phone number {phone}."
+                    summary_for_agent = f"No active appointments or callbacks on file for {phone}."
+                else:
+                    parts = []
+                    if upcoming:
+                        parts.append(f"Found {len(upcoming)} upcoming scheduled request(s) on file:")
+                        for idx, u in enumerate(upcoming, 1):
+                            kind_label = "In-shop Appointment" if u.get("booking_type") == "appointment" else "Advisor Callback"
+                            v_str = f"{u.get('year') or ''} {u.get('make') or ''} {u.get('model') or ''}".strip() or "Vehicle"
+                            srv = u.get("service_type") or "Service"
+                            issue = u.get("issue_description") or ""
+                            dt_str = u.get("appointment_datetime")
+                            issue_part = f" ({issue})" if issue and issue.lower() != srv.lower() else ""
+                            parts.append(f"{idx}) {kind_label} at {dt_str} for {v_str} regarding {srv}{issue_part}.")
+                    if past:
+                        parts.append(f"Also found {len(past)} past service visit(s) from prior dates.")
+                    if unscheduled:
+                        parts.append(f"Also found {len(unscheduled)} unscheduled request(s).")
+                    msg = " ".join(parts)
+                    summary_for_agent = (
+                        f"Customer {phone} has {len(upcoming)} upcoming scheduled request(s) on file. "
+                        f"Clearly inform the caller of both in-shop appointments and advisor callbacks, "
+                        f"and do not claim there are only in-shop appointments if advisor callbacks are also scheduled."
+                    )
+
                 result = {
                     "success": True,
                     "appointments": appts,
-                    "message": f"Found {len(appts)} appointments for phone number {phone}." if appts else f"No active appointments found for phone number {phone}."
+                    "total_count": len(appts),
+                    "upcoming_count": len(upcoming),
+                    "upcoming_appointments": upcoming,
+                    "past_count": len(past),
+                    "message": msg,
+                    "summary_for_agent": summary_for_agent,
                 }
 
         elif tool_name == "consolidate_appointment_service":

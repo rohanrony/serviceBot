@@ -1303,8 +1303,9 @@ def create_callback_request(customer_id: int, service_request_id: int = None, pr
 
 def get_customer_appointments(phone: str) -> list:
     """
-    Looks up all scheduled/rescheduled appointments for a customer by phone number,
-    including vehicle make, model, year, issue description, and duration.
+    Looks up all scheduled/rescheduled appointments and service requests (including advisor callbacks)
+    for a customer by phone number, including vehicle make, model, year, issue description, duration,
+    and booking type.
     """
     import re
     cleaned_phone = re.sub(r"\D", "", phone) if phone else ""
@@ -1312,16 +1313,16 @@ def get_customer_appointments(phone: str) -> list:
         cleaned_phone = cleaned_phone[1:]
 
     query = """
-    SELECT sr.id, sr.booking_time AS appointment_datetime, sr.service_type,
+    SELECT sr.id, sr.booking_time AS appointment_datetime, sr.booking_type, sr.service_type,
            sr.issue_description, COALESCE(sr.duration_minutes, 60) AS duration_minutes,
            sr.status, v.year, v.make, v.model
     FROM service_requests sr
     JOIN customers c ON sr.customer_id = c.id
     LEFT JOIN vehicles v ON sr.vehicle_id = v.id
     WHERE (c.phone = %s OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(c.phone, '-', ''), ' ', ''), '(', ''), ')', ''), '+1', '') = %s)
-      AND sr.booking_type = 'appointment'
+      AND (sr.booking_type IN ('appointment', 'callback', 'appointment_and_callback') OR sr.booking_time IS NOT NULL)
       AND sr.status IN ('pending', 'in_progress')
-    ORDER BY sr.booking_time DESC;
+    ORDER BY sr.booking_time ASC NULLS LAST;
     """
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:

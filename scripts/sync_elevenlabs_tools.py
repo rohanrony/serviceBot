@@ -71,7 +71,7 @@ TOOL_DEFINITIONS = [
     {
         "type": "webhook",
         "name": "get_customer_appointments",
-        "description": "Retrieve existing appointments, scheduled dates, and past service issues for a customer using their 10-digit phone number.",
+        "description": "Retrieve all existing upcoming and past scheduled appointments, advisor callbacks, and service requests for a customer using their 10-digit phone number.",
         "response_timeout_secs": 20,
         "disable_interruptions": False,
         "interruption_mode": "allow",
