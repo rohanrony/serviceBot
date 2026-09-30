@@ -705,20 +705,26 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
         
         # If not in query params, try to detect from the payload keys
         if not tool_name:
-            if any(k in payload for k in ["summary_text", "summaryText", "summary", "reason", "transfer_phone_number"]):
+            if any(k in payload for k in ["new_appointment_datetime", "new_datetime", "new_time", "new_slot"]):
+                tool_name = "reschedule_appointment"
+            elif any(k in payload for k in ["additional_issue", "additional_service_type", "additional_duration_minutes"]):
+                tool_name = "consolidate_appointment_service"
+            elif any(k in payload for k in ["summary_text", "summaryText", "summary", "reason", "transfer_phone_number"]):
                 tool_name = "cba_webhook"
             elif any(k in payload for k in ["appointment_datetime", "appointmentDatetime", "datetime"]):
                 tool_name = "book_appointment"
             elif any(k in payload for k in ["preferred_date", "preferredDate"]):
                 tool_name = "check_availability"
-            elif any(k in payload for k in ["service_name", "serviceName", "service"]):
+            elif any(k in payload for k in ["preferred_time", "preferredTime", "callback_priority", "callback_number"]):
+                tool_name = "request_callback"
+            elif any(k in payload for k in ["service_name", "serviceName"]):
                 tool_name = "get_service_fields"
             elif any(k in payload for k in ["query_text", "query"]):
                 tool_name = "query_knowledge_base"
             elif any(k in payload for k in ["make", "model", "year", "issue_description", "issue"]):
                 tool_name = "create_service_request"
             elif any(k in payload for k in ["phone", "phone_number", "phoneNumber", "caller_phone"]):
-                tool_name = "check_availability"
+                tool_name = "get_customer_appointments"
             else:
                 tool_name = "check_availability"
 

@@ -311,14 +311,20 @@ TOOL_DEFINITIONS = [
     }
 ]
 
+# Ensure every tool webhook URL includes ?name=<tool_name> for unambiguous routing in FastAPI
+for _tool in TOOL_DEFINITIONS:
+    _name = _tool["name"]
+    _base_url = WEBHOOK_URL.split("?")[0]
+    _tool["api_schema"]["url"] = f"{_base_url}?name={_name}"
+
 def sync_agents():
     print(f"🚀 Synchronizing {len(TOOL_DEFINITIONS)} tools & prompt to ElevenLabs agents...")
-    print(f"   Webhook URL: {WEBHOOK_URL}")
+    print(f"   Base Webhook URL: {WEBHOOK_URL}")
 
     for agent_id in TARGET_AGENTS:
         print(f"\n📡 Processing agent: {agent_id}...")
         url = f"https://api.elevenlabs.io/v1/convai/agents/{agent_id}"
-        resp = httpx.get(url, headers=headers, trust_env=False)
+        resp = httpx.get(url, headers=headers, trust_env=False, timeout=30.0)
         if resp.status_code != 200:
             print(f"  ❌ Failed to fetch agent {agent_id}: {resp.status_code}")
             continue
@@ -339,7 +345,7 @@ def sync_agents():
         if system_prompt_text:
             patch_payload["conversation_config"]["agent"]["prompt"]["prompt"] = system_prompt_text
 
-        patch_res = httpx.patch(url, json=patch_payload, headers=headers, trust_env=False)
+        patch_res = httpx.patch(url, json=patch_payload, headers=headers, trust_env=False, timeout=30.0)
         if patch_res.status_code == 200:
             print(f"  ✅ Successfully synced all 10 tools & prompt to {agent_id}!")
         else:

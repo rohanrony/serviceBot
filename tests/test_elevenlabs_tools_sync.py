@@ -55,3 +55,10 @@ def test_consolidate_appointment_tool_schema():
     assert "phone" in body_schema["required"]
     assert "additional_issue" in body_schema["required"]
     assert "additional_duration_minutes" in body_schema["properties"]
+
+def test_tool_urls_contain_tool_name_query_parameter():
+    """Verify that every tool webhook URL in TOOL_DEFINITIONS has ?name=<tool_name> for unambiguous routing."""
+    for tool in TOOL_DEFINITIONS:
+        name = tool["name"]
+        url = tool.get("api_schema", {}).get("url", "")
+        assert f"?name={name}" in url, f"Tool {name} URL does not contain ?name={name}: {url}"

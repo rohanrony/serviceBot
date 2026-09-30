@@ -496,6 +496,33 @@ def test_voice_tools_create_service_request_multiple_issues(mock_create, mock_lo
     )
 
 
+@patch("serviceBot.api.telephony.get_customer_appointments")
+def test_voice_tools_get_customer_appointments_with_query_param(mock_get_appts):
+    mock_get_appts.return_value = [
+        {"id": 1, "appointment_datetime": "2026-10-01 10:00:00", "service_type": "Brake Service"}
+    ]
+    response = client.post("/api/v1/voice/tools?name=get_customer_appointments", json={"phone": "4242704893"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["result"]["success"] is True
+    assert len(data["result"]["appointments"]) == 1
+    mock_get_appts.assert_called_once_with("4242704893")
+
+
+@patch("serviceBot.api.telephony.get_customer_appointments")
+def test_voice_tools_get_customer_appointments_flat_fallback(mock_get_appts):
+    mock_get_appts.return_value = [
+        {"id": 2, "appointment_datetime": "2026-10-02 14:00:00", "service_type": "Oil Change"}
+    ]
+    response = client.post("/api/v1/voice/tools", json={"phone": "4242704893"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["result"]["success"] is True
+    assert len(data["result"]["appointments"]) == 1
+    mock_get_appts.assert_called_once_with("4242704893")
+
+
+
 
 
 
