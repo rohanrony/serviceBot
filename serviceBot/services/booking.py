@@ -839,6 +839,10 @@ class BookingService:
                 staff_agent_id = %s,
                 service_type = %s,
                 calendar_integration_status = 'PENDING_CALENDAR',
+                confirmation_status = 'pending_agent_confirmation',
+                escalation_status = 'none',
+                escalation_reason = NULL,
+                confirmed_at = NULL,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = %s;
             """,

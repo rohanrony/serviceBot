@@ -91,6 +91,13 @@ class TwilioSMSClient:
         clean_to = to.strip() if to else ""
         normalized_channel = (channel or "SMS").upper()
 
+        # Check if attempting SMS with WhatsApp sandbox from_number
+        sandbox_number = os.getenv("TWILIO_WHATSAPP_SANDBOX_NUMBER", "+14155238886").replace("whatsapp:", "").strip()
+        from_clean = self.from_number.replace("whatsapp:", "").strip() if self.from_number else ""
+        if normalized_channel == "SMS" and not self.messaging_service_sid and from_clean == sandbox_number:
+            logger.info("From number matches Twilio WhatsApp Sandbox number; routing dispatch to WHATSAPP.")
+            normalized_channel = "WHATSAPP"
+
         def record(
             status: str,
             *,
@@ -159,6 +166,13 @@ class TwilioSMSClient:
             from_num = self.from_number.strip() if self.from_number else ""
 
             if normalized_channel == "WHATSAPP":
+                digits = re.sub(r"\D", "", target_to)
+                if len(digits) == 10:
+                    target_to = f"+1{digits}"
+                elif len(digits) == 11 and digits.startswith("1"):
+                    target_to = f"+{digits}"
+                elif not target_to.startswith("+"):
+                    target_to = f"+{target_to}"
                 if not target_to.startswith("whatsapp:"):
                     target_to = f"whatsapp:{target_to}"
                 if not from_num.startswith("whatsapp:"):

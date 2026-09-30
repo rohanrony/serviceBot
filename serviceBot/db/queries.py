@@ -3230,7 +3230,8 @@ def get_breached_unconfirmed_appointments(
     and confirmation_status is still 'pending_agent_confirmation' and escalation_status is 'none'.
     """
     if cutoff_threshold is None:
-        cutoff_threshold = as_of_time if as_of_time is not None else dt_mod.datetime.now()
+        from serviceBot.services.booking import BUSINESS_TZ
+        cutoff_threshold = as_of_time if as_of_time is not None else dt_mod.datetime.now(BUSINESS_TZ).replace(tzinfo=None)
 
     query = """
     SELECT sr.*, c.name AS customer_name, c.phone AS customer_phone, sa.name AS agent_name, sa.phone_number AS agent_phone

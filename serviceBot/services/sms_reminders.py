@@ -10,12 +10,18 @@ from serviceBot.db.queries import (
     get_customer_opt_in
 )
 from serviceBot.services.twilio_sms import TwilioSMSClient
+from serviceBot.services.booking import BUSINESS_TZ
 
 logger = get_logger("sms_reminders")
 
 
+def get_current_business_time() -> dt_mod.datetime:
+    """Returns current naive datetime in the shop's operational timezone (America/New_York)."""
+    return dt_mod.datetime.now(BUSINESS_TZ).replace(tzinfo=None)
+
+
 def parse_booking_datetime(dt_str: str) -> dt_mod.datetime:
-    """Parses various date/time formats into naive UTC datetime."""
+    """Parses various date/time formats into naive datetime in business timezone."""
     if not dt_str:
         return None
     for fmt in [
@@ -25,7 +31,7 @@ def parse_booking_datetime(dt_str: str) -> dt_mod.datetime:
         try:
             dt = dt_mod.datetime.strptime(dt_str.strip(), fmt)
             if dt.year == 1900:
-                now = dt_mod.datetime.now()
+                now = get_current_business_time()
                 dt = dt.replace(year=now.year, month=now.month, day=now.day)
             return dt
         except ValueError:
@@ -191,7 +197,7 @@ def schedule_appointment_reminders(
     if not apt_dt:
         return
 
-    now = dt_mod.datetime.now()
+    now = get_current_business_time()
     if booked_at is None:
         booked_at = now
 
@@ -319,16 +325,18 @@ def run_reminder_polling_worker_cycle() -> int:
     from serviceBot.api.portal import load_config
     cfg = load_config()
 
+    now_business = get_current_business_time()
     due_reminders = []
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             cursor.execute(
                 """
                 SELECT * FROM sms_reminders
-                WHERE status = 'PENDING' AND scheduled_at <= CURRENT_TIMESTAMP
+                WHERE status = 'PENDING' AND scheduled_at <= %s
                 ORDER BY scheduled_at ASC
                 FOR UPDATE SKIP LOCKED;
-                """
+                """,
+                (now_business,)
             )
             due_reminders = [dict(r) for r in cursor.fetchall()]
             if not due_reminders:
@@ -380,12 +388,35 @@ def run_reminder_polling_worker_cycle() -> int:
         else:
             body = f"Reminder: Appointment #{rem['appointment_id']}."
 
-        res = client.send_sms(
-            to=phone,
-            body=body,
-            template_type=f"reminder_{rem_type}",
-            appointment_id=rem["appointment_id"]
-        )
+        # Determine dispatch channel from matrix rules (default to WHATSAPP)
+        channel = "WHATSAPP"
+        try:
+            from serviceBot.db.queries import get_sms_matrix_rules
+            event_name = "BOOKING" if att_kind == "immediate_booking" else f"REMINDER_{rem_type.upper()}"
+            rules = get_sms_matrix_rules()
+            for r in rules:
+                if r.get("event_type") == event_name and r.get("recipient_role") == rec_type and r.get("enabled"):
+                    channel = (r.get("channel") or "WHATSAPP").upper()
+                    break
+        except Exception:
+            channel = "WHATSAPP"
+
+        if channel == "WHATSAPP":
+            res = client.send_whatsapp(
+                to=phone,
+                body=body,
+                template_type=f"reminder_{rem_type}",
+                appointment_id=rem["appointment_id"],
+                recipient_type=rec_type,
+            )
+        else:
+            res = client.send_sms(
+                to=phone,
+                body=body,
+                template_type=f"reminder_{rem_type}",
+                appointment_id=rem["appointment_id"],
+                recipient_type=rec_type,
+            )
 
         is_success = bool(res.get("success") or res.get("status") in ("DELIVERED", "SENT"))
         error_msg = res.get("error")
@@ -417,7 +448,7 @@ def run_reminder_polling_worker_cycle() -> int:
                         new_retries = retry_count + 1
                         backoff_idx = min(retry_count, len(backoff_list) - 1)
                         backoff_mins = backoff_list[backoff_idx]
-                        next_time = dt_mod.datetime.now() + dt_mod.timedelta(minutes=backoff_mins)
+                        next_time = get_current_business_time() + dt_mod.timedelta(minutes=backoff_mins)
                         cursor.execute(
                             """
                             UPDATE sms_reminders
@@ -542,7 +573,7 @@ def check_and_escalate_unconfirmed_appointments(as_of_time: dt_mod.datetime = No
     )
 
     if as_of_time is None:
-        as_of_time = dt_mod.datetime.now()
+        as_of_time = get_current_business_time()
 
     breached = get_breached_unconfirmed_appointments(as_of_time=as_of_time)
     escalated_count = 0
