@@ -275,7 +275,14 @@ async def sync_prompt_to_elevenlabs(prompt_text: str, first_message: str = None)
     except Exception:
         pass
         
-    if not api_key or not agent_id:
+    target_agents = []
+    if agent_id:
+        target_agents.append(agent_id)
+    prod_agent_id = os.getenv("ELEVENLABS_PRODUCTION_AGENT_ID") or "agent_2501ktmjf3pee2as55y9vx3gdpge"
+    if prod_agent_id and prod_agent_id not in target_agents:
+        target_agents.append(prod_agent_id)
+
+    if not api_key or not target_agents:
         try:
             with open(log_file, "a") as lf:
                 lf.write("Error: Missing API Key or Agent ID\n")
@@ -298,27 +305,28 @@ async def sync_prompt_to_elevenlabs(prompt_text: str, first_message: str = None)
         el_payload["conversation_config"]["agent"]["first_message"] = first_message
     
     async with httpx.AsyncClient() as client:
-        try:
-            response = await client.patch(
-                f"https://api.elevenlabs.io/v1/convai/agents/{agent_id}",
-                json=el_payload,
-                headers=headers
-            )
+        for target_id in target_agents:
             try:
-                with open(log_file, "a") as lf:
-                    lf.write(f"Status Code: {response.status_code}\n")
-                    lf.write(f"Response: {response.text}\n")
-            except Exception:
-                pass
-            if response.status_code != 200:
-                print(f"ElevenLabs prompt sync returned status code {response.status_code}: {response.text}")
-        except Exception as e:
-            try:
-                with open(log_file, "a") as lf:
-                    lf.write(f"Exception: {str(e)}\n")
-            except Exception:
-                pass
-            print(f"Failed to sync prompt to ElevenLabs: {str(e)}")
+                response = await client.patch(
+                    f"https://api.elevenlabs.io/v1/convai/agents/{target_id}",
+                    json=el_payload,
+                    headers=headers
+                )
+                try:
+                    with open(log_file, "a") as lf:
+                        lf.write(f"Target: {target_id} - Status Code: {response.status_code}\n")
+                        lf.write(f"Response: {response.text}\n")
+                except Exception:
+                    pass
+                if response.status_code != 200:
+                    print(f"ElevenLabs prompt sync for {target_id} returned status code {response.status_code}: {response.text}")
+            except Exception as e:
+                try:
+                    with open(log_file, "a") as lf:
+                        lf.write(f"Target {target_id} Exception: {str(e)}\n")
+                except Exception:
+                    pass
+                print(f"Failed to sync prompt to ElevenLabs agent {target_id}: {str(e)}")
 
 class ConfigUpdatePayload(BaseModel):
     required_fields: Optional[dict] = None
