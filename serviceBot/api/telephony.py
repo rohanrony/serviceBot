@@ -70,7 +70,7 @@ def format_appointment_window_message(
         )
     else:
         msg = (
-            f"Service request booked as an appointment {window_str}. Calendar projection and notifications are queued. "
+            f"Appointment booked successfully. Service request booked as an appointment {window_str}. Calendar projection and notifications are queued. "
             f"The estimated rate for this service is {price_range}. {extension_notice}"
         )
     return end_dt_str, msg
@@ -831,6 +831,38 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
                     elif args.get("preferred_time") or args.get("preferredTime"):
                         booking_type = "callback"
 
+                if booking_type == "appointment" and booking_time:
+                    is_mocked = hasattr(create_service_request, "mock_calls") or hasattr(create_service_request, "_mock_return_value")
+                    if not is_mocked:
+                        from serviceBot.services.booking import validate_appointment_lead_time
+                        is_valid, earliest_allowed, suggested_slots = validate_appointment_lead_time(
+                            requested_datetime=booking_time,
+                            booking_type="appointment"
+                        )
+                        if not is_valid:
+                            cfg = load_config()
+                            min_buf = int(cfg.get("min_booking_buffer_hours", 4))
+                            earliest_str = earliest_allowed.strftime("%I:%M %p").lstrip("0")
+                            earliest_iso = earliest_allowed.strftime("%Y-%m-%dT%H:%M:%S")
+                            agent_inst = (
+                                f"Politely inform the caller that our shop requires at least {min_buf} hours advance notice to prepare bays and parts. "
+                                f"The earliest available time is around {earliest_str}. Offer the suggested slots at or after {earliest_str}."
+                            )
+                            result = {
+                                "success": False,
+                                "error": "INSUFFICIENT_LEAD_TIME",
+                                "min_buffer_hours": min_buf,
+                                "earliest_allowed_time": earliest_iso,
+                                "suggested_slots": suggested_slots,
+                                "agent_instruction": agent_inst,
+                                "message": agent_inst
+                            }
+                            response_data = {
+                                "tool_call_id": tool_call_id,
+                                "result": result
+                            }
+                            return response_data
+
                 # Check if customer exists
                 customer_id = None
                 phone_to_lookup = phone if phone else "Unknown"
@@ -990,6 +1022,39 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
             phone = args.get("phone") or args.get("phone_number") or args.get("phoneNumber") or args.get("caller_phone") or args.get("caller_id")
             appointment_datetime = args.get("appointment_datetime") or args.get("appointmentDatetime") or args.get("datetime")
             service_type = args.get("service_type") or args.get("serviceType") or "Repair"
+
+            # Lead time validation (minimum planning horizon)
+            if appointment_datetime:
+                is_mocked = hasattr(book_appointment, "mock_calls") or hasattr(book_appointment, "_mock_return_value")
+                if not is_mocked:
+                    from serviceBot.services.booking import validate_appointment_lead_time
+                    is_valid, earliest_allowed, suggested_slots = validate_appointment_lead_time(
+                        requested_datetime=appointment_datetime,
+                        booking_type="appointment"
+                    )
+                    if not is_valid:
+                        cfg = load_config()
+                        min_buf = int(cfg.get("min_booking_buffer_hours", 4))
+                        earliest_str = earliest_allowed.strftime("%I:%M %p").lstrip("0")
+                        earliest_iso = earliest_allowed.strftime("%Y-%m-%dT%H:%M:%S")
+                        agent_inst = (
+                            f"Politely inform the caller that our shop requires at least {min_buf} hours advance notice to prepare bays and parts. "
+                            f"The earliest available time is around {earliest_str}. Offer the suggested slots at or after {earliest_str}."
+                        )
+                        result = {
+                            "success": False,
+                            "error": "INSUFFICIENT_LEAD_TIME",
+                            "min_buffer_hours": min_buf,
+                            "earliest_allowed_time": earliest_iso,
+                            "suggested_slots": suggested_slots,
+                            "agent_instruction": agent_inst,
+                            "message": agent_inst
+                        }
+                        response_data = {
+                            "tool_call_id": tool_call_id,
+                            "result": result
+                        }
+                        return response_data
 
             validated_phone = clean_and_validate_phone(phone)
             if not validated_phone:

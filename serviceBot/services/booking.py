@@ -37,6 +37,22 @@ class BookingValidationError(BookingError):
     """Raised when a booking request is incomplete or outside operating hours."""
 
 
+class BookingHorizonError(BookingError):
+    """Raised when an appointment is requested with insufficient advance lead time."""
+
+    def __init__(
+        self,
+        message: str,
+        min_buffer_hours: float = 4.0,
+        earliest_allowed: Optional[dt_mod.datetime] = None,
+        suggested_slots: Optional[list[str]] = None,
+    ):
+        super().__init__(message)
+        self.min_buffer_hours = min_buffer_hours
+        self.earliest_allowed = earliest_allowed
+        self.suggested_slots = suggested_slots or []
+
+
 @dataclass(frozen=True)
 class BookingReceipt:
     request_id: int
@@ -122,6 +138,81 @@ def validate_bookable_window(starts_at: dt_mod.datetime, duration_minutes: int) 
                 "Booking time is outside company workhours (Monday to Friday, 7:00 AM to 6:00 PM)."
             )
     return segments
+
+
+def validate_appointment_lead_time(
+    requested_datetime: str | dt_mod.datetime,
+    current_time: Optional[dt_mod.datetime] = None,
+    min_buffer_hours: Optional[float] = None,
+    booking_type: str = "appointment",
+) -> tuple[bool, dt_mod.datetime, list[str]]:
+    """
+    Validates whether an appointment meets the required minimum planning lead time.
+    Callbacks are exempt from this restriction.
+    Returns (is_valid, earliest_allowed_datetime, suggested_slots).
+    """
+    if current_time is None:
+        current_time = dt_mod.datetime.now()
+
+    if min_buffer_hours is None:
+        try:
+            from serviceBot.api.portal import load_config
+            cfg = load_config()
+            min_buffer_hours = float(cfg.get("min_booking_buffer_hours", 4.0))
+        except Exception:
+            min_buffer_hours = 4.0
+
+    earliest_allowed = current_time + dt_mod.timedelta(hours=float(min_buffer_hours))
+
+    if booking_type != "appointment":
+        return True, earliest_allowed, []
+
+    req_dt = None
+    if hasattr(requested_datetime, "strftime") and hasattr(requested_datetime, "year"):
+        req_dt = requested_datetime
+    elif isinstance(requested_datetime, str):
+        for fmt in (
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%d %H:%M",
+            "%Y-%m-%dT%H:%M",
+            "%Y-%m-%d",
+            "%I:%M %p",
+        ):
+            try:
+                req_dt = dt_mod.datetime.strptime(requested_datetime.strip().replace("Z", ""), fmt)
+                if req_dt.year == 1900:
+                    req_dt = req_dt.replace(year=current_time.year, month=current_time.month, day=current_time.day)
+                break
+            except ValueError:
+                pass
+        if req_dt is None:
+            try:
+                candidate = requested_datetime.strip().replace("Z", "")
+                req_dt = dt_mod.datetime.fromisoformat(candidate)
+            except Exception:
+                pass
+
+    if req_dt is None:
+        return False, earliest_allowed, []
+
+    if req_dt.tzinfo is not None:
+        req_dt = req_dt.astimezone(BUSINESS_TZ).replace(tzinfo=None)
+
+    if req_dt < earliest_allowed:
+        suggested_slots = []
+        try:
+            from serviceBot.db.queries import check_availability
+            pref_date_str = earliest_allowed.strftime("%Y-%m-%d %H:%M:%S")
+            suggested_slots = check_availability(preferred_date=pref_date_str, booking_type="appointment")
+        except Exception:
+            suggested_slots = [
+                earliest_allowed.strftime("%Y-%m-%d %H:%M:%S"),
+                (earliest_allowed + dt_mod.timedelta(hours=1.5)).strftime("%Y-%m-%d %H:%M:%S"),
+            ]
+        return False, earliest_allowed, suggested_slots
+
+    return True, earliest_allowed, []
 
 
 def _as_datetime(value: Any) -> Optional[dt_mod.datetime]:

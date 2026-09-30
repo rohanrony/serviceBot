@@ -547,7 +547,7 @@ def parse_preferred_date_and_time(preferred_date_str: str) -> tuple:
     return iso_date_str, time_window, start_timestamp_str
 
 
-def _generate_dynamic_slots(preferred_date_str: str, duration_minutes: int, interval_minutes: int = 30) -> list:
+def _generate_dynamic_slots(preferred_date_str: str, duration_minutes: int, interval_minutes: int = 30, booking_type: str = "appointment") -> list:
     """
     Generates candidate work-hour slots dynamically for the next 14 business days,
     starting from preferred_date_str (or today). Used when mock_calendar_slots is empty.
@@ -575,6 +575,17 @@ def _generate_dynamic_slots(preferred_date_str: str, duration_minutes: int, inte
     slots = []
     day_offset = 0
     now_dt = dt_mod.datetime.now()
+
+    min_lead_hours = 0.0
+    if booking_type == "appointment":
+        try:
+            from serviceBot.api.portal import load_config
+            cfg = load_config()
+            min_lead_hours = float(cfg.get("min_booking_buffer_hours", 4.0))
+        except Exception:
+            min_lead_hours = 4.0
+    min_cutoff_dt = now_dt + dt_mod.timedelta(hours=min_lead_hours)
+
     valid_hours = get_configured_business_hours()
     valid_days = get_configured_business_days()
     business_hours_set = set(valid_hours)
@@ -596,7 +607,7 @@ def _generate_dynamic_slots(preferred_date_str: str, duration_minutes: int, inte
             for hour in valid_hours:
                 for minute in valid_minutes:
                     slot_dt = dt_mod.datetime.combine(candidate_day, dt_mod.time(hour, minute, 0))
-                    if slot_dt > now_dt:
+                    if slot_dt >= min_cutoff_dt:
                         # Enforce that every 15-minute segment of the appointment is strictly within business hours and days
                         fits_business_hours = True
                         for offset in range(0, norm_duration, 15):
@@ -656,8 +667,12 @@ def check_availability(service_type: str = None, preferred_date: str = None, boo
         
     agent_events_map = {}
 
-    preferred_date_for_gen = preferred_date if preferred_date else None
-    candidate_slots = _generate_dynamic_slots(preferred_date_for_gen, duration_minutes, interval_minutes=15 if is_callback else 30)
+    candidate_slots = _generate_dynamic_slots(
+        preferred_date,
+        duration_minutes,
+        interval_minutes=15 if is_callback else 30,
+        booking_type="callback" if is_callback else "appointment"
+    )
 
     if not candidate_slots:
         return []
@@ -2606,7 +2621,15 @@ def get_sms_log_by_id(log_id: int) -> dict:
             return dict(row) if row else None
 
 
-def schedule_sms_reminder(appointment_id: int, recipient_type: str, recipient_phone: str, reminder_type: str, scheduled_at: dt_mod.datetime) -> int:
+def schedule_sms_reminder(
+    appointment_id: int,
+    recipient_type: str,
+    recipient_phone: str,
+    reminder_type: str,
+    scheduled_at: dt_mod.datetime,
+    attempt_number: int = 1,
+    attempt_kind: str = "final_reminder",
+) -> int:
     """Schedules a pre-appointment SMS reminder in sms_reminders table."""
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
@@ -2618,23 +2641,32 @@ def schedule_sms_reminder(appointment_id: int, recipient_type: str, recipient_ph
 
             cursor.execute(
                 """
-                INSERT INTO sms_reminders (appointment_id, recipient_type, recipient_phone, reminder_type, scheduled_at, status)
-                VALUES (%s, %s, %s, %s, %s, 'PENDING')
+                INSERT INTO sms_reminders (
+                    appointment_id, recipient_type, recipient_phone, reminder_type, scheduled_at, status,
+                    attempt_number, attempt_kind, retry_count
+                )
+                VALUES (%s, %s, %s, %s, %s, 'PENDING', %s, %s, 0)
                 RETURNING id;
                 """,
-                (appointment_id, recipient_type, recipient_phone, reminder_type, scheduled_at)
+                (appointment_id, recipient_type, recipient_phone, reminder_type, scheduled_at, attempt_number, attempt_kind)
             )
             return cursor.fetchone()["id"]
 
 
-def cancel_pending_sms_reminders(appointment_id: int):
-    """Marks all pending reminders for an appointment as CANCELLED."""
+def cancel_pending_sms_reminders(appointment_id: int, recipient_type: str = None):
+    """Marks pending reminders for an appointment as CANCELLED, optionally filtered by recipient_type."""
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
-            cursor.execute(
-                "UPDATE sms_reminders SET status = 'CANCELLED' WHERE appointment_id = %s AND status = 'PENDING';",
-                (appointment_id,)
-            )
+            if recipient_type:
+                cursor.execute(
+                    "UPDATE sms_reminders SET status = 'CANCELLED' WHERE appointment_id = %s AND recipient_type = %s AND status = 'PENDING';",
+                    (appointment_id, recipient_type)
+                )
+            else:
+                cursor.execute(
+                    "UPDATE sms_reminders SET status = 'CANCELLED' WHERE appointment_id = %s AND status = 'PENDING';",
+                    (appointment_id,)
+                )
 
 
 def get_due_sms_reminders() -> list:
@@ -3032,5 +3064,180 @@ def consolidate_appointment_service(
             }
 
 
+def get_staff_agent_by_phone(phone_number: str) -> Optional[Dict[str, Any]]:
+    """
+    Looks up a staff agent by phone number, matching against raw or E.164 normalized formats.
+    """
+    if not phone_number:
+        return None
+    import re
+    cleaned = re.sub(r"\D", "", phone_number)
+    if len(cleaned) == 11 and cleaned.startswith("1"):
+        cleaned_10 = cleaned[1:]
+    else:
+        cleaned_10 = cleaned if len(cleaned) == 10 else ""
+    e164 = f"+1{cleaned_10}" if cleaned_10 else phone_number.strip()
+
+    query = """
+    SELECT id, name, email, phone_number, role
+    FROM staff_agents
+    WHERE phone_number = %s
+       OR phone_number = %s
+       OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone_number, '-', ''), ' ', ''), '(', ''), ')', ''), '+1', '') = %s
+    LIMIT 1;
+    """
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(query, (phone_number.strip(), e164, cleaned_10 or cleaned))
+            row = cursor.fetchone()
+            return dict(row) if row else None
 
 
+def update_appointment_confirmation_status(
+    request_id: int,
+    confirmation_status: str,
+    confirmed_at: Optional[dt_mod.datetime] = None,
+) -> Dict[str, Any]:
+    """
+    Updates the confirmation status ('pending_agent_confirmation', 'confirmed', 'declined')
+    and confirmed_at timestamp for a service request.
+    If transitioning to 'confirmed' and currently 'escalated', auto-resolves escalation.
+    """
+    valid_statuses = ('pending_agent_confirmation', 'confirmed', 'declined')
+    if confirmation_status not in valid_statuses:
+        raise ValueError(f"Invalid confirmation_status '{confirmation_status}'. Must be one of {valid_statuses}")
+
+    if confirmation_status == 'confirmed' and confirmed_at is None:
+        confirmed_at = dt_mod.datetime.now()
+
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                "SELECT id, confirmation_status, escalation_status FROM service_requests WHERE id = %s FOR UPDATE;",
+                (request_id,)
+            )
+            current = cursor.fetchone()
+            if not current:
+                raise ValueError(f"Service request #{request_id} not found.")
+
+            escalation_status = current.get("escalation_status") or "none"
+            if confirmation_status == "confirmed" and escalation_status == "escalated":
+                escalation_status = "resolved"
+
+            cursor.execute(
+                """
+                UPDATE service_requests
+                SET confirmation_status = %s,
+                    confirmed_at = %s,
+                    escalation_status = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                RETURNING *;
+                """,
+                (confirmation_status, confirmed_at, escalation_status, request_id)
+            )
+            updated = dict(cursor.fetchone())
+
+            cursor.execute(
+                """
+                INSERT INTO service_request_audit_log (request_id, from_status, to_status, triggered_by, notes)
+                VALUES (%s, %s, %s, 'agent', %s);
+                """,
+                (
+                    request_id,
+                    current.get("confirmation_status") or "pending_agent_confirmation",
+                    confirmation_status,
+                    f"Agent confirmation status changed to {confirmation_status} (escalation: {escalation_status})"
+                )
+            )
+            conn.commit()
+            return updated
+
+
+def escalate_service_request(
+    request_id: int,
+    reason: str = "TIMEOUT_NO_RESPONSE",
+    triggered_by: str = "system",
+) -> Dict[str, Any]:
+    """
+    Flags a service request as escalated with a specific escalation reason.
+    Valid reasons: 'TIMEOUT_NO_RESPONSE', 'AGENT_DECLINED', 'DELIVERY_FAILED',
+    'UNASSIGNED_ON_CREATION', 'MANUAL_SUPERVISOR_ACTION'.
+    """
+    valid_reasons = (
+        'TIMEOUT_NO_RESPONSE',
+        'AGENT_DECLINED',
+        'DELIVERY_FAILED',
+        'UNASSIGNED_ON_CREATION',
+        'MANUAL_SUPERVISOR_ACTION'
+    )
+    if reason not in valid_reasons:
+        raise ValueError(f"Invalid escalation reason '{reason}'. Must be one of {valid_reasons}")
+
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                "SELECT id, escalation_status FROM service_requests WHERE id = %s FOR UPDATE;",
+                (request_id,)
+            )
+            current = cursor.fetchone()
+            if not current:
+                raise ValueError(f"Service request #{request_id} not found.")
+
+            cursor.execute(
+                """
+                UPDATE service_requests
+                SET escalation_status = 'escalated',
+                    escalation_reason = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                RETURNING *;
+                """,
+                (reason, request_id)
+            )
+            updated = dict(cursor.fetchone())
+
+            cursor.execute(
+                """
+                INSERT INTO service_request_audit_log (request_id, from_status, to_status, triggered_by, notes)
+                VALUES (%s, %s, 'escalated', %s, %s);
+                """,
+                (
+                    request_id,
+                    current.get("escalation_status") or "none",
+                    triggered_by,
+                    f"Escalated due to: {reason}"
+                )
+            )
+            conn.commit()
+            return updated
+
+
+def get_breached_unconfirmed_appointments(
+    cutoff_threshold: Optional[dt_mod.datetime] = None,
+    as_of_time: Optional[dt_mod.datetime] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Retrieves all pending appointments where confirmation_cutoff_at <= cutoff_threshold
+    and confirmation_status is still 'pending_agent_confirmation' and escalation_status is 'none'.
+    """
+    if cutoff_threshold is None:
+        cutoff_threshold = as_of_time if as_of_time is not None else dt_mod.datetime.now()
+
+    query = """
+    SELECT sr.*, c.name AS customer_name, c.phone AS customer_phone, sa.name AS agent_name, sa.phone_number AS agent_phone
+    FROM service_requests sr
+    LEFT JOIN customers c ON sr.customer_id = c.id
+    LEFT JOIN staff_agents sa ON sr.staff_agent_id = sa.id
+    WHERE sr.confirmation_status = 'pending_agent_confirmation'
+      AND sr.confirmation_cutoff_at IS NOT NULL
+      AND sr.confirmation_cutoff_at <= %s
+      AND sr.escalation_status = 'none'
+      AND sr.status IN ('pending', 'in_progress')
+    ORDER BY sr.confirmation_cutoff_at ASC;
+    """
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(query, (cutoff_threshold,))
+            rows = cursor.fetchall()
+            return [dict(r) for r in rows]

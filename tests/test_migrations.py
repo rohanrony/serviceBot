@@ -53,6 +53,7 @@ def test_booking_integrity_migrations_have_explicit_rollbacks():
     assert [migration_version(path) for path in migrations] == [
         "0001_booking_integrity",
         "0002_webhook_replay_and_reservation_backfill",
+        "0003_reminders_escalation",
     ]
 
     for forward in migrations:

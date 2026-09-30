@@ -1,5 +1,6 @@
 import os
 import httpx
+import datetime as dt_mod
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, HTTPException, UploadFile, File, Request
@@ -190,7 +191,14 @@ Speak the filler naturally as part of the conversation so the caller experiences
         "gmail_client_secret": "",
         "gmail_access_token": "",
         "gmail_refresh_token": "",
-        "gmail_token_expires_at": 0
+        "gmail_token_expires_at": 0,
+        "min_booking_buffer_hours": 4,
+        "cutoff_window_hours": 2,
+        "extended_cutoff_window_hours": 4,
+        "morning_opening_grace_minutes": 60,
+        "supervisor_escalation_sms": True,
+        "supervisor_escalation_phone": "",
+        "carrier_retry_backoff_minutes": [1, 5, 15]
     }
     if not os.path.exists(CONFIG_PATH):
         data = defaults.copy()
@@ -260,12 +268,12 @@ def sync_services_to_kb():
     service.index_text(catalog_text, filename)
 
 async def sync_prompt_to_elevenlabs(prompt_text: str, first_message: str = None):
-    import sys
-    if not any(x in sys.modules for x in ["pytest", "unittest"]):
-        load_dotenv(override=True)
     api_key = os.getenv("ELEVENLABS_API_KEY", "")
     agent_id = os.getenv("ELEVENLABS_AGENT_ID", "")
-    
+
+    if not api_key or not agent_id:
+        return
+
     log_file = os.path.join(os.path.dirname(CONFIG_PATH), "elevenlabs_sync.log")
     
     try:
@@ -276,20 +284,10 @@ async def sync_prompt_to_elevenlabs(prompt_text: str, first_message: str = None)
     except Exception:
         pass
         
-    target_agents = []
-    if agent_id:
-        target_agents.append(agent_id)
-    prod_agent_id = os.getenv("ELEVENLABS_PRODUCTION_AGENT_ID") or "agent_2501ktmjf3pee2as55y9vx3gdpge"
+    target_agents = [agent_id]
+    prod_agent_id = os.getenv("ELEVENLABS_PRODUCTION_AGENT_ID")
     if prod_agent_id and prod_agent_id not in target_agents:
         target_agents.append(prod_agent_id)
-
-    if not api_key or not target_agents:
-        try:
-            with open(log_file, "a") as lf:
-                lf.write("Error: Missing API Key or Agent ID\n")
-        except Exception:
-            pass
-        return
         
     headers = {"xi-api-key": api_key}
     el_payload = {
@@ -339,6 +337,15 @@ class ConfigUpdatePayload(BaseModel):
     business_hours_end: Optional[int] = None
     business_hours: Optional[list] = None
     business_days: Optional[list] = None
+    min_booking_buffer_hours: Optional[int] = None
+    sla_advance_booking_hours: Optional[float] = None
+    sla_medium_booking_hours: Optional[float] = None
+    sla_short_booking_hours: Optional[float] = None
+    final_reminder_hours: Optional[float] = None
+    overnight_grace_minutes: Optional[int] = None
+    supervisor_alert_phone: Optional[str] = None
+    auto_reassign_on_escalation: Optional[bool] = None
+    reassignment_confirmation_window_minutes: Optional[int] = None
 
 @router.get("/config")
 async def get_config():
@@ -379,6 +386,26 @@ async def update_config(payload: ConfigUpdatePayload):
         "business_hours": b_hours,
         "business_days": b_days
     })
+
+    if payload.min_booking_buffer_hours is not None:
+        config_data["min_booking_buffer_hours"] = int(payload.min_booking_buffer_hours)
+    if payload.sla_advance_booking_hours is not None:
+        config_data["sla_advance_booking_hours"] = float(payload.sla_advance_booking_hours)
+    if payload.sla_medium_booking_hours is not None:
+        config_data["sla_medium_booking_hours"] = float(payload.sla_medium_booking_hours)
+    if payload.sla_short_booking_hours is not None:
+        config_data["sla_short_booking_hours"] = float(payload.sla_short_booking_hours)
+    if payload.final_reminder_hours is not None:
+        config_data["final_reminder_hours"] = float(payload.final_reminder_hours)
+    if payload.overnight_grace_minutes is not None:
+        config_data["overnight_grace_minutes"] = int(payload.overnight_grace_minutes)
+    if payload.supervisor_alert_phone is not None:
+        config_data["supervisor_alert_phone"] = str(payload.supervisor_alert_phone)
+    if payload.auto_reassign_on_escalation is not None:
+        config_data["auto_reassign_on_escalation"] = bool(payload.auto_reassign_on_escalation)
+    if payload.reassignment_confirmation_window_minutes is not None:
+        config_data["reassignment_confirmation_window_minutes"] = int(payload.reassignment_confirmation_window_minutes)
+
     save_config(config_data)
     
     await sync_prompt_to_elevenlabs(prompt_to_sync, payload.first_message)
@@ -1038,7 +1065,11 @@ async def get_appointments():
             return res
 
 @router.get("/service-requests")
-async def get_service_requests(limit: Optional[int] = None, offset: Optional[int] = None):
+async def get_service_requests(
+    limit: Optional[int] = None,
+    offset: Optional[int] = None,
+    escalated: Optional[bool] = None,
+):
     from serviceBot.db.connection import get_db_connection, dict_cursor
     from serviceBot.db.queries import get_service_required_fields
     from serviceBot.services.sms_reminders import parse_booking_datetime
@@ -1046,10 +1077,22 @@ async def get_service_requests(limit: Optional[int] = None, offset: Optional[int
 
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
-            query = """
+            where_clauses = []
+            params = []
+
+            if escalated is True:
+                where_clauses.append("sr.escalation_status != 'none'")
+            elif escalated is False:
+                where_clauses.append("sr.escalation_status = 'none'")
+
+            where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
+            query = f"""
                 SELECT sr.id, sr.service_type, sr.issue_description, sr.status, sr.time_slot, sr.created_at,
                        sr.booking_type, sr.booking_time, sr.duration_minutes, sr.staff_agent_id,
                        sr.notification_dispatched_at, sr.sla_expires_at,
+                       sr.confirmation_status, sr.escalation_status, sr.escalation_reason,
+                       sr.confirmation_cutoff_at, sr.confirmed_at,
                        c.name AS customer_name, c.phone,
                        v.make, v.model, v.year,
                        sa.name AS staff_agent_name, sa.role AS staff_agent_role, sa.phone_number AS staff_agent_phone,
@@ -1059,9 +1102,9 @@ async def get_service_requests(limit: Optional[int] = None, offset: Optional[int
                 LEFT JOIN customers c ON sr.customer_id = c.id
                 LEFT JOIN vehicles v ON sr.vehicle_id = v.id
                 LEFT JOIN staff_agents sa ON sr.staff_agent_id = sa.id
+                {where_sql}
                 ORDER BY COALESCE(sr.updated_at, sr.created_at) DESC, sr.id DESC
             """
-            params = []
             if limit is not None:
                 query += " LIMIT %s"
                 params.append(limit)
@@ -1075,6 +1118,11 @@ async def get_service_requests(limit: Optional[int] = None, offset: Optional[int
                 r = dict(row)
                 if not isinstance(r["created_at"], str) and r["created_at"]:
                     r["created_at"] = r["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+
+                if r.get("confirmation_cutoff_at") and not isinstance(r["confirmation_cutoff_at"], str):
+                    r["confirmation_cutoff_at"] = r["confirmation_cutoff_at"].strftime("%Y-%m-%d %H:%M:%S")
+                if r.get("confirmed_at") and not isinstance(r["confirmed_at"], str):
+                    r["confirmed_at"] = r["confirmed_at"].strftime("%Y-%m-%d %H:%M:%S")
 
                 from serviceBot.db.queries import is_agent_whatsapp_connected
                 if r.get("staff_agent_id"):
@@ -1114,8 +1162,186 @@ async def get_service_requests(limit: Optional[int] = None, offset: Optional[int
                     r["booking_start_time"] = None
                     r["booking_end_time"] = None
 
+                # Compute candidate replacement agents for escalated or reassigned items
+                candidates = []
+                if escalated is True or r.get("escalation_status") in ("escalated", "reassigned"):
+                    curr_agent_id = r.get("staff_agent_id") or -1
+                    cursor.execute(
+                        "SELECT id, name, role, phone_number, email FROM staff_agents WHERE id != %s ORDER BY name ASC;",
+                        (curr_agent_id,)
+                    )
+                    other_agents = cursor.fetchall()
+                    start_ts = r.get("booking_start_time")
+                    for oa in other_agents:
+                        c_dict = dict(oa)
+                        is_avail = True
+                        if start_ts:
+                            try:
+                                s_dt = parse_booking_datetime(start_ts)
+                                if s_dt:
+                                    cursor.execute(
+                                        """
+                                        SELECT 1 FROM mock_calendar_slots
+                                        WHERE staff_agent_id = %s
+                                          AND slot_datetime = %s
+                                          AND (reservation_status IN ('RESERVED', 'BLOCKED') OR is_booked = TRUE)
+                                        LIMIT 1;
+                                        """,
+                                        (c_dict["id"], s_dt)
+                                    )
+                                    if cursor.fetchone():
+                                        is_avail = False
+                            except Exception:
+                                pass
+                        c_dict["is_available"] = is_avail
+                        candidates.append(c_dict)
+                    candidates.sort(key=lambda x: not x["is_available"])
+
+                r["candidate_agents"] = candidates
                 res.append(r)
             return res
+
+
+class ReassignRequestPayload(BaseModel):
+    new_agent_id: int
+    reason: Optional[str] = "Supervisor manual reassignment"
+
+
+@router.post("/service-requests/{request_id}/reassign")
+async def reassign_service_request(request_id: int, payload: ReassignRequestPayload):
+    """
+    Reassigns an escalated service request to a new technician.
+    Updates staff_agent_id, binds calendar reservation to new technician,
+    and dispatches SMS alert to the new agent and notice to the old agent.
+    """
+    from serviceBot.db.connection import get_db_connection, dict_cursor
+    from serviceBot.services.twilio_sms import TwilioSMSClient
+
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            # 1. Fetch service request
+            cursor.execute(
+                """
+                SELECT sr.id, sr.staff_agent_id, sr.status, sr.service_type, sr.booking_time,
+                       c.name AS customer_name, c.phone AS customer_phone,
+                       v.make, v.model, v.year,
+                       sa.name AS old_agent_name, sa.phone_number AS old_agent_phone
+                FROM service_requests sr
+                LEFT JOIN customers c ON c.id = sr.customer_id
+                LEFT JOIN vehicles v ON v.id = sr.vehicle_id
+                LEFT JOIN staff_agents sa ON sa.id = sr.staff_agent_id
+                WHERE sr.id = %s;
+                """,
+                (request_id,)
+            )
+            sr = cursor.fetchone()
+            if not sr:
+                raise HTTPException(status_code=404, detail=f"Service request {request_id} not found.")
+
+            if sr["status"] in ("completed", "cancelled", "cancelled_by_customer"):
+                raise HTTPException(status_code=400, detail="Cannot reassign a closed or cancelled request.")
+
+            # 2. Fetch new agent
+            cursor.execute("SELECT id, name, phone_number, email FROM staff_agents WHERE id = %s;", (payload.new_agent_id,))
+            new_agent = cursor.fetchone()
+            if not new_agent:
+                raise HTTPException(status_code=404, detail=f"Staff agent {payload.new_agent_id} not found.")
+
+            old_agent_id = sr["staff_agent_id"]
+            old_agent_phone = sr.get("old_agent_phone")
+            new_agent_phone = new_agent.get("phone_number")
+
+            # 3. Update service_request
+            cursor.execute(
+                """
+                UPDATE service_requests
+                SET staff_agent_id = %s,
+                    escalation_status = 'reassigned',
+                    confirmation_status = 'pending_agent_confirmation',
+                    confirmed_at = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s;
+                """,
+                (payload.new_agent_id, request_id)
+            )
+
+            # 4. Update appointment_reservations
+            cursor.execute(
+                """
+                UPDATE appointment_reservations
+                SET staff_agent_id = %s,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE service_request_id = %s;
+                """,
+                (payload.new_agent_id, request_id)
+            )
+
+            # 5. Rebind mock_calendar_slots if reservation exists
+            cursor.execute(
+                """
+                SELECT starts_at FROM appointment_reservations WHERE service_request_id = %s;
+                """,
+                (request_id,)
+            )
+            res_row = cursor.fetchone()
+            if res_row and res_row.get("starts_at"):
+                slot_dt = res_row["starts_at"]
+                if old_agent_id:
+                    cursor.execute(
+                        """
+                        UPDATE mock_calendar_slots
+                        SET is_booked = FALSE, reservation_status = 'AVAILABLE', service_request_id = NULL
+                        WHERE staff_agent_id = %s AND service_request_id = %s;
+                        """,
+                        (old_agent_id, request_id)
+                    )
+                cursor.execute(
+                    """
+                    INSERT INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id, reservation_status, service_request_id)
+                    VALUES (%s, TRUE, %s, 'RESERVED', %s)
+                    ON CONFLICT (slot_datetime, staff_agent_id) DO UPDATE
+                    SET is_booked = TRUE, reservation_status = 'RESERVED', service_request_id = EXCLUDED.service_request_id;
+                    """,
+                    (slot_dt, payload.new_agent_id, request_id)
+                )
+
+            # 6. Audit log entry
+            cursor.execute(
+                """
+                INSERT INTO service_request_audit_log (request_id, triggered_by, from_status, to_status, notes)
+                VALUES (%s, 'supervisor_reassign', %s, 'reassigned', %s);
+                """,
+                (request_id, sr.get("escalation_status") or "escalated", f"Reassigned from agent {old_agent_id} to {payload.new_agent_id} ({payload.reason})")
+            )
+
+            conn.commit()
+
+    # 7. SMS notifications
+    client = TwilioSMSClient()
+    c_name = sr.get("customer_name") or "Customer"
+    v_str = f"{sr.get('year') or ''} {sr.get('make') or ''} {sr.get('model') or ''}".strip() or "Vehicle"
+    s_type = sr.get("service_type") or "Service"
+    t_str = str(sr.get("booking_time") or "Scheduled Time")
+
+    # High-priority alert to new agent
+    if new_agent_phone:
+        new_msg = (
+            f"Davidson Car Care URGENT ASSIGNMENT: Appointment #{request_id} has been reassigned to you "
+            f"on {t_str} for {c_name} ({v_str} - {s_type}). Reply CONFIRM or C to accept."
+        )
+        client.send_sms(to=new_agent_phone, body=new_msg, template_type="reassignment_prompt", appointment_id=request_id)
+
+    # Courtesy update to old agent
+    if old_agent_phone and old_agent_id != payload.new_agent_id:
+        old_msg = f"Davidson Car Care: Appointment #{request_id} on {t_str} has been reassigned to another technician. No further action needed."
+        client.send_sms(to=old_agent_phone, body=old_msg, template_type="reassignment_notice", appointment_id=request_id)
+
+    return {
+        "success": True,
+        "request_id": request_id,
+        "new_agent_id": payload.new_agent_id,
+        "escalation_status": "reassigned"
+    }
 
 @router.post("/service-requests", status_code=201)
 async def create_service_request_endpoint(payload: ServiceRequestCreate):
@@ -1131,6 +1357,32 @@ async def create_service_request_endpoint(payload: ServiceRequestCreate):
     if not validated_phone:
         raise HTTPException(status_code=400, detail="Phone number must be a valid 10-digit number.")
     norm_phone = normalize_e164_phone(validated_phone)
+
+    req_details = payload.service_request or {}
+    b_type = req_details.get("booking_type") or "appointment"
+    b_time = req_details.get("booking_time") or req_details.get("time_slot")
+    if b_type == "appointment" and b_time:
+        from serviceBot.services.booking import validate_appointment_lead_time
+        now_ts = dt_mod.datetime.now()
+        is_valid, earliest_allowed, _ = validate_appointment_lead_time(
+            requested_datetime=b_time,
+            current_time=now_ts,
+            booking_type="appointment"
+        )
+        if not is_valid:
+            cfg = load_config()
+            min_buf = int(cfg.get("min_booking_buffer_hours", 4))
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "error_code": "LEAD_TIME_VIOLATION",
+                    "message": f"Appointment slot {b_time} violates the minimum advance notice policy of {min_buf} hours.",
+                    "current_time": now_ts.strftime("%Y-%m-%dT%H:%M:%S"),
+                    "min_buffer_hours": min_buf,
+                    "earliest_valid_time": earliest_allowed.strftime("%Y-%m-%dT%H:%M:%S")
+                }
+            )
+
     try:
         result = BookingService().create_portal_request(
             customer_name=payload.customer.name,

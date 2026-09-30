@@ -145,6 +145,7 @@
                 <input type="text" id="filter-sr-search" class="form-input filter-search" placeholder="Search requests...">
                 <select id="filter-sr-status" class="form-input filter-status">
                   <option value="all">All Statuses</option>
+                  <option value="escalated">⚠️ Escalated / At Risk</option>
                   <option value="pending">Pending</option>
                   <option value="confirmed">Confirmed</option>
                   <option value="in_progress">In Progress</option>
@@ -153,6 +154,19 @@
                   <option value="cancelled_by_customer">Cancelled by Customer</option>
                 </select>
               </div>
+            </div>
+            <!-- Escalation Alert Banner -->
+            <div id="escalation-alert-banner" style="display: none; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; align-items: center; justify-content: space-between;">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 18px;">⚠️</span>
+                <div>
+                  <strong style="color: #ef4444;" id="escalation-banner-title">Escalated Appointments Require Attention</strong>
+                  <div style="font-size: 12px; color: var(--text-muted);" id="escalation-banner-desc">Appointments have breached agent confirmation cutoffs and need reassignment.</div>
+                </div>
+              </div>
+              <button type="button" class="btn btn-sm btn-secondary" id="escalation-banner-filter-btn" style="border-color: #ef4444; color: #ef4444;">
+                View Escalated Queue
+              </button>
             </div>
             <div class="table-container">
               <table class="data-table" id="service-requests-table">
@@ -976,6 +990,70 @@
             </form>
           </div>
 
+          <!-- Appointment Lead Time & Escalation SLAs Card -->
+          <div class="content-card sms-config-card mb-6">
+            <div class="card-header">
+              <h3>Appointment Lead Time & Escalation SLAs</h3>
+              <p class="text-muted">Configure advance notice buffers, technician response SLAs, and supervisor escalation contacts.</p>
+            </div>
+
+            <form id="escalation-config-form" class="sms-config-form mt-4">
+              <div class="form-group">
+                <label class="form-label" for="config-min-booking-buffer">Min Booking Lead Time Buffer (Hours)</label>
+                <input type="number" id="config-min-booking-buffer" class="form-input" min="1" max="72" value="4">
+                <small class="text-muted">Appointments cannot be booked earlier than current time + this buffer.</small>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="config-supervisor-phone">Supervisor Alert Mobile Phone</label>
+                <input type="text" id="config-supervisor-phone" class="form-input" placeholder="+19195550199">
+                <small class="text-muted">Receives urgent SMS alerts on agent decline, timeout, or delivery failure.</small>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="config-sla-advance">Advance Booking Acceptance SLA (Hours)</label>
+                <input type="number" id="config-sla-advance" class="form-input" step="0.5" min="0.5" value="4">
+                <small class="text-muted">Operating hours allowed for agent to accept when booked ≥24h in advance.</small>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="config-sla-medium">Medium Horizon Acceptance SLA (Hours)</label>
+                <input type="number" id="config-sla-medium" class="form-input" step="0.5" min="0.5" value="3">
+                <small class="text-muted">Operating hours allowed when booked between 6h and 24h in advance.</small>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="config-sla-short">Short Horizon Acceptance SLA (Hours)</label>
+                <input type="number" id="config-sla-short" class="form-input" step="0.5" min="0.5" value="1.5">
+                <small class="text-muted">Operating hours allowed when booked between 4h and 6h in advance.</small>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="config-final-reminder">Pre-Visit Cutoff Safety Net (Hours)</label>
+                <input type="number" id="config-final-reminder" class="form-input" step="0.5" min="0.5" value="2">
+                <small class="text-muted">Ceiling cutoff before scheduled visit (T - X hours).</small>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="config-morning-grace">Morning Opening Grace (Minutes)</label>
+                <input type="number" id="config-morning-grace" class="form-input" min="10" max="120" value="30">
+                <small class="text-muted">Grace window from shop opening for early morning appointments.</small>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="config-reassign-window">Reassignment Confirmation Window (Minutes)</label>
+                <input type="number" id="config-reassign-window" class="form-input" min="5" max="60" value="15">
+                <small class="text-muted">Time allowed for newly reassigned technician to confirm.</small>
+              </div>
+
+              <div class="form-actions full-width">
+                <button type="submit" class="btn btn-primary" id="save-escalation-config-btn">
+                  Save Escalation Settings
+                </button>
+              </div>
+            </form>
+          </div>
+
           <!-- Notification Matrix Section -->
           <div class="content-card sms-config-card mb-6">
             <div class="card-header">
@@ -1597,6 +1675,61 @@
       <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px;">
         <button type="button" class="btn btn-secondary" id="sr-cancel-btn">Cancel</button>
         <button type="submit" class="btn btn-primary" id="sr-save-btn">Save Request</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Reassign Escalated Appointment Modal -->
+  <div class="drawer-overlay" id="reassign-modal-overlay"></div>
+  <div class="modal-card" id="reassign-modal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1200; max-width: 480px; width: 90%; background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 12px; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.6);">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span class="badge danger" style="font-size: 11px; padding: 2px 6px;">ESCALATED</span>
+        <h3 style="margin: 0; font-size: 16px; color: #fff;">Reassign Service Appointment</h3>
+      </div>
+      <button class="btn-close" id="close-reassign-modal-btn">
+        <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+      </button>
+    </div>
+
+    <div style="margin-bottom: 16px; background: rgba(255, 255, 255, 0.04); border-radius: 8px; padding: 12px; font-size: 13px;">
+      <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+        <span class="text-muted">Customer:</span>
+        <strong id="reassign-customer-name" style="color: #fff;">--</strong>
+      </div>
+      <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+        <span class="text-muted">Appointment Time:</span>
+        <span id="reassign-booking-time" style="color: #fff;">--</span>
+      </div>
+      <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+        <span class="text-muted">Current Agent:</span>
+        <span id="reassign-current-agent" style="color: #ef4444;">--</span>
+      </div>
+      <div style="display: flex; justify-content: space-between;">
+        <span class="text-muted">Escalation Reason:</span>
+        <span id="reassign-reason-display" style="color: #f59e0b; font-weight: 500;">--</span>
+      </div>
+    </div>
+
+    <form id="reassign-form">
+      <input type="hidden" id="reassign-sr-id" value="">
+      
+      <div class="form-group mb-4">
+        <label for="reassign-agent-select" style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 6px;">Select Replacement Technician</label>
+        <select id="reassign-agent-select" class="form-input" required style="width: 100%;">
+          <option value="">Loading available candidates...</option>
+        </select>
+        <small class="text-muted" style="font-size: 11px; display: block; margin-top: 4px;">Candidates are ranked by calendar availability and current schedule load.</small>
+      </div>
+
+      <div class="form-group mb-4">
+        <label for="reassign-reason-note" style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 6px;">Reassignment Notes (Optional)</label>
+        <input type="text" id="reassign-reason-note" class="form-input" placeholder="e.g. Technician called out sick / unreachable">
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+        <button type="button" class="btn btn-secondary" id="reassign-cancel-btn">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="reassign-submit-btn" style="background: #ef4444; border-color: #ef4444;">Reassign Appointment</button>
       </div>
     </form>
   </div>

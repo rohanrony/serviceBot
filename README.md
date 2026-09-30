@@ -40,6 +40,13 @@ VoiceAI is a sub-second latency, multi-agent inbound call handling platform desi
    - **Transcripts Viewer**: View call logs, AI summaries, and full turn-by-turn speech transcripts.
    - **Secrets Encryption**: Encrypts sensitive API tokens (Twilio, ElevenLabs, OpenAI/Claude) in transit and at rest using AES-256.
 
+6. **Appointment Reminders, Dual Confirmation & Escalation Engine**
+   - **4-Hour Advance Booking Planning Buffer**: Proactively enforces that appointments cannot be booked earlier than `current_time + 4 hours` across both AI voice telephony and the portal, suggesting the next available open slot.
+   - **Immediate Dual Notification & 3-Attempt Cadence**: Instantly dispatches Attempt 1 upon booking to both customer (informational) and assigned technician (confirmation prompt with `CONFIRM` / `DECLINE` instructions), with an adaptive 3-attempt cadence and carrier retry backoff (+1m, +5m, +15m).
+   - **Horizon-Adaptive Acceptance SLA & Morning Grace**: Calculates technician acceptance deadlines based on elapsed business hours from booking horizon (≥24h advance: 4 business hours; 6-24h: 3 business hours; 4-6h: 1.5 business hours; pre-visit safety ceiling: $T-2\text{h}$) with morning opening grace. Countdowns pause overnight and across weekends.
+   - **Inbound Agent SMS Routing**: Parses technician SMS replies (`CONFIRM`/`C`, `DECLINE`/`UNAVAILABLE`), handles race conditions (late confirms before/after reassignment), and suppresses customer cancellation keywords from technician numbers.
+   - **Supervisor Escalation Queue & Single-Click Reassignment**: Breached cutoffs or explicit declines trigger immediate supervisor SMS alerts, an escalation banner and queue filter on the portal, candidate technician workload ranking, and one-click reassignment with calendar re-binding.
+
 ---
 
 ## 📐 System Architecture
@@ -80,7 +87,11 @@ VoiceAI is a sub-second latency, multi-agent inbound call handling platform desi
       * [state.py](file:///Users/rohanroy/Coding/voiceService/serviceBot/graph/state.py): Graph State schema (`AgentState`).
       * [nodes.py](file:///Users/rohanroy/Coding/voiceService/serviceBot/graph/nodes.py): Sub-agent nodes.
       * [routing.py](file:///Users/rohanroy/Coding/voiceService/serviceBot/graph/routing.py): Conditional router edges.
-    - [services/](file:///Users/rohanroy/Coding/voiceService/serviceBot/services/): Third-party clients.
+    - [services/](file:///Users/rohanroy/Coding/voiceService/serviceBot/services/): Business services and integrations.
+      * [booking.py](file:///Users/rohanroy/Coding/voiceService/serviceBot/services/booking.py): 4-hour lead time booking buffer validator.
+      * [sms_reminders.py](file:///Users/rohanroy/Coding/voiceService/serviceBot/services/sms_reminders.py): 3-attempt reminder cadence, business-hours cutoff math, and background scheduler.
+      * [sms_classifier.py](file:///Users/rohanroy/Coding/voiceService/serviceBot/services/sms_classifier.py): Inbound SMS intent classifier and agent confirm/decline action router.
+      * [twilio_sms.py](file:///Users/rohanroy/Coding/voiceService/serviceBot/services/twilio_sms.py): Outbound SMS dispatcher with retry backoff and environment mode awareness.
       * [encryption.py](file:///Users/rohanroy/Coding/voiceService/serviceBot/services/encryption.py): AES-256 encryption.
       * [gmail.py](file:///Users/rohanroy/Coding/voiceService/serviceBot/services/gmail.py): Gmail API and SMTP email dispatch.
       * [google_calendar.py](file:///Users/rohanroy/Coding/voiceService/serviceBot/services/google_calendar.py): Google Calendar client.

@@ -103,7 +103,11 @@ class SMSNotificationRouter:
             fallback_channels.append("WHATSAPP")
         if self._is_rule_enabled(event_type, recipient_role, rules_list, channel="SMS"):
             fallback_channels.append("SMS")
-        return fallback_channels or ["SMS"]
+        if not fallback_channels:
+            if recipient_role == "admin":
+                return []
+            return ["SMS"]
+        return fallback_channels
 
     def _dispatch_to(
         self,
@@ -222,7 +226,7 @@ class SMSNotificationRouter:
 
         # Schedule or update reminders on booking / reschedule / cancel
         if event_type == "BOOKING" and raw_t_str:
-            schedule_appointment_reminders(appointment_id, raw_t_str, customer_phone, agent_phone)
+            schedule_appointment_reminders(appointment_id, raw_t_str, customer_phone, agent_phone, trigger_immediate=True)
         elif event_type in ("RESCHEDULED", "RESCHEDULED_REASSIGNED", "CONSOLIDATED") and raw_t_str:
             update_or_cancel_appointment_reminders(appointment_id, raw_t_str, customer_phone, agent_phone)
         elif event_type in ("CANCELLED_BY_CUSTOMER", "CANCELLED_BY_ADMIN"):

@@ -125,11 +125,19 @@ CREATE TABLE IF NOT EXISTS service_requests (
     booking_time VARCHAR(100) DEFAULT NULL,
     duration_minutes INTEGER DEFAULT 60,
     staff_agent_id INTEGER DEFAULT NULL REFERENCES staff_agents(id) ON DELETE SET NULL,
+    confirmation_status VARCHAR(40) DEFAULT 'pending_agent_confirmation',
+    escalation_status VARCHAR(40) DEFAULT 'none',
+    escalation_reason VARCHAR(50) DEFAULT NULL,
+    confirmation_cutoff_at TIMESTAMP DEFAULT NULL,
+    confirmed_at TIMESTAMP DEFAULT NULL,
     FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE RESTRICT,
     FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_service_requests_customer ON service_requests(customer_id);
+CREATE INDEX IF NOT EXISTS idx_sr_confirmation_cutoff ON service_requests(confirmation_status, confirmation_cutoff_at);
+CREATE INDEX IF NOT EXISTS idx_sr_escalation_status ON service_requests(escalation_status);
+CREATE INDEX IF NOT EXISTS idx_staff_agents_phone ON staff_agents(phone_number);
 
 CREATE TABLE IF NOT EXISTS service_request_audit_log (
     id SERIAL PRIMARY KEY,
@@ -266,8 +274,14 @@ CREATE TABLE IF NOT EXISTS sms_reminders (
     reminder_type VARCHAR(10) NOT NULL,
     scheduled_at TIMESTAMP NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+    attempt_number INTEGER DEFAULT 1,
+    attempt_kind VARCHAR(50) DEFAULT 'final_reminder',
+    retry_count INTEGER DEFAULT 0,
+    last_error TEXT DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX IF NOT EXISTS idx_sms_reminders_polling ON sms_reminders(status, scheduled_at);
 
 CREATE TABLE IF NOT EXISTS sms_conversations (
     id SERIAL PRIMARY KEY,
@@ -409,8 +423,21 @@ def init_db(db_url: str = None, force: bool = False):
             ("sla_expires_at", "TIMESTAMP WITHOUT TIME ZONE DEFAULT NULL"),
             ("customer_consent_obtained", "BOOLEAN DEFAULT FALSE"),
             ("last_rescheduled_at", "TIMESTAMP WITHOUT TIME ZONE DEFAULT NULL"),
+            ("confirmation_status", "VARCHAR(40) DEFAULT 'pending_agent_confirmation'"),
+            ("escalation_status", "VARCHAR(40) DEFAULT 'none'"),
+            ("escalation_reason", "VARCHAR(50) DEFAULT NULL"),
+            ("confirmation_cutoff_at", "TIMESTAMP WITHOUT TIME ZONE DEFAULT NULL"),
+            ("confirmed_at", "TIMESTAMP WITHOUT TIME ZONE DEFAULT NULL"),
         ]:
             _safe_alter(cursor, conn, f"ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS {col} {col_type}")
+
+        for col, col_type in [
+            ("attempt_number", "INTEGER DEFAULT 1"),
+            ("attempt_kind", "VARCHAR(50) DEFAULT 'final_reminder'"),
+            ("retry_count", "INTEGER DEFAULT 0"),
+            ("last_error", "TEXT DEFAULT NULL"),
+        ]:
+            _safe_alter(cursor, conn, f"ALTER TABLE sms_reminders ADD COLUMN IF NOT EXISTS {col} {col_type}")
 
         for col, col_type in [
             ("admin_phone_number", "VARCHAR(50) DEFAULT NULL"),

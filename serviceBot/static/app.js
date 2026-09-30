@@ -757,7 +757,13 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
 
         let slaBadgeHtml = '';
-        if (currentStatus === 'pending' || currentStatus === 'rescheduled') {
+        if (req.escalation_status === 'escalated') {
+          slaBadgeHtml = `<div class="sla-warning-badge overdue" style="background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.4);" title="${req.escalation_reason || 'Escalated: Agent SLA Timeout'}"><span class="sla-dot" style="background: #ef4444;"></span> ⚠️ Escalated</div>`;
+        } else if (req.escalation_status === 'reassigned') {
+          slaBadgeHtml = `<div class="sla-warning-badge" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3);"><span class="sla-dot" style="background: #60a5fa;"></span> Reassigned</div>`;
+        } else if (req.confirmation_status === 'confirmed') {
+          slaBadgeHtml = `<div class="sla-warning-badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3);"><span class="sla-dot" style="background: #34d399;"></span> Confirmed</div>`;
+        } else if (currentStatus === 'pending' || currentStatus === 'rescheduled') {
           const slaStart = req.notification_dispatched_at || req.created_at;
           if (slaStart) {
             // Fix date parsing for Safari/cross-browser
@@ -797,9 +803,13 @@ document.addEventListener('DOMContentLoaded', () => {
           failedLabel = '⚠️ Failed Email';
         }
         const failedIndicator = failedLabel ? `<span class="badge danger failed-sms-badge" title="Delivery failed">${failedLabel}</span>` : '';
+        const reassignBtnHtml = req.escalation_status === 'escalated'
+          ? `<button type="button" class="btn btn-primary btn-sm reassign-sr-btn" data-id="${req.id}" style="background: #ef4444; border-color: #ef4444; color: #fff;">Reassign</button>`
+          : '';
         const actionsHtml = `
           <div class="actions-cell-container">
             ${failedIndicator}
+            ${reassignBtnHtml}
             <button type="button" class="btn btn-secondary btn-sm edit-sr-btn" data-id="${req.id}">Edit</button>
             <button type="button" class="btn btn-secondary btn-sm details-sms-log-btn" data-id="${req.id}">Details</button>
           </div>
@@ -820,6 +830,13 @@ document.addEventListener('DOMContentLoaded', () => {
           <td style="text-align: center;">${statusSelectHtml}</td>
           <td style="text-align: center;">${actionsHtml}</td>
         `;
+
+        const reassignBtn = tr.querySelector('.reassign-sr-btn');
+        if (reassignBtn) {
+          reassignBtn.addEventListener('click', () => {
+            if (window.openReassignModal) window.openReassignModal(req);
+          });
+        }
 
         const detailsBtn = tr.querySelector('.details-sms-log-btn');
         if (detailsBtn) {
@@ -971,12 +988,28 @@ document.addEventListener('DOMContentLoaded', () => {
         (req.issue_description || '').toLowerCase().includes(query);
         
       const matchesType = type === 'all' || req.booking_type === type;
-      const matchesStatus = status === 'all' || req.status === status || (status === 'completed' && req.status === 'done');
+      const matchesStatus = status === 'all' || 
+        (status === 'escalated' ? (req.escalation_status === 'escalated') : (req.status === status || (status === 'completed' && req.status === 'done')));
       
       return matchesTime && matchesText && matchesType && matchesStatus;
     });
     
     renderServiceRequests(filtered);
+
+    // Update Escalation Alert Banner
+    const banner = document.getElementById('escalation-alert-banner');
+    if (banner) {
+      const escalatedCount = allRequests.filter(r => r.escalation_status === 'escalated').length;
+      if (escalatedCount > 0) {
+        banner.style.display = 'flex';
+        const titleEl = document.getElementById('escalation-banner-title');
+        if (titleEl) {
+          titleEl.textContent = `${escalatedCount} Escalated Appointment${escalatedCount > 1 ? 's' : ''} Require Attention`;
+        }
+      } else {
+        banner.style.display = 'none';
+      }
+    }
   }
 
   function applyCallsFilter() {
@@ -1018,6 +1051,19 @@ document.addEventListener('DOMContentLoaded', () => {
     srStatus.addEventListener('change', () => {
       srCurrentPage = 1;
       applyServiceRequestsFilter();
+    });
+  }
+
+  const bannerFilterBtn = document.getElementById('escalation-banner-filter-btn');
+  if (bannerFilterBtn && !bannerFilterBtn.dataset.listenerBound) {
+    bannerFilterBtn.dataset.listenerBound = 'true';
+    bannerFilterBtn.addEventListener('click', () => {
+      const statusSelect = document.getElementById('filter-sr-status');
+      if (statusSelect) {
+        statusSelect.value = 'escalated';
+        srCurrentPage = 1;
+        applyServiceRequestsFilter();
+      }
     });
   }
 
@@ -2965,6 +3011,32 @@ document.addEventListener('DOMContentLoaded', () => {
       if (quietEndEl) quietEndEl.value = config.quiet_end_time || '08:00';
       const autoRespEl = document.getElementById('sms-config-auto-responder');
       if (autoRespEl) autoRespEl.value = config.auto_responder_template || '';
+
+      // Load Escalation & Timing SLAs from portal config
+      try {
+        const portalRes = await fetch('/api/v1/portal/config');
+        if (portalRes.ok) {
+          const pCfg = await portalRes.json();
+          const minBufEl = document.getElementById('config-min-booking-buffer');
+          if (minBufEl) minBufEl.value = pCfg.min_booking_buffer_hours ?? 4;
+          const supPhoneEl = document.getElementById('config-supervisor-phone');
+          if (supPhoneEl) supPhoneEl.value = pCfg.supervisor_alert_phone || '';
+          const slaAdvEl = document.getElementById('config-sla-advance');
+          if (slaAdvEl) slaAdvEl.value = pCfg.sla_advance_booking_hours ?? 4;
+          const slaMedEl = document.getElementById('config-sla-medium');
+          if (slaMedEl) slaMedEl.value = pCfg.sla_medium_booking_hours ?? 3;
+          const slaShortEl = document.getElementById('config-sla-short');
+          if (slaShortEl) slaShortEl.value = pCfg.sla_short_booking_hours ?? 1.5;
+          const finalRemEl = document.getElementById('config-final-reminder');
+          if (finalRemEl) finalRemEl.value = pCfg.final_reminder_hours ?? 2;
+          const mornGraceEl = document.getElementById('config-morning-grace');
+          if (mornGraceEl) mornGraceEl.value = pCfg.overnight_grace_minutes ?? 30;
+          const reassignWinEl = document.getElementById('config-reassign-window');
+          if (reassignWinEl) reassignWinEl.value = pCfg.reassignment_confirmation_window_minutes ?? 15;
+        }
+      } catch (pErr) {
+        console.error('Error loading escalation config:', pErr);
+      }
     } catch (err) {
       console.error('Error loading SMS config:', err);
     }
@@ -3109,6 +3181,48 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('whitelist-phone-input').value = '';
       document.getElementById('whitelist-name-input').value = '';
       loadSMSWhitelist();
+    });
+  }
+
+  const escalationConfigForm = document.getElementById('escalation-config-form');
+  if (escalationConfigForm) {
+    escalationConfigForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const saveBtn = document.getElementById('save-escalation-config-btn');
+      if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Saving...';
+      }
+
+      const payload = {
+        min_booking_buffer_hours: parseFloat(document.getElementById('config-min-booking-buffer').value) || 4,
+        supervisor_alert_phone: document.getElementById('config-supervisor-phone').value.trim(),
+        sla_advance_booking_hours: parseFloat(document.getElementById('config-sla-advance').value) || 4,
+        sla_medium_booking_hours: parseFloat(document.getElementById('config-sla-medium').value) || 3,
+        sla_short_booking_hours: parseFloat(document.getElementById('config-sla-short').value) || 1.5,
+        final_reminder_hours: parseFloat(document.getElementById('config-final-reminder').value) || 2,
+        overnight_grace_minutes: parseInt(document.getElementById('config-morning-grace').value) || 30,
+        reassignment_confirmation_window_minutes: parseInt(document.getElementById('config-reassign-window').value) || 15
+      };
+
+      try {
+        const res = await fetch('/api/v1/portal/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) throw new Error('Failed to update escalation settings');
+        showToast('Escalation SLAs and timing settings saved successfully!');
+      } catch (err) {
+        console.error('Error saving escalation settings:', err);
+        showToast('Error saving escalation settings: ' + err.message, 'error');
+      } finally {
+        if (saveBtn) {
+          saveBtn.disabled = false;
+          saveBtn.textContent = 'Save Escalation Settings';
+        }
+      }
     });
   }
 
@@ -4363,6 +4477,127 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         }
       });
+    });
+  }
+
+  // --- REASSIGN ESCALATED APPOINTMENT MODAL ---
+  window.openReassignModal = async function(req) {
+    const modal = document.getElementById('reassign-modal');
+    const overlay = document.getElementById('reassign-modal-overlay');
+    if (!modal || !overlay) return;
+
+    document.getElementById('reassign-sr-id').value = req.id;
+    document.getElementById('reassign-customer-name').textContent = req.customer_name || 'Unknown Customer';
+    document.getElementById('reassign-booking-time').textContent = formatBookingTimeRange(req) || req.booking_time || '--';
+    document.getElementById('reassign-current-agent').textContent = req.staff_agent_name || 'Unassigned';
+    document.getElementById('reassign-reason-display').textContent = req.escalation_reason || 'TIMEOUT_NO_RESPONSE';
+    document.getElementById('reassign-reason-note').value = '';
+
+    const agentSelect = document.getElementById('reassign-agent-select');
+    agentSelect.innerHTML = '<option value="">Loading available candidates...</option>';
+
+    modal.style.display = 'block';
+    overlay.style.display = 'block';
+
+    try {
+      let candidates = req.candidate_agents;
+      if (!candidates || candidates.length === 0) {
+        const res = await fetch(`/api/v1/portal/service-requests/${req.id}/available-agents`);
+        if (res.ok) {
+          const data = await res.json();
+          candidates = data.agents || [];
+        }
+      }
+
+      if (candidates && candidates.length > 0) {
+        let opts = '<option value="">-- Choose Candidate Technician --</option>';
+        candidates.forEach(c => {
+          const cId = c.agent_id || c.id;
+          const cName = c.agent_name || c.name;
+          const isAvail = c.is_available !== false && c.available !== false;
+          const currentId = req.assigned_staff_id || req.staff_agent_id;
+          if (Number(cId) === Number(currentId)) return;
+
+          const badge = isAvail ? '✅ Available' : '⚠️ Busy';
+          const jobsText = c.current_job_count_today !== undefined ? ` • ${c.current_job_count_today} jobs today` : '';
+          opts += `<option value="${cId}">${cName} (${badge}${jobsText})</option>`;
+        });
+        agentSelect.innerHTML = opts;
+      } else {
+        agentSelect.innerHTML = '<option value="">No alternative technicians found</option>';
+      }
+    } catch (err) {
+      console.error('Error fetching candidates for reassignment:', err);
+      agentSelect.innerHTML = '<option value="">Failed to load candidates</option>';
+    }
+  };
+
+  function closeReassignModal() {
+    const modal = document.getElementById('reassign-modal');
+    const overlay = document.getElementById('reassign-modal-overlay');
+    if (modal) modal.style.display = 'none';
+    if (overlay) overlay.style.display = 'none';
+  }
+
+  const closeReassignBtn = document.getElementById('close-reassign-modal-btn');
+  if (closeReassignBtn) closeReassignBtn.addEventListener('click', closeReassignModal);
+  const cancelReassignBtn = document.getElementById('reassign-cancel-btn');
+  if (cancelReassignBtn) cancelReassignBtn.addEventListener('click', closeReassignModal);
+  const reassignOverlay = document.getElementById('reassign-modal-overlay');
+  if (reassignOverlay) reassignOverlay.addEventListener('click', closeReassignModal);
+
+  const reassignForm = document.getElementById('reassign-form');
+  if (reassignForm) {
+    reassignForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const srId = document.getElementById('reassign-sr-id').value;
+      const newAgentId = parseInt(document.getElementById('reassign-agent-select').value);
+      const note = document.getElementById('reassign-reason-note').value.trim();
+
+      if (!newAgentId) {
+        showToast('Please select a replacement technician.', 'error');
+        return;
+      }
+
+      const submitBtn = document.getElementById('reassign-submit-btn');
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Reassigning...';
+      }
+
+      try {
+        const res = await fetch(`/api/v1/portal/service-requests/${srId}/reassign`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            new_agent_id: newAgentId,
+            reason: note || 'Supervisor reassignment'
+          })
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || 'Reassignment failed');
+        }
+
+        showToast('Appointment reassigned! New technician notified via SMS.', 'success');
+        closeReassignModal();
+
+        // Refresh service requests
+        const reqsResponse = await fetch('/api/v1/portal/service-requests');
+        if (reqsResponse.ok) {
+          allRequests = await reqsResponse.json();
+          applyServiceRequestsFilter();
+        }
+      } catch (err) {
+        console.error('Error during reassignment:', err);
+        showToast('Error reassigning: ' + err.message, 'error');
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Reassign Appointment';
+        }
+      }
     });
   }
 
