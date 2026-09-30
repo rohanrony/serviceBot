@@ -742,7 +742,6 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
             slots = check_availability(service_type=service_type, preferred_date=preferred_date, booking_type=booking_type, preferred_time=preferred_time)
 
             from serviceBot.db.queries import parse_specific_time
-            from datetime import datetime
             requested_time_target = parse_specific_time(f"{preferred_date or ''} {preferred_time or ''}")
             time_match = False
             if requested_time_target and slots:

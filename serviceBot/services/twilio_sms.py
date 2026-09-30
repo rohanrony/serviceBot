@@ -163,7 +163,6 @@ class TwilioSMSClient:
 
             # Handle channel formatting for SMS vs WhatsApp
             target_to = clean_to.replace("whatsapp:", "").strip()
-            from_num = self.from_number.strip() if self.from_number else ""
 
             if normalized_channel == "WHATSAPP":
                 digits = re.sub(r"\D", "", target_to)
@@ -175,13 +174,21 @@ class TwilioSMSClient:
                     target_to = f"+{target_to}"
                 if not target_to.startswith("whatsapp:"):
                     target_to = f"whatsapp:{target_to}"
-                if not from_num.startswith("whatsapp:"):
-                    from_num = f"whatsapp:{from_num}"
+
+                # WhatsApp requires a registered WhatsApp Sender or the WhatsApp Sandbox number
+                whatsapp_from = (
+                    os.getenv("TWILIO_WHATSAPP_FROM_NUMBER")
+                    or os.getenv("TWILIO_WHATSAPP_SANDBOX_NUMBER")
+                    or "+14155238886"
+                ).strip()
+                if not whatsapp_from.startswith("whatsapp:"):
+                    whatsapp_from = f"whatsapp:{whatsapp_from}"
+                from_num = whatsapp_from
             else:
-                from_num = from_num.replace("whatsapp:", "").strip()
+                from_num = (self.from_number or "").replace("whatsapp:", "").strip()
 
             kwargs = {"to": target_to, "body": body}
-            if self.messaging_service_sid:
+            if self.messaging_service_sid and normalized_channel != "WHATSAPP":
                 kwargs["messaging_service_sid"] = self.messaging_service_sid
             elif from_num:
                 kwargs["from_"] = from_num

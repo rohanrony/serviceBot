@@ -16,6 +16,11 @@ Examples:
 
 import sys
 import os
+
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
 import argparse
 import json
 from serviceBot.conversation_simulator import ConversationSimulator
@@ -140,17 +145,18 @@ def load_env_file():
     try:
         from dotenv import load_dotenv
         load_dotenv(override=False)
-    except ImportError:
-        env_path = os.path.join(os.path.dirname(__file__), ".env")
-        if os.path.exists(env_path):
-            with open(env_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith("#") and "=" in line:
-                        k, v = line.split("=", 1)
-                        k, v = k.strip(), v.strip().strip("'").strip('"')
-                        if k and k not in os.environ:
-                            os.environ[k] = v
+    except Exception:
+        pass
+    env_path = os.path.join(BASE_DIR, ".env")
+    if os.path.exists(env_path):
+        with open(env_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    k, v = k.strip(), v.strip().strip("'").strip('"')
+                    if k and k not in os.environ:
+                        os.environ[k] = v
 
 def main():
     load_env_file()
