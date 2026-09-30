@@ -1370,6 +1370,7 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
             additional_service_type = args.get("additional_service_type") or args.get("service_type")
             additional_duration = int(args.get("additional_duration_minutes") or args.get("duration_minutes") or 30)
             phone = args.get("phone") or args.get("phone_number")
+            source_ids = args.get("source_appointment_ids") or args.get("source_appointment_id") or args.get("cancelled_appointment_ids")
 
             if not appt_id and phone:
                 p_clean = clean_and_validate_phone(phone)
@@ -1419,11 +1420,13 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
                             appointment_id=appt_id,
                             additional_issue=additional_issue,
                             additional_service_type=additional_service_type,
-                            additional_duration_minutes=additional_duration
+                            additional_duration_minutes=additional_duration,
+                            source_appointment_ids=source_ids
                         )
                         combined_issues = cons_res.get("combined_issues")
                         new_dur = cons_res.get("new_duration_minutes", new_total_duration)
                         b_time = cons_res.get("booking_time") or booking_time or ""
+                        cancelled_sources = cons_res.get("cancelled_source_ids") or []
 
                         start_str = str(b_time)
                         end_str = ""
@@ -1440,11 +1443,41 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
                         except Exception:
                             pass
 
+                        cancel_msg = ""
+                        if cancelled_sources:
+                            cancel_msg = f" Other requests merged and cancelled: {', '.join(str(x) for x in cancelled_sources)}."
+
                         msg = (
                             f"Appointment {appt_id} successfully consolidated. "
-                            f"Total scheduled duration is now {new_dur} minutes ({st_fmt} to {end_fmt}). "
+                            f"Total scheduled duration is now {new_dur} minutes ({st_fmt} to {end_fmt}).{cancel_msg} "
                             f"Calendar reservation extended. Please advise the customer that the visit is booked for this window but is likely to extend."
                         )
+
+                        # Trigger immediate SMS/WhatsApp notification
+                        if phone:
+                            try:
+                                from serviceBot.services.sms_router import SMSNotificationRouter
+                                v_info = cons_res.get("vehicle") or (appt_details.get("vehicle") if appt_details else {}) or {}
+                                v_str = f"{v_info.get('year') or ''} {v_info.get('make') or ''} {v_info.get('model') or ''}".strip() or "Vehicle"
+                                SMSNotificationRouter().process_event(
+                                    event_type="CONSOLIDATED",
+                                    appointment_id=appt_id,
+                                    customer_phone=clean_and_validate_phone(phone),
+                                    booking_time=str(b_time),
+                                    details={
+                                        "customer_name": (appt_details.get("customer_name") if appt_details else None) or "Valued Customer",
+                                        "phone": clean_and_validate_phone(phone),
+                                        "service_type": cons_res.get("service_type") or (appt_details.get("service_type") if appt_details else None) or "Service",
+                                        "issue": combined_issues,
+                                        "duration_minutes": new_dur,
+                                        "time": str(b_time),
+                                        "vehicle": v_str,
+                                        "cancelled_source_ids": cancelled_sources
+                                    }
+                                )
+                            except Exception as sms_err:
+                                logger.warning(f"SMS notification failed for consolidation #{appt_id}: {sms_err}")
+
                         result = {
                             "success": True,
                             "appointment_id": appt_id,
@@ -1452,6 +1485,7 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
                             "new_duration_minutes": new_dur,
                             "start_time": start_str,
                             "expected_end_time": end_str,
+                            "cancelled_source_ids": cancelled_sources,
                             "message": msg
                         }
                     except Exception as err:

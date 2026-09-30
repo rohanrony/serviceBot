@@ -141,7 +141,8 @@ TOOL_DEFINITIONS = [
                     "additional_issue": {"type": "string", "description": "The new issue or symptom to add to the existing appointment"},
                     "additional_service_type": {"type": "string", "description": "Optional service type for the additional issue"},
                     "additional_duration_minutes": {"type": "integer", "description": "Estimated duration in minutes for the additional service (default 30)"},
-                    "appointment_id": {"type": "integer", "description": "Optional specific appointment ID to consolidate into"}
+                    "appointment_id": {"type": "integer", "description": "Optional specific appointment ID to consolidate into"},
+                    "source_appointment_ids": {"type": "string", "description": "Optional comma-separated IDs of other appointments or callbacks being combined/cancelled into this one (e.g. '22, 26'). Those visits will be cancelled so they do not remain open duplicates."}
                 }
             }
         }

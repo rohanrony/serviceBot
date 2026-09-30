@@ -496,6 +496,9 @@ def init_db(db_url: str = None, force: bool = False):
                 ('AGENT_CONFIRMED', 'customer', 'WHATSAPP', False),
                 ('AGENT_CONFIRMED', 'agent', 'WHATSAPP', True),
                 ('AGENT_CONFIRMED', 'admin', 'WHATSAPP', False),
+                ('CONSOLIDATED', 'customer', 'WHATSAPP', True),
+                ('CONSOLIDATED', 'agent', 'WHATSAPP', True),
+                ('CONSOLIDATED', 'admin', 'WHATSAPP', False),
             ]
             for event_type, recipient_role, channel, enabled in default_rules:
                 cursor.execute(

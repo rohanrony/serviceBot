@@ -98,7 +98,12 @@ class SMSNotificationRouter:
             for rule in rules_list
         ):
             return []
-        return ["SMS"] if self._is_rule_enabled(event_type, recipient_role, rules_list, channel="SMS") else []
+        fallback_channels = []
+        if self._is_rule_enabled(event_type, recipient_role, rules_list, channel="WHATSAPP"):
+            fallback_channels.append("WHATSAPP")
+        if self._is_rule_enabled(event_type, recipient_role, rules_list, channel="SMS"):
+            fallback_channels.append("SMS")
+        return fallback_channels or ["SMS"]
 
     def _dispatch_to(
         self,
@@ -218,7 +223,7 @@ class SMSNotificationRouter:
         # Schedule or update reminders on booking / reschedule / cancel
         if event_type == "BOOKING" and raw_t_str:
             schedule_appointment_reminders(appointment_id, raw_t_str, customer_phone, agent_phone)
-        elif event_type in ("RESCHEDULED", "RESCHEDULED_REASSIGNED") and raw_t_str:
+        elif event_type in ("RESCHEDULED", "RESCHEDULED_REASSIGNED", "CONSOLIDATED") and raw_t_str:
             update_or_cancel_appointment_reminders(appointment_id, raw_t_str, customer_phone, agent_phone)
         elif event_type in ("CANCELLED_BY_CUSTOMER", "CANCELLED_BY_ADMIN"):
             update_or_cancel_appointment_reminders(appointment_id)
@@ -240,6 +245,15 @@ class SMSNotificationRouter:
                     f"New Slot: {slot_range_str}\n"
                     f"Assigned Advisor: {new_ag}\n"
                     f"Vehicle: {veh}"
+                )
+            elif event_type == "CONSOLIDATED":
+                customer_body = (
+                    f"🚗 [APPOINTMENT CONSOLIDATED] Appt #{appointment_id}\n"
+                    f"Service: {srv}\n"
+                    f"Slot: {slot_range_str}\n"
+                    f"Assigned Advisor: {new_ag}\n"
+                    f"Vehicle: {veh}\n"
+                    f"Combined Issues: {iss}"
                 )
             else:
                 customer_body = (

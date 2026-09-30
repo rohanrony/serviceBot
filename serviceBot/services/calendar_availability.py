@@ -371,8 +371,8 @@ def verify_contiguous_slot_capacity(
         with get_db_connection() as conn:
             with dict_cursor(conn) as cursor:
                 query = """
-                    SELECT id FROM calendar_reservations
-                    WHERE reservation_status = 'RESERVED'
+                    SELECT id FROM appointment_reservations
+                    WHERE status = 'ACTIVE'
                       AND starts_at < %s
                       AND ends_at > %s
                 """

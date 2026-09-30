@@ -2800,11 +2800,13 @@ def consolidate_appointment_service(
     additional_issue: str,
     additional_service_type: str = None,
     additional_duration_minutes: int = 30,
+    source_appointment_ids: Any = None,
 ) -> dict:
     """
     Consolidates an additional service or symptom into an existing appointment.
     Appends the additional issue description and extends duration_minutes.
-    Updates any linked calendar reservations accordingly.
+    Optionally cancels and links source appointment/callback IDs so duplicate requests are closed.
+    Updates linked appointment_reservations and enqueues outbox SMS notification.
     """
     import datetime as dt_mod
     with get_db_connection() as conn:
@@ -2813,9 +2815,11 @@ def consolidate_appointment_service(
                 """
                 SELECT sr.id, sr.customer_id, sr.booking_time, sr.issue_description, sr.service_type,
                        COALESCE(sr.duration_minutes, 60) AS duration_minutes, sr.vehicle_id,
-                       v.year, v.make, v.model
+                       v.year, v.make, v.model,
+                       c.phone, c.name AS customer_name
                 FROM service_requests sr
                 LEFT JOIN vehicles v ON sr.vehicle_id = v.id
+                LEFT JOIN customers c ON sr.customer_id = c.id
                 WHERE sr.id = %s;
                 """,
                 (appointment_id,)
@@ -2824,13 +2828,20 @@ def consolidate_appointment_service(
             if not sr:
                 raise ValueError(f"Appointment #{appointment_id} not found.")
 
-            existing_desc = sr.get("issue_description") or ""
+            existing_desc = (sr.get("issue_description") or "").strip()
             existing_duration = sr.get("duration_minutes") or 60
             booking_time = sr.get("booking_time")
+            customer_id = sr.get("customer_id")
+            vehicle_id = sr.get("vehicle_id")
 
-            clean_add = additional_issue.strip() if additional_issue else ""
+            clean_add = (additional_issue or "").strip()
             if existing_desc and clean_add:
-                combined_issues = f"{existing_desc}; {clean_add}"
+                if clean_add.lower() in existing_desc.lower():
+                    combined_issues = existing_desc
+                elif existing_desc.lower() in clean_add.lower():
+                    combined_issues = clean_add
+                else:
+                    combined_issues = f"{existing_desc}; {clean_add}"
             elif clean_add:
                 combined_issues = clean_add
             else:
@@ -2841,19 +2852,8 @@ def consolidate_appointment_service(
             if additional_service_type and additional_service_type not in (new_service_type or ""):
                 new_service_type = f"{new_service_type}, {additional_service_type}"
 
-            cursor.execute(
-                """
-                UPDATE service_requests
-                SET issue_description = %s,
-                    duration_minutes = %s,
-                    service_type = %s,
-                    updated_at = NOW()
-                WHERE id = %s;
-                """,
-                (combined_issues, new_duration, new_service_type, appointment_id)
-            )
-
-            # Update calendar reservation if present
+            # Calculate new end datetime
+            new_end_dt = None
             if booking_time:
                 try:
                     if isinstance(booking_time, str):
@@ -2862,18 +2862,119 @@ def consolidate_appointment_service(
                     else:
                         start_dt = booking_time
                     new_end_dt = start_dt + dt_mod.timedelta(minutes=new_duration)
-                    cursor.execute(
-                        """
-                        UPDATE calendar_reservations
-                        SET ends_at = %s,
-                            service_type = %s,
-                            updated_at = NOW()
-                        WHERE linked_service_request_id = %s;
-                        """,
-                        (new_end_dt.strftime("%Y-%m-%d %H:%M:%S"), new_service_type, appointment_id)
-                    )
                 except Exception:
                     pass
+
+            cursor.execute(
+                """
+                UPDATE service_requests
+                SET issue_description = %s,
+                    duration_minutes = %s,
+                    service_type = %s,
+                    booking_end_at = %s,
+                    updated_at = NOW()
+                WHERE id = %s;
+                """,
+                (combined_issues, new_duration, new_service_type, new_end_dt, appointment_id)
+            )
+
+            # Update appointment_reservations (correct table name and columns)
+            if new_end_dt:
+                try:
+                    cursor.execute(
+                        """
+                        UPDATE appointment_reservations
+                        SET ends_at = %s,
+                            updated_at = NOW()
+                        WHERE service_request_id = %s;
+                        """,
+                        (new_end_dt, appointment_id)
+                    )
+                except Exception as res_err:
+                    logger.warning(f"Failed to update appointment_reservations for #{appointment_id}: {res_err}")
+
+            # Process source appointments / callbacks to merge & cancel
+            cancelled_ids = []
+            parsed_source_ids = []
+            if source_appointment_ids:
+                if isinstance(source_appointment_ids, (list, tuple, set)):
+                    parsed_source_ids = [int(x) for x in source_appointment_ids if str(x).isdigit()]
+                elif isinstance(source_appointment_ids, int):
+                    parsed_source_ids = [source_appointment_ids]
+                elif isinstance(source_appointment_ids, str):
+                    import re
+                    clean_str = re.sub(r"[\[\]'\"]", "", source_appointment_ids)
+                    parsed_source_ids = [int(x.strip()) for x in clean_str.split(",") if x.strip().isdigit()]
+
+            # If no explicit source IDs provided, look for other pending requests for the same customer & vehicle on the same date
+            if not parsed_source_ids and customer_id and vehicle_id and booking_time:
+                b_date_str = str(booking_time)[:10]
+                cursor.execute(
+                    """
+                    SELECT id FROM service_requests
+                    WHERE customer_id = %s
+                      AND vehicle_id = %s
+                      AND id != %s
+                      AND status IN ('pending', 'in_progress')
+                      AND (booking_time::text LIKE %s OR booking_time IS NULL);
+                    """,
+                    (customer_id, vehicle_id, appointment_id, f"{b_date_str}%")
+                )
+                parsed_source_ids = [r["id"] for r in cursor.fetchall()]
+
+            for src_id in set(parsed_source_ids):
+                if src_id != appointment_id:
+                    cursor.execute(
+                        """
+                        UPDATE service_requests
+                        SET status = 'cancelled_by_customer',
+                            linked_appointment_id = %s,
+                            updated_at = NOW()
+                        WHERE id = %s;
+                        """,
+                        (appointment_id, src_id)
+                    )
+                    try:
+                        cursor.execute(
+                            """
+                            UPDATE appointment_reservations
+                            SET status = 'CANCELLED',
+                                updated_at = NOW()
+                            WHERE service_request_id = %s;
+                            """,
+                            (src_id,)
+                        )
+                    except Exception:
+                        pass
+                    cancelled_ids.append(src_id)
+
+            # Enqueue outbox notification
+            try:
+                from serviceBot.services.outbox_worker import enqueue_outbox_event
+                veh_str = f"{sr.get('year') or ''} {sr.get('make') or ''} {sr.get('model') or ''}".strip()
+                enqueue_outbox_event(
+                    cursor=cursor,
+                    event_type="sms_consolidated",
+                    request_id=appointment_id,
+                    payload={
+                        "sms_event_type": "CONSOLIDATED",
+                        "appointment_id": appointment_id,
+                        "customer_phone": sr.get("phone"),
+                        "booking_time": str(booking_time),
+                        "details": {
+                            "customer_name": sr.get("customer_name") or "Valued Customer",
+                            "phone": sr.get("phone"),
+                            "service_type": new_service_type,
+                            "issue": combined_issues,
+                            "duration_minutes": new_duration,
+                            "time": str(booking_time),
+                            "vehicle": veh_str,
+                            "cancelled_source_ids": cancelled_ids
+                        }
+                    }
+                )
+            except Exception as outbox_err:
+                logger.warning(f"Failed to enqueue outbox event for appointment #{appointment_id}: {outbox_err}")
 
             conn.commit()
 
@@ -2882,12 +2983,15 @@ def consolidate_appointment_service(
                 "combined_issues": combined_issues,
                 "new_duration_minutes": new_duration,
                 "booking_time": str(booking_time),
+                "service_type": new_service_type,
+                "cancelled_source_ids": cancelled_ids,
                 "vehicle": {
                     "year": sr.get("year"),
                     "make": sr.get("make"),
                     "model": sr.get("model")
                 }
             }
+
 
 
 

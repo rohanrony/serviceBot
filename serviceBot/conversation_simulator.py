@@ -144,7 +144,8 @@ VOICE_TOOLS = [
                     "phone": {"type": "string", "description": "Customer 10-digit phone number."},
                     "additional_issue": {"type": "string", "description": "Description of the additional issue or service requested."},
                     "additional_service_type": {"type": "string", "description": "Optional service type category for the additional work."},
-                    "additional_duration_minutes": {"type": "integer", "description": "Estimated duration in minutes for the additional work (default: 30)."}
+                    "additional_duration_minutes": {"type": "integer", "description": "Estimated duration in minutes for the additional work (default: 30)."},
+                    "source_appointment_ids": {"type": "string", "description": "Optional comma-separated list of other appointment or callback IDs being merged/cancelled into this one (e.g. '22, 26')."}
                 },
                 "required": ["appointment_id", "additional_issue"]
             }
