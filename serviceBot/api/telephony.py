@@ -743,15 +743,17 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
                 msg = (
                     f"Recommended available slots: {', '.join(slots)}. "
                     f"Clearly suggest 2 to 3 of these options to the caller. "
-                    f"NOTE TO AGENT: These are recommended options around the caller's requested time/date. "
+                    f"NOTE TO AGENT: These are recommended options around the caller's requested time/date that fit strictly within business hours. "
                     f"Additional slots are also available throughout the day if the caller prefers another specific time. "
                     f"Never tell or imply to the caller that these are the only available slots for the day. If the caller requests a different time, "
-                    f"call check_availability with their preferred time."
+                    f"call check_availability with their preferred time. "
+                    f"CRITICAL: All appointments must conclude strictly by 6:00 PM. Never offer or accept an appointment that would run past 6:00 PM."
                 )
             else:
                 msg = (
                     "I apologize, but there are no open appointment slots available in our schedule around that time/date right now. "
-                    "Please apologize to the caller for the inconvenience and offer to check another date or arrange a callback."
+                    "Please note our business hours are Monday to Friday, 7:00 AM to 6:00 PM, and appointments must conclude by 6:00 PM. "
+                    "Please apologize to the caller for the inconvenience and offer to check another date or arrange an advisor callback."
                 )
             result = {
                 "success": True,

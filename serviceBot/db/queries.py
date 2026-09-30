@@ -577,6 +577,9 @@ def _generate_dynamic_slots(preferred_date_str: str, duration_minutes: int, inte
     now_dt = dt_mod.datetime.now()
     valid_hours = get_configured_business_hours()
     valid_days = get_configured_business_days()
+    business_hours_set = set(valid_hours)
+    business_days_set = set(valid_days)
+    norm_duration = max(15, ((int(duration_minutes or 60) + 14) // 15) * 15)
 
     if time_window == "afternoon":
         valid_hours = [h for h in valid_hours if 12 <= h < 18]
@@ -594,7 +597,15 @@ def _generate_dynamic_slots(preferred_date_str: str, duration_minutes: int, inte
                 for minute in valid_minutes:
                     slot_dt = dt_mod.datetime.combine(candidate_day, dt_mod.time(hour, minute, 0))
                     if slot_dt > now_dt:
-                        slots.append(slot_dt.strftime("%Y-%m-%d %H:%M:%S"))
+                        # Enforce that every 15-minute segment of the appointment is strictly within business hours and days
+                        fits_business_hours = True
+                        for offset in range(0, norm_duration, 15):
+                            seg_dt = slot_dt + dt_mod.timedelta(minutes=offset)
+                            if seg_dt.weekday() not in business_days_set or seg_dt.hour not in business_hours_set:
+                                fits_business_hours = False
+                                break
+                        if fits_business_hours:
+                            slots.append(slot_dt.strftime("%Y-%m-%d %H:%M:%S"))
         day_offset += 1
     return slots
 
@@ -614,6 +625,7 @@ def check_availability(service_type: str = None, preferred_date: str = None, boo
     from concurrent.futures import ThreadPoolExecutor, as_completed
     from serviceBot.services.google_calendar import fetch_agent_events, parse_google_datetime
     from serviceBot.services.booking import normalize_reservation_duration
+    from serviceBot.services.calendar_sync import get_configured_business_hours, get_configured_business_days
 
     iso_date_str, time_window, start_time = parse_preferred_date_and_time(preferred_date)
 
@@ -705,14 +717,23 @@ def check_availability(service_type: str = None, preferred_date: str = None, boo
     except Exception as db_err:
         pass
 
+    valid_business_hours = set(get_configured_business_hours())
+    valid_business_days = set(get_configured_business_days())
+
     def is_agent_free_live(agent_id: int, slot_dt_str: str) -> bool:
-        """Returns True if agent has no Google Calendar or local DB conflict for the slot."""
+        """Returns True if agent has no Google Calendar or local DB conflict for the slot and slot fits business hours."""
+        slot_dt_naive = datetime.strptime(slot_dt_str, "%Y-%m-%d %H:%M:%S")
+        norm_dur = max(15, ((int(duration_minutes or 60) + 14) // 15) * 15)
+        for seg_offset in range(0, norm_dur, 15):
+            seg_time = slot_dt_naive + timedelta(minutes=seg_offset)
+            if seg_time.weekday() not in valid_business_days or seg_time.hour not in valid_business_hours:
+                return False
+
         if agent_id not in agent_events_map or agent_events_map[agent_id] is None:
             # A provider failure is unknown capacity, never a free slot.
             return False
 
         # Check local DB blocks & reservations across all 15-minute segments of the slot
-        slot_dt_naive = datetime.strptime(slot_dt_str, "%Y-%m-%d %H:%M:%S")
         for seg_offset in range(0, duration_minutes, 15):
             seg_time = slot_dt_naive + timedelta(minutes=seg_offset)
             seg_str = seg_time.strftime("%Y-%m-%d %H:%M:%S")
@@ -1409,11 +1430,26 @@ def get_available_slots_for_date(target_date_str: str, duration_minutes: int = 6
             if not agents:
                 return []
 
+            from serviceBot.services.calendar_sync import get_configured_business_hours, get_configured_business_days
+            valid_business_hours = set(get_configured_business_hours())
+            valid_business_days = set(get_configured_business_days())
+            norm_dur = max(15, ((int(duration_minutes or 60) + 14) // 15) * 15)
+
+            def _fits_hours(s_dt: dt_mod.datetime) -> bool:
+                for off in range(0, norm_dur, 15):
+                    seg = s_dt + dt_mod.timedelta(minutes=off)
+                    if seg.weekday() not in valid_business_days or seg.hour not in valid_business_hours:
+                        return False
+                return True
+
             # If is_agent_free is explicitly mocked (e.g., in unit tests), use standard fallback loop
             if isinstance(is_agent_free, Mock):
                 current_slot_dt = dt_mod.datetime.combine(target_date, dt_mod.time(7, 0))
                 end_of_day = dt_mod.datetime.combine(target_date, dt_mod.time(17, 0))
                 while current_slot_dt <= end_of_day:
+                    if not _fits_hours(current_slot_dt):
+                        current_slot_dt += dt_mod.timedelta(minutes=30)
+                        continue
                     slot_str = current_slot_dt.strftime("%Y-%m-%d %H:%M:%S")
                     free_count = sum(1 for agent in agents if is_agent_free(agent["id"], slot_str, duration_minutes=duration_minutes))
                     if free_count > 0:
@@ -1466,6 +1502,9 @@ def get_available_slots_for_date(target_date_str: str, duration_minutes: int = 6
             end_of_day = dt_mod.datetime.combine(target_date, dt_mod.time(17, 0))
             
             while current_slot_dt <= end_of_day:
+                if not _fits_hours(current_slot_dt):
+                    current_slot_dt += dt_mod.timedelta(minutes=30)
+                    continue
                 slot_str = current_slot_dt.strftime("%Y-%m-%d %H:%M:%S")
                 slot_start_localized = current_slot_dt.replace(tzinfo=tz)
                 slot_end_localized = (current_slot_dt + dt_mod.timedelta(minutes=duration_minutes)).replace(tzinfo=tz)
