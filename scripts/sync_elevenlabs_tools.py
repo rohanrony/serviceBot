@@ -61,7 +61,8 @@ TOOL_DEFINITIONS = [
             "request_body_schema": {
                 "type": "object",
                 "properties": {
-                    "preferred_date": {"type": "string", "description": "The date to check in YYYY-MM-DD format"},
+                    "preferred_date": {"type": "string", "description": "The date to check in YYYY-MM-DD format (or natural language date)"},
+                    "preferred_time": {"type": "string", "description": "Optional specific time or time window to check (e.g. '09:00 AM', '10:00 AM', 'morning', 'afternoon')"},
                     "service_type": {"type": "string", "description": "The requested service"},
                     "booking_type": {"type": "string", "description": "Type of booking: 'appointment' or 'callback'"}
                 }

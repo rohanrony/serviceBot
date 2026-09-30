@@ -17,6 +17,10 @@ VOICE_TOOLS = [
                     "preferred_date": {
                         "type": "string",
                         "description": "Date to check in YYYY-MM-DD format (e.g. '2026-06-10')."
+                    },
+                    "preferred_time": {
+                        "type": "string",
+                        "description": "Optional specific time or time window to check (e.g. '9:00 AM', '10:00 AM', 'morning')."
                     }
                 },
                 "required": ["preferred_date"]

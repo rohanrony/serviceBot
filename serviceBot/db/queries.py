@@ -621,7 +621,7 @@ def _generate_dynamic_slots(preferred_date_str: str, duration_minutes: int, inte
     return slots
 
 
-def check_availability(service_type: str = None, preferred_date: str = None, booking_type: str = "appointment") -> list:
+def check_availability(service_type: str = None, preferred_date: str = None, booking_type: str = "appointment", preferred_time: str = None) -> list:
     """
     Checks available appointment or callback slots on or after preferred_date.
 
@@ -637,6 +637,14 @@ def check_availability(service_type: str = None, preferred_date: str = None, boo
     from serviceBot.services.google_calendar import fetch_agent_events, parse_google_datetime
     from serviceBot.services.booking import normalize_reservation_duration
     from serviceBot.services.calendar_sync import get_configured_business_hours, get_configured_business_days
+
+    if preferred_time:
+        pref_time_clean = str(preferred_time).strip()
+        if preferred_date:
+            if pref_time_clean.lower() not in str(preferred_date).lower():
+                preferred_date = f"{preferred_date} {pref_time_clean}"
+        else:
+            preferred_date = pref_time_clean
 
     iso_date_str, time_window, start_time = parse_preferred_date_and_time(preferred_date)
 

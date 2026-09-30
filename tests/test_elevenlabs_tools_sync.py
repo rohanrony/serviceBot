@@ -62,3 +62,12 @@ def test_tool_urls_contain_tool_name_query_parameter():
         name = tool["name"]
         url = tool.get("api_schema", {}).get("url", "")
         assert f"?name={name}" in url, f"Tool {name} URL does not contain ?name={name}: {url}"
+
+def test_check_availability_tool_schema_has_preferred_time():
+    """Verify check_availability tool schema includes preferred_time parameter."""
+    tool_map = {t["name"]: t for t in TOOL_DEFINITIONS}
+    tool = tool_map["check_availability"]
+    body_schema = tool["api_schema"]["request_body_schema"]
+    assert "preferred_time" in body_schema["properties"], "preferred_time must be defined in check_availability tool schema"
+    assert body_schema["properties"]["preferred_time"]["type"] == "string"
+

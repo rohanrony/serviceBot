@@ -208,5 +208,54 @@ class TestTimeSlotChecking(unittest.TestCase):
         self.assertIn("NOTE TO AGENT", res["result"]["message"])
         self.assertIn("Never tell or imply to the caller that these are the only available slots", res["result"]["message"])
 
+    def test_check_availability_with_separate_preferred_time_parameter(self):
+        target_date = datetime.date.today() + datetime.timedelta(days=7)
+        while target_date.weekday() > 4:
+            target_date += datetime.timedelta(days=1)
+        target_date_str = target_date.isoformat()
+
+        with patch("serviceBot.db.queries.get_db_connection") as mock_get_conn:
+            mock_conn = MagicMock()
+            mock_cursor = MagicMock()
+            mock_get_conn.return_value.__enter__.return_value = mock_conn
+            mock_cursor.fetchall.return_value = [{"id": 1}]
+
+            with patch("serviceBot.db.queries.dict_cursor") as mock_dict_cursor:
+                mock_dict_cursor.return_value.__enter__.return_value = mock_cursor
+                with patch("serviceBot.services.google_calendar.fetch_agent_events", return_value=[]):
+                    slots = check_availability(
+                        preferred_date=target_date_str,
+                        preferred_time="9:00 AM"
+                    )
+
+        self.assertEqual(len(slots), 3)
+        hours = [datetime.datetime.strptime(s, "%Y-%m-%d %H:%M:%S").hour for s in slots]
+        self.assertIn(9, hours)
+
+    @patch("serviceBot.api.telephony.check_availability")
+    def test_telephony_tool_check_availability_with_preferred_time(self, mock_check):
+        import asyncio
+        from serviceBot.api.telephony import voice_tools
+
+        mock_check.return_value = ["2026-08-06 08:30:00", "2026-08-06 09:00:00", "2026-08-06 09:30:00"]
+        payload = {
+            "name": "check_availability",
+            "arguments": {
+                "preferred_date": "2026-08-06",
+                "preferred_time": "9:00 AM"
+            }
+        }
+        res = asyncio.run(voice_tools(payload))
+        mock_check.assert_called_once_with(
+            service_type=None,
+            preferred_date="2026-08-06",
+            booking_type="appointment",
+            preferred_time="9:00 AM"
+        )
+        self.assertTrue(res["result"]["success"])
+        self.assertIn("IS AVAILABLE", res["result"]["message"])
+        self.assertIn("2026-08-06 09:00:00", res["result"]["available_slots"])
+
 if __name__ == "__main__":
     unittest.main()
+

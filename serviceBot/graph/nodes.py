@@ -189,15 +189,16 @@ def appointment_booking_node(state: AgentState) -> Dict[str, Any]:
                 service_type = row["service_type"]
 
     @tool
-    def check_availability_tool(preferred_date: str, service_type: str = None, booking_type: str = "appointment") -> list:
+    def check_availability_tool(preferred_date: str, service_type: str = None, booking_type: str = "appointment", preferred_time: str = None) -> list:
         """
         Checks unbooked slots on or after preferred_date.
         Args:
             preferred_date: The date to check in format YYYY-MM-DD.
             service_type: Optional service type or multiple services string to calculate aggregate duration.
             booking_type: Optional booking type ("appointment" or "callback").
+            preferred_time: Optional specific time or time window to check (e.g. "9:00 AM", "morning").
         """
-        return check_availability(service_type=service_type, preferred_date=preferred_date, booking_type=booking_type)
+        return check_availability(service_type=service_type, preferred_date=preferred_date, booking_type=booking_type, preferred_time=preferred_time)
 
     @tool
     def book_appointment_tool(appointment_datetime: str) -> str:

@@ -10,7 +10,10 @@ def load_env_file():
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:
                     key, val = line.split("=", 1)
-                    os.environ[key.strip()] = val.strip().strip("'\"")
+                    k = key.strip()
+                    if k != "LOG_FILE":
+                        os.environ[k] = val.strip().strip("'\"")
+    os.environ.pop("LOG_FILE", None)
 
 load_env_file()
 
