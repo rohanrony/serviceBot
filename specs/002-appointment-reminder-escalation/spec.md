@@ -4,7 +4,7 @@
 
 **Created**: 2026-09-30
 
-**Status**: Draft
+**Status**: Complete
 
 **Input**: User description: "I want to discuss and plan a reminder logic. When an appointment is made, a reminder could be sent before the appointment time to both the customer and the agent at the same time. The appointment needs to be confirmed before time, and if the appointment is not confirmed, then there needs to be some way to confirm the appointment. It could be through SMS, or it could be through the portal. If the confirmation doesn't happen, there needs to be some sort of an escalation, maybe to change the agent or something. Two things here. Notification logic: We also need a total of three attempt retry logic. 1. Initial notification to be sent immediately, and the reminder could be T-2. 2. Let us restrict booking for 4 hours to give some planning. If the customer is calling at 8:00, do not allow the customer to book before 4 hours after the current time. That is 12:00 in this example. Escalation logic: The escalation logic also depends on the time at which the appointment was made. Let's say it was made at 5 pm. It's likely that the person is going to respond the next morning, so maybe business hours could be considered along with the booking horizon."
 
