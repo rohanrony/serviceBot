@@ -1322,9 +1322,47 @@ async def reassign_service_request(request_id: int, payload: ReassignRequestPayl
                 (request_id, sr.get("escalation_status") or "escalated", f"Reassigned from agent {old_agent_id} to {payload.new_agent_id} ({payload.reason})")
             )
 
+            # 7. Transactional Outbox Event: Atomically enqueue agent_reassignment
+            from serviceBot.services.outbox_worker import enqueue_outbox_event
+            c_name = sr.get("customer_name") or "Customer"
+            v_str = f"{sr.get('year') or ''} {sr.get('make') or ''} {sr.get('model') or ''}".strip() or "Vehicle"
+            s_type = sr.get("service_type") or "Service Request"
+            t_str = str(sr.get("booking_time") or "")
+
+            details = {
+                "customer_name": c_name,
+                "phone": sr.get("customer_phone") or "",
+                "vehicle": v_str,
+                "service_type": s_type,
+                "time": t_str[:19] if t_str else "",
+                "issue": sr.get("issue_description") or "",
+                "previous_agent_name": sr.get("old_agent_name") or "Unassigned",
+                "new_agent_name": new_agent.get("name") or "Unassigned"
+            }
+
+            outbox_payload = {
+                "old_agent_id": old_agent_id,
+                "old_agent_name": sr.get("old_agent_name"),
+                "new_agent_id": payload.new_agent_id,
+                "new_agent_name": new_agent.get("name"),
+                "new_agent_email": new_agent.get("email"),
+                "agent_phone": None,  # already notified via direct reassignment_prompt SMS below
+                "previous_agent_phone": None,  # already notified via direct reassignment_notice SMS below
+                "booking_time_str": t_str[:19] if t_str else None,
+                "details": details
+            }
+            enqueue_outbox_event(cursor, "agent_reassignment", request_id, outbox_payload)
+
             conn.commit()
 
-    # 7. SMS notifications
+    # Trigger immediate outbox batch processing for fast email & calendar dispatch
+    try:
+        from serviceBot.services.outbox_worker import process_outbox_batch
+        process_outbox_batch()
+    except Exception as ob_err:
+        logger.warning(f"Immediate outbox processing triggered warning: {ob_err}")
+
+    # 8. SMS notifications
     client = TwilioSMSClient()
     c_name = sr.get("customer_name") or "Customer"
     v_str = f"{sr.get('year') or ''} {sr.get('make') or ''} {sr.get('model') or ''}".strip() or "Vehicle"

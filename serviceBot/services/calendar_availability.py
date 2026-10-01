@@ -345,11 +345,13 @@ def verify_contiguous_slot_capacity(
     start_time: str | dt_mod.datetime,
     duration_minutes: int,
     exclude_reservation_id: Optional[int] = None,
+    exclude_service_request_id: Optional[int] = None,
     staff_agent_id: Optional[int] = None,
 ) -> bool:
     """
     Checks if there is contiguous capacity for a booking starting at start_time
     and lasting duration_minutes. Returns True if available, False if conflicting.
+    Also ensures the slot does not conclude after business hours (6:00 PM / 18:00).
     """
     if isinstance(start_time, str):
         clean_str = start_time.replace("T", " ")
@@ -367,6 +369,10 @@ def verify_contiguous_slot_capacity(
 
     end_dt = start_dt + dt_mod.timedelta(minutes=duration_minutes)
 
+    # Business hours closing boundary enforcement: cannot end after 18:00 or start before 07:00
+    if end_dt.time() > dt_mod.time(18, 0) or start_dt.time() < dt_mod.time(7, 0):
+        return False
+
     try:
         with get_db_connection() as conn:
             with dict_cursor(conn) as cursor:
@@ -380,6 +386,9 @@ def verify_contiguous_slot_capacity(
                 if exclude_reservation_id:
                     query += " AND id != %s"
                     params.append(exclude_reservation_id)
+                if exclude_service_request_id:
+                    query += " AND service_request_id != %s"
+                    params.append(exclude_service_request_id)
                 if staff_agent_id:
                     query += " AND staff_agent_id = %s"
                     params.append(staff_agent_id)
@@ -391,4 +400,5 @@ def verify_contiguous_slot_capacity(
         # Fallback to true if table doesn't exist in lightweight test environments
         return True
     return True
+
 

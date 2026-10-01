@@ -88,7 +88,8 @@ TOOL_DEFINITIONS = [
                 "type": "object",
                 "required": ["phone"],
                 "properties": {
-                    "phone": {"type": "string", "description": "The customer 10-digit phone number (e.g. 4242704893)"}
+                    "phone": {"type": "string", "description": "The customer 10-digit phone number (e.g. 4242704893)"},
+                    "caller_phone": {"type": "string", "description": "Optional calling number (Caller ID) to cross-reference if different from spoken phone"}
                 }
             }
         }
@@ -113,6 +114,7 @@ TOOL_DEFINITIONS = [
                 "required": ["phone", "new_appointment_datetime"],
                 "properties": {
                     "phone": {"type": "string", "description": "The customer 10-digit phone number"},
+                    "caller_phone": {"type": "string", "description": "Optional calling number (Caller ID) to cross-reference"},
                     "new_appointment_datetime": {"type": "string", "description": "The new appointment date and time (YYYY-MM-DD HH:MM:SS format)"},
                     "appointment_id": {"type": "integer", "description": "Optional specific appointment ID to reschedule"}
                 }
@@ -200,6 +202,7 @@ TOOL_DEFINITIONS = [
                 "properties": {
                     "customer_name": {"type": "string", "description": "The full name of the customer"},
                     "phone": {"type": "string", "description": "The customer's phone number"},
+                    "caller_phone": {"type": "string", "description": "Optional calling number (Caller ID) from {{caller_phone}} if available"},
                     "make": {"type": "string", "description": "The make of the vehicle (e.g. Honda)"},
                     "model": {"type": "string", "description": "The model of the vehicle (e.g. Civic)"},
                     "year": {"type": "integer", "description": "The production year of the vehicle (e.g. 2020)"},

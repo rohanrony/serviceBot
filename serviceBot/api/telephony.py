@@ -836,6 +836,30 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
             else:
                 phone = validated_phone
                 customer_name = args.get("customer_name") or args.get("name")
+                caller_phone_arg = args.get("caller_phone") or args.get("caller_id") or args.get("callerId") or args.get("from_number")
+                validated_caller_phone = clean_and_validate_phone(caller_phone_arg)
+
+                # ANI cross-referencing & acoustic error reconciliation
+                if validated_caller_phone and phone != validated_caller_phone:
+                    if phone[-7:] == validated_caller_phone[-7:]:
+                        logger.warning(
+                            f"Reconciling spoken phone {phone} to verified caller ID {validated_caller_phone} "
+                            f"(matching 7-digit subscriber suffix {phone[-7:]})"
+                        )
+                        phone = validated_caller_phone
+                    else:
+                        c_spoken = lookup_customer_by_phone(phone)
+                        c_caller = lookup_customer_by_phone(validated_caller_phone)
+                        if not c_spoken and c_caller:
+                            caller_cname = (c_caller.get("name") or "").lower()
+                            req_cname = (customer_name or "").lower()
+                            if req_cname in caller_cname or caller_cname in req_cname or not req_cname:
+                                logger.info(
+                                    f"Linking intake for spoken phone {phone} to existing verified customer "
+                                    f"#{c_caller.get('id')} ({validated_caller_phone})"
+                                )
+                                phone = validated_caller_phone
+
                 make = args.get("make")
                 model = args.get("model")
                 year = args.get("year")
@@ -890,6 +914,34 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
                 customer_id = None
                 phone_to_lookup = phone if phone else "Unknown"
                 c_data = lookup_customer_by_phone(phone_to_lookup)
+                if not c_data and validated_caller_phone:
+                    c_data = lookup_customer_by_phone(validated_caller_phone)
+                    if c_data:
+                        phone_to_lookup = validated_caller_phone
+                        phone = validated_caller_phone
+
+                # Fuzzy lookup by 7-digit subscriber suffix + customer name if not found
+                if not c_data and len(phone) >= 7 and customer_name and customer_name not in ("Unknown Customer", "Unknown"):
+                    try:
+                        with get_db_connection() as conn:
+                            with dict_cursor(conn) as cursor:
+                                cursor.execute(
+                                    """
+                                    SELECT id, name, phone
+                                    FROM customers
+                                    WHERE RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, '-', ''), ' ', ''), '(', ''), ')', ''), '+1', ''), 7) = %s
+                                      AND name ILIKE %s
+                                    LIMIT 1;
+                                    """,
+                                    (phone[-7:], f"%{customer_name.strip()}%")
+                                )
+                                fuzzy_c = cursor.fetchone()
+                                if fuzzy_c:
+                                    logger.info(f"Fuzzy matched existing customer #{fuzzy_c['id']} ({fuzzy_c['phone']}) for phone {phone} and name {customer_name}")
+                                    c_data = {"id": fuzzy_c["id"], "customer_id": fuzzy_c["id"], "name": fuzzy_c["name"], "phone": fuzzy_c["phone"]}
+                    except Exception as fuzzy_err:
+                        logger.warning(f"Fuzzy customer lookup error: {fuzzy_err}")
+
                 if c_data:
                     customer_id = c_data.get("customer_id") or c_data.get("id")
                     if customer_name and customer_name not in ("Unknown Customer", "Unknown"):
@@ -934,7 +986,13 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
                 is_uncataloged = extra_kwargs.get("is_uncataloged", False)
 
                 vehicle_details = {"make": make, "model": model, "year": year}
-                session_key = args.get("call_sid") or args.get("callSid") or args.get("conversation_id") or args.get("session_id")
+                session_key = (
+                    args.get("call_sid")
+                    or args.get("callSid")
+                    or args.get("conversation_id")
+                    or args.get("session_id")
+                    or (f"phone_{phone}" if phone else None)
+                )
                 existing_session = get_session_booking(session_key) if (booking_type == "appointment" and session_key) else None
 
                 price_range = "Varies"
@@ -1379,8 +1437,14 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
                         }
 
         elif tool_name == "get_customer_appointments":
-            phone = args.get("phone")
+            phone = args.get("phone") or args.get("phone_number") or args.get("phoneNumber") or args.get("caller_phone") or args.get("caller_id")
             validated_phone = clean_and_validate_phone(phone)
+            caller_phone_arg = args.get("caller_phone") or args.get("caller_id") or args.get("callerId") or args.get("from_number")
+            validated_caller_phone = clean_and_validate_phone(caller_phone_arg)
+
+            if not validated_phone and validated_caller_phone:
+                validated_phone = validated_caller_phone
+
             if not validated_phone:
                 result = {
                     "success": False,
@@ -1389,6 +1453,50 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
             else:
                 phone = validated_phone
                 appts = get_customer_appointments(phone)
+                found_via_caller_phone = False
+
+                # Fallback cross-reference: check calling number (Caller ID) and merge if different
+                if validated_caller_phone and validated_caller_phone != phone:
+                    alt_appts = get_customer_appointments(validated_caller_phone)
+                    if alt_appts:
+                        if not appts:
+                            phone = validated_caller_phone
+                            found_via_caller_phone = True
+                        existing_ids = {a.get("id") for a in appts}
+                        for aa in alt_appts:
+                            if aa.get("id") not in existing_ids:
+                                appts.append(aa)
+                                existing_ids.add(aa.get("id"))
+
+                # Suffix cross-reference: match any pending/in_progress bookings by 7-digit subscriber suffix if none found
+                if not appts and len(phone) >= 7:
+                    suffix = phone[-7:]
+                    try:
+                        with get_db_connection() as conn:
+                            with dict_cursor(conn) as cursor:
+                                cursor.execute(
+                                    """
+                                    SELECT sr.id, sr.booking_time AS appointment_datetime, sr.booking_type, sr.service_type,
+                                           sr.issue_description, COALESCE(sr.duration_minutes, 60) AS duration_minutes,
+                                           sr.status, v.year, v.make, v.model
+                                    FROM service_requests sr
+                                    JOIN customers c ON sr.customer_id = c.id
+                                    LEFT JOIN vehicles v ON sr.vehicle_id = v.id
+                                    WHERE RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(c.phone, '-', ''), ' ', ''), '(', ''), ')', ''), '+1', ''), 7) = %s
+                                      AND sr.status IN ('pending', 'in_progress')
+                                      AND (sr.booking_type IN ('appointment', 'callback', 'appointment_and_callback') OR sr.booking_time IS NOT NULL)
+                                    ORDER BY sr.booking_time ASC NULLS LAST;
+                                    """,
+                                    (suffix,)
+                                )
+                                suffix_rows = cursor.fetchall()
+                                existing_ids = {a.get("id") for a in appts}
+                                for sr_row in suffix_rows:
+                                    if sr_row.get("id") not in existing_ids:
+                                        appts.append(dict(sr_row))
+                                        existing_ids.add(sr_row.get("id"))
+                    except Exception as suffix_err:
+                        logger.warning(f"7-digit suffix lookup error in get_customer_appointments: {suffix_err}")
 
                 try:
                     tz = zoneinfo.ZoneInfo("America/New_York")
@@ -1417,8 +1525,9 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
                     summary_for_agent = f"No active appointments or callbacks on file for {phone}."
                 else:
                     parts = []
+                    source_prefix = f"found under your calling number ({phone}) " if found_via_caller_phone else ""
                     if upcoming:
-                        parts.append(f"Found {len(upcoming)} upcoming scheduled request(s) on file:")
+                        parts.append(f"Found {len(upcoming)} upcoming scheduled request(s) on file {source_prefix}:".strip())
                         for idx, u in enumerate(upcoming, 1):
                             kind_label = "In-shop Appointment" if u.get("booking_type") == "appointment" else "Advisor Callback"
                             v_str = f"{u.get('year') or ''} {u.get('make') or ''} {u.get('model') or ''}".strip() or "Vehicle"
@@ -1476,7 +1585,18 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
                 }
             else:
                 appt_details = None
-                if phone:
+                try:
+                    with get_db_connection() as conn:
+                        with dict_cursor(conn) as cursor:
+                            cursor.execute(
+                                "SELECT id, booking_time, duration_minutes, staff_agent_id FROM service_requests WHERE id = %s;",
+                                (appt_id,)
+                            )
+                            appt_details = cursor.fetchone()
+                except Exception as db_err:
+                    logger.warning(f"Could not load appointment #{appt_id} directly from DB: {db_err}")
+
+                if not appt_details and phone:
                     p_clean = clean_and_validate_phone(phone)
                     if p_clean:
                         for ap in get_customer_appointments(p_clean):
@@ -1484,13 +1604,16 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
                                 appt_details = ap
                                 break
 
-                booking_time = appt_details.get("appointment_datetime") if appt_details else None
+                booking_time = (appt_details.get("booking_time") or appt_details.get("appointment_datetime")) if appt_details else None
                 curr_duration = (appt_details.get("duration_minutes") if appt_details else None) or 60
+                staff_agent_id = appt_details.get("staff_agent_id") if appt_details else None
                 new_total_duration = curr_duration + additional_duration
 
                 has_capacity = verify_contiguous_slot_capacity(
                     start_time=booking_time,
-                    duration_minutes=new_total_duration
+                    duration_minutes=new_total_duration,
+                    exclude_service_request_id=appt_id,
+                    staff_agent_id=staff_agent_id,
                 ) if booking_time else True
 
                 if not has_capacity:
@@ -1589,6 +1712,11 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
             new_datetime = args.get("new_appointment_datetime") or args.get("newAppointmentDatetime") or args.get("appointment_datetime")
             
             validated_phone = clean_and_validate_phone(phone)
+            caller_phone_arg = args.get("caller_phone") or args.get("caller_id") or args.get("callerId") or args.get("from_number")
+            validated_caller_phone = clean_and_validate_phone(caller_phone_arg)
+            if not validated_phone and validated_caller_phone:
+                validated_phone = validated_caller_phone
+
             if not validated_phone:
                 result = {
                     "success": False,
@@ -1597,6 +1725,37 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
             else:
                 phone = validated_phone
                 appts = get_customer_appointments(phone)
+                if not appts and validated_caller_phone and validated_caller_phone != phone:
+                    alt_appts = get_customer_appointments(validated_caller_phone)
+                    if alt_appts:
+                        appts = alt_appts
+                        phone = validated_caller_phone
+
+                if not appts and len(phone) >= 7:
+                    try:
+                        with get_db_connection() as conn:
+                            with dict_cursor(conn) as cursor:
+                                cursor.execute(
+                                    """
+                                    SELECT sr.id, sr.booking_time AS appointment_datetime, sr.booking_type, sr.service_type,
+                                           sr.issue_description, COALESCE(sr.duration_minutes, 60) AS duration_minutes,
+                                           sr.status, v.year, v.make, v.model
+                                    FROM service_requests sr
+                                    JOIN customers c ON sr.customer_id = c.id
+                                    LEFT JOIN vehicles v ON sr.vehicle_id = v.id
+                                    WHERE RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(c.phone, '-', ''), ' ', ''), '(', ''), ')', ''), '+1', ''), 7) = %s
+                                      AND sr.status IN ('pending', 'in_progress')
+                                      AND (sr.booking_type IN ('appointment', 'callback', 'appointment_and_callback') OR sr.booking_time IS NOT NULL)
+                                    ORDER BY sr.booking_time ASC NULLS LAST;
+                                    """,
+                                    (phone[-7:],)
+                                )
+                                s_rows = cursor.fetchall()
+                                if s_rows:
+                                    appts = [dict(r) for r in s_rows]
+                    except Exception as resch_s_err:
+                        logger.warning(f"Reschedule suffix lookup error: {resch_s_err}")
+
                 if not appts:
                     result = {
                         "success": False,
