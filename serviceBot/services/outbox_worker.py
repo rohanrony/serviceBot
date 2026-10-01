@@ -248,6 +248,7 @@ def _dispatch_outbox_event(event_type: str, request_id: Optional[int], payload: 
     Raises an exception if any operation fails so the worker can retry or revert.
     """
     if event_type == "calendar_projection":
+        action = payload.get("action", "upsert")
         reservation_id = payload.get("reservation_id")
         agent_id = payload.get("agent_id")
         old_agent_id = payload.get("old_agent_id")
@@ -255,6 +256,21 @@ def _dispatch_outbox_event(event_type: str, request_id: Optional[int], payload: 
         booking_time = payload.get("booking_time_str")
         calendar_event_id = payload.get("calendar_event_id")
         details = payload.get("details", {})
+
+        if action == "delete":
+            if agent_id and booking_time:
+                try:
+                    delete_agent_calendar_event(
+                        agent_id,
+                        str(booking_time)[:19],
+                        duration_minutes=payload.get("duration_minutes") or 60,
+                    )
+                except Exception as exc:
+                    logger.warning(f"Could not remove agent calendar projection on cancel: {exc}")
+            if request_id and reservation_id:
+                _set_calendar_projection_status(request_id, reservation_id, "DELETED", calendar_event_id)
+            return
+
         if not request_id or not reservation_id or not agent_id or not booking_time or not calendar_event_id:
             raise ValueError("calendar_projection payload is missing a required reservation field")
 
@@ -382,10 +398,15 @@ def _dispatch_outbox_event(event_type: str, request_id: Optional[int], payload: 
 
         if agent_email:
             try:
-                send_booking_notification(
-                    "reschedule"
+                email_event_type = (
+                    "cancel"
+                    if notification_event in {"CANCELLED_BY_CUSTOMER", "CANCELLED_BY_ADMIN"}
+                    else "reschedule"
                     if notification_event in {"RESCHEDULED", "RESCHEDULED_REASSIGNED"}
-                    else booking_type,
+                    else booking_type
+                )
+                send_booking_notification(
+                    email_event_type,
                     details,
                     agent_email=agent_email,
                 )
@@ -396,21 +417,27 @@ def _dispatch_outbox_event(event_type: str, request_id: Optional[int], payload: 
             try:
                 clean_slot_str = str(slot_datetime_str)[:19]
                 delete_admin_calendar_event(clean_slot_str)
-                create_admin_calendar_event(
-                    customer_name=details.get("customer_name") or "Customer",
-                    service_type=details.get("service_type") or "Service Request",
-                    issue_description=details.get("issue") or "",
-                    slot_datetime_str=clean_slot_str,
-                    agent_name=agent_name
-                )
+                if notification_event not in {"CANCELLED_BY_CUSTOMER", "CANCELLED_BY_ADMIN"}:
+                    create_admin_calendar_event(
+                        customer_name=details.get("customer_name") or "Customer",
+                        service_type=details.get("service_type") or "Service Request",
+                        issue_description=details.get("issue") or "",
+                        slot_datetime_str=clean_slot_str,
+                        agent_name=agent_name
+                    )
             except Exception as cal_err:
                 logger.warning(f"[OUTBOX CALENDAR WARNING] Failed to update admin calendar event: {cal_err}")
 
         try:
-            send_admin_notification(
-                "reschedule"
+            admin_event_type = (
+                "cancel"
+                if notification_event in {"CANCELLED_BY_CUSTOMER", "CANCELLED_BY_ADMIN"}
+                else "reschedule"
                 if notification_event in {"RESCHEDULED", "RESCHEDULED_REASSIGNED"}
-                else booking_type,
+                else booking_type
+            )
+            send_admin_notification(
+                admin_event_type,
                 details,
                 agent_name=agent_name,
                 agent_email=agent_email,
@@ -424,8 +451,15 @@ def _dispatch_outbox_event(event_type: str, request_id: Optional[int], payload: 
             sms_event = notification_event or (
                 "BOOKING" if booking_type in ("appointment", "callback") else "RESCHEDULED"
             )
+            bypass_qh = bool(
+                payload.get("bypass_quiet_hours") or
+                payload.get("triggered_by") in ("voice_agent", "telephony_voice_assistant", "voice_tool", "customer") or
+                details.get("bypass_quiet_hours") or
+                details.get("triggered_by") in ("voice_agent", "telephony_voice_assistant", "voice_tool", "customer")
+            )
             from serviceBot.services.sms_router import SMSNotificationRouter
             sms_router = SMSNotificationRouter()
+            extra_kwargs = {"bypass_quiet_hours": True} if bypass_qh else {}
             sms_result = sms_router.process_event(
                 event_type=sms_event,
                 appointment_id=request_id,
@@ -434,6 +468,7 @@ def _dispatch_outbox_event(event_type: str, request_id: Optional[int], payload: 
                 previous_agent_phone=payload.get("previous_agent_phone"),
                 booking_time=slot_datetime_str,
                 details=details,
+                **extra_kwargs,
             )
             _require_notification_delivery(sms_result)
 
@@ -441,6 +476,13 @@ def _dispatch_outbox_event(event_type: str, request_id: Optional[int], payload: 
         from serviceBot.services.sms_router import SMSNotificationRouter
         router_svc = SMSNotificationRouter()
         sms_event_type = payload.get("sms_event_type", event_type.replace("sms_", "").upper())
+        bypass_qh = bool(
+            payload.get("bypass_quiet_hours") or
+            payload.get("triggered_by") in ("voice_agent", "telephony_voice_assistant", "voice_tool", "customer") or
+            payload.get("details", {}).get("bypass_quiet_hours") or
+            payload.get("details", {}).get("triggered_by") in ("voice_agent", "telephony_voice_assistant", "voice_tool", "customer")
+        )
+        extra_kwargs = {"bypass_quiet_hours": True} if bypass_qh else {}
         sms_result = router_svc.process_event(
             event_type=sms_event_type,
             appointment_id=request_id or payload.get("appointment_id"),
@@ -448,7 +490,9 @@ def _dispatch_outbox_event(event_type: str, request_id: Optional[int], payload: 
             agent_phone=payload.get("agent_phone"),
             previous_agent_phone=payload.get("previous_agent_phone"),
             admin_phone=payload.get("admin_phone"),
-            booking_time=payload.get("booking_time")
+            booking_time=payload.get("booking_time_str") or payload.get("booking_time"),
+            details=payload.get("details", {}),
+            **extra_kwargs,
         )
         _require_notification_delivery(sms_result)
 

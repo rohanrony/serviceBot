@@ -1712,6 +1712,23 @@ def reschedule_appointment(
     return True
 
 
+def cancel_appointment(
+    appointment_id: int,
+    customer_consent_obtained: bool = True,
+    triggered_by: str = "customer",
+    reason: str = None,
+) -> dict:
+    """Cancel an appointment atomically, freeing reserved capacity and triggering notifications."""
+    from serviceBot.services.booking import BookingService
+
+    return BookingService().cancel(
+        request_id=appointment_id,
+        customer_consent_obtained=customer_consent_obtained,
+        triggered_by=triggered_by,
+        reason=reason,
+    )
+
+
 ALLOWED_TRANSITIONS = {
     "pending": {"confirmed", "in_progress", "completed", "cancelled"},
     "confirmed": {"in_progress", "completed", "cancelled"},

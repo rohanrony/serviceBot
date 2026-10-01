@@ -123,6 +123,33 @@ TOOL_DEFINITIONS = [
     },
     {
         "type": "webhook",
+        "name": "cancel_appointment",
+        "description": "Cancel an existing upcoming appointment or service request directly during the call once verbal customer consent is confirmed. Do NOT offer or require an advisor callback for cancellations.",
+        "response_timeout_secs": 20,
+        "disable_interruptions": False,
+        "interruption_mode": "allow",
+        "force_pre_tool_speech": False,
+        "pre_tool_speech": "auto",
+        "assignments": [],
+        "execution_mode": "immediate",
+        "api_schema": {
+            "url": WEBHOOK_URL,
+            "method": "POST",
+            "request_headers": {},
+            "request_body_schema": {
+                "type": "object",
+                "required": ["phone"],
+                "properties": {
+                    "phone": {"type": "string", "description": "The customer 10-digit phone number (e.g. 4242704893)"},
+                    "caller_phone": {"type": "string", "description": "Optional calling number (Caller ID) to cross-reference"},
+                    "appointment_id": {"type": "integer", "description": "Optional specific appointment ID to cancel"},
+                    "cancellation_reason": {"type": "string", "description": "Optional reason for cancellation provided by caller"}
+                }
+            }
+        }
+    },
+    {
+        "type": "webhook",
         "name": "consolidate_appointment_service",
         "description": "Consolidate an additional service or symptom into an existing upcoming appointment for the same vehicle, recalculating total duration.",
         "response_timeout_secs": 20,

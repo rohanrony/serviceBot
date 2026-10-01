@@ -191,7 +191,8 @@ class SMSNotificationRouter:
         admin_phone: str = None,
         booking_time: str = None,
         details: dict = None,
-        channel_overrides: dict = None
+        channel_overrides: dict = None,
+        bypass_quiet_hours: bool = False
     ) -> dict:
         import os
         rules = get_sms_matrix_rules()
@@ -220,9 +221,15 @@ class SMSNotificationRouter:
         new_ag = info.get("new_agent_name") or info.get("agent_name") or "Assigned Advisor"
         old_ag = info.get("previous_agent_name") or info.get("old_agent_name") or "Previous Advisor"
 
+        if not bypass_quiet_hours and details:
+            bypass_quiet_hours = bool(
+                details.get("bypass_quiet_hours") or
+                details.get("triggered_by") in ("voice_agent", "telephony_voice_assistant", "voice_tool", "customer")
+            )
+
         apt_dt = parse_booking_datetime(raw_t_str)
         is_urgent = should_bypass_quiet_hours(apt_dt) if apt_dt else False
-        in_quiet = is_in_quiet_hours() if not is_urgent else False
+        in_quiet = is_in_quiet_hours() if (not is_urgent and not bypass_quiet_hours) else False
 
         # Schedule or update reminders on booking / reschedule / cancel
         if event_type == "BOOKING" and raw_t_str:

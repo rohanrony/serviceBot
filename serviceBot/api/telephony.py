@@ -76,7 +76,7 @@ def format_appointment_window_message(
     return end_dt_str, msg
 
 
-from serviceBot.db.queries import lookup_customer_by_phone, create_service_request, check_availability, book_appointment, get_service_required_fields, create_crm_note, create_callback_request, get_customer_appointments, reschedule_appointment, update_customer_name, get_customer_service_history, consolidate_appointment_service
+from serviceBot.db.queries import lookup_customer_by_phone, create_service_request, check_availability, book_appointment, get_service_required_fields, create_crm_note, create_callback_request, get_customer_appointments, reschedule_appointment, cancel_appointment, update_customer_name, get_customer_service_history, consolidate_appointment_service
 from serviceBot.db.connection import get_db_connection, dict_cursor
 from serviceBot.services.calendar_availability import verify_contiguous_slot_capacity
 from serviceBot.services.rag import FAQService
@@ -705,7 +705,9 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
         
         # If not in query params, try to detect from the payload keys
         if not tool_name:
-            if any(k in payload for k in ["new_appointment_datetime", "new_datetime", "new_time", "new_slot"]):
+            if any(k in payload for k in ["cancel_appointment", "cancellation_reason", "cancel_reason"]):
+                tool_name = "cancel_appointment"
+            elif any(k in payload for k in ["new_appointment_datetime", "new_datetime", "new_time", "new_slot"]):
                 tool_name = "reschedule_appointment"
             elif any(k in payload for k in ["additional_issue", "additional_service_type", "additional_duration_minutes"]):
                 tool_name = "consolidate_appointment_service"
@@ -1783,6 +1785,88 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
                         result = {
                             "success": False,
                             "message": f"Failed to reschedule: {str(e)}"
+                        }
+
+        elif tool_name == "cancel_appointment":
+            phone = args.get("phone")
+            reason = args.get("cancellation_reason") or args.get("cancel_reason") or args.get("reason")
+            
+            validated_phone = clean_and_validate_phone(phone)
+            caller_phone_arg = args.get("caller_phone") or args.get("caller_id") or args.get("callerId") or args.get("from_number")
+            validated_caller_phone = clean_and_validate_phone(caller_phone_arg)
+            if not validated_phone and validated_caller_phone:
+                validated_phone = validated_caller_phone
+
+            if not validated_phone:
+                result = {
+                    "success": False,
+                    "message": "Validation failed: Phone number must be a valid 10-digit number."
+                }
+            else:
+                phone = validated_phone
+                appts = get_customer_appointments(phone)
+                if not appts and validated_caller_phone and validated_caller_phone != phone:
+                    alt_appts = get_customer_appointments(validated_caller_phone)
+                    if alt_appts:
+                        appts = alt_appts
+                        phone = validated_caller_phone
+
+                if not appts and len(phone) >= 7:
+                    try:
+                        with get_db_connection() as conn:
+                            with dict_cursor(conn) as cursor:
+                                cursor.execute(
+                                    """
+                                    SELECT sr.id, sr.booking_time AS appointment_datetime, sr.booking_type, sr.service_type,
+                                           sr.issue_description, COALESCE(sr.duration_minutes, 60) AS duration_minutes,
+                                           sr.status, v.year, v.make, v.model
+                                    FROM service_requests sr
+                                    JOIN customers c ON sr.customer_id = c.id
+                                    LEFT JOIN vehicles v ON sr.vehicle_id = v.id
+                                    WHERE RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(c.phone, '-', ''), ' ', ''), '(', ''), ')', ''), '+1', ''), 7) = %s
+                                      AND sr.status IN ('pending', 'in_progress')
+                                      AND (sr.booking_type IN ('appointment', 'callback', 'appointment_and_callback') OR sr.booking_time IS NOT NULL)
+                                    ORDER BY sr.booking_time ASC NULLS LAST;
+                                    """,
+                                    (phone[-7:],)
+                                )
+                                s_rows = cursor.fetchall()
+                                if s_rows:
+                                    appts = [dict(r) for r in s_rows]
+                    except Exception as cancel_s_err:
+                        logger.warning(f"Cancel appointment suffix lookup error: {cancel_s_err}")
+
+                if not appts:
+                    result = {
+                        "success": False,
+                        "message": f"No active appointments found for phone number {phone} to cancel."
+                    }
+                else:
+                    appt_id = args.get("appointment_id")
+                    if not appt_id:
+                        appt_id = appts[0]["id"]
+                    else:
+                        try:
+                            appt_id = int(appt_id)
+                        except (ValueError, TypeError):
+                            appt_id = appts[0]["id"]
+
+                    try:
+                        cancel_res = cancel_appointment(
+                            appointment_id=appt_id,
+                            customer_consent_obtained=True,
+                            triggered_by="voice_agent",
+                            reason=reason,
+                        )
+                        result = {
+                            "success": True,
+                            "appointment_id": appt_id,
+                            "message": f"Appointment #{appt_id} has been successfully cancelled. A confirmation text has been dispatched to your phone."
+                        }
+                    except Exception as e:
+                        result = {
+                            "success": False,
+                            "message": f"Failed to cancel appointment: {str(e)}"
                         }
 
         elif tool_name in ["query_knowledge_base", "faq_lookup"]:
