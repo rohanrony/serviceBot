@@ -1067,29 +1067,18 @@ textarea.form-input {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23f59e0b'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
 }
 
+.status-select-badge.neutral,
 .status-select-badge.teal,
-.status-select-badge[data-status="confirmed"] {
-  background-color: rgba(14, 165, 233, 0.12);
-  color: #38bdf8;
-  border: 1px solid rgba(14, 165, 233, 0.28);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2338bdf8'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
-}
-
-.status-select-badge.info,
-.status-select-badge[data-status="in_progress"] {
-  background-color: rgba(99, 102, 241, 0.12);
-  color: #818cf8;
-  border: 1px solid rgba(99, 102, 241, 0.28);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23818cf8'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
-}
-
+.status-select-badge[data-status="confirmed"],
 .status-select-badge.success,
 .status-select-badge[data-status="completed"],
-.status-select-badge[data-status="done"] {
-  background-color: rgba(16, 185, 129, 0.12);
-  color: #34d399;
-  border: 1px solid rgba(16, 185, 129, 0.28);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2334d399'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+.status-select-badge[data-status="done"],
+.status-select-badge.info,
+.status-select-badge[data-status="in_progress"] {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: #9ca3af;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%239ca3af'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
 }
 
 .status-select-badge.danger,

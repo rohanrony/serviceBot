@@ -719,15 +719,13 @@ document.addEventListener('DOMContentLoaded', () => {
           : baseDesc;
         
         let currentStatus = req.status;
-        let statusBadgeClass = 'warning';
-        if (currentStatus === 'completed' || currentStatus === 'done') {
-          statusBadgeClass = 'success';
-        } else if (currentStatus === 'confirmed') {
-          statusBadgeClass = 'teal';
+        let statusBadgeClass = 'neutral';
+        if (currentStatus === 'pending' || currentStatus === 'rescheduled') {
+          statusBadgeClass = 'warning';
         } else if (currentStatus === 'cancelled' || currentStatus === 'cancelled_by_customer') {
           statusBadgeClass = 'danger';
-        } else if (currentStatus === 'in_progress') {
-          statusBadgeClass = 'info';
+        } else {
+          statusBadgeClass = 'neutral';
         }
 
         let displayTime = formatBookingTimeRange(req);
@@ -921,12 +919,10 @@ document.addEventListener('DOMContentLoaded', () => {
               return;
             }
             
-            statusSelect.setAttribute('data-status', newStatus);
-            let badgeClass = 'warning';
-            if (newStatus === 'completed' || newStatus === 'done') badgeClass = 'success';
-            else if (newStatus === 'confirmed') badgeClass = 'teal';
+            let badgeClass = 'neutral';
+            if (newStatus === 'pending' || newStatus === 'rescheduled') badgeClass = 'warning';
             else if (newStatus === 'cancelled' || newStatus === 'cancelled_by_customer') badgeClass = 'danger';
-            else if (newStatus === 'in_progress') badgeClass = 'info';
+            else badgeClass = 'neutral';
             statusSelect.className = `status-select-badge ${badgeClass}`;
 
             if (agentSelect) {
