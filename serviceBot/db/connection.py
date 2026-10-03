@@ -464,6 +464,7 @@ def init_db(db_url: str = None, force: bool = False):
             cursor.execute("UPDATE service_requests SET status = 'cancelled' WHERE status = 'cancelled_by_customer';")
             cursor.execute("UPDATE service_requests SET status = 'pending' WHERE status = 'rescheduled';")
             cursor.execute("UPDATE service_requests SET status = 'completed' WHERE status = 'done';")
+            cursor.execute("UPDATE service_requests SET escalation_status = 'none', escalation_reason = NULL WHERE status IN ('cancelled', 'cancelled_by_customer') AND escalation_status != 'none';")
             conn.commit()
         except Exception as exc:
             logger.debug(f"Status normalization or constraint migration skipped: {exc}")

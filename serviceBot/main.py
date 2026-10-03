@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 import os
@@ -127,6 +127,17 @@ async def cron_process_reminders(authorization: str = Header(None)):
 app.include_router(telephony_router)
 app.include_router(voice_router)
 app.include_router(portal_router)
+
+# Root-level aliases for Twilio webhooks configured without /api/v1/telephony prefix
+@app.post("/sms/inbound")
+async def root_sms_inbound_alias(request: Request):
+    from serviceBot.api.telephony import inbound_sms_webhook
+    return await inbound_sms_webhook(request)
+
+@app.post("/sms/status")
+async def root_sms_status_alias(request: Request):
+    from serviceBot.api.telephony import sms_status_callback_webhook
+    return await sms_status_callback_webhook(request)
 
 
 @app.get("/portal")

@@ -131,9 +131,13 @@ def test_reschedule_clears_old_escalation_status(sample_test_request):
 
     # Reschedule via BookingService
     service = BookingService()
+    future_dt = (dt_mod.datetime.now(BUSINESS_TZ) + dt_mod.timedelta(days=7)).replace(hour=10, minute=0, second=0, microsecond=0)
+    # Ensure it's on a weekday (Monday-Friday: 0-4)
+    while future_dt.weekday() >= 5:
+        future_dt += dt_mod.timedelta(days=1)
     receipt = service.reschedule(
         request_id=sr_id,
-        new_datetime="2026-10-02 09:00:00",
+        new_datetime=future_dt.strftime("%Y-%m-%d %H:%M:%S"),
         customer_consent_obtained=True,
         triggered_by="customer_portal",
     )

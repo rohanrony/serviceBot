@@ -70,6 +70,25 @@ def test_twilio_signature_uses_explicit_public_webhook_url(monkeypatch):
         webhook_security.verify_twilio_request(request, form_data)
 
 
+def test_twilio_signature_falls_back_to_render_external_url(monkeypatch):
+    token = "twilio-contract-token"
+    render_base = "https://servicebot-render.example.test"
+    path = "/api/v1/telephony/sms/inbound"
+    form_data = {"From": "+15550120000", "Body": "Hello", "MessageSid": "SM-contract-render"}
+    signed_url = f"{render_base}{path}"
+    signature = RequestValidator(token).compute_signature(signed_url, form_data)
+    request = SimpleNamespace(
+        url=SimpleNamespace(path=path, query=""),
+        headers={"X-Twilio-Signature": signature},
+    )
+    monkeypatch.setenv("TWILIO_AUTH_TOKEN", token)
+    monkeypatch.delenv("TWILIO_WEBHOOK_BASE_URL", raising=False)
+    monkeypatch.setenv("RENDER_EXTERNAL_URL", render_base)
+    monkeypatch.setattr(webhook_security, "is_test_environment", lambda: False)
+
+    webhook_security.verify_twilio_request(request, form_data)
+
+
 def test_event_store_rejects_conflicting_replays_and_accepts_identical_retries():
     provider = "contract"
     event_id = f"event-{uuid.uuid4()}"

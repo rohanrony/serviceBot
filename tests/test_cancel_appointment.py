@@ -44,10 +44,12 @@ def test_cancel_appointment_atomicity_and_cleanup(dummy_appointment_id):
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             # Check service_requests status
-            cursor.execute("SELECT status, confirmation_status FROM service_requests WHERE id = %s;", (dummy_appointment_id,))
+            cursor.execute("SELECT status, confirmation_status, escalation_status, escalation_reason FROM service_requests WHERE id = %s;", (dummy_appointment_id,))
             sr = cursor.fetchone()
             assert sr["status"] == "cancelled"
             assert sr["confirmation_status"] == "cancelled"
+            assert sr["escalation_status"] == "none"
+            assert sr["escalation_reason"] is None
 
             # Check appointment_reservations status
             cursor.execute("SELECT status FROM appointment_reservations WHERE service_request_id = %s;", (dummy_appointment_id,))
@@ -197,3 +199,106 @@ async def test_telephony_voice_tool_cancel_appointment(dummy_appointment_id):
     resp = await voice_tools(payload=payload)
     assert resp["result"]["success"] is True
     assert f"Appointment #{dummy_appointment_id} has been successfully cancelled" in resp["result"]["message"]
+
+
+@pytest.mark.anyio
+async def test_cancelled_appointment_clears_escalation_and_excluded_from_escalated_queue(dummy_appointment_id):
+    from serviceBot.api.portal import get_service_requests
+    from serviceBot.db.queries import escalate_service_request
+    from serviceBot.services.sms_reminders import dispatch_supervisor_escalation_alert
+    from serviceBot.db.connection import get_db_connection, dict_cursor
+
+    # 1. Artificially mark dummy_appointment_id as escalated
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                """
+                UPDATE service_requests
+                SET escalation_status = 'escalated',
+                    escalation_reason = 'TIMEOUT_NO_RESPONSE',
+                    confirmation_status = 'pending_agent_confirmation'
+                WHERE id = %s;
+                """,
+                (dummy_appointment_id,)
+            )
+            conn.commit()
+
+    # 2. Query portal escalated service requests - should be visible
+    escalated_items = await get_service_requests(escalated=True)
+    escalated_ids = [item["id"] for item in escalated_items]
+    assert dummy_appointment_id in escalated_ids
+
+    # 3. Cancel the appointment via BookingService
+    svc = BookingService()
+    res = svc.cancel(
+        request_id=dummy_appointment_id,
+        customer_consent_obtained=True,
+        triggered_by="customer_portal",
+        reason="No longer required"
+    )
+    assert res["status"] == "cancelled"
+
+    # 4. Verify DB state has escalation_status reset to 'none' and reason cleared
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                "SELECT status, confirmation_status, escalation_status, escalation_reason FROM service_requests WHERE id = %s;",
+                (dummy_appointment_id,)
+            )
+            sr = cursor.fetchone()
+            assert sr["status"] == "cancelled"
+            assert sr["confirmation_status"] == "cancelled"
+            assert sr["escalation_status"] == "none"
+            assert sr["escalation_reason"] is None
+
+    # 5. Query portal escalated service requests - should NO LONGER be returned
+    escalated_items_after = await get_service_requests(escalated=True)
+    escalated_ids_after = [item["id"] for item in escalated_items_after]
+    assert dummy_appointment_id not in escalated_ids_after
+
+    # 6. Attempting to escalate an already cancelled appointment should be ignored / skipped
+    esc_result = escalate_service_request(dummy_appointment_id, reason="AGENT_DECLINED")
+    assert esc_result["status"] == "cancelled"
+    assert esc_result["escalation_status"] == "none"
+
+    # 7. Attempting to send supervisor alert on cancelled appointment should skip
+    alert_res = dispatch_supervisor_escalation_alert(dummy_appointment_id, reason="TIMEOUT_NO_RESPONSE")
+    assert alert_res.get("skipped") is True
+
+
+def test_update_service_request_status_cancelled_clears_escalation(dummy_appointment_id):
+    from serviceBot.db.queries import update_service_request_status
+    from serviceBot.db.connection import get_db_connection, dict_cursor
+
+    # 1. Artificially mark request as escalated
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                """
+                UPDATE service_requests
+                SET status = 'pending',
+                    escalation_status = 'escalated',
+                    escalation_reason = 'AGENT_DECLINED'
+                WHERE id = %s;
+                """,
+                (dummy_appointment_id,)
+            )
+            conn.commit()
+
+    # 2. Update status to 'cancelled' via queries.update_service_request_status
+    updated = update_service_request_status(dummy_appointment_id, status="cancelled", triggered_by="portal_admin")
+    assert updated["status"] == "cancelled"
+
+    # 3. Verify escalation_status is reset to 'none' and confirmation_status is 'cancelled'
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                "SELECT status, confirmation_status, escalation_status, escalation_reason FROM service_requests WHERE id = %s;",
+                (dummy_appointment_id,)
+            )
+            sr = cursor.fetchone()
+            assert sr["status"] == "cancelled"
+            assert sr["confirmation_status"] == "cancelled"
+            assert sr["escalation_status"] == "none"
+            assert sr["escalation_reason"] is None
+

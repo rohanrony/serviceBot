@@ -567,6 +567,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const targetReq = allRequests.find(r => r.id === requestId);
       if (targetReq) {
         targetReq.status = newStatus === 'done' ? 'completed' : newStatus;
+        if (['cancelled', 'cancelled_by_customer'].includes(targetReq.status)) {
+          targetReq.escalation_status = 'none';
+          targetReq.escalation_reason = null;
+          targetReq.confirmation_status = 'cancelled';
+        }
       }
       const statusLabels = {
         completed: 'Done',
@@ -578,6 +583,7 @@ document.addEventListener('DOMContentLoaded', () => {
       };
       const label = statusLabels[newStatus] || newStatus;
       showToast(`Service Request #${requestId} marked as ${label}!`, 'success');
+      applyServiceRequestsFilter();
       
       fetch('/api/v1/portal/stats')
         .then(res => res.ok ? res.json() : null)
@@ -756,14 +762,15 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
         `;
 
+        const isCancelled = ['cancelled', 'cancelled_by_customer'].includes(currentStatus);
         let slaBadgeHtml = '';
-        if (req.escalation_status === 'escalated') {
+        if (req.escalation_status === 'escalated' && !isCancelled) {
           slaBadgeHtml = `<div class="sla-warning-badge overdue" style="background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.4);" title="${req.escalation_reason || 'Escalated: Agent SLA Timeout'}"><span class="sla-dot" style="background: #ef4444;"></span> ⚠️ Escalated</div>`;
-        } else if (req.escalation_status === 'reassigned') {
+        } else if (req.escalation_status === 'reassigned' && !isCancelled) {
           slaBadgeHtml = `<div class="sla-warning-badge" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3);"><span class="sla-dot" style="background: #60a5fa;"></span> Reassigned</div>`;
-        } else if (req.confirmation_status === 'confirmed') {
+        } else if (req.confirmation_status === 'confirmed' && !isCancelled) {
           slaBadgeHtml = `<div class="sla-warning-badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3);"><span class="sla-dot" style="background: #34d399;"></span> Confirmed</div>`;
-        } else if (currentStatus === 'pending' || currentStatus === 'rescheduled') {
+        } else if ((currentStatus === 'pending' || currentStatus === 'rescheduled') && !isCancelled) {
           const slaStart = req.notification_dispatched_at || req.created_at;
           if (slaStart) {
             // Fix date parsing for Safari/cross-browser
@@ -803,7 +810,7 @@ document.addEventListener('DOMContentLoaded', () => {
           failedLabel = '⚠️ Failed Email';
         }
         const failedIndicator = failedLabel ? `<span class="badge danger failed-sms-badge" title="Delivery failed">${failedLabel}</span>` : '';
-        const reassignBtnHtml = req.escalation_status === 'escalated'
+        const reassignBtnHtml = (req.escalation_status === 'escalated' && !isCancelled)
           ? `<button type="button" class="btn btn-primary btn-sm reassign-sr-btn" data-id="${req.id}" style="background: #ef4444; border-color: #ef4444; color: #fff;">Reassign</button>`
           : '';
         const actionsHtml = `
@@ -987,9 +994,10 @@ document.addEventListener('DOMContentLoaded', () => {
         (req.service_type || '').toLowerCase().includes(query) ||
         (req.issue_description || '').toLowerCase().includes(query);
         
+      const isCancelled = ['cancelled', 'cancelled_by_customer'].includes(req.status);
       const matchesType = type === 'all' || req.booking_type === type;
       const matchesStatus = status === 'all' || 
-        (status === 'escalated' ? (req.escalation_status === 'escalated') : (req.status === status || (status === 'completed' && req.status === 'done')));
+        (status === 'escalated' ? (req.escalation_status === 'escalated' && !isCancelled) : (req.status === status || (status === 'completed' && req.status === 'done')));
       
       return matchesTime && matchesText && matchesType && matchesStatus;
     });
@@ -999,7 +1007,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Update Escalation Alert Banner
     const banner = document.getElementById('escalation-alert-banner');
     if (banner) {
-      const escalatedCount = allRequests.filter(r => r.escalation_status === 'escalated').length;
+      const escalatedCount = allRequests.filter(r => 
+        r.escalation_status === 'escalated' && 
+        !['cancelled', 'cancelled_by_customer'].includes(r.status)
+      ).length;
       if (escalatedCount > 0) {
         banner.style.display = 'flex';
         const titleEl = document.getElementById('escalation-banner-title');
@@ -4482,6 +4493,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- REASSIGN ESCALATED APPOINTMENT MODAL ---
   window.openReassignModal = async function(req) {
+    if (['cancelled', 'cancelled_by_customer'].includes(req.status)) {
+      showToast('Cannot reassign a cancelled appointment.', 'warning');
+      return;
+    }
     const modal = document.getElementById('reassign-modal');
     const overlay = document.getElementById('reassign-modal-overlay');
     if (!modal || !overlay) return;

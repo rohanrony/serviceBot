@@ -391,13 +391,20 @@ def run_reminder_polling_worker_cycle() -> int:
         # Determine dispatch channel from matrix rules (default to WHATSAPP)
         channel = "WHATSAPP"
         try:
-            from serviceBot.db.queries import get_sms_matrix_rules
+            from serviceBot.db.queries import get_sms_matrix_rules, is_agent_whatsapp_connected
             event_name = "BOOKING" if att_kind == "immediate_booking" else f"REMINDER_{rem_type.upper()}"
             rules = get_sms_matrix_rules()
-            for r in rules:
-                if r.get("event_type") == event_name and r.get("recipient_role") == rec_type and r.get("enabled"):
-                    channel = (r.get("channel") or "WHATSAPP").upper()
-                    break
+            enabled_channels = [
+                (r.get("channel") or "WHATSAPP").upper()
+                for r in rules
+                if r.get("event_type") == event_name and r.get("recipient_role") == rec_type and r.get("enabled")
+            ]
+            if "WHATSAPP" in enabled_channels and (rec_type != "agent" or is_agent_whatsapp_connected(phone)):
+                channel = "WHATSAPP"
+            elif enabled_channels:
+                channel = enabled_channels[0]
+            else:
+                channel = "WHATSAPP"
         except Exception:
             channel = "WHATSAPP"
 
@@ -506,7 +513,7 @@ def dispatch_supervisor_escalation_alert(service_request_id: int, reason: str = 
         with dict_cursor(conn) as cursor:
             cursor.execute(
                 """
-                SELECT sr.id, sr.staff_agent_id, c.name AS customer_name,
+                SELECT sr.id, sr.status, sr.staff_agent_id, c.name AS customer_name,
                        sa.name AS agent_name, ar.starts_at
                 FROM service_requests sr
                 LEFT JOIN customers c ON c.id = sr.customer_id
@@ -517,6 +524,14 @@ def dispatch_supervisor_escalation_alert(service_request_id: int, reason: str = 
                 (service_request_id,)
             )
             row = cursor.fetchone()
+            if not row or (row.get("status") or "").lower() in ("cancelled", "cancelled_by_customer"):
+                logger.info(f"Skipping supervisor escalation alert for cancelled or missing appointment #{service_request_id}")
+                return {
+                    "success": False,
+                    "skipped": True,
+                    "reason": "Appointment is cancelled or not found"
+                }
+
             if row:
                 if row.get("customer_name"):
                     customer_name = row["customer_name"]

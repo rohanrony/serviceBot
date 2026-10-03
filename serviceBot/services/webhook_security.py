@@ -29,8 +29,17 @@ def is_test_environment() -> bool:
 
 
 def canonical_twilio_url(request: Any) -> str:
-    """Build the externally signed URL from an explicit public base URL."""
-    public_base = os.getenv("TWILIO_WEBHOOK_BASE_URL", "").strip().rstrip("/")
+    """Build the externally signed URL from an explicit public base URL, falling back to Render or request headers."""
+    public_base = (
+        os.getenv("TWILIO_WEBHOOK_BASE_URL", "").strip().rstrip("/")
+        or os.getenv("RENDER_EXTERNAL_URL", "").strip().rstrip("/")
+    )
+    if not public_base and hasattr(request, "headers"):
+        host = request.headers.get("x-forwarded-host") or request.headers.get("host")
+        proto = request.headers.get("x-forwarded-proto", "https")
+        if host:
+            public_base = f"{proto}://{host}".rstrip("/")
+
     if not public_base:
         raise WebhookVerificationError("TWILIO_WEBHOOK_BASE_URL must be configured for webhook verification.")
     path = request.url.path

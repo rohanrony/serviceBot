@@ -688,7 +688,7 @@ voice_router = APIRouter(prefix="/api/v1/voice", tags=["voice"])
 
 
 @voice_router.post("/tools")
-async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks = None, name: Optional[str] = None):
+async def voice_tools(payload: Dict[str, Any], request: Request = None, background_tasks: BackgroundTasks = None, name: Optional[str] = None):
     # Check if this is the standard wrapped tool call format
     if "name" in payload and "arguments" in payload:
         tool_name = payload["name"]
@@ -732,6 +732,21 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
 
         args = payload
         tool_call_id = payload.get("tool_call_id", "call_flat")
+
+    # Ingest verified Caller ID from incoming HTTP headers or query params if provided
+    if request:
+        header_caller = (
+            request.headers.get("x-caller-id")
+            or request.headers.get("caller_id")
+            or request.query_params.get("caller_id")
+            or request.query_params.get("caller_phone")
+        )
+        if header_caller and not str(header_caller).startswith("{{") and not args.get("caller_phone"):
+            args["caller_phone"] = header_caller
+
+    # Strip raw unexpanded template placeholders if passed by model
+    if str(args.get("caller_phone", "")).startswith("{{"):
+        args.pop("caller_phone", None)
 
     result = {"success": False, "message": f"Unknown tool called: {tool_name}"}
 
@@ -847,6 +862,12 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
                         logger.warning(
                             f"Reconciling spoken phone {phone} to verified caller ID {validated_caller_phone} "
                             f"(matching 7-digit subscriber suffix {phone[-7:]})"
+                        )
+                        phone = validated_caller_phone
+                    elif len(phone) == len(validated_caller_phone) and sum(1 for a, b in zip(phone, validated_caller_phone) if a != b) <= 1:
+                        logger.warning(
+                            f"Reconciling spoken phone {phone} to verified caller ID {validated_caller_phone} "
+                            f"(single-digit acoustic discrepancy)"
                         )
                         phone = validated_caller_phone
                     else:
@@ -1148,6 +1169,36 @@ async def voice_tools(payload: Dict[str, Any], background_tasks: BackgroundTasks
             else:
                 phone = validated_phone
                 customer_name = args.get("customer_name") or args.get("name")
+                caller_phone_arg = args.get("caller_phone") or args.get("caller_id") or args.get("callerId") or args.get("from_number")
+                validated_caller_phone = clean_and_validate_phone(caller_phone_arg)
+
+                # ANI cross-referencing & acoustic error reconciliation
+                if validated_caller_phone and phone != validated_caller_phone:
+                    if phone[-7:] == validated_caller_phone[-7:]:
+                        logger.warning(
+                            f"Reconciling spoken phone {phone} to verified caller ID {validated_caller_phone} "
+                            f"(matching 7-digit subscriber suffix {phone[-7:]})"
+                        )
+                        phone = validated_caller_phone
+                    elif len(phone) == len(validated_caller_phone) and sum(1 for a, b in zip(phone, validated_caller_phone) if a != b) <= 1:
+                        logger.warning(
+                            f"Reconciling spoken phone {phone} to verified caller ID {validated_caller_phone} "
+                            f"(single-digit acoustic discrepancy)"
+                        )
+                        phone = validated_caller_phone
+                    else:
+                        c_spoken = lookup_customer_by_phone(phone)
+                        c_caller = lookup_customer_by_phone(validated_caller_phone)
+                        if not c_spoken and c_caller:
+                            caller_cname = (c_caller.get("name") or "").lower()
+                            req_cname = (customer_name or "").lower()
+                            if req_cname in caller_cname or caller_cname in req_cname or not req_cname:
+                                logger.info(
+                                    f"Linking intake for spoken phone {phone} to existing verified customer "
+                                    f"#{c_caller.get('id')} ({validated_caller_phone})"
+                                )
+                                phone = validated_caller_phone
+
                 make = args.get("make")
                 model = args.get("model")
                 year = args.get("year")

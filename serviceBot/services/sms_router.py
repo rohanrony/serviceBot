@@ -1,4 +1,5 @@
 import datetime as dt_mod
+from serviceBot.logger import logger
 from serviceBot.db.queries import (
     get_sms_matrix_rules,
     get_customer_opt_in,
@@ -155,7 +156,7 @@ class SMSNotificationRouter:
                         SELECT sr.id, sr.service_type, sr.issue_description, sr.booking_time, sr.time_slot, sr.duration_minutes,
                                c.name AS customer_name, c.phone AS customer_phone,
                                v.year AS vehicle_year, v.make AS vehicle_make, v.model AS vehicle_model,
-                               sa.name AS agent_name
+                               sa.id AS agent_id, sa.name AS agent_name, sa.phone_number AS agent_phone
                         FROM service_requests sr
                         LEFT JOIN customers c ON sr.customer_id = c.id
                         LEFT JOIN vehicles v ON sr.vehicle_id = v.id
@@ -176,7 +177,10 @@ class SMSNotificationRouter:
                         "time": str(b_time)[:19],
                         "duration_minutes": sr.get("duration_minutes"),
                         "issue": sr.get("issue_description") or "N/A",
-                        "new_agent_name": sr.get("agent_name") or "Assigned Advisor"
+                        "new_agent_name": sr.get("agent_name") or "Assigned Advisor",
+                        "agent_name": sr.get("agent_name") or "Assigned Advisor",
+                        "agent_id": sr.get("agent_id"),
+                        "agent_phone": sr.get("agent_phone") or ""
                     }
         except Exception:
             return {}
@@ -201,8 +205,9 @@ class SMSNotificationRouter:
         # Enrich details for clear, professional notifications
         info = self._fetch_details_if_missing(appointment_id, details)
         cust_name = info.get("customer_name") or "Customer"
-        customer_phone = customer_phone or info.get("phone") or ""
+        customer_phone = customer_phone or info.get("phone") or (details.get("phone") if details else None) or ""
         cust_ph = customer_phone
+        agent_phone = agent_phone or info.get("agent_phone") or (details.get("agent_phone") if details else None) or ""
         veh = info.get("vehicle") or "N/A"
         srv = info.get("service_type") or "Service"
         raw_t_str = booking_time or info.get("time") or "N/A"
@@ -332,17 +337,43 @@ class SMSNotificationRouter:
         # 2. Agent Dispatch (Current / New Agent)
         agent_channels = self._enabled_channels(event_type, "agent", rules, channel_overrides)
         if agent_phone and agent_channels:
-            agent_body = (
-                f"🚨 [NEW ADVISOR ALERT] Appt #{appointment_id}\n"
-                f"Status: {event_type}\n"
-                f"Customer: {cust_name} ({cust_ph})\n"
-                f"Vehicle: {veh}\n"
-                f"Service: {srv}\n"
-                f"Slot: {slot_range_str}\n"
-                f"Issue: {iss}"
-            )
-            if event_type == "REASSIGNED":
-                agent_body += f"\nReassigned from: {old_ag}"
+            if event_type in ("CANCELLED_BY_ADMIN", "CANCELLED_BY_CUSTOMER"):
+                agent_body = (
+                    f"❌ [APPOINTMENT CANCELLED] Appt #{appointment_id}\n"
+                    f"Customer: {cust_name} ({cust_ph})\n"
+                    f"Service: {srv}\n"
+                    f"Vehicle: {veh}\n"
+                    f"Slot: {slot_range_str}\n"
+                    f"Notice: This appointment has been cancelled and removed from your schedule."
+                )
+            elif event_type == "REASSIGNED":
+                agent_body = (
+                    f"🚨 [NEW ADVISOR ALERT] Appt #{appointment_id}\n"
+                    f"Status: {event_type}\n"
+                    f"Customer: {cust_name} ({cust_ph})\n"
+                    f"Vehicle: {veh}\n"
+                    f"Service: {srv}\n"
+                    f"Slot: {slot_range_str}\n"
+                    f"Issue: {iss}\n"
+                    f"Reassigned from: {old_ag}\n"
+                    f"Reply CONFIRM or C to accept, or DECLINE if unavailable."
+                )
+            else:
+                confirm_prompt = (
+                    "\nReply CONFIRM or C to accept, or DECLINE if unavailable."
+                    if event_type in ("BOOKING", "RESCHEDULED", "RESCHEDULED_REASSIGNED")
+                    else ""
+                )
+                agent_body = (
+                    f"🚨 [NEW ADVISOR ALERT] Appt #{appointment_id}\n"
+                    f"Status: {event_type}\n"
+                    f"Customer: {cust_name} ({cust_ph})\n"
+                    f"Vehicle: {veh}\n"
+                    f"Service: {srv}\n"
+                    f"Slot: {slot_range_str}\n"
+                    f"Issue: {iss}"
+                    f"{confirm_prompt}"
+                )
 
             dispatches.extend(self._dispatch_to(
                 recipient_type="agent",
@@ -352,6 +383,10 @@ class SMSNotificationRouter:
                 template_type=f"agent_{event_type.lower()}",
                 appointment_id=appointment_id,
             ))
+        elif agent_channels and not agent_phone:
+            logger.warning(
+                f"[SMS ROUTER] Skipping agent notification for appt #{appointment_id}: agent_phone is missing or empty."
+            )
 
         # 3. Previous Agent Dispatch (on Reassignment)
         previous_agent_channels = self._enabled_channels(event_type, "previous_agent", rules, channel_overrides)

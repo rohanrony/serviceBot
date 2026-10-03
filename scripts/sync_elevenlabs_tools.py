@@ -89,7 +89,7 @@ TOOL_DEFINITIONS = [
                 "required": ["phone"],
                 "properties": {
                     "phone": {"type": "string", "description": "The customer 10-digit phone number (e.g. 4242704893)"},
-                    "caller_phone": {"type": "string", "description": "Optional calling number (Caller ID) to cross-reference if different from spoken phone"}
+                    "caller_phone": {"type": "string", "description": "Optional calling number (Caller ID) from {{system__caller_id}} or {{caller_phone}} if available"}
                 }
             }
         }
@@ -114,7 +114,7 @@ TOOL_DEFINITIONS = [
                 "required": ["phone", "new_appointment_datetime"],
                 "properties": {
                     "phone": {"type": "string", "description": "The customer 10-digit phone number"},
-                    "caller_phone": {"type": "string", "description": "Optional calling number (Caller ID) to cross-reference"},
+                    "caller_phone": {"type": "string", "description": "Optional calling number (Caller ID) from {{system__caller_id}} or {{caller_phone}} if available"},
                     "new_appointment_datetime": {"type": "string", "description": "The new appointment date and time (YYYY-MM-DD HH:MM:SS format)"},
                     "appointment_id": {"type": "integer", "description": "Optional specific appointment ID to reschedule"}
                 }
@@ -141,7 +141,7 @@ TOOL_DEFINITIONS = [
                 "required": ["phone"],
                 "properties": {
                     "phone": {"type": "string", "description": "The customer 10-digit phone number (e.g. 4242704893)"},
-                    "caller_phone": {"type": "string", "description": "Optional calling number (Caller ID) to cross-reference"},
+                    "caller_phone": {"type": "string", "description": "Optional calling number (Caller ID) from {{system__caller_id}} or {{caller_phone}} if available"},
                     "appointment_id": {"type": "integer", "description": "Optional specific appointment ID to cancel"},
                     "cancellation_reason": {"type": "string", "description": "Optional reason for cancellation provided by caller"}
                 }
@@ -197,6 +197,7 @@ TOOL_DEFINITIONS = [
                 "required": ["phone", "appointment_datetime", "service_type"],
                 "properties": {
                     "phone": {"type": "string", "description": "The customer's phone number"},
+                    "caller_phone": {"type": "string", "description": "Optional calling number (Caller ID) from {{system__caller_id}} or {{caller_phone}} if available"},
                     "appointment_datetime": {"type": "string", "description": "The slot datetime in YYYY-MM-DD HH:MM:SS format"},
                     "service_type": {"type": "string", "description": "The type of service requested (e.g. Brake repair)"},
                     "customer_name": {"type": "string", "description": "Customer full name"},
@@ -229,7 +230,7 @@ TOOL_DEFINITIONS = [
                 "properties": {
                     "customer_name": {"type": "string", "description": "The full name of the customer"},
                     "phone": {"type": "string", "description": "The customer's phone number"},
-                    "caller_phone": {"type": "string", "description": "Optional calling number (Caller ID) from {{caller_phone}} if available"},
+                    "caller_phone": {"type": "string", "description": "Optional calling number (Caller ID) from {{system__caller_id}} or {{caller_phone}} if available"},
                     "make": {"type": "string", "description": "The make of the vehicle (e.g. Honda)"},
                     "model": {"type": "string", "description": "The model of the vehicle (e.g. Civic)"},
                     "year": {"type": "integer", "description": "The production year of the vehicle (e.g. 2020)"},
@@ -344,10 +345,14 @@ TOOL_DEFINITIONS = [
 ]
 
 # Ensure every tool webhook URL includes ?name=<tool_name> for unambiguous routing in FastAPI
+# Also pass X-Caller-ID header using native ElevenLabs Twilio caller ID {{system__caller_id}}
 for _tool in TOOL_DEFINITIONS:
     _name = _tool["name"]
     _base_url = WEBHOOK_URL.split("?")[0]
     _tool["api_schema"]["url"] = f"{_base_url}?name={_name}"
+    _tool["api_schema"]["request_headers"] = {
+        "X-Caller-ID": "{{system__caller_id}}"
+    }
 
 def sync_agents():
     print(f"🚀 Synchronizing {len(TOOL_DEFINITIONS)} tools & prompt to ElevenLabs agents...")

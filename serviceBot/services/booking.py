@@ -582,6 +582,8 @@ class BookingService:
                     UPDATE service_requests
                     SET status = 'cancelled',
                         confirmation_status = 'cancelled',
+                        escalation_status = 'none',
+                        escalation_reason = NULL,
                         calendar_integration_status = 'PENDING_CALENDAR',
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = %s;

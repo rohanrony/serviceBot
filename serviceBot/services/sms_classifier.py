@@ -74,7 +74,7 @@ def classify_inbound_message(body: str) -> dict:
     return {"category": "free_text", "raw": body, "normalized": normalized, "is_handoff_requested": is_handoff_req}
 
 
-def handle_agent_confirmation_action(staff_agent: dict, body: str, twilio_message_sid: str = None) -> dict:
+def handle_agent_confirmation_action(staff_agent: dict, body: str, twilio_message_sid: str = None, from_phone: str = None) -> dict:
     """
     Handles inbound SMS replies from staff agents / technicians:
     - Confirms assignment on 'CONFIRM', 'C', 'YES', 'ACCEPT'
@@ -85,6 +85,14 @@ def handle_agent_confirmation_action(staff_agent: dict, body: str, twilio_messag
     client = TwilioSMSClient()
     agent_id = staff_agent["id"]
     agent_phone = staff_agent.get("phone_number")
+    reply_target = from_phone.strip() if (from_phone and from_phone.strip()) else agent_phone
+    is_whatsapp_reply = reply_target.startswith("whatsapp:")
+
+    def dispatch_agent_receipt(msg_body: str, template_type: str = "agent_action_receipt"):
+        if is_whatsapp_reply:
+            return client.send_whatsapp(to=reply_target, body=msg_body, template_type=template_type)
+        return client.send_sms(to=reply_target, body=msg_body, template_type=template_type)
+
     clean_body = (body or "").strip()
     norm = clean_body.upper()
     tokens = set(norm.split())
@@ -100,6 +108,28 @@ def handle_agent_confirmation_action(staff_agent: dict, body: str, twilio_messag
         cancel_pending_sms_reminders,
     )
 
+    # Resolve all agent IDs sharing this phone number to handle multi-advisor demo/test setups cleanly
+    candidate_agent_ids = [agent_id]
+    lookup_phone = agent_phone or from_phone
+    if lookup_phone:
+        import re
+        cl = re.sub(r"\D", "", lookup_phone)
+        cl10 = cl[1:] if len(cl) == 11 and cl.startswith("1") else (cl if len(cl) == 10 else "")
+        e164_norm = f"+1{cl10}" if cl10 else lookup_phone.strip()
+        with get_db_connection() as conn:
+            with dict_cursor(conn) as c_cur:
+                c_cur.execute(
+                    """
+                    SELECT id FROM staff_agents
+                    WHERE phone_number = %s OR phone_number = %s
+                       OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone_number, '-', ''), ' ', ''), '(', ''), ')', ''), '+1', '') = %s;
+                    """,
+                    (lookup_phone.strip(), e164_norm, cl10 or cl)
+                )
+                rows = c_cur.fetchall()
+                if rows:
+                    candidate_agent_ids = [r["id"] for r in rows]
+
     if is_confirm:
         with get_db_connection() as conn:
             with dict_cursor(conn) as cursor:
@@ -110,12 +140,12 @@ def handle_agent_confirmation_action(staff_agent: dict, body: str, twilio_messag
                            sa.name AS agent_name
                     FROM service_requests sr
                     LEFT JOIN staff_agents sa ON sa.id = sr.staff_agent_id
-                    WHERE sr.staff_agent_id = %s
+                    WHERE sr.staff_agent_id = ANY(%s)
                       AND sr.confirmation_status = 'pending_agent_confirmation'
                       AND sr.status NOT IN ('completed', 'cancelled', 'cancelled_by_customer')
                     ORDER BY sr.created_at DESC LIMIT 1;
                     """,
-                    (agent_id,)
+                    (candidate_agent_ids,)
                 )
                 curr_sr = cursor.fetchone()
 
@@ -127,11 +157,11 @@ def handle_agent_confirmation_action(staff_agent: dict, body: str, twilio_messag
                     FROM service_requests sr
                     JOIN staff_agents sa ON sa.id = sr.staff_agent_id
                     WHERE sr.escalation_status = 'reassigned'
-                      AND sr.staff_agent_id != %s
+                      AND NOT (sr.staff_agent_id = ANY(%s))
                       AND sr.status NOT IN ('completed', 'cancelled', 'cancelled_by_customer')
                     ORDER BY sr.created_at DESC LIMIT 1;
                     """,
-                    (agent_id,)
+                    (candidate_agent_ids,)
                 )
                 superseded_sr = cursor.fetchone()
 
@@ -144,7 +174,7 @@ def handle_agent_confirmation_action(staff_agent: dict, body: str, twilio_messag
             target_sr = superseded_sr
             new_name = target_sr.get("new_agent_name") or "another technician"
             reply_text = f"Appointment #{target_sr['id']} was already reassigned to {new_name}. No action required."
-            client.send_sms(to=agent_phone, body=reply_text, template_type="agent_action_receipt")
+            dispatch_agent_receipt(reply_text)
             return {
                 "status": "processed",
                 "category": "agent_confirm_superseded",
@@ -179,7 +209,7 @@ def handle_agent_confirmation_action(staff_agent: dict, body: str, twilio_messag
                         conn.commit()
                 cancel_pending_sms_reminders(sr_id, recipient_type="agent")
                 reply_text = f"Late confirmation accepted for Appointment #{sr_id}. Thank you!"
-                client.send_sms(to=agent_phone, body=reply_text, template_type="agent_action_receipt")
+                dispatch_agent_receipt(reply_text)
                 return {
                     "status": "processed",
                     "category": "agent_confirm_late",
@@ -191,7 +221,7 @@ def handle_agent_confirmation_action(staff_agent: dict, body: str, twilio_messag
             update_appointment_confirmation_status(sr_id, "confirmed", confirmed_at=now_ts)
             cancel_pending_sms_reminders(sr_id, recipient_type="agent")
             reply_text = f"Appointment #{sr_id} confirmed. Thank you!"
-            client.send_sms(to=agent_phone, body=reply_text, template_type="agent_action_receipt")
+            dispatch_agent_receipt(reply_text)
             return {
                 "status": "processed",
                 "category": "agent_confirm",
@@ -200,7 +230,7 @@ def handle_agent_confirmation_action(staff_agent: dict, body: str, twilio_messag
             }
 
         reply_text = "No pending appointments found assigned to your mobile number."
-        client.send_sms(to=agent_phone, body=reply_text, template_type="agent_action_receipt")
+        dispatch_agent_receipt(reply_text)
         return {"status": "processed", "category": "agent_confirm_noop", "reply": reply_text}
 
     elif is_decline:
@@ -210,11 +240,11 @@ def handle_agent_confirmation_action(staff_agent: dict, body: str, twilio_messag
                     """
                     SELECT sr.id, sr.staff_agent_id, sr.confirmation_status, sr.escalation_status
                     FROM service_requests sr
-                    WHERE sr.staff_agent_id = %s
+                    WHERE sr.staff_agent_id = ANY(%s)
                       AND sr.status NOT IN ('completed', 'cancelled', 'cancelled_by_customer')
                     ORDER BY sr.created_at DESC LIMIT 1;
                     """,
-                    (agent_id,)
+                    (candidate_agent_ids,)
                 )
                 curr_sr = cursor.fetchone()
 
@@ -228,7 +258,7 @@ def handle_agent_confirmation_action(staff_agent: dict, body: str, twilio_messag
             dispatch_supervisor_escalation_alert(sr_id, reason="AGENT_DECLINED")
 
             reply_text = f"Appointment #{sr_id} has been marked declined. Supervisor notified."
-            client.send_sms(to=agent_phone, body=reply_text, template_type="agent_action_receipt")
+            dispatch_agent_receipt(reply_text)
             return {
                 "status": "processed",
                 "category": "agent_decline",
@@ -237,13 +267,13 @@ def handle_agent_confirmation_action(staff_agent: dict, body: str, twilio_messag
             }
 
         reply_text = "No pending appointments found assigned to your mobile number."
-        client.send_sms(to=agent_phone, body=reply_text, template_type="agent_action_receipt")
+        dispatch_agent_receipt(reply_text)
         return {"status": "processed", "category": "agent_decline_noop", "reply": reply_text}
 
     else:
         # Free-text from staff agent
         reply_text = "Message received. For urgent scheduling assistance, please contact dispatch."
-        client.send_sms(to=agent_phone, body=reply_text, template_type="agent_action_receipt")
+        dispatch_agent_receipt(reply_text)
         return {"status": "processed", "category": "agent_free_text", "reply": reply_text}
 
 
@@ -253,7 +283,7 @@ def process_inbound_sms(from_phone: str, body: str, twilio_message_sid: str = No
     from serviceBot.db.queries import get_staff_agent_by_phone
     staff_agent = get_staff_agent_by_phone(from_phone)
     if staff_agent:
-        return handle_agent_confirmation_action(staff_agent, body, twilio_message_sid)
+        return handle_agent_confirmation_action(staff_agent, body, twilio_message_sid, from_phone=from_phone)
 
     client = TwilioSMSClient()
     config = get_sms_config()

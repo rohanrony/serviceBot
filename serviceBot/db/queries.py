@@ -1775,11 +1775,53 @@ def update_service_request_status(request_id: int, status: str, triggered_by: st
                 if normalized_status not in allowed_next:
                     raise ValueError(f"Invalid FSM transition: Cannot move from '{current_status}' to '{normalized_status}'.")
 
-            cursor.execute(
-                "UPDATE service_requests SET status = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s RETURNING id, status, updated_at;",
-                (normalized_status, request_id)
-            )
-            row = cursor.fetchone()
+            if normalized_status == 'cancelled':
+                cursor.execute(
+                    """
+                    UPDATE service_requests
+                    SET status = %s,
+                        confirmation_status = 'cancelled',
+                        escalation_status = 'none',
+                        escalation_reason = NULL,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                    RETURNING id, status, updated_at;
+                    """,
+                    (normalized_status, request_id)
+                )
+                row = cursor.fetchone()
+
+                # Release capacity reservations, segments, and mock calendar slots
+                cursor.execute(
+                    """
+                    UPDATE appointment_reservations
+                    SET status = 'CANCELLED', updated_at = CURRENT_TIMESTAMP
+                    WHERE service_request_id = %s;
+                    """,
+                    (request_id,)
+                )
+                cursor.execute(
+                    """
+                    DELETE FROM appointment_reservation_segments
+                    WHERE reservation_id IN (SELECT id FROM appointment_reservations WHERE service_request_id = %s);
+                    """,
+                    (request_id,)
+                )
+                cursor.execute(
+                    """
+                    UPDATE mock_calendar_slots
+                    SET is_booked = FALSE, service_request_id = NULL
+                    WHERE service_request_id = %s;
+                    """,
+                    (request_id,)
+                )
+            else:
+                cursor.execute(
+                    "UPDATE service_requests SET status = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s RETURNING id, status, updated_at;",
+                    (normalized_status, request_id)
+                )
+                row = cursor.fetchone()
+
             if not row:
                 raise ValueError(f"Service request with ID {request_id} not found.")
 
@@ -1801,20 +1843,78 @@ def update_service_request_status(request_id: int, status: str, triggered_by: st
                 if notification_event:
                     cursor.execute(
                         """
+                        SELECT sa.id AS agent_id, sa.name AS agent_name, sa.phone_number AS agent_phone,
+                               COALESCE(uga.email, sa.email) AS agent_email,
+                               sr.booking_time, sr.service_type, sr.issue_description,
+                               c.name AS customer_name, c.phone AS customer_phone
+                        FROM service_requests sr
+                        LEFT JOIN staff_agents sa ON sr.staff_agent_id = sa.id
+                        LEFT JOIN user_google_accounts uga ON uga.agent_id = sa.id
+                        LEFT JOIN customers c ON sr.customer_id = c.id
+                        WHERE sr.id = %s;
+                        """,
+                        (request_id,)
+                    )
+                    details_row = cursor.fetchone() or {}
+
+                    payload = {
+                        "sms_event_type": notification_event,
+                        "appointment_id": request_id,
+                        "customer_phone": details_row.get("customer_phone"),
+                        "agent_phone": details_row.get("agent_phone"),
+                        "agent_id": details_row.get("agent_id"),
+                        "agent_name": details_row.get("agent_name"),
+                        "agent_email": details_row.get("agent_email"),
+                        "booking_time_str": str(details_row.get("booking_time") or ""),
+                        "details": {
+                            "customer_name": details_row.get("customer_name") or "Customer",
+                            "phone": details_row.get("customer_phone"),
+                            "service_type": details_row.get("service_type") or "Service",
+                            "issue": notes or details_row.get("issue_description") or "",
+                            "agent_name": details_row.get("agent_name"),
+                            "agent_phone": details_row.get("agent_phone"),
+                            "agent_email": details_row.get("agent_email"),
+                        }
+                    }
+
+                    cursor.execute(
+                        """
                         INSERT INTO outbox_notifications
                         (event_type, request_id, payload, status, next_retry_at)
                         VALUES ('sms_status_change', %s, %s, 'PENDING', CURRENT_TIMESTAMP);
                         """,
                         (
                             request_id,
-                            json.dumps(
-                                {
-                                    "sms_event_type": notification_event,
-                                    "appointment_id": request_id,
-                                }
-                            ),
+                            json.dumps(payload),
                         ),
                     )
+
+                    if details_row.get("agent_id") and details_row.get("booking_time"):
+                        cal_payload = {
+                            "action": "delete",
+                            "agent_id": details_row.get("agent_id"),
+                            "calendar_event_id": f"servicebot{request_id}",
+                            "booking_time_str": str(details_row.get("booking_time"))[:19],
+                            "details": {
+                                "customer_name": details_row.get("customer_name") or "Customer",
+                                "phone": details_row.get("customer_phone"),
+                                "service_type": details_row.get("service_type") or "Service",
+                            },
+                        }
+                        cursor.execute(
+                            """
+                            INSERT INTO outbox_notifications (event_type, request_id, payload, status, next_retry_at)
+                            VALUES ('calendar_projection', %s, %s, 'PENDING', CURRENT_TIMESTAMP);
+                            """,
+                            (request_id, json.dumps(cal_payload)),
+                        )
+
+            if normalized_status == 'cancelled':
+                try:
+                    from serviceBot.services.sms_reminders import update_or_cancel_appointment_reminders
+                    update_or_cancel_appointment_reminders(request_id)
+                except Exception:
+                    pass
 
             return dict(row)
 
@@ -3024,6 +3124,9 @@ def consolidate_appointment_service(
                         """
                         UPDATE service_requests
                         SET status = 'cancelled_by_customer',
+                            confirmation_status = 'cancelled',
+                            escalation_status = 'none',
+                            escalation_reason = NULL,
                             linked_appointment_id = %s,
                             updated_at = NOW()
                         WHERE id = %s;
@@ -3202,12 +3305,17 @@ def escalate_service_request(
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             cursor.execute(
-                "SELECT id, escalation_status FROM service_requests WHERE id = %s FOR UPDATE;",
+                "SELECT id, status, escalation_status FROM service_requests WHERE id = %s FOR UPDATE;",
                 (request_id,)
             )
             current = cursor.fetchone()
             if not current:
                 raise ValueError(f"Service request #{request_id} not found.")
+
+            curr_status = (current.get("status") or "").lower()
+            if curr_status in ("cancelled", "cancelled_by_customer"):
+                logger.info(f"Skipping escalation for cancelled service request #{request_id}.")
+                return dict(current)
 
             cursor.execute(
                 """

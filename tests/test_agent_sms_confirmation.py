@@ -262,3 +262,142 @@ def test_late_confirm_superseded_if_already_reassigned(setup_agent_and_appointme
             row = cursor.fetchone()
             assert row["staff_agent_id"] == new_agent_id
             assert row["escalation_status"] == "reassigned"
+
+
+def test_booking_notification_includes_confirm_or_decline_instruction(setup_agent_and_appointment):
+    """Verify that a new booking event sends the agent an alert with explicit confirm/decline instructions."""
+    fixture = setup_agent_and_appointment
+    agent_id = fixture["agent_id"]
+    agent_phone = fixture["agent_phone"]
+
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                """
+                INSERT INTO service_requests (
+                    customer_id, vehicle_id, service_type, issue_description,
+                    status, booking_type, staff_agent_id, confirmation_status, escalation_status
+                )
+                VALUES (%s, %s, 'Brake Inspection', 'Squeaking brakes',
+                        'pending', 'appointment', %s, 'pending_agent_confirmation', 'none')
+                RETURNING id;
+                """,
+                (fixture["customer_id"], fixture["vehicle_id"], agent_id)
+            )
+            sr_id = cursor.fetchone()["id"]
+            conn.commit()
+
+    from serviceBot.services.sms_router import SMSNotificationRouter
+    router = SMSNotificationRouter()
+
+    with patch.object(router, "_dispatch_to") as mock_dispatch:
+        mock_dispatch.return_value = [{"recipient": "agent", "channel": "WHATSAPP", "success": True}]
+        result = router.process_event(
+            event_type="BOOKING",
+            appointment_id=sr_id,
+            agent_phone=agent_phone,
+            booking_time="2026-10-15 10:00:00",
+            details={"service_type": "Brake Service", "customer_name": "Marcus Vance"}
+        )
+
+        assert mock_dispatch.called
+        agent_call = next(c for c in mock_dispatch.call_args_list if c.kwargs.get("recipient_type") == "agent")
+        body_sent = agent_call.kwargs.get("body", "")
+        assert "Reply CONFIRM or C to accept, or DECLINE if unavailable" in body_sent
+
+
+def test_whatsapp_inbound_confirm_receipt_sent_via_whatsapp(setup_agent_and_appointment):
+    """Verify that when an agent responds with 'C' via WhatsApp (From: whatsapp:+...), the confirmation receipt is sent via WhatsApp."""
+    fixture = setup_agent_and_appointment
+    agent_id = fixture["agent_id"]
+    agent_phone = fixture["agent_phone"]
+
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                """
+                INSERT INTO service_requests (
+                    customer_id, vehicle_id, service_type, issue_description,
+                    status, booking_type, staff_agent_id, confirmation_status, escalation_status
+                )
+                VALUES (%s, %s, 'Brake Inspection', 'Squeaking brakes',
+                        'pending', 'appointment', %s, 'pending_agent_confirmation', 'none')
+                RETURNING id;
+                """,
+                (fixture["customer_id"], fixture["vehicle_id"], agent_id)
+            )
+            sr_id = cursor.fetchone()["id"]
+            conn.commit()
+
+    with patch("serviceBot.services.twilio_sms.TwilioSMSClient.send_whatsapp") as mock_wa, \
+         patch("serviceBot.services.twilio_sms.TwilioSMSClient.send_sms") as mock_sms:
+        mock_wa.return_value = {"success": True, "status": "SENT", "channel": "WHATSAPP"}
+        
+        inbound_whatsapp_sender = f"whatsapp:{agent_phone}"
+        res = process_inbound_sms(
+            from_phone=inbound_whatsapp_sender,
+            body="C",
+            twilio_message_sid="SM_WA_CONFIRM_TEST"
+        )
+
+        assert res["status"] == "processed"
+        assert res["category"] == "agent_confirm"
+        assert "confirmed" in res["reply"].lower()
+
+        # Receipt must be dispatched via WhatsApp, not plain SMS
+        assert mock_wa.called
+        assert not mock_sms.called
+        call_kwargs = mock_wa.call_args.kwargs
+        assert call_kwargs["to"] == inbound_whatsapp_sender
+        assert f"Appointment #{sr_id} confirmed" in call_kwargs["body"]
+
+
+def test_agent_confirm_matches_shared_phone_across_multiple_agents(setup_agent_and_appointment):
+    """Verify that if multiple staff agents share a phone number, confirmation matches the assigned agent's appointment."""
+    fixture = setup_agent_and_appointment
+    agent_phone = fixture["agent_phone"]
+
+    # Create a second agent sharing the exact same phone number
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                """
+                INSERT INTO staff_agents (name, email, phone_number, role)
+                VALUES ('Second Agent Shared Phone', 'shared_agent@example.com', %s, 'Service Advisor')
+                RETURNING id;
+                """,
+                (agent_phone,)
+            )
+            second_agent_id = cursor.fetchone()["id"]
+
+            cursor.execute(
+                """
+                INSERT INTO service_requests (
+                    customer_id, vehicle_id, service_type, issue_description,
+                    status, booking_type, staff_agent_id, confirmation_status, escalation_status
+                )
+                VALUES (%s, %s, 'Tire Rotation', 'Rotate tires',
+                        'pending', 'appointment', %s, 'pending_agent_confirmation', 'none')
+                RETURNING id;
+                """,
+                (fixture["customer_id"], fixture["vehicle_id"], second_agent_id)
+            )
+            sr_id = cursor.fetchone()["id"]
+            conn.commit()
+
+    with patch("serviceBot.services.twilio_sms.TwilioSMSClient.send_whatsapp") as mock_wa:
+        mock_wa.return_value = {"success": True, "status": "SENT", "channel": "WHATSAPP"}
+        res = process_inbound_sms(
+            from_phone=f"whatsapp:{agent_phone}",
+            body="C",
+            twilio_message_sid="SM_SHARED_PHONE_TEST"
+        )
+
+        assert res["status"] == "processed"
+        assert res["category"] == "agent_confirm"
+        assert res["appointment_id"] == sr_id
+
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT confirmation_status FROM service_requests WHERE id = %s;", (sr_id,))
+            assert cursor.fetchone()["confirmation_status"] == "confirmed"

@@ -1089,9 +1089,9 @@ async def get_service_requests(
             params = []
 
             if escalated is True:
-                where_clauses.append("sr.escalation_status != 'none'")
+                where_clauses.append("sr.escalation_status != 'none' AND sr.status NOT IN ('cancelled', 'cancelled_by_customer')")
             elif escalated is False:
-                where_clauses.append("sr.escalation_status = 'none'")
+                where_clauses.append("(sr.escalation_status = 'none' OR sr.status IN ('cancelled', 'cancelled_by_customer'))")
 
             where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
@@ -1172,7 +1172,8 @@ async def get_service_requests(
 
                 # Compute candidate replacement agents for escalated or reassigned items
                 candidates = []
-                if escalated is True or r.get("escalation_status") in ("escalated", "reassigned"):
+                is_cancelled_req = (r.get("status") or "").lower() in ("cancelled", "cancelled_by_customer")
+                if not is_cancelled_req and (escalated is True or r.get("escalation_status") in ("escalated", "reassigned")):
                     curr_agent_id = r.get("staff_agent_id") or -1
                     cursor.execute(
                         "SELECT id, name, role, phone_number, email FROM staff_agents WHERE id != %s ORDER BY name ASC;",
