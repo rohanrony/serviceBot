@@ -1046,6 +1046,7 @@ class BookingService:
                 duration_minutes = %s,
                 staff_agent_id = %s,
                 service_type = %s,
+                status = 'pending',
                 calendar_integration_status = 'PENDING_CALENDAR',
                 confirmation_status = 'pending_agent_confirmation',
                 escalation_status = 'none',

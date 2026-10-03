@@ -1731,7 +1731,7 @@ def cancel_appointment(
 
 ALLOWED_TRANSITIONS = {
     "pending": {"confirmed", "in_progress", "completed", "cancelled"},
-    "confirmed": {"in_progress", "completed", "cancelled"},
+    "confirmed": {"pending", "in_progress", "completed", "cancelled"},
     "in_progress": {"completed", "cancelled"},
     "completed": set(),
     "cancelled": set(),
@@ -1823,6 +1823,20 @@ def update_service_request_status(request_id: int, status: str, triggered_by: st
                         confirmation_status = 'confirmed',
                         confirmed_at = COALESCE(confirmed_at, CURRENT_TIMESTAMP),
                         escalation_status = CASE WHEN escalation_status = 'escalated' THEN 'resolved' ELSE escalation_status END,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                    RETURNING id, status, updated_at;
+                    """,
+                    (normalized_status, request_id)
+                )
+                row = cursor.fetchone()
+            elif normalized_status == 'pending':
+                cursor.execute(
+                    """
+                    UPDATE service_requests
+                    SET status = %s,
+                        confirmation_status = 'pending_agent_confirmation',
+                        confirmed_at = NULL,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = %s
                     RETURNING id, status, updated_at;
@@ -2192,10 +2206,18 @@ def assign_staff_agent_to_service_request(request_id: int, staff_agent_id: int =
             customer_consent_obtained=True,
             triggered_by="portal_staff_reassignment",
         )
-        return {
+        with get_db_connection() as conn:
+            with dict_cursor(conn) as cursor:
+                cursor.execute(
+                    "SELECT id, staff_agent_id, status, confirmation_status, updated_at FROM service_requests WHERE id = %s;",
+                    (request_id,),
+                )
+                updated_row = cursor.fetchone()
+        return dict(updated_row) if updated_row else {
             "id": receipt.request_id,
             "staff_agent_id": receipt.staff_agent_id,
-            "status": request.get("status"),
+            "status": "pending",
+            "confirmation_status": "pending_agent_confirmation",
             "updated_at": request.get("updated_at"),
         }
 
@@ -2204,9 +2226,13 @@ def assign_staff_agent_to_service_request(request_id: int, staff_agent_id: int =
             cursor.execute(
                 """
                 UPDATE service_requests
-                SET staff_agent_id = %s, updated_at = CURRENT_TIMESTAMP
+                SET staff_agent_id = %s,
+                    status = 'pending',
+                    confirmation_status = 'pending_agent_confirmation',
+                    confirmed_at = NULL,
+                    updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s
-                RETURNING id, staff_agent_id, status, updated_at;
+                RETURNING id, staff_agent_id, status, confirmation_status, updated_at;
                 """,
                 (staff_agent_id, request_id),
             )

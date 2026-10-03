@@ -1265,6 +1265,7 @@ async def reassign_service_request(request_id: int, payload: ReassignRequestPayl
                 """
                 UPDATE service_requests
                 SET staff_agent_id = %s,
+                    status = 'pending',
                     escalation_status = 'reassigned',
                     confirmation_status = 'pending_agent_confirmation',
                     confirmed_at = NULL,
@@ -1387,6 +1388,8 @@ async def reassign_service_request(request_id: int, payload: ReassignRequestPayl
         "success": True,
         "request_id": request_id,
         "new_agent_id": payload.new_agent_id,
+        "status": "pending",
+        "confirmation_status": "pending_agent_confirmation",
         "escalation_status": "reassigned"
     }
 
@@ -1506,6 +1509,7 @@ async def get_available_agents_for_request_endpoint(request_id: int):
         raise HTTPException(status_code=500, detail=f"Failed to check agent availability: {str(exc)}")
 
 
+@router.post("/service-requests/{request_id}/assign-agent")
 @router.patch("/service-requests/{request_id}/assign-agent")
 @router.put("/service-requests/{request_id}/assign-agent")
 async def assign_agent_endpoint(request_id: int, payload: AgentAssignPayload):

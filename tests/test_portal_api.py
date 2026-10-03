@@ -454,6 +454,71 @@ def test_agent_switch_triggers_slot_invite_and_admin_mail():
     assert res["staff_agent_id"] == agent2_id
 
 
+def test_confirmed_appointment_reassignment_resets_status_to_pending_until_new_agent_confirms():
+    from serviceBot.db.queries import (
+        assign_staff_agent_to_service_request,
+        update_appointment_confirmation_status,
+    )
+    from serviceBot.db.connection import get_db_connection, dict_cursor
+    import datetime as dt_mod
+
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("INSERT INTO customers (name, phone) VALUES ('Confirmed Cust', '555-0811') RETURNING id;")
+            cust_id = cursor.fetchone()["id"]
+
+            cursor.execute("INSERT INTO staff_agents (name, role, email, phone_number) VALUES ('Agent One', 'Mechanic', 'agent1@example.com', '+15551110001') RETURNING id;")
+            agent1_id = cursor.fetchone()["id"]
+
+            cursor.execute("INSERT INTO staff_agents (name, role, email, phone_number) VALUES ('Agent Two', 'Mechanic', 'agent2@example.com', '+15551110002') RETURNING id;")
+            agent2_id = cursor.fetchone()["id"]
+
+            slot_time = "2026-10-08 11:00:00"
+
+            cursor.execute("""
+                INSERT INTO service_requests (
+                    customer_id, service_type, booking_type, booking_time, staff_agent_id,
+                    status, confirmation_status, confirmed_at
+                )
+                VALUES (%s, 'Inspection', 'appointment', %s, %s, 'confirmed', 'confirmed', CURRENT_TIMESTAMP)
+                RETURNING id;
+            """, (cust_id, slot_time, agent1_id))
+            sr_id = cursor.fetchone()["id"]
+
+    # 1. Changing agent in portal (PATCH assign-agent)
+    res = assign_staff_agent_to_service_request(sr_id, agent2_id)
+    assert res["staff_agent_id"] == agent2_id
+    assert res["status"] == "pending", f"Expected 'pending' but got {res.get('status')}"
+    assert res["confirmation_status"] == "pending_agent_confirmation"
+
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                "SELECT staff_agent_id, status, confirmation_status, confirmed_at FROM service_requests WHERE id = %s;",
+                (sr_id,)
+            )
+            row = cursor.fetchone()
+            assert row["staff_agent_id"] == agent2_id
+            assert row["status"] == "pending", f"Database status should be 'pending' but was '{row['status']}'"
+            assert row["confirmation_status"] == "pending_agent_confirmation"
+            assert row["confirmed_at"] is None
+
+    # 2. When new agent confirms, status becomes confirmed again
+    update_appointment_confirmation_status(sr_id, "confirmed", confirmed_at=dt_mod.datetime.now())
+
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                "SELECT staff_agent_id, status, confirmation_status, confirmed_at FROM service_requests WHERE id = %s;",
+                (sr_id,)
+            )
+            row = cursor.fetchone()
+            assert row["status"] == "confirmed"
+            assert row["confirmation_status"] == "confirmed"
+            assert row["confirmed_at"] is not None
+
+
+
 
 
 

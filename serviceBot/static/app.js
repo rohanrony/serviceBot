@@ -542,11 +542,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const errData = await response.json().catch(() => ({}));
         throw new Error(errData.detail || 'Failed to assign agent');
       }
+      const data = await response.json().catch(() => ({}));
       const targetReq = allRequests.find(r => r.id === requestId);
       if (targetReq) {
         targetReq.staff_agent_id = parsedId;
+        const updated = data.data || {};
+        targetReq.status = updated.status || 'pending';
+        targetReq.confirmation_status = updated.confirmation_status || 'pending_agent_confirmation';
+        targetReq.confirmed_at = updated.confirmed_at || null;
       }
-      showToast(`Agent reassigned for Service Request #${requestId}! Slot updated, old invite cancelled & admin notified.`, 'success');
+      showToast(`Agent reassigned for Service Request #${requestId}! Status set to pending for agent confirmation.`, 'success');
+      applyServiceRequestsFilter();
     } catch (err) {
       showToast(err.message, 'danger');
       throw err;
