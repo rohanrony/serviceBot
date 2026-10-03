@@ -115,7 +115,7 @@ def test_get_customer_appointments_merges_caller_phone_and_suffix():
     mock_cursor.fetchall.return_value = [
         {
             "id": 28,
-            "appointment_datetime": "2026-10-02 10:00:00",
+            "appointment_datetime": "2026-10-15 10:00:00",
             "booking_type": "appointment",
             "service_type": "Repair",
             "issue_description": "Battery inspection",

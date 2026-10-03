@@ -768,8 +768,6 @@ document.addEventListener('DOMContentLoaded', () => {
           slaBadgeHtml = `<div class="sla-warning-badge overdue" style="background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.4);" title="${req.escalation_reason || 'Escalated: Agent SLA Timeout'}"><span class="sla-dot" style="background: #ef4444;"></span> ⚠️ Escalated</div>`;
         } else if (req.escalation_status === 'reassigned' && !isCancelled) {
           slaBadgeHtml = `<div class="sla-warning-badge" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3);"><span class="sla-dot" style="background: #60a5fa;"></span> Reassigned</div>`;
-        } else if (req.confirmation_status === 'confirmed' && !isCancelled) {
-          slaBadgeHtml = `<div class="sla-warning-badge" style="background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3);"><span class="sla-dot" style="background: #34d399;"></span> Confirmed</div>`;
         } else if ((currentStatus === 'pending' || currentStatus === 'rescheduled') && !isCancelled) {
           const slaStart = req.notification_dispatched_at || req.created_at;
           if (slaStart) {

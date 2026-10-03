@@ -1815,6 +1815,21 @@ def update_service_request_status(request_id: int, status: str, triggered_by: st
                     """,
                     (request_id,)
                 )
+            elif normalized_status == 'confirmed':
+                cursor.execute(
+                    """
+                    UPDATE service_requests
+                    SET status = %s,
+                        confirmation_status = 'confirmed',
+                        confirmed_at = COALESCE(confirmed_at, CURRENT_TIMESTAMP),
+                        escalation_status = CASE WHEN escalation_status = 'escalated' THEN 'resolved' ELSE escalation_status END,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                    RETURNING id, status, updated_at;
+                    """,
+                    (normalized_status, request_id)
+                )
+                row = cursor.fetchone()
             else:
                 cursor.execute(
                     "UPDATE service_requests SET status = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s RETURNING id, status, updated_at;",
@@ -3241,7 +3256,7 @@ def update_appointment_confirmation_status(
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             cursor.execute(
-                "SELECT id, confirmation_status, escalation_status FROM service_requests WHERE id = %s FOR UPDATE;",
+                "SELECT id, status, confirmation_status, escalation_status FROM service_requests WHERE id = %s FOR UPDATE;",
                 (request_id,)
             )
             current = cursor.fetchone()
@@ -3252,17 +3267,23 @@ def update_appointment_confirmation_status(
             if confirmation_status == "confirmed" and escalation_status == "escalated":
                 escalation_status = "resolved"
 
+            curr_status = current.get("status") or "pending"
+            new_primary_status = curr_status
+            if confirmation_status == "confirmed" and curr_status in ("pending", "rescheduled"):
+                new_primary_status = "confirmed"
+
             cursor.execute(
                 """
                 UPDATE service_requests
                 SET confirmation_status = %s,
                     confirmed_at = %s,
                     escalation_status = %s,
+                    status = %s,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s
                 RETURNING *;
                 """,
-                (confirmation_status, confirmed_at, escalation_status, request_id)
+                (confirmation_status, confirmed_at, escalation_status, new_primary_status, request_id)
             )
             updated = dict(cursor.fetchone())
 

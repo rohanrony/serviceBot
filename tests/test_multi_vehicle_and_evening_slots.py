@@ -33,7 +33,7 @@ def test_calendar_sync_generates_evening_hours():
         assert 20 in hours
         assert 21 not in hours
         
-        slots = _generate_slot_strings(days=1, hours=hours)
+        slots = _generate_slot_strings(days=7, hours=hours)
         assert any(" 18:00:00" in s for s in slots)
         assert any(" 19:00:00" in s for s in slots)
         assert any(" 19:30:00" in s for s in slots)
