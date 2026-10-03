@@ -307,8 +307,26 @@ def schedule_appointment_reminders(
             logger.warning(f"Immediate reminder cycle execution failed for appt #{appointment_id}: {imm_err}")
 
 
-def update_or_cancel_appointment_reminders(appointment_id: int, new_booking_time_str: str = None, customer_phone: str = None, agent_phone: str = None):
+def update_or_cancel_appointment_reminders(
+    appointment_id: int,
+    new_booking_time_str: str = None,
+    customer_phone: str = None,
+    agent_phone: str = None,
+    reassign_only: bool = False,
+):
     """Cancels pending reminders for an appointment and reschedules if a new booking time is given."""
+    if reassign_only:
+        cancel_pending_sms_reminders(appointment_id, recipient_type="agent")
+        if new_booking_time_str and agent_phone:
+            schedule_appointment_reminders(
+                appointment_id,
+                new_booking_time_str,
+                customer_phone=None,
+                agent_phone=agent_phone,
+                trigger_immediate=True,
+            )
+        return
+
     cancel_pending_sms_reminders(appointment_id)
     if new_booking_time_str and customer_phone:
         schedule_appointment_reminders(appointment_id, new_booking_time_str, customer_phone, agent_phone)
@@ -394,19 +412,36 @@ def run_reminder_polling_worker_cycle() -> int:
             from serviceBot.db.queries import get_sms_matrix_rules, is_agent_whatsapp_connected
             event_name = "BOOKING" if att_kind == "immediate_booking" else f"REMINDER_{rem_type.upper()}"
             rules = get_sms_matrix_rules()
+            matching_rules = [
+                r for r in rules
+                if r.get("event_type") == event_name and r.get("recipient_role") == rec_type
+            ]
             enabled_channels = [
                 (r.get("channel") or "WHATSAPP").upper()
-                for r in rules
-                if r.get("event_type") == event_name and r.get("recipient_role") == rec_type and r.get("enabled")
+                for r in matching_rules
+                if r.get("enabled")
             ]
             if "WHATSAPP" in enabled_channels and (rec_type != "agent" or is_agent_whatsapp_connected(phone)):
                 channel = "WHATSAPP"
             elif enabled_channels:
                 channel = enabled_channels[0]
+            elif matching_rules:
+                channel = None
             else:
                 channel = "WHATSAPP"
         except Exception:
             channel = "WHATSAPP"
+
+        if not channel:
+            logger.info(f"Skipping reminder #{rem['id']} because {event_name} is disabled for {rec_type} in SMS matrix rules.")
+            with get_db_connection() as conn:
+                with dict_cursor(conn) as cursor:
+                    cursor.execute(
+                        "UPDATE sms_reminders SET status = 'CANCELLED', last_error = 'Disabled in SMS matrix rules' WHERE id = %s;",
+                        (rem["id"],)
+                    )
+                conn.commit()
+            continue
 
         if channel == "WHATSAPP":
             res = client.send_whatsapp(

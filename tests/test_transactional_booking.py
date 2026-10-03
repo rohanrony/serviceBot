@@ -195,6 +195,43 @@ def test_reschedule_outbox_preserves_notification_event_and_recipient_context():
         assert payload["details"]["new_agent_name"] == "New Agent"
 
 
+def test_reassign_only_emits_reassigned_event_not_rescheduled():
+    cursor = RecordingCursor(
+        [
+            {"name": "New Agent", "phone_number": "+15550100002", "email": "new@example.test"},
+            {"name": "Previous Agent", "phone_number": "+15550100001", "email": "old@example.test"},
+        ]
+    )
+
+    same_slot_time = dt_mod.datetime(2026, 10, 15, 9, 30)
+
+    BookingService._enqueue_projection_events(
+        cursor,
+        request_id=9,
+        reservation_id=12,
+        staff_agent_id=2,
+        old_staff_agent_id=1,
+        old_starts_at=same_slot_time,
+        booking_type="appointment",
+        starts_at=same_slot_time,
+        duration_minutes=60,
+        customer={"name": "Ada Lovelace", "phone": "+15550100000"},
+        service_type="Oil Change",
+    )
+
+    payloads = [
+        json.loads(params[2])
+        for query, params in cursor.executed
+        if "INSERT INTO outbox_notifications" in query
+    ]
+    assert len(payloads) == 2
+    for payload in payloads:
+        assert payload["notification_event"] == "REASSIGNED", f"Expected 'REASSIGNED' but got '{payload['notification_event']}'"
+        assert payload["agent_phone"] == "+15550100002"
+        assert payload["previous_agent_phone"] == "+15550100001"
+        assert payload["details"]["new_agent_name"] == "New Agent"
+
+
 def test_scheduled_create_service_request_cannot_bypass_the_reservation_authority():
     receipt = BookingReceipt(12, 14, 3, dt_mod.datetime(2026, 10, 15, 9, 30), dt_mod.datetime(2026, 10, 15, 10, 30))
     with patch("serviceBot.db.queries.get_service_required_fields", return_value={"name": "Oil Change", "duration_minutes": 60}), patch(

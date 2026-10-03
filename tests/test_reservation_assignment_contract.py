@@ -115,7 +115,7 @@ def test_reassignment_moves_the_local_reservation_and_fails_closed_on_provider_e
 
     assert reservation["staff_agent_id"] == replacement_agent_id
     assert segment_agents == {replacement_agent_id}
-    assert notification["notification_event"] == "RESCHEDULED_REASSIGNED"
+    assert notification["notification_event"] == "REASSIGNED"
 
 def test_date_slot_lookup_fails_closed_on_provider_error():
     target_date = _future_business_time().split()[0]

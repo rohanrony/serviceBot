@@ -239,8 +239,12 @@ class SMSNotificationRouter:
         # Schedule or update reminders on booking / reschedule / cancel
         if event_type == "BOOKING" and raw_t_str:
             schedule_appointment_reminders(appointment_id, raw_t_str, customer_phone, agent_phone, trigger_immediate=True)
-        elif event_type in ("RESCHEDULED", "RESCHEDULED_REASSIGNED", "REASSIGNED", "CONSOLIDATED") and raw_t_str:
+        elif event_type in ("RESCHEDULED", "RESCHEDULED_REASSIGNED", "CONSOLIDATED") and raw_t_str:
             update_or_cancel_appointment_reminders(appointment_id, raw_t_str, customer_phone, agent_phone)
+        elif event_type == "REASSIGNED" and raw_t_str:
+            update_or_cancel_appointment_reminders(
+                appointment_id, raw_t_str, customer_phone, agent_phone, reassign_only=True
+            )
         elif event_type in ("CANCELLED_BY_CUSTOMER", "CANCELLED_BY_ADMIN"):
             update_or_cancel_appointment_reminders(appointment_id)
 

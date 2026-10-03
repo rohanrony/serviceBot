@@ -1288,11 +1288,16 @@ class BookingService:
 
         notification_event = "BOOKING"
         if old_starts_at is not None:
-            notification_event = (
-                "RESCHEDULED_REASSIGNED"
-                if previous_agent
-                else "RESCHEDULED"
-            )
+            time_changed = (old_starts_at != starts_at)
+            agent_changed = bool(previous_agent)
+            if time_changed and agent_changed:
+                notification_event = "RESCHEDULED_REASSIGNED"
+            elif agent_changed:
+                notification_event = "REASSIGNED"
+            elif time_changed:
+                notification_event = "RESCHEDULED"
+            else:
+                notification_event = "BOOKING"
         calendar_event_id = f"servicebot{reservation_id}{starts_at.strftime('%Y%m%d%H%M')}"
         bypass_qh = triggered_by in ("voice_agent", "telephony_voice_assistant", "voice_tool", "customer")
         payload = {
