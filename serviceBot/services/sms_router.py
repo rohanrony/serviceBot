@@ -12,7 +12,12 @@ from serviceBot.services.quiet_hours import (
     parse_time_str
 )
 from serviceBot.services.twilio_sms import TwilioSMSClient
-from serviceBot.services.sms_reminders import parse_booking_datetime, schedule_appointment_reminders, update_or_cancel_appointment_reminders
+from serviceBot.services.sms_reminders import (
+    parse_booking_datetime,
+    schedule_appointment_reminders,
+    update_or_cancel_appointment_reminders,
+    get_shop_address_and_map_url,
+)
 
 
 def format_time_slot_range(raw_time_str: str, duration_minutes: int = 60) -> str:
@@ -251,37 +256,48 @@ class SMSNotificationRouter:
         # 1. Customer Dispatch
         customer_channels = self._enabled_channels(event_type, "customer", rules, channel_overrides)
         if customer_phone and customer_channels:
+            shop_addr, shop_map = get_shop_address_and_map_url()
+            loc_lines = []
+            if shop_addr:
+                loc_lines.append(f"Location: {shop_addr}")
+            if shop_map:
+                loc_lines.append(f"Map: {shop_map}")
+            loc_suffix = ("\n" + "\n".join(loc_lines)) if loc_lines else ""
+
             if event_type in ("CANCELLED_BY_ADMIN", "CANCELLED_BY_CUSTOMER"):
                 customer_body = (
-                    f"❌ [APPOINTMENT CANCELLED] Appt #{appointment_id}\n"
+                    f"❌ [APPOINTMENT CANCELLED]\n"
                     f"Service: {srv}\n"
                     f"Vehicle: {veh}\n"
                     f"Your appointment has been cancelled. Please contact us if you need to reschedule."
                 )
             elif event_type in ("RESCHEDULED", "RESCHEDULED_REASSIGNED"):
                 customer_body = (
-                    f"🗓️ [APPOINTMENT RESCHEDULED] Appt #{appointment_id}\n"
+                    f"🗓️ [APPOINTMENT RESCHEDULED]\n"
                     f"Service: {srv}\n"
                     f"New Slot: {slot_range_str}\n"
                     f"Assigned Advisor: {new_ag}\n"
                     f"Vehicle: {veh}"
+                    f"{loc_suffix}"
                 )
             elif event_type == "CONSOLIDATED":
                 customer_body = (
-                    f"🚗 [APPOINTMENT CONSOLIDATED] Appt #{appointment_id}\n"
+                    f"🚗 [APPOINTMENT CONSOLIDATED]\n"
                     f"Service: {srv}\n"
                     f"Slot: {slot_range_str}\n"
                     f"Assigned Advisor: {new_ag}\n"
                     f"Vehicle: {veh}\n"
                     f"Combined Issues: {iss}"
+                    f"{loc_suffix}"
                 )
             else:
                 customer_body = (
-                    f"🚗 [CUSTOMER UPDATE] Appt #{appointment_id}\n"
+                    f"🚗 [APPOINTMENT CONFIRMED]\n"
                     f"Service: {srv}\n"
                     f"Slot: {slot_range_str}\n"
                     f"Assigned Advisor: {new_ag}\n"
                     f"Vehicle: {veh}"
+                    f"{loc_suffix}"
                 )
             if not get_customer_opt_in(customer_phone):
                 for channel in customer_channels:

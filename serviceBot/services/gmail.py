@@ -512,14 +512,27 @@ def send_admin_notification(
         color = "#ef4444"  # Red Alert
         type_title = "Admin Alert: Appointment Cancelled"
         time_label = "Cancelled Slot Time"
+    elif booking_type in ["escalation", "escalated", "sla_breach"]:
+        color = "#dc2626"  # Crimson Red Alert
+        type_title = "Admin Alert: SLA Escalation Required"
+        time_label = "Scheduled Appointment Time"
     else:
         color = "#f59e0b"  # Amber Warning
         type_title = "Admin Alert: New Callback Requested"
         time_label = "Preferred Callback Time"
 
     assigned_str = f"{agent_name or 'Staff Member'} ({agent_email})" if agent_email else (agent_name or "Assigned Staff")
-    subject = f"[Admin Copy] {type_title} - {agent_name or 'Staff'}"
+    if booking_type in ["escalation", "escalated", "sla_breach"]:
+        reason_label = details.get("escalation_reason") or details.get("reason") or "TIMEOUT_NO_RESPONSE"
+        appt_id = details.get("appointment_id") or ""
+        subject = f"[URGENT Admin Copy] {type_title} - Appt #{appt_id} ({reason_label}) - {agent_name or 'Staff'}"
+    else:
+        subject = f"[Admin Copy] {type_title} - {agent_name or 'Staff'}"
 
+    appt_id = details.get("appointment_id")
+    reassign_url = f"https://davidson.carcare/portal/reassign/{appt_id}" if appt_id else "https://davidson.carcare/portal"
+    is_escalation = booking_type in ["escalation", "escalated", "sla_breach"]
+    esc_reason = details.get("escalation_reason") or details.get("reason")
 
     html_body = f"""
     <!DOCTYPE html>
@@ -551,6 +564,7 @@ def send_admin_notification(
                         <td><span class="badge" style="background-color: rgba(16, 185, 129, 0.1); color: #10b981;">{assigned_str}</span></td>
                     </tr>
                     {"<tr><th>Previous Agent</th><td>" + str(details.get('previous_agent_name')) + "</td></tr>" if details.get('previous_agent_name') else ""}
+                    {"<tr><th>Escalation Reason</th><td><span class=\"badge\" style=\"background-color: rgba(220, 38, 38, 0.1); color: #dc2626;\">" + str(esc_reason) + "</span></td></tr>" if esc_reason else ""}
 
                     <tr>
                         <th>Customer Name</th>
@@ -574,6 +588,7 @@ def send_admin_notification(
                     </tr>
                     {"<tr><th>Issue Description</th><td>" + details.get('issue') + "</td></tr>" if details.get('issue') else ""}
                 </table>
+                {"<div style=\"margin-top: 24px; text-align: center;\"><a href=\"" + reassign_url + "\" style=\"background-color: #dc2626; color: #ffffff; padding: 10px 22px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block;\">Review & Reassign in Portal</a></div>" if is_escalation else ""}
             </div>
             <div class="footer">
                 Admin Notification sent automatically by serviceBot.
@@ -586,12 +601,14 @@ def send_admin_notification(
     plain_body = f"""
     === {type_title} ===
     Assigned Staff: {assigned_str}
+    {"Escalation Reason: " + str(esc_reason) if esc_reason else ""}
     Customer: {details.get('customer_name', 'N/A')}
     Phone: {details.get('phone', 'N/A')}
     Asset: {details.get('vehicle', 'N/A')}
     Service Type: {details.get('service_type', 'N/A')}
     {time_label}: {details.get('time', 'N/A')}
     {"Issue: " + details.get('issue') if details.get('issue') else ""}
+    {"Portal Action: " + reassign_url if is_escalation else ""}
     """
 
     auth_type = config.get("gmail_auth_type", "app_password")

@@ -206,7 +206,10 @@ Speak the filler naturally as part of the conversation so the caller experiences
         "morning_opening_grace_minutes": 60,
         "supervisor_escalation_sms": True,
         "supervisor_escalation_phone": "",
-        "carrier_retry_backoff_minutes": [1, 5, 15]
+        "carrier_retry_backoff_minutes": [1, 5, 15],
+        "business_name": "Davidson Car Care",
+        "business_address": "123 Main St, Springfield, NC 27513",
+        "google_maps_url": "https://maps.google.com/?q=Davidson+Car+Care+Springfield+NC"
     }
     if not os.path.exists(CONFIG_PATH):
         data = defaults.copy()
@@ -354,6 +357,9 @@ class ConfigUpdatePayload(BaseModel):
     supervisor_alert_phone: Optional[str] = None
     auto_reassign_on_escalation: Optional[bool] = None
     reassignment_confirmation_window_minutes: Optional[int] = None
+    business_name: Optional[str] = None
+    business_address: Optional[str] = None
+    google_maps_url: Optional[str] = None
 
 @router.get("/config")
 async def get_config():
@@ -413,6 +419,12 @@ async def update_config(payload: ConfigUpdatePayload):
         config_data["auto_reassign_on_escalation"] = bool(payload.auto_reassign_on_escalation)
     if payload.reassignment_confirmation_window_minutes is not None:
         config_data["reassignment_confirmation_window_minutes"] = int(payload.reassignment_confirmation_window_minutes)
+    if payload.business_name is not None:
+        config_data["business_name"] = str(payload.business_name).strip()
+    if payload.business_address is not None:
+        config_data["business_address"] = str(payload.business_address).strip()
+    if payload.google_maps_url is not None:
+        config_data["google_maps_url"] = str(payload.google_maps_url).strip()
 
     save_config(config_data)
     
@@ -1096,7 +1108,7 @@ async def get_service_requests(
             where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
             query = f"""
-                SELECT sr.id, sr.service_type, sr.issue_description, sr.status, sr.time_slot, sr.created_at,
+                SELECT sr.id, sr.service_type, sr.issue_description, sr.status, sr.time_slot, sr.created_at, sr.updated_at,
                        sr.booking_type, sr.booking_time, sr.duration_minutes, sr.staff_agent_id,
                        sr.notification_dispatched_at, sr.sla_expires_at,
                        sr.confirmation_status, sr.escalation_status, sr.escalation_reason,
@@ -1126,6 +1138,8 @@ async def get_service_requests(
                 r = dict(row)
                 if not isinstance(r["created_at"], str) and r["created_at"]:
                     r["created_at"] = r["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+                if r.get("updated_at") and not isinstance(r["updated_at"], str):
+                    r["updated_at"] = r["updated_at"].strftime("%Y-%m-%d %H:%M:%S")
 
                 if r.get("confirmation_cutoff_at") and not isinstance(r["confirmation_cutoff_at"], str):
                     r["confirmation_cutoff_at"] = r["confirmation_cutoff_at"].strftime("%Y-%m-%d %H:%M:%S")
@@ -2172,6 +2186,9 @@ class SMSConfigPayload(BaseModel):
     auto_responder_template: Optional[str] = None
     auto_responder_debounce_seconds: Optional[int] = None
     environment: Optional[str] = None
+    business_name: Optional[str] = None
+    business_address: Optional[str] = None
+    google_maps_url: Optional[str] = None
 
 
 class SMSMatrixRulePayload(BaseModel):
@@ -2203,14 +2220,35 @@ class SMSResolvePayload(BaseModel):
 @router.get("/sms/config")
 async def get_sms_config_endpoint():
     from serviceBot.db.queries import get_sms_config
-    return get_sms_config()
+    cfg = load_config()
+    res = get_sms_config() or {}
+    res["business_name"] = cfg.get("business_name", "Davidson Car Care")
+    res["business_address"] = cfg.get("business_address", "123 Main St, Springfield, NC 27513")
+    res["google_maps_url"] = cfg.get("google_maps_url", "")
+    return res
 
 
 @router.put("/sms/config")
 async def update_sms_config_endpoint(payload: SMSConfigPayload):
     from serviceBot.db.queries import update_sms_config
     data = payload.dict(exclude_unset=True)
-    return update_sms_config(data)
+
+    # Sync address / business settings into config.json
+    loc_updates = {}
+    for loc_key in ("business_name", "business_address", "google_maps_url"):
+        if loc_key in data:
+            loc_updates[loc_key] = data.pop(loc_key)
+    if loc_updates:
+        cfg = load_config()
+        cfg.update(loc_updates)
+        save_config(cfg)
+
+    db_res = update_sms_config(data) if data else {}
+    cfg_now = load_config()
+    db_res["business_name"] = cfg_now.get("business_name", "Davidson Car Care")
+    db_res["business_address"] = cfg_now.get("business_address", "123 Main St, Springfield, NC 27513")
+    db_res["google_maps_url"] = cfg_now.get("google_maps_url", "")
+    return db_res
 
 
 @router.get("/sms/matrix-rules")

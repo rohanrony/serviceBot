@@ -39,6 +39,72 @@ def parse_booking_datetime(dt_str: str) -> dt_mod.datetime:
     return None
 
 
+def format_time_slot_range(raw_time_str: str, duration_minutes: int = 60) -> str:
+    """Formats raw datetime or time string into start & end time slot (e.g., Jul 23, 2026 (2:00 PM - 3:00 PM))."""
+    if not raw_time_str or str(raw_time_str).strip().upper() in ("N/A", "ASAP", "NONE"):
+        return str(raw_time_str) if raw_time_str else "N/A"
+    clean_str = str(raw_time_str).strip()
+    dt = parse_booking_datetime(clean_str)
+    if not dt:
+        return clean_str
+    end_dt = dt + dt_mod.timedelta(minutes=duration_minutes)
+    date_part = dt.strftime("%b %d, %Y")
+    start_time_part = dt.strftime("%I:%M %p").lstrip("0")
+    end_time_part = end_dt.strftime("%I:%M %p").lstrip("0")
+    return f"{date_part} ({start_time_part} - {end_time_part})"
+
+
+def get_shop_address_and_map_url(cfg: dict = None) -> tuple[str, str]:
+    """Retrieves configured shop address and Google Maps navigation link."""
+    import urllib.parse
+    if cfg is None:
+        from serviceBot.api.portal import load_config
+        cfg = load_config()
+    address = (cfg.get("business_address") or "123 Main St, Springfield, NC 27513").strip()
+    map_url = (cfg.get("google_maps_url") or "").strip()
+    if not map_url and address:
+        map_url = f"https://maps.google.com/?q={urllib.parse.quote_plus(address)}"
+    return address, map_url
+
+
+def fetch_appointment_customer_details(appointment_id: int) -> dict:
+    """Fetches customer, vehicle, and booking details for appointment notification formatting."""
+    if not appointment_id:
+        return {}
+    try:
+        from serviceBot.db.connection import get_db_connection, dict_cursor
+        with get_db_connection() as conn:
+            with dict_cursor(conn) as cursor:
+                cursor.execute("""
+                    SELECT sr.id, sr.service_type, sr.issue_description, sr.booking_time, sr.time_slot, sr.duration_minutes,
+                           c.name AS customer_name, c.phone AS customer_phone,
+                           v.year AS vehicle_year, v.make AS vehicle_make, v.model AS vehicle_model,
+                           sa.id AS agent_id, sa.name AS agent_name
+                    FROM service_requests sr
+                    LEFT JOIN customers c ON sr.customer_id = c.id
+                    LEFT JOIN vehicles v ON sr.vehicle_id = v.id
+                    LEFT JOIN staff_agents sa ON sr.staff_agent_id = sa.id
+                    WHERE sr.id = %s;
+                """, (appointment_id,))
+                row = cursor.fetchone()
+                if not row:
+                    return {}
+                v_parts = [row.get("vehicle_year"), row.get("vehicle_make"), row.get("vehicle_model")]
+                v_str = " ".join([str(p) for p in v_parts if p]).strip()
+                b_time = row.get("booking_time") or row.get("time_slot") or ""
+                return {
+                    "customer_name": row.get("customer_name") or "there",
+                    "service_type": row.get("service_type") or "Service",
+                    "booking_time": str(b_time)[:19] if b_time else "",
+                    "duration_minutes": row.get("duration_minutes") or 60,
+                    "vehicle": v_str or "Vehicle on file",
+                    "agent_name": row.get("agent_name"),
+                }
+    except Exception as e:
+        logger.warning(f"Failed to fetch appointment details for appointment #{appointment_id}: {e}")
+        return {}
+
+
 def compute_business_hours_deadline(
     start_time: dt_mod.datetime,
     duration_hours: float,
@@ -386,12 +452,61 @@ def run_reminder_polling_worker_cycle() -> int:
 
         # Dynamic body generation
         if rec_type == "customer":
+            apt_details = fetch_appointment_customer_details(rem["appointment_id"])
+            cust_name = apt_details.get("customer_name") or "there"
+            srv = apt_details.get("service_type") or "Service"
+            veh = apt_details.get("vehicle") or ""
+            raw_time = apt_details.get("booking_time") or ""
+            dur = apt_details.get("duration_minutes") or 60
+            slot_str = format_time_slot_range(raw_time, dur) if raw_time else ""
+            ag_name = apt_details.get("agent_name") or ""
+            shop_addr, shop_map = get_shop_address_and_map_url(cfg)
+
+            loc_lines = []
+            if shop_addr:
+                loc_lines.append(f"📍 Location: {shop_addr}")
+            if shop_map:
+                loc_lines.append(f"🗺️ Map: {shop_map}")
+            loc_block = ("\n" + "\n".join(loc_lines)) if loc_lines else ""
+
+            veh_line = f"\n🚘 Vehicle: {veh}" if veh and veh.lower() not in ("n/a", "none") else ""
+            slot_line = f"\n📅 When: {slot_str}" if slot_str and slot_str != "N/A" else ""
+            ag_line = f"\n👤 Advisor: {ag_name}" if ag_name else ""
+
             if att_kind == "immediate_booking":
-                body = f"Confirmation: Your appointment is scheduled (Appointment #{rem['appointment_id']}). Address: Davidson Car Care. Reply STOP to opt out."
+                body = (
+                    f"🚗 [APPOINTMENT CONFIRMED]\n"
+                    f"Hi {cust_name}, your appointment is scheduled!\n"
+                    f"🔧 Service: {srv}"
+                    f"{slot_line}"
+                    f"{veh_line}"
+                    f"{ag_line}"
+                    f"{loc_block}\n\n"
+                    f"Reply STOP to opt out."
+                )
             elif att_kind == "intermediate_followup":
-                body = f"Reminder: Your upcoming appointment #{rem['appointment_id']} is scheduled. Please let us know if you need to reschedule."
+                body = (
+                    f"🗓️ [APPOINTMENT REMINDER]\n"
+                    f"Hi {cust_name}, reminding you of your upcoming appointment:\n"
+                    f"🔧 Service: {srv}"
+                    f"{slot_line}"
+                    f"{veh_line}"
+                    f"{ag_line}"
+                    f"{loc_block}\n\n"
+                    f"Please let us know if you need to reschedule."
+                )
             else:
-                body = f"Reminder: You have an upcoming appointment in {rem_type} (Appointment #{rem['appointment_id']})."
+                rem_label = f"in {rem_type}" if rem_type and rem_type != "final" else "soon"
+                body = (
+                    f"⏰ [UPCOMING APPOINTMENT]\n"
+                    f"Hi {cust_name}, your appointment is coming up {rem_label}!\n"
+                    f"🔧 Service: {srv}"
+                    f"{slot_line}"
+                    f"{veh_line}"
+                    f"{ag_line}"
+                    f"{loc_block}\n\n"
+                    f"We look forward to seeing you!"
+                )
         elif rec_type == "agent":
             if att_kind == "immediate_booking":
                 body = f"New Assignment: Service request #{rem['appointment_id']}. Please reply CONFIRM or C to accept, or DECLINE if unavailable."
@@ -519,6 +634,7 @@ def run_reminder_polling_worker_cycle() -> int:
                             try:
                                 from serviceBot.db.queries import escalate_service_request
                                 escalate_service_request(rem["appointment_id"], reason="DELIVERY_FAILED", triggered_by="sms_worker")
+                                dispatch_supervisor_escalation_alert(rem["appointment_id"], reason="DELIVERY_FAILED")
                             except Exception as esc_err:
                                 logger.warning(f"Failed to auto-escalate delivery failure for #{rem['appointment_id']}: {esc_err}")
                 conn.commit()
@@ -531,7 +647,7 @@ def run_reminder_polling_worker_cycle() -> int:
 
 def dispatch_supervisor_escalation_alert(service_request_id: int, reason: str = "TIMEOUT_NO_RESPONSE") -> dict:
     """
-    Dispatches an urgent escalation SMS to the supervisor alert mobile phone
+    Dispatches an urgent escalation SMS and admin notification email to the supervisor/admin
     when an appointment confirmation times out, is declined, or fails delivery.
     """
     from serviceBot.api.portal import load_config
@@ -541,18 +657,27 @@ def dispatch_supervisor_escalation_alert(service_request_id: int, reason: str = 
     supervisor_phone = cfg.get("supervisor_alert_phone") or "+19195550199"
 
     customer_name = "Customer"
+    customer_phone = None
     technician_name = "Unassigned"
+    agent_email = None
+    vehicle_str = ""
+    service_type = "Service Request"
+    issue_desc = ""
     time_str = "Scheduled Time"
 
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             cursor.execute(
                 """
-                SELECT sr.id, sr.status, sr.staff_agent_id, c.name AS customer_name,
-                       sa.name AS agent_name, ar.starts_at
+                SELECT sr.id, sr.status, sr.staff_agent_id, sr.service_type, sr.issue_description, sr.booking_time,
+                       c.name AS customer_name, c.phone AS customer_phone,
+                       sa.name AS agent_name, sa.email AS agent_email,
+                       v.year AS vehicle_year, v.make AS vehicle_make, v.model AS vehicle_model,
+                       ar.starts_at
                 FROM service_requests sr
                 LEFT JOIN customers c ON c.id = sr.customer_id
                 LEFT JOIN staff_agents sa ON sa.id = sr.staff_agent_id
+                LEFT JOIN vehicles v ON v.id = sr.vehicle_id
                 LEFT JOIN appointment_reservations ar ON ar.service_request_id = sr.id AND ar.status = 'ACTIVE'
                 WHERE sr.id = %s;
                 """,
@@ -570,10 +695,22 @@ def dispatch_supervisor_escalation_alert(service_request_id: int, reason: str = 
             if row:
                 if row.get("customer_name"):
                     customer_name = row["customer_name"]
+                if row.get("customer_phone"):
+                    customer_phone = row["customer_phone"]
                 if row.get("agent_name"):
                     technician_name = row["agent_name"]
+                if row.get("agent_email"):
+                    agent_email = row["agent_email"]
+                if row.get("service_type"):
+                    service_type = row["service_type"]
+                if row.get("issue_description"):
+                    issue_desc = row["issue_description"]
+                if row.get("vehicle_make"):
+                    vehicle_str = f"{row.get('vehicle_year') or ''} {row['vehicle_make']} {row.get('vehicle_model') or ''}".strip()
                 if row.get("starts_at"):
                     time_str = row["starts_at"].strftime("%b %-d at %-I:%M %p")
+                elif row.get("booking_time"):
+                    time_str = str(row["booking_time"])
 
             # Audit log entry
             cursor.execute(
@@ -599,16 +736,41 @@ def dispatch_supervisor_escalation_alert(service_request_id: int, reason: str = 
         appointment_id=service_request_id
     )
 
+    details = {
+        "appointment_id": service_request_id,
+        "customer_name": customer_name,
+        "phone": customer_phone,
+        "vehicle": vehicle_str,
+        "service_type": service_type,
+        "time": time_str,
+        "issue": issue_desc,
+        "escalation_reason": reason,
+        "reason": reason,
+    }
+
+    email_sent = False
+    try:
+        from serviceBot.services.gmail import send_admin_notification
+        email_sent = send_admin_notification(
+            booking_type="escalation",
+            details=details,
+            agent_name=technician_name,
+            agent_email=agent_email
+        )
+    except Exception as email_err:
+        logger.warning(f"[ESCALATION EMAIL WARNING] Failed to send admin escalation email for #{service_request_id}: {email_err}")
+
     logger.warning(
         f"[ESCALATION ALERT] Supervisor notified for appt #{service_request_id} "
-        f"at {supervisor_phone} (reason={reason}, status={sms_res.get('status')})"
+        f"at {supervisor_phone} (reason={reason}, status={sms_res.get('status')}, email_sent={email_sent})"
     )
 
     return {
         "success": bool(sms_res.get("success") or sms_res.get("status") in ("DELIVERED", "SENT")),
         "supervisor_phone": supervisor_phone,
         "body": body,
-        "sid": sms_res.get("sid")
+        "sid": sms_res.get("sid"),
+        "email_sent": bool(email_sent)
     }
 
 

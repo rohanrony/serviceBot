@@ -304,6 +304,7 @@ def test_get_service_requests_endpoint():
         assert "duration_minutes" in first
         assert "booking_start_time" in first
         assert "booking_end_time" in first
+        assert "updated_at" in first
 
 def test_get_stats_endpoint():
     response = client.get("/api/v1/portal/stats")

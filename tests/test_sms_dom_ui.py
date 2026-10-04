@@ -158,3 +158,17 @@ def test_specific_notification_failure_badge_logic():
     assert "⚠️ Failed SMS & Email" in js_content
     assert "⚠️ Failed SMS" in js_content
     assert "⚠️ Failed Email" in js_content
+
+
+def test_unconfirmed_sla_badge_removed():
+    js_path = os.path.join(os.path.dirname(__file__), "..", "serviceBot", "static", "app.js")
+    with open(js_path, "r", encoding="utf-8") as f:
+        js_content = f.read()
+
+    # Redundant "Unconfirmed" SLA badge under pending requests must be removed
+    assert "sla-warning-badge unconfirmed" not in js_content
+    assert "> Unconfirmed</div>" not in js_content
+    # Critical SLA overdue badge should remain intact
+    assert "sla-warning-badge overdue" in js_content
+    assert "SLA Overdue" in js_content
+

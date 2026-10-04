@@ -783,9 +783,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const diffMins = diffMs / 60000;
             if (diffMins > 60) {
               slaBadgeHtml = `<div class="sla-warning-badge overdue"><span class="sla-dot"></span> SLA Overdue</div>`;
-            } else if (diffMins > 15) {
-              slaBadgeHtml = `<div class="sla-warning-badge unconfirmed"><span class="sla-dot"></span> Unconfirmed</div>`;
             }
+
           }
         }
 
@@ -984,7 +983,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const status = document.getElementById('filter-sr-status')?.value || 'all';
     
     const filtered = allRequests.filter(req => {
-      const matchesTime = isDateInTimeframe(req.created_at, currentCallsTimeframe);
+      const isCancelled = ['cancelled', 'cancelled_by_customer'].includes(req.status);
+      const isClosed = isCancelled || ['completed', 'done'].includes(req.status);
+
+      // Operational requests (pending, confirmed, in_progress, escalated) should NEVER
+      // be hidden by timeframe unless specifically filtered by status or search.
+      // For closed/historical records, match against updated_at, created_at, or booking_time.
+      let matchesTime = true;
+      if (currentCallsTimeframe && currentCallsTimeframe !== 'all') {
+        if (isClosed) {
+          const bookingTime = req.booking_start_time || req.booking_time || req.time_slot;
+          matchesTime = isDateInTimeframe(req.updated_at, currentCallsTimeframe) ||
+                        isDateInTimeframe(req.created_at, currentCallsTimeframe) ||
+                        (bookingTime ? isDateInTimeframe(bookingTime, currentCallsTimeframe) : false);
+        } else {
+          matchesTime = true;
+        }
+      }
 
       const matchesText = !query || 
         (req.customer_name || '').toLowerCase().includes(query) ||
@@ -994,7 +1009,6 @@ document.addEventListener('DOMContentLoaded', () => {
         (req.service_type || '').toLowerCase().includes(query) ||
         (req.issue_description || '').toLowerCase().includes(query);
         
-      const isCancelled = ['cancelled', 'cancelled_by_customer'].includes(req.status);
       const matchesType = type === 'all' || req.booking_type === type;
       const matchesStatus = status === 'all' || 
         (status === 'escalated' ? (req.escalation_status === 'escalated' && !isCancelled) : (req.status === status || (status === 'completed' && req.status === 'done')));
@@ -3022,6 +3036,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (quietEndEl) quietEndEl.value = config.quiet_end_time || '08:00';
       const autoRespEl = document.getElementById('sms-config-auto-responder');
       if (autoRespEl) autoRespEl.value = config.auto_responder_template || '';
+      const shopAddrEl = document.getElementById('sms-config-shop-address');
+      if (shopAddrEl) shopAddrEl.value = config.business_address || '';
+      const mapsUrlEl = document.getElementById('sms-config-maps-url');
+      if (mapsUrlEl) mapsUrlEl.value = config.google_maps_url || '';
 
       // Load Escalation & Timing SLAs from portal config
       try {
@@ -3166,7 +3184,9 @@ document.addEventListener('DOMContentLoaded', () => {
         environment: document.getElementById('sms-config-environment').value,
         quiet_start_time: document.getElementById('sms-config-quiet-start').value,
         quiet_end_time: document.getElementById('sms-config-quiet-end').value,
-        auto_responder_template: document.getElementById('sms-config-auto-responder').value
+        auto_responder_template: document.getElementById('sms-config-auto-responder').value,
+        business_address: document.getElementById('sms-config-shop-address') ? document.getElementById('sms-config-shop-address').value.trim() : '',
+        google_maps_url: document.getElementById('sms-config-maps-url') ? document.getElementById('sms-config-maps-url').value.trim() : ''
       };
       await fetch('/api/v1/portal/sms/config', {
         method: 'PUT',
@@ -4134,6 +4154,63 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  const datePickerEl = document.getElementById('sr-check-date-picker');
+
+  function getNextBusinessDateString() {
+    const d = new Date();
+    if (d.getDay() === 0) d.setDate(d.getDate() + 1); // Sunday -> Monday
+    else if (d.getDay() === 6) d.setDate(d.getDate() + 2); // Saturday -> Monday
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
+  async function checkStaffSlots(targetDate) {
+    if (!targetDate) return;
+    try {
+      if (checkSlotsBtn) checkSlotsBtn.textContent = 'Checking...';
+      
+      const bType = srBookingTypeSelect ? srBookingTypeSelect.value : 'appointment';
+      const durVal = srDurationSelect ? parseInt(srDurationSelect.value) : 60;
+      const durationMinutes = (bType === 'callback') ? 15 : (durVal || 60);
+
+      let url = `/api/v1/portal/available-slots?date=${targetDate}&duration_minutes=${durationMinutes}`;
+      const agentSelect = document.getElementById('sr-agent-select');
+      if (agentSelect && agentSelect.value) {
+        url += `&staff_agent_id=${agentSelect.value}`;
+      }
+      
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        const slots = data.available_slots || [];
+        slotsDropdown.innerHTML = '<option value="">Select an available slot...</option>';
+        if (slots.length === 0) {
+          const opt = document.createElement('option');
+          opt.value = '';
+          opt.textContent = `No free slots on ${targetDate} (Weekend or All Busy)`;
+          slotsDropdown.appendChild(opt);
+        } else {
+          slots.forEach(s => {
+            const opt = document.createElement('option');
+            opt.value = s.start_time;
+            opt.textContent = `${s.start_time.substring(11, 16)} - ${s.end_time.substring(11, 16)} (${s.available_agents_count} agent free)`;
+            slotsDropdown.appendChild(opt);
+          });
+        }
+        if (slotsContainer) slotsContainer.style.display = 'block';
+        if (datePickerEl) datePickerEl.value = targetDate;
+      } else {
+        showToast('Failed to check available slots.', 'danger');
+      }
+    } catch (err) {
+      showToast('Error checking slot availability.', 'danger');
+    } finally {
+      if (checkSlotsBtn) checkSlotsBtn.textContent = 'Check Availability';
+    }
+  }
+
   if (checkSlotsBtn) {
     checkSlotsBtn.addEventListener('click', async () => {
       let currentVal = document.getElementById('sr-booking-time').value;
@@ -4154,49 +4231,25 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         }
       } else {
-        const today = new Date();
-        targetDate = today.toISOString().substring(0, 10);
+        const origTime = (srForm && srForm.dataset.originalBookingTime) || '';
+        let matchOrig = origTime ? origTime.match(/\d{4}-\d{2}-\d{2}/) : null;
+        if (matchOrig) {
+          targetDate = matchOrig[0];
+        } else if (datePickerEl && datePickerEl.value) {
+          targetDate = datePickerEl.value;
+        } else {
+          targetDate = getNextBusinessDateString();
+        }
       }
       
-      try {
-        checkSlotsBtn.textContent = 'Checking...';
-        
-        const bType = srBookingTypeSelect ? srBookingTypeSelect.value : 'appointment';
-        const durVal = srDurationSelect ? parseInt(srDurationSelect.value) : 60;
-        const durationMinutes = (bType === 'callback') ? 15 : (durVal || 60);
+      await checkStaffSlots(targetDate);
+    });
+  }
 
-        let url = `/api/v1/portal/available-slots?date=${targetDate}&duration_minutes=${durationMinutes}`;
-        const agentSelect = document.getElementById('sr-agent-select');
-        if (agentSelect && agentSelect.value) {
-          url += `&staff_agent_id=${agentSelect.value}`;
-        }
-        
-        const res = await fetch(url);
-        if (res.ok) {
-          const data = await res.json();
-          const slots = data.available_slots || [];
-          slotsDropdown.innerHTML = '<option value="">Select an available slot...</option>';
-          if (slots.length === 0) {
-            const opt = document.createElement('option');
-            opt.value = '';
-            opt.textContent = `No free slots on ${targetDate} (Weekend or All Busy)`;
-            slotsDropdown.appendChild(opt);
-          } else {
-            slots.forEach(s => {
-              const opt = document.createElement('option');
-              opt.value = s.start_time;
-              opt.textContent = `${s.start_time.substring(11, 16)} - ${s.end_time.substring(11, 16)} (${s.available_agents_count} agent free)`;
-              slotsDropdown.appendChild(opt);
-            });
-          }
-          if (slotsContainer) slotsContainer.style.display = 'block';
-        } else {
-          showToast('Failed to check available slots.', 'danger');
-        }
-      } catch (err) {
-        showToast('Error checking slot availability.', 'danger');
-      } finally {
-        checkSlotsBtn.textContent = 'Check Availability';
+  if (datePickerEl) {
+    datePickerEl.addEventListener('change', async () => {
+      if (datePickerEl.value) {
+        await checkStaffSlots(datePickerEl.value);
       }
     });
   }
@@ -4206,6 +4259,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const selectedSlot = slotsDropdown.value;
       if (selectedSlot && selectedSlot.length >= 16) {
         document.getElementById('sr-booking-time').value = selectedSlot.substring(0, 16).replace(' ', 'T');
+        if (datePickerEl) datePickerEl.value = selectedSlot.substring(0, 10);
         triggerConsentCheckIfNeeded();
       }
     });
@@ -4287,6 +4341,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Populate booking time, booking type, and duration if available
     document.getElementById('sr-booking-time').value = origBt;
+    if (origBt && datePickerEl) {
+      datePickerEl.value = origBt.substring(0, 10);
+    }
     const bookingTypeVal = req.booking_type || 'appointment';
     const durationMinutesVal = req.duration_minutes || (bookingTypeVal === 'callback' ? 15 : 60);
     if (srBookingTypeSelect) srBookingTypeSelect.value = bookingTypeVal;
@@ -4326,6 +4383,7 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('sr-service-type').disabled = false;
       
       document.getElementById('sr-booking-time').value = '';
+      if (datePickerEl) datePickerEl.value = getNextBusinessDateString();
       if (srModal) srModal.style.display = 'block';
       if (srModalOverlay) srModalOverlay.style.display = 'block';
 

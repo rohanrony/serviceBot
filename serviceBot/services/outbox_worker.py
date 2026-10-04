@@ -496,6 +496,13 @@ def _dispatch_outbox_event(event_type: str, request_id: Optional[int], payload: 
         )
         _require_notification_delivery(sms_result)
 
+    elif event_type in ("escalation_alert", "sla_escalation"):
+        from serviceBot.services.sms_reminders import dispatch_supervisor_escalation_alert
+        reason = payload.get("reason") or payload.get("escalation_reason") or "TIMEOUT_NO_RESPONSE"
+        appt_id = request_id or payload.get("appointment_id")
+        if appt_id:
+            dispatch_supervisor_escalation_alert(appt_id, reason=reason)
+
 
 def _execute_revert_compensation(conn, event_type: str, request_id: Optional[int], payload: dict, err_log: str):
     """
