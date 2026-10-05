@@ -1,0 +1,1685 @@
+{
+  "schema": "openai.presentation.layout/v4",
+  "unit": "px",
+  "slide": {
+    "aid": "sl/we80ty",
+    "id": "we80ty",
+    "slide": 3,
+    "layoutId": "ff657ed7-b0ae-4ec4-82c2-b751f9512869",
+    "layoutName": "Title Slide",
+    "layoutType": "title",
+    "masterLayoutId": "d1b4affa-1abc-48e1-b632-2570dfafd606",
+    "masterLayoutName": "Master",
+    "backgroundColor": "#071827",
+    "frame": {
+      "left": 0,
+      "top": 0,
+      "width": 1280,
+      "height": 720
+    }
+  },
+  "theme": {
+    "colorSchemeName": "ChatGPT",
+    "colors": {
+      "accent1": "#156082",
+      "accent2": "#E97132",
+      "accent3": "#196B24",
+      "accent4": "#0F9ED5",
+      "accent5": "#A02B93",
+      "accent6": "#4EA72E",
+      "bg1": "#FFFFFF",
+      "bg2": "#000000",
+      "tx1": "#1F1F1F",
+      "tx2": "#FFFFFF",
+      "dk1": "#000000",
+      "lt1": "#FFFFFF",
+      "dk2": "#0E2841",
+      "lt2": "#E8E8E8",
+      "hlink": "#467886",
+      "folHlink": "#96607D"
+    },
+    "typefaces": [
+      "Helvetica Neue"
+    ]
+  },
+  "inheritedLayers": [
+    {
+      "scope": "layout",
+      "id": "ff657ed7-b0ae-4ec4-82c2-b751f9512869",
+      "name": "Title Slide",
+      "type": "title",
+      "parentLayoutId": "d1b4affa-1abc-48e1-b632-2570dfafd606",
+      "elements": []
+    },
+    {
+      "scope": "master",
+      "id": "d1b4affa-1abc-48e1-b632-2570dfafd606",
+      "name": "Master",
+      "type": "master",
+      "elements": []
+    }
+  ],
+  "elements": [
+    {
+      "order": 1,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/jyhgfyx0",
+      "id": "1",
+      "name": "workflow-brand",
+      "bbox": [
+        1030,
+        32,
+        178,
+        42
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#11334A",
+      "lineColor": "#5FE1D2",
+      "lineWidth": 1
+    },
+    {
+      "order": 2,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/4zqho3e5",
+      "id": "2",
+      "name": "workflow-brand-text",
+      "bbox": [
+        1042,
+        43,
+        154,
+        20
+      ],
+      "geometry": "rect",
+      "text": "YOUR BRAND",
+      "textPreview": "YOUR BRAND",
+      "resolvedFontSize": 12,
+      "resolvedTextStyle": {
+        "fontSize": 12,
+        "typeface": "Helvetica Neue",
+        "color": "#B7FFF6",
+        "bold": true,
+        "alignment": "center",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "YOUR BRAND"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "YOUR BRAND",
+          "resolvedTextStyle": {
+            "fontSize": 12,
+            "typeface": "Helvetica Neue",
+            "color": "#B7FFF6",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "YOUR BRAND",
+              "fontSize": 12,
+              "typeface": "Helvetica Neue",
+              "color": "#B7FFF6",
+              "bold": true,
+              "alignment": "center"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 3,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/50zyh8fq",
+      "id": "3",
+      "name": "kicker-One conversation, several business actions",
+      "bbox": [
+        72,
+        54,
+        300,
+        22
+      ],
+      "geometry": "rect",
+      "text": "THE PRODUCT WORKFLOW",
+      "textPreview": "THE PRODUCT WORKFLOW",
+      "resolvedFontSize": 11,
+      "resolvedTextStyle": {
+        "fontSize": 11,
+        "typeface": "Helvetica Neue",
+        "color": "#5FE1D2",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "THE PRODUCT WORKFLOW"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "THE PRODUCT WORKFLOW",
+          "resolvedTextStyle": {
+            "fontSize": 11,
+            "typeface": "Helvetica Neue",
+            "color": "#5FE1D2",
+            "bold": true
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "THE PRODUCT WORKFLOW",
+              "fontSize": 11,
+              "typeface": "Helvetica Neue",
+              "color": "#5FE1D2",
+              "bold": true
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 4,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/618zqdwb",
+      "id": "4",
+      "name": "title-One conversation, several business actions",
+      "bbox": [
+        72,
+        86,
+        1000,
+        64
+      ],
+      "geometry": "rect",
+      "text": "One conversation, several business actions",
+      "textPreview": "One conversation, several business actions",
+      "resolvedFontSize": 34,
+      "resolvedTextStyle": {
+        "fontSize": 34,
+        "typeface": "Helvetica Neue",
+        "color": "#FFFFFF",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "One conversation, several business actions"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "One conversation, several business actions",
+          "resolvedTextStyle": {
+            "fontSize": 34,
+            "typeface": "Helvetica Neue",
+            "color": "#FFFFFF",
+            "bold": true
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "One conversation, several business actions",
+              "fontSize": 34,
+              "typeface": "Helvetica Neue",
+              "color": "#FFFFFF",
+              "bold": true
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 5,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/r2hgjixw",
+      "id": "5",
+      "name": "subtitle-One conversation, several business actions",
+      "bbox": [
+        72,
+        154,
+        870,
+        44
+      ],
+      "geometry": "rect",
+      "text": "VoiceAI routes the request to the right next step while keeping the caller’s context in one place.",
+      "textPreview": "VoiceAI routes the request to the right next step while keeping the caller’s context in one place.",
+      "resolvedFontSize": 18,
+      "resolvedTextStyle": {
+        "fontSize": 18,
+        "typeface": "Helvetica Neue",
+        "color": "#B2C6CF",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "VoiceAI routes the request to the right next step while keeping the caller’s context in one place."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "VoiceAI routes the request to the right next step while keeping the caller’s context in one place.",
+          "resolvedTextStyle": {
+            "fontSize": 18,
+            "typeface": "Helvetica Neue",
+            "color": "#B2C6CF"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "VoiceAI routes the request to the right next step while keeping the caller’s context in one place.",
+              "fontSize": 18,
+              "typeface": "Helvetica Neue",
+              "color": "#B2C6CF"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 6,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/s3qhsneh",
+      "id": "6",
+      "name": "workflow-call",
+      "bbox": [
+        78,
+        300,
+        112,
+        112
+      ],
+      "geometry": "ellipse",
+      "fillColor": "#5FE1D2",
+      "lineWidth": 0
+    },
+    {
+      "order": 7,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/t4jilsf2",
+      "id": "7",
+      "name": "workflow-call-text",
+      "bbox": [
+        84,
+        334,
+        100,
+        48
+      ],
+      "geometry": "rect",
+      "text": "INBOUND\nCALL",
+      "textPreview": "INBOUND | CALL",
+      "resolvedFontSize": 14,
+      "resolvedTextStyle": {
+        "fontSize": 14,
+        "typeface": "Helvetica Neue",
+        "color": "#071827",
+        "bold": true,
+        "alignment": "center",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "INBOUND"
+          },
+          {
+            "index": 2,
+            "text": "CALL"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "INBOUND",
+          "resolvedTextStyle": {
+            "fontSize": 14,
+            "typeface": "Helvetica Neue",
+            "color": "#071827",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "INBOUND",
+              "fontSize": 14,
+              "typeface": "Helvetica Neue",
+              "color": "#071827",
+              "bold": true,
+              "alignment": "center"
+            }
+          ],
+          "marginLeft": 0
+        },
+        {
+          "index": 2,
+          "text": "CALL",
+          "resolvedTextStyle": {
+            "fontSize": 14,
+            "typeface": "Helvetica Neue",
+            "color": "#071827",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "CALL",
+              "fontSize": 14,
+              "typeface": "Helvetica Neue",
+              "color": "#071827",
+              "bold": true,
+              "alignment": "center"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 8,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/e5szudwn",
+      "id": "8",
+      "name": "workflow-router",
+      "bbox": [
+        270,
+        298,
+        190,
+        116
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#153B56",
+      "lineColor": "#5FE1D2",
+      "lineWidth": 1
+    },
+    {
+      "order": 9,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/fq10nixs",
+      "id": "9",
+      "name": "workflow-router-title",
+      "bbox": [
+        294,
+        322,
+        142,
+        24
+      ],
+      "geometry": "rect",
+      "text": "INTENT ROUTING",
+      "textPreview": "INTENT ROUTING",
+      "resolvedFontSize": 15,
+      "resolvedTextStyle": {
+        "fontSize": 15,
+        "typeface": "Helvetica Neue",
+        "color": "#B7FFF6",
+        "bold": true,
+        "alignment": "center",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "INTENT"
+          },
+          {
+            "index": 2,
+            "text": "ROUTING"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "INTENT ROUTING",
+          "resolvedTextStyle": {
+            "fontSize": 15,
+            "typeface": "Helvetica Neue",
+            "color": "#B7FFF6",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "INTENT ROUTING",
+              "fontSize": 15,
+              "typeface": "Helvetica Neue",
+              "color": "#B7FFF6",
+              "bold": true,
+              "alignment": "center"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 10,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/7u9svixg",
+      "id": "10",
+      "name": "workflow-router-body",
+      "bbox": [
+        294,
+        356,
+        142,
+        36
+      ],
+      "geometry": "rect",
+      "text": "Caller history + request context",
+      "textPreview": "Caller history + request context",
+      "resolvedFontSize": 14,
+      "resolvedTextStyle": {
+        "fontSize": 14,
+        "typeface": "Helvetica Neue",
+        "color": "#C4D6DD",
+        "alignment": "center",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Caller history +"
+          },
+          {
+            "index": 2,
+            "text": "request context"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Caller history + request context",
+          "resolvedTextStyle": {
+            "fontSize": 14,
+            "typeface": "Helvetica Neue",
+            "color": "#C4D6DD",
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Caller history + request context",
+              "fontSize": 14,
+              "typeface": "Helvetica Neue",
+              "color": "#C4D6DD",
+              "alignment": "center"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 11,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/6t0r2dwv",
+      "id": "11",
+      "name": "workflow-call-line",
+      "bbox": [
+        190,
+        356,
+        80,
+        0
+      ],
+      "geometry": "line",
+      "lineColor": "#5FE1D2",
+      "lineWidth": 2
+    },
+    {
+      "order": 12,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/tgbax8fm",
+      "id": "12",
+      "name": "workflow-destination-0",
+      "bbox": [
+        548,
+        224,
+        230,
+        112
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#10283B",
+      "lineColor": "#31566C",
+      "lineWidth": 1
+    },
+    {
+      "order": 13,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/sf2943e1",
+      "id": "13",
+      "name": "workflow-dot-0",
+      "bbox": [
+        566,
+        242,
+        14,
+        14
+      ],
+      "geometry": "ellipse",
+      "fillColor": "#5FE1D2",
+      "lineWidth": 0
+    },
+    {
+      "order": 14,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/jq9sryx4",
+      "id": "14",
+      "name": "workflow-destination-label-0",
+      "bbox": [
+        594,
+        241,
+        166,
+        22
+      ],
+      "geometry": "rect",
+      "text": "SERVICE INTAKE",
+      "textPreview": "SERVICE INTAKE",
+      "resolvedFontSize": 13,
+      "resolvedTextStyle": {
+        "fontSize": 13,
+        "typeface": "Helvetica Neue",
+        "color": "#B7FFF6",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "SERVICE INTAKE"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "SERVICE INTAKE",
+          "resolvedTextStyle": {
+            "fontSize": 13,
+            "typeface": "Helvetica Neue",
+            "color": "#B7FFF6",
+            "bold": true
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "SERVICE INTAKE",
+              "fontSize": 13,
+              "typeface": "Helvetica Neue",
+              "color": "#B7FFF6",
+              "bold": true
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 15,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ip0rytgz",
+      "id": "15",
+      "name": "workflow-destination-body-0",
+      "bbox": [
+        566,
+        276,
+        194,
+        36
+      ],
+      "geometry": "rect",
+      "text": "Capture the right details",
+      "textPreview": "Capture the right details",
+      "resolvedFontSize": 15,
+      "resolvedTextStyle": {
+        "fontSize": 15,
+        "typeface": "Helvetica Neue",
+        "color": "#C4D6DD",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Capture the right details"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Capture the right details",
+          "resolvedTextStyle": {
+            "fontSize": 15,
+            "typeface": "Helvetica Neue",
+            "color": "#C4D6DD"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Capture the right details",
+              "fontSize": 15,
+              "typeface": "Helvetica Neue",
+              "color": "#C4D6DD"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 16,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/5srat8fa",
+      "id": "16",
+      "name": "workflow-route-horizontal-0",
+      "bbox": [
+        460,
+        356,
+        40,
+        0
+      ],
+      "geometry": "line",
+      "lineColor": "#4B7486",
+      "lineWidth": 2
+    },
+    {
+      "order": 17,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/kri903yp",
+      "id": "17",
+      "name": "workflow-route-vertical-0",
+      "bbox": [
+        500,
+        280,
+        0,
+        76
+      ],
+      "geometry": "line",
+      "lineColor": "#4B7486",
+      "lineWidth": 2
+    },
+    {
+      "order": 18,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/3mds32xo",
+      "id": "18",
+      "name": "workflow-route-destination-0",
+      "bbox": [
+        500,
+        280,
+        48,
+        0
+      ],
+      "geometry": "line",
+      "lineColor": "#4B7486",
+      "lineWidth": 2
+    },
+    {
+      "order": 19,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/2lkbaxw3",
+      "id": "19",
+      "name": "workflow-destination-1",
+      "bbox": [
+        820,
+        224,
+        230,
+        112
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#153B56",
+      "lineColor": "#5FE1D2",
+      "lineWidth": 1
+    },
+    {
+      "order": 20,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ehov21gb",
+      "id": "20",
+      "name": "workflow-dot-1",
+      "bbox": [
+        838,
+        242,
+        14,
+        14
+      ],
+      "geometry": "ellipse",
+      "fillColor": "#F2C37B",
+      "lineWidth": 0
+    },
+    {
+      "order": 21,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/zixcbmhw",
+      "id": "21",
+      "name": "workflow-destination-label-1",
+      "bbox": [
+        866,
+        241,
+        166,
+        22
+      ],
+      "geometry": "rect",
+      "text": "APPOINTMENT BOOKING",
+      "textPreview": "APPOINTMENT BOOKING",
+      "resolvedFontSize": 13,
+      "resolvedTextStyle": {
+        "fontSize": 13,
+        "typeface": "Helvetica Neue",
+        "color": "#B7FFF6",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "APPOINTMENT"
+          },
+          {
+            "index": 2,
+            "text": "BOOKING"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "APPOINTMENT BOOKING",
+          "resolvedTextStyle": {
+            "fontSize": 13,
+            "typeface": "Helvetica Neue",
+            "color": "#B7FFF6",
+            "bold": true
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "APPOINTMENT BOOKING",
+              "fontSize": 13,
+              "typeface": "Helvetica Neue",
+              "color": "#B7FFF6",
+              "bold": true
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 22,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/0j6d4ryh",
+      "id": "22",
+      "name": "workflow-destination-body-1",
+      "bbox": [
+        838,
+        276,
+        194,
+        36
+      ],
+      "geometry": "rect",
+      "text": "Check and reserve a slot",
+      "textPreview": "Check and reserve a slot",
+      "resolvedFontSize": 15,
+      "resolvedTextStyle": {
+        "fontSize": 15,
+        "typeface": "Helvetica Neue",
+        "color": "#C4D6DD",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Check and reserve a slot"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Check and reserve a slot",
+          "resolvedTextStyle": {
+            "fontSize": 15,
+            "typeface": "Helvetica Neue",
+            "color": "#C4D6DD"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Check and reserve a slot",
+              "fontSize": 15,
+              "typeface": "Helvetica Neue",
+              "color": "#C4D6DD"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 23,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/1kfudwz2",
+      "id": "23",
+      "name": "workflow-route-horizontal-1",
+      "bbox": [
+        460,
+        356,
+        330,
+        0
+      ],
+      "geometry": "line",
+      "lineColor": "#5FE1D2",
+      "lineWidth": 2
+    },
+    {
+      "order": 24,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/m5ov61g7",
+      "id": "24",
+      "name": "workflow-route-vertical-1",
+      "bbox": [
+        790,
+        280,
+        0,
+        76
+      ],
+      "geometry": "line",
+      "lineColor": "#5FE1D2",
+      "lineWidth": 2
+    },
+    {
+      "order": 25,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/n6hcf6hs",
+      "id": "25",
+      "name": "workflow-route-destination-1",
+      "bbox": [
+        790,
+        280,
+        30,
+        0
+      ],
+      "geometry": "line",
+      "lineColor": "#5FE1D2",
+      "lineWidth": 2
+    },
+    {
+      "order": 26,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/o7qd8byd",
+      "id": "26",
+      "name": "workflow-destination-2",
+      "bbox": [
+        548,
+        432,
+        230,
+        112
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#10283B",
+      "lineColor": "#31566C",
+      "lineWidth": 1
+    },
+    {
+      "order": 27,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/98zehgzy",
+      "id": "27",
+      "name": "workflow-dot-2",
+      "bbox": [
+        566,
+        450,
+        14,
+        14
+      ],
+      "geometry": "ellipse",
+      "fillColor": "#5FE1D2",
+      "lineWidth": 0
+    },
+    {
+      "order": 28,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/294vuh03",
+      "id": "28",
+      "name": "workflow-destination-label-2",
+      "bbox": [
+        594,
+        449,
+        166,
+        22
+      ],
+      "geometry": "rect",
+      "text": "FAQ ANSWER",
+      "textPreview": "FAQ ANSWER",
+      "resolvedFontSize": 13,
+      "resolvedTextStyle": {
+        "fontSize": 13,
+        "typeface": "Helvetica Neue",
+        "color": "#B7FFF6",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "FAQ ANSWER"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "FAQ ANSWER",
+          "resolvedTextStyle": {
+            "fontSize": 13,
+            "typeface": "Helvetica Neue",
+            "color": "#B7FFF6",
+            "bold": true
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "FAQ ANSWER",
+              "fontSize": 13,
+              "typeface": "Helvetica Neue",
+              "color": "#B7FFF6",
+              "bold": true
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 29,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/3adc32ho",
+      "id": "29",
+      "name": "workflow-destination-body-2",
+      "bbox": [
+        566,
+        484,
+        194,
+        36
+      ],
+      "geometry": "rect",
+      "text": "Use the business knowledge base",
+      "textPreview": "Use the business knowledge base",
+      "resolvedFontSize": 15,
+      "resolvedTextStyle": {
+        "fontSize": 15,
+        "typeface": "Helvetica Neue",
+        "color": "#C4D6DD",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Use the business"
+          },
+          {
+            "index": 2,
+            "text": "knowledge base"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Use the business knowledge base",
+          "resolvedTextStyle": {
+            "fontSize": 15,
+            "typeface": "Helvetica Neue",
+            "color": "#C4D6DD"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Use the business knowledge base",
+              "fontSize": 15,
+              "typeface": "Helvetica Neue",
+              "color": "#C4D6DD"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 30,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/5g36p4ni",
+      "id": "30",
+      "name": "workflow-route-horizontal-2",
+      "bbox": [
+        460,
+        356,
+        40,
+        0
+      ],
+      "geometry": "line",
+      "lineColor": "#4B7486",
+      "lineWidth": 2
+    },
+    {
+      "order": 31,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/4fupwzmx",
+      "id": "31",
+      "name": "workflow-route-vertical-2",
+      "bbox": [
+        500,
+        356,
+        0,
+        132
+      ],
+      "geometry": "line",
+      "lineColor": "#4B7486",
+      "lineWidth": 2
+    },
+    {
+      "order": 32,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/jelonu5c",
+      "id": "32",
+      "name": "workflow-route-destination-2",
+      "bbox": [
+        500,
+        488,
+        48,
+        0
+      ],
+      "geometry": "line",
+      "lineColor": "#4B7486",
+      "lineWidth": 2
+    },
+    {
+      "order": 33,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/idc7u94r",
+      "id": "33",
+      "name": "workflow-destination-3",
+      "bbox": [
+        820,
+        432,
+        230,
+        112
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#10283B",
+      "lineColor": "#31566C",
+      "lineWidth": 1
+    },
+    {
+      "order": 34,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/tkn6tone",
+      "id": "34",
+      "name": "workflow-dot-3",
+      "bbox": [
+        838,
+        450,
+        14,
+        14
+      ],
+      "geometry": "ellipse",
+      "fillColor": "#5FE1D2",
+      "lineWidth": 0
+    },
+    {
+      "order": 35,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/sjep0jmt",
+      "id": "35",
+      "name": "workflow-destination-label-3",
+      "bbox": [
+        866,
+        449,
+        166,
+        22
+      ],
+      "geometry": "rect",
+      "text": "CALLBACK OR HANDOFF",
+      "textPreview": "CALLBACK OR HANDOFF",
+      "resolvedFontSize": 13,
+      "resolvedTextStyle": {
+        "fontSize": 13,
+        "typeface": "Helvetica Neue",
+        "color": "#B7FFF6",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "CALLBACK OR"
+          },
+          {
+            "index": 2,
+            "text": "HANDOFF"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "CALLBACK OR HANDOFF",
+          "resolvedTextStyle": {
+            "fontSize": 13,
+            "typeface": "Helvetica Neue",
+            "color": "#B7FFF6",
+            "bold": true
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "CALLBACK OR HANDOFF",
+              "fontSize": 13,
+              "typeface": "Helvetica Neue",
+              "color": "#B7FFF6",
+              "bold": true
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 36,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ri5ore58",
+      "id": "36",
+      "name": "workflow-destination-body-3",
+      "bbox": [
+        838,
+        484,
+        194,
+        36
+      ],
+      "geometry": "rect",
+      "text": "Keep the next action clear",
+      "textPreview": "Keep the next action clear",
+      "resolvedFontSize": 15,
+      "resolvedTextStyle": {
+        "fontSize": 15,
+        "typeface": "Helvetica Neue",
+        "color": "#C4D6DD",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Keep the next action clear"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Keep the next action clear",
+          "resolvedTextStyle": {
+            "fontSize": 15,
+            "typeface": "Helvetica Neue",
+            "color": "#C4D6DD"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Keep the next action clear",
+              "fontSize": 15,
+              "typeface": "Helvetica Neue",
+              "color": "#C4D6DD"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 37,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/6hc7y943",
+      "id": "37",
+      "name": "workflow-route-horizontal-3",
+      "bbox": [
+        460,
+        356,
+        330,
+        0
+      ],
+      "geometry": "line",
+      "lineColor": "#4B7486",
+      "lineWidth": 2
+    },
+    {
+      "order": 38,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/9oj6hkna",
+      "id": "38",
+      "name": "workflow-route-vertical-3",
+      "bbox": [
+        790,
+        356,
+        0,
+        132
+      ],
+      "geometry": "line",
+      "lineColor": "#4B7486",
+      "lineWidth": 2
+    },
+    {
+      "order": 39,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/8na5ofmp",
+      "id": "39",
+      "name": "workflow-route-destination-3",
+      "bbox": [
+        790,
+        488,
+        30,
+        0
+      ],
+      "geometry": "line",
+      "lineColor": "#4B7486",
+      "lineWidth": 2
+    },
+    {
+      "order": 40,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/c3i9wn6d",
+      "id": "40",
+      "name": "workflow-bottom-note",
+      "bbox": [
+        270,
+        590,
+        700,
+        34
+      ],
+      "geometry": "rect",
+      "text": "Structured records and summaries give staff a clear handoff when the call continues beyond automation.",
+      "textPreview": "Structured records and summaries give staff a clear handoff when the call continues beyond automation.",
+      "resolvedFontSize": 16,
+      "resolvedTextStyle": {
+        "fontSize": 16,
+        "typeface": "Helvetica Neue",
+        "color": "#B5C9D2",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Structured records and summaries give staff a clear handoff when the call continues beyond"
+          },
+          {
+            "index": 2,
+            "text": "automation."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Structured records and summaries give staff a clear handoff when the call continues beyond automation.",
+          "resolvedTextStyle": {
+            "fontSize": 16,
+            "typeface": "Helvetica Neue",
+            "color": "#B5C9D2"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Structured records and summaries give staff a clear handoff when the call continues beyond automation.",
+              "fontSize": 16,
+              "typeface": "Helvetica Neue",
+              "color": "#B5C9D2"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 41,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/d4raps7y",
+      "id": "41",
+      "name": "footer-rule-3",
+      "bbox": [
+        72,
+        674,
+        1136,
+        0
+      ],
+      "geometry": "line",
+      "lineColor": "#2B4A5C",
+      "lineWidth": 1
+    },
+    {
+      "order": 42,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/q10rudo7",
+      "id": "42",
+      "name": "footer-brand-3",
+      "bbox": [
+        72,
+        686,
+        160,
+        20
+      ],
+      "geometry": "rect",
+      "text": "VoiceAI",
+      "textPreview": "VoiceAI",
+      "resolvedFontSize": 11,
+      "resolvedTextStyle": {
+        "fontSize": 11,
+        "typeface": "Helvetica Neue",
+        "color": "#A7C0CD",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "VoiceAI"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "VoiceAI",
+          "resolvedTextStyle": {
+            "fontSize": 11,
+            "typeface": "Helvetica Neue",
+            "color": "#A7C0CD",
+            "bold": true
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "VoiceAI",
+              "fontSize": 11,
+              "typeface": "Helvetica Neue",
+              "color": "#A7C0CD",
+              "bold": true
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 43,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/b29snips",
+      "id": "43",
+      "name": "footer-page-3",
+      "bbox": [
+        1152,
+        686,
+        56,
+        20
+      ],
+      "geometry": "rect",
+      "text": "03",
+      "textPreview": "03",
+      "resolvedFontSize": 11,
+      "resolvedTextStyle": {
+        "fontSize": 11,
+        "typeface": "Helvetica Neue",
+        "color": "#A7C0CD",
+        "alignment": "right",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "03"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "03",
+          "resolvedTextStyle": {
+            "fontSize": 11,
+            "typeface": "Helvetica Neue",
+            "color": "#A7C0CD",
+            "alignment": "right"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "03",
+              "fontSize": 11,
+              "typeface": "Helvetica Neue",
+              "color": "#A7C0CD",
+              "alignment": "right"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    }
+  ],
+  "composeRuns": []
+}

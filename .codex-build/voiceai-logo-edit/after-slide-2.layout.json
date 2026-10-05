@@ -1,0 +1,1756 @@
+{
+  "schema": "openai.presentation.layout/v4",
+  "unit": "px",
+  "slide": {
+    "aid": "sl/hwbqtkby",
+    "id": "hwbqtkby",
+    "slide": 2,
+    "layoutId": "/ppt/slideLayouts/slideLayout1.xml",
+    "layoutName": "Title Slide",
+    "layoutType": "title",
+    "masterLayoutId": "/ppt/slideMasters/slideMaster1.xml",
+    "masterLayoutName": "Master",
+    "backgroundColor": "#F7F4EE",
+    "frame": {
+      "left": 0,
+      "top": 0,
+      "width": 1280,
+      "height": 720
+    }
+  },
+  "theme": {
+    "colorSchemeName": "ChatGPT",
+    "colors": {
+      "accent1": "#156082",
+      "accent2": "#E97132",
+      "accent3": "#196B24",
+      "accent4": "#0F9ED5",
+      "accent5": "#A02B93",
+      "accent6": "#4EA72E",
+      "dk1": "#000000",
+      "lt1": "#FFFFFF",
+      "dk2": "#0E2841",
+      "lt2": "#E8E8E8",
+      "hlink": "#467886",
+      "folHlink": "#96607D"
+    },
+    "fontScheme": {
+      "name": "Office",
+      "majorFont": {
+        "latinTypeface": "Calibri Light",
+        "eastAsianTypeface": "Calibri Light",
+        "complexScriptTypeface": "Calibri Light"
+      },
+      "minorFont": {
+        "latinTypeface": "Calibri",
+        "eastAsianTypeface": "Calibri",
+        "complexScriptTypeface": "Calibri"
+      }
+    },
+    "typefaces": [
+      "Calibri",
+      "Calibri Light",
+      "Helvetica Neue"
+    ]
+  },
+  "inheritedLayers": [
+    {
+      "scope": "layout",
+      "id": "/ppt/slideLayouts/slideLayout1.xml",
+      "name": "Title Slide",
+      "type": "title",
+      "parentLayoutId": "/ppt/slideMasters/slideMaster1.xml",
+      "elements": []
+    },
+    {
+      "scope": "master",
+      "id": "/ppt/slideMasters/slideMaster1.xml",
+      "name": "Master",
+      "type": "master",
+      "elements": []
+    }
+  ],
+  "elements": [
+    {
+      "order": 1,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/je9crql0",
+      "id": "39",
+      "name": "problem-brand",
+      "bbox": [
+        1030,
+        32,
+        178,
+        42
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#EAF2F1",
+      "lineColor": "#A8C9C6",
+      "lineWidth": 1
+    },
+    {
+      "order": 2,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/9072xkry",
+      "id": "2",
+      "name": "problem-brand-text",
+      "bbox": [
+        1042,
+        43,
+        154,
+        20
+      ],
+      "geometry": "rect",
+      "text": "YOUR BRAND",
+      "textPreview": "YOUR BRAND",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "YOUR BRAND"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "YOUR BRAND",
+          "resolvedTextStyle": {
+            "fontSize": 12,
+            "typeface": "Helvetica Neue",
+            "color": "#0E766E",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "YOUR BRAND",
+              "fontSize": 12,
+              "typeface": "Helvetica Neue",
+              "color": "#0E766E",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 3,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ozy1ofad",
+      "id": "3",
+      "name": "kicker-The phone is where service demand begins",
+      "bbox": [
+        72,
+        54,
+        300,
+        22
+      ],
+      "geometry": "rect",
+      "text": "THE BUSINESS PROBLEM",
+      "textPreview": "THE BUSINESS PROBLEM",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "THE BUSINESS PROBLEM"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "THE BUSINESS PROBLEM",
+          "resolvedTextStyle": {
+            "fontSize": 11,
+            "typeface": "Helvetica Neue",
+            "color": "#0E766E",
+            "bold": true
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "THE BUSINESS PROBLEM",
+              "fontSize": 11,
+              "typeface": "Helvetica Neue",
+              "color": "#0E766E",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 4,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/b29kza94",
+      "id": "4",
+      "name": "title-The phone is where service demand begins",
+      "bbox": [
+        72,
+        86,
+        1000,
+        64
+      ],
+      "geometry": "rect",
+      "text": "The phone is where service demand begins",
+      "textPreview": "The phone is where service demand begins",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "The phone is where service demand begins"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "The phone is where service demand begins",
+          "resolvedTextStyle": {
+            "fontSize": 34,
+            "typeface": "Helvetica Neue",
+            "color": "#102434",
+            "bold": true
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "The phone is where service demand begins",
+              "fontSize": 34,
+              "typeface": "Helvetica Neue",
+              "color": "#102434",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 5,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/a10jqpsj",
+      "id": "5",
+      "name": "subtitle-The phone is where service demand begins",
+      "bbox": [
+        72,
+        154,
+        870,
+        44
+      ],
+      "geometry": "rect",
+      "text": "When staff cannot answer, the work does not wait.",
+      "textPreview": "When staff cannot answer, the work does not wait.",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "When staff cannot answer, the work does not wait."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "When staff cannot answer, the work does not wait.",
+          "resolvedTextStyle": {
+            "fontSize": 18,
+            "typeface": "Helvetica Neue",
+            "color": "#526777"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "When staff cannot answer, the work does not wait.",
+              "fontSize": 18,
+              "typeface": "Helvetica Neue",
+              "color": "#526777"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 6,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/x4r21kru",
+      "id": "6",
+      "name": "problem-dot-0",
+      "bbox": [
+        76,
+        250,
+        26,
+        26
+      ],
+      "geometry": "ellipse",
+      "fillColor": "#F39D84",
+      "lineWidth": 0
+    },
+    {
+      "order": 7,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/w3i1sfa9",
+      "id": "7",
+      "name": "problem-label-0",
+      "bbox": [
+        122,
+        246,
+        340,
+        22
+      ],
+      "geometry": "rect",
+      "text": "MISSED CALLS",
+      "textPreview": "MISSED CALLS",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "MISSED CALLS"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "MISSED CALLS",
+          "resolvedTextStyle": {
+            "fontSize": 12,
+            "typeface": "Helvetica Neue",
+            "color": "#0E766E",
+            "bold": true
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "MISSED CALLS",
+              "fontSize": 12,
+              "typeface": "Helvetica Neue",
+              "color": "#0E766E",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 8,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/r65knqtk",
+      "id": "8",
+      "name": "problem-body-0",
+      "bbox": [
+        122,
+        272,
+        420,
+        48
+      ],
+      "geometry": "rect",
+      "text": "A customer leaves before anyone responds.",
+      "textPreview": "A customer leaves before anyone responds.",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "A customer leaves before anyone"
+          },
+          {
+            "index": 2,
+            "text": "responds."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "A customer leaves before anyone responds.",
+          "resolvedTextStyle": {
+            "fontSize": 20,
+            "typeface": "Helvetica Neue",
+            "color": "#102434",
+            "bold": true
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "A customer leaves before anyone responds.",
+              "fontSize": 20,
+              "typeface": "Helvetica Neue",
+              "color": "#102434",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 9,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/q5wjelsz",
+      "id": "9",
+      "name": "problem-rule-0",
+      "bbox": [
+        122,
+        332,
+        462,
+        0
+      ],
+      "geometry": "line",
+      "lineColor": "#CBD7DC",
+      "lineWidth": 1
+    },
+    {
+      "order": 10,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ove9o7yd",
+      "id": "10",
+      "name": "problem-dot-1",
+      "bbox": [
+        76,
+        352,
+        26,
+        26
+      ],
+      "geometry": "ellipse",
+      "fillColor": "#F2C37B",
+      "lineWidth": 0
+    },
+    {
+      "order": 11,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/9wnqhczy",
+      "id": "11",
+      "name": "problem-label-1",
+      "bbox": [
+        122,
+        348,
+        340,
+        22
+      ],
+      "geometry": "rect",
+      "text": "REPETITIVE FRONT-DESK WORK",
+      "textPreview": "REPETITIVE FRONT-DESK WORK",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "REPETITIVE FRONT-DESK WORK"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "REPETITIVE FRONT-DESK WORK",
+          "resolvedTextStyle": {
+            "fontSize": 12,
+            "typeface": "Helvetica Neue",
+            "color": "#0E766E",
+            "bold": true
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "REPETITIVE FRONT-DESK WORK",
+              "fontSize": 12,
+              "typeface": "Helvetica Neue",
+              "color": "#0E766E",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 12,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/mtwrmxg7",
+      "id": "12",
+      "name": "problem-body-1",
+      "bbox": [
+        122,
+        374,
+        420,
+        48
+      ],
+      "geometry": "rect",
+      "text": "Staff re-enter the same details across tools.",
+      "textPreview": "Staff re-enter the same details across tools.",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Staff re-enter the same details across"
+          },
+          {
+            "index": 2,
+            "text": "tools."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Staff re-enter the same details across tools.",
+          "resolvedTextStyle": {
+            "fontSize": 20,
+            "typeface": "Helvetica Neue",
+            "color": "#102434",
+            "bold": true
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Staff re-enter the same details across tools.",
+              "fontSize": 20,
+              "typeface": "Helvetica Neue",
+              "color": "#102434",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 13,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/nu58f2hs",
+      "id": "13",
+      "name": "problem-rule-1",
+      "bbox": [
+        122,
+        434,
+        462,
+        0
+      ],
+      "geometry": "line",
+      "lineColor": "#CBD7DC",
+      "lineWidth": 1
+    },
+    {
+      "order": 14,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/wjy9sry9",
+      "id": "14",
+      "name": "problem-dot-2",
+      "bbox": [
+        76,
+        454,
+        26,
+        26
+      ],
+      "geometry": "ellipse",
+      "fillColor": "#5FE1D2",
+      "lineWidth": 0
+    },
+    {
+      "order": 15,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/xk7qlczu",
+      "id": "15",
+      "name": "problem-label-2",
+      "bbox": [
+        122,
+        450,
+        340,
+        22
+      ],
+      "geometry": "rect",
+      "text": "FRAGMENTED FOLLOW-THROUGH",
+      "textPreview": "FRAGMENTED FOLLOW-THROUGH",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "FRAGMENTED FOLLOW-THROUGH"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "FRAGMENTED FOLLOW-THROUGH",
+          "resolvedTextStyle": {
+            "fontSize": 12,
+            "typeface": "Helvetica Neue",
+            "color": "#0E766E",
+            "bold": true
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "FRAGMENTED FOLLOW-THROUGH",
+              "fontSize": 12,
+              "typeface": "Helvetica Neue",
+              "color": "#0E766E",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 16,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ahwrqhgj",
+      "id": "16",
+      "name": "problem-body-2",
+      "bbox": [
+        122,
+        476,
+        420,
+        48
+      ],
+      "geometry": "rect",
+      "text": "Bookings, reminders, and handoffs depend on manual coordination.",
+      "textPreview": "Bookings, reminders, and handoffs depend on manual coordination.",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Bookings, reminders, and handoffs"
+          },
+          {
+            "index": 2,
+            "text": "depend on manual coordination."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Bookings, reminders, and handoffs depend on manual coordination.",
+          "resolvedTextStyle": {
+            "fontSize": 20,
+            "typeface": "Helvetica Neue",
+            "color": "#102434",
+            "bold": true
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Bookings, reminders, and handoffs depend on manual coordination.",
+              "fontSize": 20,
+              "typeface": "Helvetica Neue",
+              "color": "#102434",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 17,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/bip8jmho",
+      "id": "17",
+      "name": "problem-before-label",
+      "bbox": [
+        720,
+        238,
+        330,
+        22
+      ],
+      "geometry": "rect",
+      "text": "WHEN THE TEAM IS BUSY",
+      "textPreview": "WHEN THE TEAM IS BUSY",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "WHEN THE TEAM IS BUSY"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "WHEN THE TEAM IS BUSY",
+          "resolvedTextStyle": {
+            "fontSize": 12,
+            "typeface": "Helvetica Neue",
+            "color": "#526777",
+            "bold": true
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "WHEN THE TEAM IS BUSY",
+              "fontSize": 12,
+              "typeface": "Helvetica Neue",
+              "color": "#526777",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 18,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/cnupgny5",
+      "id": "18",
+      "name": "problem-before-call",
+      "bbox": [
+        720,
+        288,
+        62,
+        62
+      ],
+      "geometry": "ellipse",
+      "fillColor": "#FFFCF7",
+      "lineColor": "#F39D84",
+      "lineWidth": 1
+    },
+    {
+      "order": 19,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/do3q9szq",
+      "id": "19",
+      "name": "problem-before-call-text",
+      "bbox": [
+        720,
+        308,
+        62,
+        20
+      ],
+      "geometry": "rect",
+      "text": "CALL",
+      "textPreview": "CALL",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "CALL"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "CALL",
+          "resolvedTextStyle": {
+            "fontSize": 11,
+            "typeface": "Helvetica Neue",
+            "color": "#102434",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "CALL",
+              "fontSize": 11,
+              "typeface": "Helvetica Neue",
+              "color": "#102434",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 20,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/t8byxkn2",
+      "id": "20",
+      "name": "problem-voicemail",
+      "bbox": [
+        846,
+        292,
+        160,
+        54
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#FFF8EE",
+      "lineColor": "#F2C37B",
+      "lineWidth": 1
+    },
+    {
+      "order": 21,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/s72xofmh",
+      "id": "21",
+      "name": "problem-voicemail-text",
+      "bbox": [
+        860,
+        309,
+        132,
+        24
+      ],
+      "geometry": "rect",
+      "text": "Voicemail or repeat call",
+      "textPreview": "Voicemail or repeat call",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Voicemail or"
+          },
+          {
+            "index": 2,
+            "text": "repeat call"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Voicemail or repeat call",
+          "resolvedTextStyle": {
+            "fontSize": 14,
+            "typeface": "Helvetica Neue",
+            "color": "#102434",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Voicemail or repeat call",
+              "fontSize": 14,
+              "typeface": "Helvetica Neue",
+              "color": "#102434",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 22,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/76twva5c",
+      "id": "22",
+      "name": "problem-before-line",
+      "bbox": [
+        782,
+        319,
+        64,
+        0
+      ],
+      "geometry": "line",
+      "lineColor": "#F39D84",
+      "lineWidth": 2
+    },
+    {
+      "order": 23,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/65kfmpor",
+      "id": "23",
+      "name": "problem-before-arrow",
+      "bbox": [
+        806,
+        312,
+        24,
+        14
+      ],
+      "geometry": "rightArrow",
+      "fillColor": "#F39D84",
+      "lineWidth": 0
+    },
+    {
+      "order": 24,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/hcvy14ne",
+      "id": "24",
+      "name": "problem-after-label",
+      "bbox": [
+        720,
+        402,
+        330,
+        22
+      ],
+      "geometry": "rect",
+      "text": "WITH VOICEAI",
+      "textPreview": "WITH VOICEAI",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "WITH VOICEAI"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "WITH VOICEAI",
+          "resolvedTextStyle": {
+            "fontSize": 12,
+            "typeface": "Helvetica Neue",
+            "color": "#0E766E",
+            "bold": true
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "WITH VOICEAI",
+              "fontSize": 12,
+              "typeface": "Helvetica Neue",
+              "color": "#0E766E",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 25,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/gbmxszmt",
+      "id": "25",
+      "name": "problem-after-call",
+      "bbox": [
+        720,
+        452,
+        62,
+        62
+      ],
+      "geometry": "ellipse",
+      "fillColor": "#E8FBF7",
+      "lineColor": "#0E766E",
+      "lineWidth": 1
+    },
+    {
+      "order": 26,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/fadgzu58",
+      "id": "26",
+      "name": "problem-after-call-text",
+      "bbox": [
+        720,
+        472,
+        62,
+        20
+      ],
+      "geometry": "rect",
+      "text": "CALL",
+      "textPreview": "CALL",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "CALL"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "CALL",
+          "resolvedTextStyle": {
+            "fontSize": 11,
+            "typeface": "Helvetica Neue",
+            "color": "#102434",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "CALL",
+              "fontSize": 11,
+              "typeface": "Helvetica Neue",
+              "color": "#102434",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 27,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/u94fqp4n",
+      "id": "27",
+      "name": "problem-conversation",
+      "bbox": [
+        826,
+        456,
+        132,
+        54
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#E8FBF7",
+      "lineColor": "#0E766E",
+      "lineWidth": 1
+    },
+    {
+      "order": 28,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/p0vy54na",
+      "id": "28",
+      "name": "problem-conversation-text",
+      "bbox": [
+        838,
+        473,
+        108,
+        24
+      ],
+      "geometry": "rect",
+      "text": "Useful conversation",
+      "textPreview": "Useful conversation",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Useful"
+          },
+          {
+            "index": 2,
+            "text": "conversation"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Useful conversation",
+          "resolvedTextStyle": {
+            "fontSize": 14,
+            "typeface": "Helvetica Neue",
+            "color": "#102434",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Useful conversation",
+              "fontSize": 14,
+              "typeface": "Helvetica Neue",
+              "color": "#102434",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 29,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/4zmxwzmp",
+      "id": "29",
+      "name": "problem-next-step",
+      "bbox": [
+        1000,
+        456,
+        178,
+        54
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#0D2B42",
+      "lineColor": "#5FE1D2",
+      "lineWidth": 1
+    },
+    {
+      "order": 30,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/mlgvq147",
+      "id": "30",
+      "name": "problem-next-step-text",
+      "bbox": [
+        1014,
+        473,
+        150,
+        24
+      ],
+      "geometry": "rect",
+      "text": "Clear next step",
+      "textPreview": "Clear next step",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "Clear next step"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "Clear next step",
+          "resolvedTextStyle": {
+            "fontSize": 14,
+            "typeface": "Helvetica Neue",
+            "color": "#FFFFFF",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "Clear next step",
+              "fontSize": 14,
+              "typeface": "Helvetica Neue",
+              "color": "#FFFFFF",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 31,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/nmpcj6ls",
+      "id": "31",
+      "name": "problem-after-line-1",
+      "bbox": [
+        782,
+        483,
+        44,
+        0
+      ],
+      "geometry": "line",
+      "lineColor": "#0E766E",
+      "lineWidth": 2
+    },
+    {
+      "order": 32,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/onydsbmd",
+      "id": "32",
+      "name": "problem-after-arrow-1",
+      "bbox": [
+        795,
+        476,
+        24,
+        14
+      ],
+      "geometry": "rightArrow",
+      "fillColor": "#0E766E",
+      "lineWidth": 0
+    },
+    {
+      "order": 33,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/9o7ulg3y",
+      "id": "33",
+      "name": "problem-after-line-2",
+      "bbox": [
+        958,
+        483,
+        42,
+        0
+      ],
+      "geometry": "line",
+      "lineColor": "#0E766E",
+      "lineWidth": 2
+    },
+    {
+      "order": 34,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/a9gvulkj",
+      "id": "34",
+      "name": "problem-after-arrow-2",
+      "bbox": [
+        978,
+        476,
+        24,
+        14
+      ],
+      "geometry": "rightArrow",
+      "fillColor": "#0E766E",
+      "lineWidth": 0
+    },
+    {
+      "order": 35,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ba9cn6l4",
+      "id": "35",
+      "name": "problem-takeaway",
+      "bbox": [
+        720,
+        558,
+        450,
+        48
+      ],
+      "geometry": "rect",
+      "text": "VoiceAI keeps the first conversation useful, even when the team is busy.",
+      "textPreview": "VoiceAI keeps the first conversation useful, even when the team is busy.",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "VoiceAI keeps the first conversation useful, even"
+          },
+          {
+            "index": 2,
+            "text": "when the team is busy."
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "VoiceAI keeps the first conversation useful, even when the team is busy.",
+          "resolvedTextStyle": {
+            "fontSize": 18,
+            "typeface": "Helvetica Neue",
+            "color": "#102434",
+            "bold": true
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "VoiceAI keeps the first conversation useful, even when the team is busy.",
+              "fontSize": 18,
+              "typeface": "Helvetica Neue",
+              "color": "#102434",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 36,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/wbidwb29",
+      "id": "36",
+      "name": "footer-rule-2",
+      "bbox": [
+        72,
+        674,
+        1136,
+        0
+      ],
+      "geometry": "line",
+      "lineColor": "#D6DFE2",
+      "lineWidth": 1
+    },
+    {
+      "order": 37,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/xcrupg3u",
+      "id": "37",
+      "name": "footer-brand-2",
+      "bbox": [
+        72,
+        686,
+        160,
+        20
+      ],
+      "geometry": "rect",
+      "text": "VoiceAI",
+      "textPreview": "VoiceAI",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "VoiceAI"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "VoiceAI",
+          "resolvedTextStyle": {
+            "fontSize": 11,
+            "typeface": "Helvetica Neue",
+            "color": "#718691",
+            "bold": true
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "VoiceAI",
+              "fontSize": 11,
+              "typeface": "Helvetica Neue",
+              "color": "#718691",
+              "bold": true
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 38,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/id0vylkf",
+      "id": "38",
+      "name": "footer-page-2",
+      "bbox": [
+        1152,
+        686,
+        56,
+        20
+      ],
+      "geometry": "rect",
+      "text": "02",
+      "textPreview": "02",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "02"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "02",
+          "resolvedTextStyle": {
+            "fontSize": 11,
+            "typeface": "Helvetica Neue",
+            "color": "#718691",
+            "alignment": "right"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "02",
+              "fontSize": 11,
+              "typeface": "Helvetica Neue",
+              "color": "#718691"
+            }
+          ],
+          "bulletCharacter": "",
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 39,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ru5cbqd4",
+      "id": "40",
+      "name": "edvenswa-logo-panel-2",
+      "bbox": [
+        1026,
+        18,
+        186,
+        120
+      ],
+      "geometry": "roundRect",
+      "resolvedFontSize": 24,
+      "resolvedTextStyle": {
+        "fontSize": 24,
+        "typeface": "Calibri",
+        "color": "tx1",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": ""
+          }
+        ]
+      },
+      "fillColor": "#FFFFFF",
+      "lineColor": "#5FE1D2",
+      "lineWidth": 1
+    },
+    {
+      "order": 40,
+      "kind": "image",
+      "scope": "slide",
+      "aid": "im/pofu1wbq",
+      "id": "41",
+      "bbox": [
+        1058,
+        23,
+        122,
+        110
+      ],
+      "alt": "Edvenswa logo",
+      "contentType": "image/png",
+      "imageFit": "contain",
+      "asset": {
+        "assetId": "aad46fff-37bd-42df-b5fd-7c4fd4cc3f9d",
+        "contentType": "image/png",
+        "byteLength": 46094
+      }
+    }
+  ],
+  "composeRuns": []
+}

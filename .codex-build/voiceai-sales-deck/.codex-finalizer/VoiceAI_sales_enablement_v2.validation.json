@@ -1,0 +1,157 @@
+{
+  "schemaVersion": "presentation-finalization.v1",
+  "finalSha256": "3f571bb2c7772f2e841b926d6158e7b0b4ae28a1ef2bd44daf6ad369671f24d6",
+  "byteCount": 1593304,
+  "packageIntegrity": {
+    "chart_count": 0,
+    "claim_boundary": "Structural package checks only; no slide text, notes, formulas, chart values, or native PowerPoint execution were inspected.",
+    "finding_count": 0,
+    "findings": [],
+    "notes_parts_skipped": 5,
+    "relationship_part_count": 15,
+    "slide_count": 5,
+    "status": "pass",
+    "exitCode": 0,
+    "findingCount": 0,
+    "warnings": []
+  },
+  "presentationLayout": {
+    "finding_count": 0,
+    "findings": [],
+    "font_policy": {
+      "checked_text_script_count": 90,
+      "native_font_rendering_verified": false,
+      "observed_font_families": [
+        "Helvetica Neue"
+      ],
+      "observed_font_use_counts": {
+        "Helvetica Neue": 90
+      },
+      "passed": true,
+      "performed": true
+    },
+    "slide_count": 5,
+    "slide_size_in": [
+      13.3333,
+      7.5
+    ],
+    "warning_count": 3,
+    "warnings": [
+      {
+        "connector_id": "56",
+        "connector_z": 22,
+        "kind": "connector_over_text",
+        "slide": 3,
+        "text_object_id": "15",
+        "text_z": 16
+      },
+      {
+        "connector_id": "66",
+        "connector_z": 32,
+        "kind": "connector_over_text",
+        "slide": 3,
+        "text_object_id": "24",
+        "text_z": 25
+      },
+      {
+        "connector_id": "66",
+        "connector_z": 32,
+        "kind": "connector_over_text",
+        "slide": 3,
+        "text_object_id": "25",
+        "text_z": 26
+      }
+    ],
+    "exitCode": 0,
+    "findingCount": 0,
+    "fontPolicy": {
+      "checked_text_script_count": 90,
+      "native_font_rendering_verified": false,
+      "observed_font_families": [
+        "Helvetica Neue"
+      ],
+      "observed_font_use_counts": {
+        "Helvetica Neue": 90
+      },
+      "passed": true,
+      "performed": true
+    }
+  },
+  "fontSelection": {
+    "basis": "design",
+    "approvedFamilies": [
+      "Helvetica Neue"
+    ],
+    "scriptFonts": {},
+    "referenceSha256": null,
+    "referenceFontsVerifiedInEncodedText": false,
+    "checked_text_script_count": 90,
+    "native_font_rendering_verified": false,
+    "observed_font_families": [
+      "Helvetica Neue"
+    ],
+    "observed_font_use_counts": {
+      "Helvetica Neue": 90
+    },
+    "passed": true,
+    "performed": true
+  },
+  "firstPartyImport": {
+    "performed": true,
+    "passed": true,
+    "slideCount": 5,
+    "sha256": "3f571bb2c7772f2e841b926d6158e7b0b4ae28a1ef2bd44daf6ad369671f24d6",
+    "runtimeNodeModules": "/Users/rohanroy/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules",
+    "nodeExecutable": "/Users/rohanroy/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node"
+  },
+  "nativeTableArithmetic": {
+    "performed": true,
+    "checked_column_count": 0,
+    "checks": [],
+    "claim_boundary": "Displayed-value arithmetic with rounding tolerance; not source-data verification.",
+    "eligible_table_count": 0,
+    "finding_count": 0,
+    "findings": [],
+    "native_table_count": 0,
+    "passed": true,
+    "schema_version": "presentation-native-table-arithmetic.v1",
+    "skipped_tables": [],
+    "slide_count": 5,
+    "warning_count": 0,
+    "warnings": []
+  },
+  "nativeChartTitles": {
+    "performed": true,
+    "checks": [],
+    "finding_count": 0,
+    "findings": [],
+    "native_chart_count": 0,
+    "native_powerpoint_verified": false,
+    "passed": true,
+    "presentation_sha256": "3f571bb2c7772f2e841b926d6158e7b0b4ae28a1ef2bd44daf6ad369671f24d6",
+    "schema_version": "presentation-native-chart-titles.v1",
+    "slide_count": 5,
+    "source_text_emitted": false,
+    "unresolved_linked_title_count": 0
+  },
+  "sourceDerivedPolicyFlags": [
+    "--expected-slide-size-emu",
+    "12192000,6858000",
+    "--validate-bullet-geometry",
+    "--validate-heading-fit",
+    "--cover-role",
+    "none",
+    "--expected-slide-count",
+    "5",
+    "--approved-font-family",
+    "Helvetica Neue"
+  ],
+  "nativeChartValidation": {
+    "detectedOwnerSlides": [],
+    "detectedChartCount": 0,
+    "targetApplication": "portable",
+    "sourceChartOwnersExplicitlyDeclared": true,
+    "validatorRan": false,
+    "passed": true
+  }
+}

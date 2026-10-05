@@ -1,0 +1,174 @@
+{"kind":"deck","id":"pr/dkjodo","name":"Deck"}
+{"kind":"layout","layoutId":"d1b4affa-1abc-48e1-b632-2570dfafd606","name":"Master","type":"master"}
+{"kind":"layout","layoutId":"ff657ed7-b0ae-4ec4-82c2-b751f9512869","name":"Title Slide","type":"title"}
+{"kind":"slide","id":"sl/22n648","slide":1,"title":"YOUR BRAND","textShapes":6}
+{"kind":"shape","id":"sh/l47yd8rm","slide":1,"name":"cover-left-scrim","bbox":[0,0,650,720]}
+{"kind":"shape","id":"sh/03yh43a1","slide":1,"name":"cover-brand","bbox":[1030,34,178,42]}
+{"kind":"textbox","id":"sh/be5g7y9k","slide":1,"name":"cover-brand-text","text":"YOUR BRAND","textPreview":"YOUR BRAND","textChars":10,"textLines":1,"bbox":[1042,45,154,20]}
+{"kind":"textbox","id":"sh/qdwzytsz","slide":1,"name":"cover-kicker","text":"SALES PRESENTATION","textPreview":"SALES PRESENTATION","textChars":18,"textLines":1,"bbox":[84,82,260,24]}
+{"kind":"shape","id":"sh/d0ny98ra","slide":1,"name":"cover-accent","bbox":[84,118,56,0]}
+{"kind":"textbox","id":"sh/czeh03ap","slide":1,"name":"cover-title","text":"VoiceAI","textPreview":"VoiceAI","textChars":7,"textLines":1,"bbox":[84,164,560,84]}
+{"kind":"textbox","id":"sh/va9gji9o","slide":1,"name":"cover-subtitle","text":"Conversational inbound call handling for service businesses.","textPreview":"Conversational inbound call handling for service businesses.","textChars":60,"textLines":1,"bbox":[84,274,520,76]}
+{"kind":"textbox","id":"sh/a9gzads3","slide":1,"name":"cover-description","text":"One voice conversation can capture the request, answer questions, and start the next operational step.","textPreview":"One voice conversation can capture the request, answer questions, and start the next operational step.","textChars":102,"textLines":1,"bbox":[84,382,475,64]}
+{"kind":"textbox","id":"sh/srqlwj2p","slide":1,"name":"cover-footer-label","text":"PRODUCT OVERVIEW","textPreview":"PRODUCT OVERVIEW","textChars":16,"textLines":1,"bbox":[84,618,250,22]}
+{"kind":"image","id":"im/bqps7ex0","slide":1,"name":"","alt":"Abstract teal voice waveform and connected signal paths","bbox":[0,0,1280,720]}
+{"kind":"notes","id":"nt/22n648","slide":1,"text":"Source notes: Product positioning and capabilities synthesized from README.md, docs/PRD.md, and docs/RELEASE_NOTE_v0.1.md. Cover artwork generated for this deck and contains no external brand or factual claim."}
+{"kind":"slide","id":"sl/ue8h4r","slide":2,"title":"YOUR BRAND","textShapes":20}
+{"kind":"shape","id":"sh/61sbe1s7","slide":2,"name":"problem-brand","bbox":[1030,32,178,42]}
+{"kind":"textbox","id":"sh/t43a9wry","slide":2,"name":"problem-brand-text","text":"YOUR BRAND","textPreview":"YOUR BRAND","textChars":10,"textLines":1,"bbox":[1042,43,154,20]}
+{"kind":"textbox","id":"sh/s3utgrad","slide":2,"name":"kicker-The phone is where service demand begins","text":"THE BUSINESS PROBLEM","textPreview":"THE BUSINESS PROBLEM","textChars":20,"textLines":1,"bbox":[72,54,300,22]}
+{"kind":"textbox","id":"sh/jy1s3mtw","slide":2,"name":"title-The phone is where service demand begins","text":"The phone is where service demand begins","textPreview":"The phone is where service demand begins","textChars":40,"textLines":1,"bbox":[72,86,1000,64]}
+{"kind":"textbox","id":"sh/ixsbahsb","slide":2,"name":"subtitle-The phone is where service demand begins","text":"When staff cannot answer, the work does not wait.","textPreview":"When staff cannot answer, the work does not wait.","textChars":49,"textLines":1,"bbox":[72,154,870,44]}
+{"kind":"shape","id":"sh/50ja5wbm","slide":2,"name":"problem-dot-0","bbox":[76,250,26,26]}
+{"kind":"textbox","id":"sh/kzatcra1","slide":2,"name":"problem-label-0","text":"MISSED CALLS","textPreview":"MISSED CALLS","textChars":12,"textLines":1,"bbox":[122,246,340,22]}
+{"kind":"textbox","id":"sh/vuhszmtk","slide":2,"name":"problem-body-0","text":"A customer leaves before anyone responds.","textPreview":"A customer leaves before anyone responds.","textChars":41,"textLines":1,"bbox":[122,272,420,48]}
+{"kind":"shape","id":"sh/at8r6hsz","slide":2,"name":"problem-rule-0","bbox":[122,332,462,0]}
+{"kind":"shape","id":"sh/o3ix87ih","slide":2,"name":"problem-dot-1","bbox":[76,352,26,26]}
+{"kind":"textbox","id":"sh/p4ryhcz2","slide":2,"name":"problem-label-1","text":"REPETITIVE FRONT-DESK WORK","textPreview":"REPETITIVE FRONT-DESK WORK","textChars":26,"textLines":1,"bbox":[122,348,340,22]}
+{"kind":"textbox","id":"sh/2h0f6x0b","slide":2,"name":"problem-body-1","text":"Staff re-enter the same details across tools.","textPreview":"Staff re-enter the same details across tools.","textChars":45,"textLines":1,"bbox":[122,374,420,48]}
+{"kind":"shape","id":"sh/3i9gf2hw","slide":2,"name":"problem-rule-1","bbox":[122,434,462,0]}
+{"kind":"shape","id":"sh/gfix4ni5","slide":2,"name":"problem-dot-2","bbox":[76,454,26,26]}
+{"kind":"textbox","id":"sh/1grydszq","slide":2,"name":"problem-label-2","text":"FRAGMENTED FOLLOW-THROUGH","textPreview":"FRAGMENTED FOLLOW-THROUGH","textChars":25,"textLines":1,"bbox":[122,450,340,22]}
+{"kind":"textbox","id":"sh/edgf2x0f","slide":2,"name":"problem-body-2","text":"Bookings, reminders, and handoffs depend on manual coordination.","textPreview":"Bookings, reminders, and handoffs depend on manual coordination.","textChars":64,"textLines":1,"bbox":[122,476,420,48]}
+{"kind":"textbox","id":"sh/fe9gb2hk","slide":2,"name":"problem-before-label","text":"WHEN THE TEAM IS BUSY","textPreview":"WHEN THE TEAM IS BUSY","textChars":21,"textLines":1,"bbox":[720,238,330,22]}
+{"kind":"shape","id":"sh/0b2hgrip","slide":2,"name":"problem-before-call","bbox":[720,288,62,62]}
+{"kind":"textbox","id":"sh/lcbypwzu","slide":2,"name":"problem-before-call-text","text":"CALL","textPreview":"CALL","textChars":4,"textLines":1,"bbox":[720,308,62,20]}
+{"kind":"shape","id":"sh/9sry9wre","slide":2,"name":"problem-voicemail","bbox":[846,292,160,54]}
+{"kind":"textbox","id":"sh/8ryx0rat","slide":2,"name":"problem-voicemail-text","text":"Voicemail or repeat call","textPreview":"Voicemail or repeat call","textChars":24,"textLines":1,"bbox":[860,309,132,24]}
+{"kind":"shape","id":"sh/7qpg7m98","slide":2,"name":"problem-before-line","bbox":[782,319,64,0]}
+{"kind":"shape","id":"sh/mpgfyhsn","slide":2,"name":"problem-before-arrow","bbox":[806,312,24,14]}
+{"kind":"textbox","id":"sh/lo7y5cr2","slide":2,"name":"problem-after-label","text":"WITH VOICEAI","textPreview":"WITH VOICEAI","textChars":12,"textLines":1,"bbox":[720,402,330,22]}
+{"kind":"shape","id":"sh/knyxw7ah","slide":2,"name":"problem-after-call","bbox":[720,452,62,62]}
+{"kind":"textbox","id":"sh/z2pg329w","slide":2,"name":"problem-after-call-text","text":"CALL","textPreview":"CALL","textChars":4,"textLines":1,"bbox":[720,472,62,20]}
+{"kind":"shape","id":"sh/y1gfuhsr","slide":2,"name":"problem-conversation","bbox":[826,456,132,54]}
+{"kind":"textbox","id":"sh/x0ny1cr6","slide":2,"name":"problem-conversation-text","text":"Useful conversation","textPreview":"Useful conversation","textChars":19,"textLines":1,"bbox":[838,473,108,24]}
+{"kind":"shape","id":"sh/czexs7al","slide":2,"name":"problem-next-step","bbox":[1000,456,178,54]}
+{"kind":"textbox","id":"sh/25cv2d8j","slide":2,"name":"problem-next-step-text","text":"Clear next step","textPreview":"Clear next step","textChars":15,"textLines":1,"bbox":[1014,473,150,24]}
+{"kind":"shape","id":"sh/n6lcvypo","slide":2,"name":"problem-after-line-1","bbox":[782,483,44,0]}
+{"kind":"shape","id":"sh/o7ud43q9","slide":2,"name":"problem-after-arrow-1","bbox":[795,476,24,14]}
+{"kind":"shape","id":"sh/p83ux87u","slide":2,"name":"problem-after-line-2","bbox":[958,483,42,0]}
+{"kind":"shape","id":"sh/e1cvyt87","slide":2,"name":"problem-after-arrow-2","bbox":[978,476,24,14]}
+{"kind":"textbox","id":"sh/f2lc7yps","slide":2,"name":"problem-takeaway","text":"VoiceAI keeps the first conversation useful, even when the team is busy.","textPreview":"VoiceAI keeps the first conversation useful, even when the team is busy.","textChars":72,"textLines":1,"bbox":[720,558,450,48]}
+{"kind":"shape","id":"sh/03ud03qd","slide":2,"name":"footer-rule-2","bbox":[72,674,1136,0]}
+{"kind":"textbox","id":"sh/143u987y","slide":2,"name":"footer-brand-2","text":"VoiceAI","textPreview":"VoiceAI","textChars":7,"textLines":1,"bbox":[72,686,160,20]}
+{"kind":"textbox","id":"sh/qdsvut8b","slide":2,"name":"footer-page-2","text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[1152,686,56,20]}
+{"kind":"notes","id":"nt/ue8h4r","slide":2,"text":"Source notes: Problem framing is a concise synthesis of the problem statement and value proposition in docs/PRD.md. No performance metrics are claimed on this slide."}
+{"kind":"slide","id":"sl/we80ty","slide":3,"title":"YOUR BRAND","textShapes":18}
+{"kind":"shape","id":"sh/jyhgfyx0","slide":3,"name":"workflow-brand","bbox":[1030,32,178,42]}
+{"kind":"textbox","id":"sh/4zqho3e5","slide":3,"name":"workflow-brand-text","text":"YOUR BRAND","textPreview":"YOUR BRAND","textChars":10,"textLines":1,"bbox":[1042,43,154,20]}
+{"kind":"textbox","id":"sh/50zyh8fq","slide":3,"name":"kicker-One conversation, several business actions","text":"THE PRODUCT WORKFLOW","textPreview":"THE PRODUCT WORKFLOW","textChars":20,"textLines":1,"bbox":[72,54,300,22]}
+{"kind":"textbox","id":"sh/618zqdwb","slide":3,"name":"title-One conversation, several business actions","text":"One conversation, several business actions","textPreview":"One conversation, several business actions","textChars":42,"textLines":1,"bbox":[72,86,1000,64]}
+{"kind":"textbox","id":"sh/r2hgjixw","slide":3,"name":"subtitle-One conversation, several business actions","text":"VoiceAI routes the request to the right next step while keeping the caller’s context in one place.","textPreview":"VoiceAI routes the request to the right next step while keeping the caller’s context in one place.","textChars":98,"textLines":1,"bbox":[72,154,870,44]}
+{"kind":"shape","id":"sh/s3qhsneh","slide":3,"name":"workflow-call","bbox":[78,300,112,112]}
+{"kind":"textbox","id":"sh/t4jilsf2","slide":3,"name":"workflow-call-text","text":"INBOUND\nCALL","textPreview":"INBOUND | CALL","textChars":12,"textLines":2,"bbox":[84,334,100,48]}
+{"kind":"shape","id":"sh/e5szudwn","slide":3,"name":"workflow-router","bbox":[270,298,190,116]}
+{"kind":"textbox","id":"sh/fq10nixs","slide":3,"name":"workflow-router-title","text":"INTENT ROUTING","textPreview":"INTENT ROUTING","textChars":14,"textLines":1,"bbox":[294,322,142,24]}
+{"kind":"textbox","id":"sh/7u9svixg","slide":3,"name":"workflow-router-body","text":"Caller history + request context","textPreview":"Caller history + request context","textChars":32,"textLines":1,"bbox":[294,356,142,36]}
+{"kind":"shape","id":"sh/6t0r2dwv","slide":3,"name":"workflow-call-line","bbox":[190,356,80,0]}
+{"kind":"shape","id":"sh/tgbax8fm","slide":3,"name":"workflow-destination-0","bbox":[548,224,230,112]}
+{"kind":"shape","id":"sh/sf2943e1","slide":3,"name":"workflow-dot-0","bbox":[566,242,14,14]}
+{"kind":"textbox","id":"sh/jq9sryx4","slide":3,"name":"workflow-destination-label-0","text":"SERVICE INTAKE","textPreview":"SERVICE INTAKE","textChars":14,"textLines":1,"bbox":[594,241,166,22]}
+{"kind":"textbox","id":"sh/ip0rytgz","slide":3,"name":"workflow-destination-body-0","text":"Capture the right details","textPreview":"Capture the right details","textChars":25,"textLines":1,"bbox":[566,276,194,36]}
+{"kind":"shape","id":"sh/5srat8fa","slide":3,"name":"workflow-route-horizontal-0","bbox":[460,356,40,0]}
+{"kind":"shape","id":"sh/kri903yp","slide":3,"name":"workflow-route-vertical-0","bbox":[500,280,0,76]}
+{"kind":"shape","id":"sh/3mds32xo","slide":3,"name":"workflow-route-destination-0","bbox":[500,280,48,0]}
+{"kind":"shape","id":"sh/2lkbaxw3","slide":3,"name":"workflow-destination-1","bbox":[820,224,230,112]}
+{"kind":"shape","id":"sh/ehov21gb","slide":3,"name":"workflow-dot-1","bbox":[838,242,14,14]}
+{"kind":"textbox","id":"sh/zixcbmhw","slide":3,"name":"workflow-destination-label-1","text":"APPOINTMENT BOOKING","textPreview":"APPOINTMENT BOOKING","textChars":19,"textLines":1,"bbox":[866,241,166,22]}
+{"kind":"textbox","id":"sh/0j6d4ryh","slide":3,"name":"workflow-destination-body-1","text":"Check and reserve a slot","textPreview":"Check and reserve a slot","textChars":24,"textLines":1,"bbox":[838,276,194,36]}
+{"kind":"shape","id":"sh/1kfudwz2","slide":3,"name":"workflow-route-horizontal-1","bbox":[460,356,330,0]}
+{"kind":"shape","id":"sh/m5ov61g7","slide":3,"name":"workflow-route-vertical-1","bbox":[790,280,0,76]}
+{"kind":"shape","id":"sh/n6hcf6hs","slide":3,"name":"workflow-route-destination-1","bbox":[790,280,30,0]}
+{"kind":"shape","id":"sh/o7qd8byd","slide":3,"name":"workflow-destination-2","bbox":[548,432,230,112]}
+{"kind":"shape","id":"sh/98zehgzy","slide":3,"name":"workflow-dot-2","bbox":[566,450,14,14]}
+{"kind":"textbox","id":"sh/294vuh03","slide":3,"name":"workflow-destination-label-2","text":"FAQ ANSWER","textPreview":"FAQ ANSWER","textChars":10,"textLines":1,"bbox":[594,449,166,22]}
+{"kind":"textbox","id":"sh/3adc32ho","slide":3,"name":"workflow-destination-body-2","text":"Use the business knowledge base","textPreview":"Use the business knowledge base","textChars":31,"textLines":1,"bbox":[566,484,194,36]}
+{"kind":"shape","id":"sh/5g36p4ni","slide":3,"name":"workflow-route-horizontal-2","bbox":[460,356,40,0]}
+{"kind":"shape","id":"sh/4fupwzmx","slide":3,"name":"workflow-route-vertical-2","bbox":[500,356,0,132]}
+{"kind":"shape","id":"sh/jelonu5c","slide":3,"name":"workflow-route-destination-2","bbox":[500,488,48,0]}
+{"kind":"shape","id":"sh/idc7u94r","slide":3,"name":"workflow-destination-3","bbox":[820,432,230,112]}
+{"kind":"shape","id":"sh/tkn6tone","slide":3,"name":"workflow-dot-3","bbox":[838,450,14,14]}
+{"kind":"textbox","id":"sh/sjep0jmt","slide":3,"name":"workflow-destination-label-3","text":"CALLBACK OR HANDOFF","textPreview":"CALLBACK OR HANDOFF","textChars":19,"textLines":1,"bbox":[866,449,166,22]}
+{"kind":"textbox","id":"sh/ri5ore58","slide":3,"name":"workflow-destination-body-3","text":"Keep the next action clear","textPreview":"Keep the next action clear","textChars":26,"textLines":1,"bbox":[838,484,194,36]}
+{"kind":"shape","id":"sh/6hc7y943","slide":3,"name":"workflow-route-horizontal-3","bbox":[460,356,330,0]}
+{"kind":"shape","id":"sh/9oj6hkna","slide":3,"name":"workflow-route-vertical-3","bbox":[790,356,0,132]}
+{"kind":"shape","id":"sh/8na5ofmp","slide":3,"name":"workflow-route-destination-3","bbox":[790,488,30,0]}
+{"kind":"textbox","id":"sh/c3i9wn6d","slide":3,"name":"workflow-bottom-note","text":"Structured records and summaries give staff a clear handoff when the call continues beyond automation.","textPreview":"Structured records and summaries give staff a clear handoff when the call continues beyond automation.","textChars":102,"textLines":1,"bbox":[270,590,700,34]}
+{"kind":"shape","id":"sh/d4raps7y","slide":3,"name":"footer-rule-3","bbox":[72,674,1136,0]}
+{"kind":"textbox","id":"sh/q10rudo7","slide":3,"name":"footer-brand-3","text":"VoiceAI","textPreview":"VoiceAI","textChars":7,"textLines":1,"bbox":[72,686,160,20]}
+{"kind":"textbox","id":"sh/b29snips","slide":3,"name":"footer-page-3","text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[1152,686,56,20]}
+{"kind":"notes","id":"nt/we80ty","slide":3,"text":"Source notes: Workflow based on serviceBot/graph/state.py, serviceBot/graph/routing.py, serviceBot/graph/nodes.py, and the capabilities documented in README.md and docs/RELEASE_NOTE_v0.1.md."}
+{"kind":"slide","id":"sl/zjhrwh","slide":4,"title":"YOUR BRAND","textShapes":21}
+{"kind":"shape","id":"sh/dg3ypcni","slide":4,"name":"operations-brand","bbox":[1030,32,178,42]}
+{"kind":"textbox","id":"sh/qdczux47","slide":4,"name":"operations-brand-text","text":"YOUR BRAND","textPreview":"YOUR BRAND","textChars":10,"textLines":1,"bbox":[1042,43,154,20]}
+{"kind":"textbox","id":"sh/relgn25c","slide":4,"name":"kicker-The call connects to the operation","text":"CONNECTED OPERATIONS","textPreview":"CONNECTED OPERATIONS","textChars":20,"textLines":1,"bbox":[72,54,300,22]}
+{"kind":"textbox","id":"sh/03eh0rm9","slide":4,"name":"title-The call connects to the operation","text":"The call connects to the operation","textPreview":"The call connects to the operation","textChars":34,"textLines":1,"bbox":[72,86,1000,64]}
+{"kind":"textbox","id":"sh/14nitwnu","slide":4,"name":"subtitle-The call connects to the operation","text":"VoiceAI turns a conversation into updates the team can act on.","textPreview":"VoiceAI turns a conversation into updates the team can act on.","textChars":62,"textLines":1,"bbox":[72,154,870,44]}
+{"kind":"shape","id":"sh/ehczyh43","slide":4,"name":"operations-center","bbox":[546,276,184,184]}
+{"kind":"textbox","id":"sh/zil0rm5o","slide":4,"name":"operations-center-title","text":"VoiceAI","textPreview":"VoiceAI","textChars":7,"textLines":1,"bbox":[572,332,132,36]}
+{"kind":"textbox","id":"sh/o7eh4rm5","slide":4,"name":"operations-center-body","text":"conversation\n→ action","textPreview":"conversation | → action","textChars":21,"textLines":2,"bbox":[576,378,124,44]}
+{"kind":"shape","id":"sh/98nixwnq","slide":4,"name":"operations-node-0","bbox":[102,250,278,92]}
+{"kind":"shape","id":"sh/5c3exwbi","slide":4,"name":"operations-dot-0","bbox":[120,270,16,16]}
+{"kind":"textbox","id":"sh/4budorax","slide":4,"name":"operations-label-0","text":"CUSTOMER RECORDS","textPreview":"CUSTOMER RECORDS","textChars":16,"textLines":1,"bbox":[150,268,206,22]}
+{"kind":"textbox","id":"sh/3alwvmtc","slide":4,"name":"operations-body-0","text":"History, vehicle details, active requests","textPreview":"History, vehicle details, active requests","textChars":41,"textLines":1,"bbox":[120,298,238,30]}
+{"kind":"shape","id":"sh/i9svmhsr","slide":4,"bbox":[0,0,0,0]}
+{"kind":"shape","id":"sh/d03e1wbe","slide":4,"name":"operations-node-1","bbox":[894,250,278,92]}
+{"kind":"shape","id":"sh/szuxsra9","slide":4,"name":"operations-dot-1","bbox":[912,270,16,16]}
+{"kind":"textbox","id":"sh/relwz6to","slide":4,"name":"operations-label-1","text":"GOOGLE CALENDAR","textPreview":"GOOGLE CALENDAR","textChars":15,"textLines":1,"bbox":[942,268,206,22]}
+{"kind":"textbox","id":"sh/qdcfq1s3","slide":4,"name":"operations-body-1","text":"Availability and booked slots","textPreview":"Availability and booked slots","textChars":29,"textLines":1,"bbox":[912,298,238,30]}
+{"kind":"shape","id":"sh/t4jepcba","slide":4,"bbox":[0,0,0,0]}
+{"kind":"shape","id":"sh/83adg7up","slide":4,"name":"operations-node-2","bbox":[102,474,278,92]}
+{"kind":"shape","id":"sh/knexc72l","slide":4,"name":"operations-dot-2","bbox":[120,494,16,16]}
+{"kind":"textbox","id":"sh/lone5cj6","slide":4,"name":"operations-label-2","text":"KNOWLEDGE BASE","textPreview":"KNOWLEDGE BASE","textChars":14,"textLines":1,"bbox":[150,492,206,22]}
+{"kind":"textbox","id":"sh/ylcvaxkf","slide":4,"name":"operations-body-2","text":"Business answers grounded in source material","textPreview":"Business answers grounded in source material","textChars":44,"textLines":1,"bbox":[120,522,238,30]}
+{"kind":"shape","id":"sh/zmlw3210","slide":4,"bbox":[0,0,0,0]}
+{"kind":"shape","id":"sh/8rexgr2x","slide":4,"name":"operations-node-3","bbox":[894,474,278,92]}
+{"kind":"shape","id":"sh/9sne9cj2","slide":4,"name":"operations-dot-3","bbox":[912,494,16,16]}
+{"kind":"textbox","id":"sh/mpwfehkr","slide":4,"name":"operations-label-3","text":"EMAIL + SMS","textPreview":"EMAIL + SMS","textChars":11,"textLines":1,"bbox":[942,492,206,22]}
+{"kind":"textbox","id":"sh/7q5w7m1c","slide":4,"name":"operations-body-3","text":"Customer and staff notifications","textPreview":"Customer and staff notifications","textChars":32,"textLines":1,"bbox":[912,522,238,30]}
+{"kind":"shape","id":"sh/wfyxkrit","slide":4,"bbox":[0,0,0,0]}
+{"kind":"shape","id":"sh/hg7edwje","slide":4,"name":"operations-portal-band","bbox":[102,604,1076,44]}
+{"kind":"textbox","id":"sh/ra903qlg","slide":4,"name":"operations-portal-title","text":"STAFF PORTAL","textPreview":"STAFF PORTAL","textChars":12,"textLines":1,"bbox":[122,616,130,20]}
+{"kind":"textbox","id":"sh/690zal4v","slide":4,"name":"operations-portal-transcripts","text":"Transcripts","textPreview":"Transcripts","textChars":11,"textLines":1,"bbox":[306,616,120,20]}
+{"kind":"textbox","id":"sh/tcri503m","slide":4,"name":"operations-portal-catalog","text":"Service catalog","textPreview":"Service catalog","textChars":15,"textLines":1,"bbox":[480,616,140,20]}
+{"kind":"textbox","id":"sh/sbihcv21","slide":4,"name":"operations-portal-calendar","text":"Calendar controls","textPreview":"Calendar controls","textChars":17,"textLines":1,"bbox":[674,616,150,20]}
+{"kind":"textbox","id":"sh/jmpgzqlk","slide":4,"name":"operations-portal-escalation","text":"Escalation visibility","textPreview":"Escalation visibility","textChars":21,"textLines":1,"bbox":[870,616,180,20]}
+{"kind":"shape","id":"sh/ilgz6l4z","slide":4,"name":"footer-rule-4","bbox":[72,674,1136,0]}
+{"kind":"textbox","id":"sh/58ry1g3a","slide":4,"name":"footer-brand-4","text":"VoiceAI","textPreview":"VoiceAI","textChars":7,"textLines":1,"bbox":[72,686,160,20]}
+{"kind":"textbox","id":"sh/4nih8bm5","slide":4,"name":"footer-page-4","text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[1152,686,56,20]}
+{"kind":"notes","id":"nt/zjhrwh","slide":4,"text":"Source notes: Integrations and portal capabilities based on serviceBot/services/calendar_availability.py, serviceBot/services/google_calendar.py, serviceBot/services/rag.py, serviceBot/services/gmail.py, serviceBot/services/twilio_sms.py, serviceBot/static/index.html, and docs/RELEASE_NOTE_v0.1.md."}
+{"kind":"slide","id":"sl/6fyq6c","slide":5,"title":"YOUR BRAND","textShapes":21}
+{"kind":"shape","id":"sh/xczu9sbi","slide":5,"name":"close-brand","bbox":[1030,32,178,42]}
+{"kind":"textbox","id":"sh/a98byxs7","slide":5,"name":"close-brand-text","text":"YOUR BRAND","textPreview":"YOUR BRAND","textChars":10,"textLines":1,"bbox":[1042,43,154,20]}
+{"kind":"textbox","id":"sh/bahc7its","slide":5,"name":"kicker-Start with one high-volume call flow","text":"A PRACTICAL STARTING POINT","textPreview":"A PRACTICAL STARTING POINT","textChars":26,"textLines":1,"bbox":[72,54,300,22]}
+{"kind":"textbox","id":"sh/kzat47a9","slide":5,"name":"title-Start with one high-volume call flow","text":"Start with one high-volume call flow","textPreview":"Start with one high-volume call flow","textChars":36,"textLines":1,"bbox":[72,86,1000,64]}
+{"kind":"textbox","id":"sh/l0judcbu","slide":5,"name":"subtitle-Start with one high-volume call flow","text":"A focused pilot lets the team map the conversation, the systems it touches, and the next operational step.","textPreview":"A focused pilot lets the team map the conversation, the systems it touches, and the next operational step.","textChars":106,"textLines":1,"bbox":[72,154,870,44]}
+{"kind":"textbox","id":"sh/yd8b2xs3","slide":5,"name":"close-example-kicker","text":"AUTO-SERVICE EXAMPLE","textPreview":"AUTO-SERVICE EXAMPLE","textChars":20,"textLines":1,"bbox":[72,250,260,22]}
+{"kind":"textbox","id":"sh/zy1cb2to","slide":5,"name":"close-example-body","text":"A brake-repair call becomes a captured service request, a viable appointment slot, and a clear staff follow-up.","textPreview":"A brake-repair call becomes a captured service request, a viable appointment slot, and a clear staff follow-up.","textChars":111,"textLines":1,"bbox":[72,284,540,96]}
+{"kind":"shape","id":"sh/g36ts3a5","slide":5,"name":"close-rule","bbox":[72,410,540,0]}
+{"kind":"textbox","id":"sh/14fu18ba","slide":5,"name":"close-pilot-label","text":"Pilot scope","textPreview":"Pilot scope","textChars":11,"textLines":1,"bbox":[72,438,130,22]}
+{"kind":"textbox","id":"sh/pkf6d8fe","slide":5,"name":"close-pilot-list","text":"Configure the service catalog\nConnect calendars and notifications\nReview transcripts and exceptions","textPreview":"Configure the service catalog | Connect calendars and notifications | Review transcripts and exceptions","textChars":99,"textLines":3,"bbox":[72,470,460,92]}
+{"kind":"textbox","id":"sh/oj6543yt","slide":5,"name":"close-next-step","text":"Use the first pilot to map one workflow and the systems it touches.","textPreview":"Use the first pilot to map one workflow and the systems it touches.","textChars":67,"textLines":1,"bbox":[72,604,500,30]}
+{"kind":"shape","id":"sh/nixobyx8","slide":5,"name":"close-portal-frame","bbox":[732,242,438,328]}
+{"kind":"textbox","id":"sh/2hon2tg3","slide":5,"name":"close-portal-title","text":"STAFF PORTAL","textPreview":"STAFF PORTAL","textChars":12,"textLines":1,"bbox":[760,268,180,24]}
+{"kind":"shape","id":"sh/x8z6h8fq","slide":5,"name":"close-portal-rule","bbox":[760,310,380,0]}
+{"kind":"shape","id":"sh/c76583y5","slide":5,"name":"close-portal-dot-0","bbox":[760,338,12,12]}
+{"kind":"textbox","id":"sh/b6xofyxk","slide":5,"name":"close-portal-row-label-0","text":"Service catalog","textPreview":"Service catalog","textChars":15,"textLines":1,"bbox":[792,334,150,20]}
+{"kind":"textbox","id":"sh/a5on6tgz","slide":5,"name":"close-portal-row-body-0","text":"Edit offers and intake fields","textPreview":"Edit offers and intake fields","textChars":29,"textLines":1,"bbox":[954,334,190,20]}
+{"kind":"shape","id":"sh/lcz6lsfm","slide":5,"name":"close-portal-row-rule-0","bbox":[760,370,380,0]}
+{"kind":"shape","id":"sh/kbqpcny1","slide":5,"name":"close-portal-dot-1","bbox":[760,390,12,12]}
+{"kind":"textbox","id":"sh/kfyp8rmd","slide":5,"name":"close-portal-row-label-1","text":"Calendar controls","textPreview":"Calendar controls","textChars":17,"textLines":1,"bbox":[792,386,150,20]}
+{"kind":"textbox","id":"sh/5g7qhwny","slide":5,"name":"close-portal-row-body-1","text":"Manage availability and bookings","textPreview":"Manage availability and bookings","textChars":32,"textLines":1,"bbox":[954,386,190,20]}
+{"kind":"shape","id":"sh/idg76h47","slide":5,"name":"close-portal-row-rule-1","bbox":[760,422,380,0]}
+{"kind":"shape","id":"sh/jep8fm5s","slide":5,"name":"close-portal-dot-2","bbox":[760,442,12,12]}
+{"kind":"textbox","id":"sh/sjy9cbm9","slide":5,"name":"close-portal-row-label-2","text":"Transcript review","textPreview":"Transcript review","textChars":17,"textLines":1,"bbox":[792,438,150,20]}
+{"kind":"textbox","id":"sh/tkrqlwnu","slide":5,"name":"close-portal-row-body-2","text":"See summaries and full call context","textPreview":"See summaries and full call context","textChars":35,"textLines":1,"bbox":[954,438,190,20]}
+{"kind":"shape","id":"sh/6hgra14j","slide":5,"name":"close-portal-row-rule-2","bbox":[760,474,380,0]}
+{"kind":"shape","id":"sh/7ip8j65o","slide":5,"name":"close-portal-dot-3","bbox":[760,494,12,12]}
+{"kind":"textbox","id":"sh/8nep0765","slide":5,"name":"close-portal-row-label-3","text":"Escalation queue","textPreview":"Escalation queue","textChars":16,"textLines":1,"bbox":[792,490,150,20]}
+{"kind":"textbox","id":"sh/9onq9cnq","slide":5,"name":"close-portal-row-body-3","text":"Surface exceptions for staff","textPreview":"Surface exceptions for staff","textChars":28,"textLines":1,"bbox":[954,490,190,20]}
+{"kind":"textbox","id":"sh/bedkvetk","slide":5,"name":"close-contact-placeholder","text":"CONTACT / DEMO","textPreview":"CONTACT / DEMO","textChars":14,"textLines":1,"bbox":[1010,604,198,28]}
+{"kind":"shape","id":"sh/ad4j29sz","slide":5,"name":"footer-rule-5","bbox":[72,674,1136,0]}
+{"kind":"textbox","id":"sh/xgf2x4ba","slide":5,"name":"footer-brand-5","text":"VoiceAI","textPreview":"VoiceAI","textChars":7,"textLines":1,"bbox":[72,686,160,20]}
+{"kind":"textbox","id":"sh/cfml4jap","slide":5,"name":"footer-page-5","text":"05","textPreview":"05","textChars":2,"textLines":1,"bbox":[1152,686,56,20]}
+{"kind":"notes","id":"nt/6fyq6c","slide":5,"text":"Source notes: Closing workflow and portal capabilities based on docs/PRD.md, README.md, serviceBot/static/index.html, and docs/RELEASE_NOTE_v0.1.md. Copy intentionally avoids unsupported ROI or performance claims."}

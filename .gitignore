@@ -52,3 +52,11 @@ __pycache__/
 *.sqlite3
 chroma_db/
 scratch/
+
+# Dependencies
+node_modules
+node_modules/
+**/node_modules
+**/node_modules/**
+.codex-build/**/node_modules/
+.codex-build/**/node_modules/**

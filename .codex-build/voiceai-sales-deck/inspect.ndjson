@@ -1,0 +1,30 @@
+{
+  "recordCount": 174,
+  "truncated": true,
+  "metadata": {
+    "revision": "djlozq",
+    "target": {
+      "id": "pr/dkjodo"
+    },
+    "kind": {
+      "requested": "slide,textbox,shape,image,table,chart,notes,layout",
+      "tokens": [
+        "slide",
+        "textbox",
+        "shape",
+        "image",
+        "table",
+        "chart",
+        "notes",
+        "layout"
+      ]
+    },
+    "include": {
+      "tokens": []
+    },
+    "exclude": {
+      "tokens": []
+    },
+    "notices": []
+  }
+}
