@@ -613,27 +613,59 @@ def send_admin_notification(
 
     auth_type = config.get("gmail_auth_type", "app_password")
     if auth_type == "oauth2":
-        return send_gmail_api_email(
-            sender=sender,
-            recipient=admin_recipient,
-            subject=subject,
-            html_body=html_body,
-            plain_body=plain_body
-        )
+        try:
+            return send_gmail_api_email(
+                sender=sender,
+                recipient=admin_recipient,
+                subject=subject,
+                html_body=html_body,
+                plain_body=plain_body
+            )
+        except Exception as e:
+            logger.warning(f"System Gmail API sending failed: {e}. Trying fallback mechanisms...")
     else:
         encrypted_pw = config.get("gmail_password", "")
-        server = config.get("gmail_smtp_server", "smtp.gmail.com")
-        port = int(config.get("gmail_smtp_port", 587))
-        return send_smtp_email(
-            sender=sender,
-            encrypted_password=encrypted_pw,
-            recipient=admin_recipient,
-            server=server,
-            port=port,
-            subject=subject,
-            html_body=html_body,
-            plain_body=plain_body
-        )
+        if encrypted_pw:
+            server = config.get("gmail_smtp_server", "smtp.gmail.com")
+            port = int(config.get("gmail_smtp_port", 587))
+            smtp_success = send_smtp_email(
+                sender=sender,
+                encrypted_password=encrypted_pw,
+                recipient=admin_recipient,
+                server=server,
+                port=port,
+                subject=subject,
+                html_body=html_body,
+                plain_body=plain_body
+            )
+            if smtp_success:
+                return True
+
+    # Resilient Fallback: If system email is unconfigured or failed, send via connected Google account in user_google_accounts
+    try:
+        from serviceBot.db.connection import get_db_connection, dict_cursor
+        with get_db_connection() as conn:
+            with dict_cursor(conn) as cursor:
+                cursor.execute("""
+                    SELECT uga.agent_id, uga.email, uga.granted_scopes
+                    FROM user_google_accounts uga
+                    WHERE uga.granted_scopes LIKE %s
+                    ORDER BY (uga.email = %s) DESC, uga.agent_id ASC
+                    LIMIT 1;
+                """, ("%gmail.send%", sender))
+                connected_account = cursor.fetchone()
+                if connected_account:
+                    return send_gmail_via_api(
+                        agent_id=connected_account["agent_id"],
+                        recipient=admin_recipient,
+                        subject=subject,
+                        html_body=html_body,
+                        plain_body=plain_body
+                    )
+    except Exception as fallback_err:
+        logger.warning(f"Fallback to connected Google account for admin notification failed: {fallback_err}")
+
+    return False
 
 def create_admin_calendar_event(
     customer_name: str,

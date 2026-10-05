@@ -177,3 +177,48 @@ def test_outbox_worker_processes_escalation_event(mock_dispatch_alert):
     args, kwargs = mock_dispatch_alert.call_args
     assert args[0] == 405
     assert kwargs.get("reason") == "TIMEOUT_NO_RESPONSE"
+
+
+@patch("serviceBot.services.gmail.send_gmail_via_api")
+@patch("serviceBot.db.connection.get_db_connection")
+@patch("serviceBot.db.connection.dict_cursor")
+@patch("serviceBot.services.gmail.load_config")
+def test_send_admin_notification_fallback_to_user_google_accounts(mock_load_cfg, mock_dict_cur, mock_get_conn, mock_send_via_api):
+    """Verify that when system SMTP password is missing, send_admin_notification falls back to connected Google account."""
+    mock_load_cfg.return_value = {
+        "gmail_enabled": True,
+        "gmail_sender": "rohanrony@gmail.com",
+        "gmail_recipient": "rohan.roy@edvenswainc.com",
+        "gmail_auth_type": "app_password",
+        "gmail_password": "",  # Empty password triggers fallback
+    }
+
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_get_conn.return_value.__enter__.return_value = mock_conn
+    mock_dict_cur.return_value.__enter__.return_value = mock_cursor
+    mock_cursor.fetchone.return_value = {
+        "agent_id": 8,
+        "email": "rohanrony@gmail.com",
+        "granted_scopes": "https://www.googleapis.com/auth/gmail.send openid"
+    }
+    mock_send_via_api.return_value = True
+
+    details = {
+        "appointment_id": 32,
+        "customer_name": "Rohan Roy",
+        "escalation_reason": "TIMEOUT_NO_RESPONSE"
+    }
+
+    res = send_admin_notification(
+        booking_type="escalation",
+        details=details,
+        agent_name="Jane Smith",
+        agent_email="jane.smith@example.com"
+    )
+
+    assert res is True
+    assert mock_send_via_api.called
+    _, kwargs = mock_send_via_api.call_args
+    assert kwargs["agent_id"] == 8
+    assert kwargs["recipient"] == "rohan.roy@edvenswainc.com"
