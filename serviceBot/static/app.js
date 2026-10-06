@@ -155,7 +155,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (documentDrawerOverlay) documentDrawerOverlay.addEventListener('click', closeDocumentDrawer);
   
   // Mapped View Titles & Subtitles
-  const CONFIG_SUBTABS = ['staff', 'gmail', 'sms-config', 'customer-onboarding', 'intents', 'keys'];
+  const CONFIG_SUBTABS = ['staff', 'gmail', 'sms-config', 'customer-onboarding', 'intents', 'keys', 'analytics'];
   let activeConfigSubtab = 'staff';
 
   const TAB_METADATA = {
@@ -166,6 +166,10 @@ document.addEventListener('DOMContentLoaded', () => {
     'config': {
       title: 'System Configuration',
       subtitle: 'Manage system settings, AI prompts, notifications, calendars, and API integrations.'
+    },
+    'analytics': {
+      title: 'Operational Analytics & SLA Performance',
+      subtitle: 'Real-time metrics on technician SLA compliance, escalation resolution, and staff response times.'
     },
     'intents': {
       title: 'AI Agent Config',
@@ -289,6 +293,8 @@ document.addEventListener('DOMContentLoaded', () => {
         loadConfigData();
       } else if (targetSubtab === 'keys') {
         loadVoiceData();
+      } else if (targetSubtab === 'analytics') {
+        loadAnalyticsView();
       }
 
     } else {
@@ -1591,6 +1597,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (handoffPhoneInput) {
           handoffPhoneInput.value = config.handoff_phone_number || '';
         }
+        const modelSelect = document.getElementById('agent-llm-model');
+        if (modelSelect && config.agent_llm_model) {
+          modelSelect.value = config.agent_llm_model;
+        }
       }
     } catch (err) {
       console.warn('Failed to fetch config for handoff phone:', err);
@@ -1623,6 +1633,73 @@ document.addEventListener('DOMContentLoaded', () => {
                            '<option value="default_mock2">Mock Clyde (Default ElevenLabs)</option>';
       }
     }
+
+    // Also load secret status and placeholders
+    await loadSecretsData();
+  }
+
+  // Fetch secrets status and display badges/placeholders
+  async function loadSecretsData() {
+    const fields = [
+      { id: 'openai', inputId: 'key-openai', badgeId: 'badge-openai', label: 'OpenAI' },
+      { id: 'gemini', inputId: 'key-gemini', badgeId: 'badge-gemini', label: 'Gemini' },
+      { id: 'anthropic', inputId: 'key-anthropic', badgeId: 'badge-anthropic', label: 'Anthropic' },
+      { id: 'elevenlabs_key', inputId: 'key-elevenlabs', badgeId: 'badge-elevenlabs-key', label: 'ElevenLabs' },
+      { id: 'elevenlabs_agent', inputId: 'key-elevenlabs-agent', badgeId: 'badge-elevenlabs-agent', label: 'Agent ID' },
+      { id: 'twilio', inputId: 'key-twilio', badgeId: 'badge-twilio', label: 'Twilio' }
+    ];
+
+    try {
+      const res = await fetch('/api/v1/portal/secrets');
+      if (!res.ok) throw new Error('Failed to load secrets info');
+      const secrets = await res.json();
+
+      fields.forEach(f => {
+        const info = secrets[f.id] || { has_key: false, source: 'none', masked: '', display_value: null };
+        const input = document.getElementById(f.inputId);
+        const badge = document.getElementById(f.badgeId);
+
+        if (badge) {
+          badge.className = 'secret-status-badge';
+          if (info.source === 'custom') {
+            badge.classList.add('badge-custom');
+            badge.innerHTML = `<i class="fas fa-shield-alt"></i> Custom Encrypted (${info.masked || 'Active'})`;
+          } else if (info.source === 'env') {
+            badge.classList.add('badge-env');
+            badge.innerHTML = `<i class="fas fa-file-alt"></i> Default (.env)`;
+          } else {
+            badge.classList.add('badge-none');
+            badge.innerHTML = `<i class="fas fa-times-circle"></i> Not Set`;
+          }
+        }
+
+        if (input) {
+          input.value = ''; // Clear typed text so placeholder shows
+          if (f.id === 'elevenlabs_agent' && info.display_value) {
+            input.value = info.display_value;
+          } else if (info.has_key) {
+            input.placeholder = `${info.masked} (${info.source === 'custom' ? 'Encrypted Override' : 'System Default'})`;
+          } else {
+            input.placeholder = `Not configured (Enter to set)`;
+          }
+        }
+      });
+    } catch (err) {
+      console.warn('Error loading secrets data:', err);
+    }
+  }
+
+  // Refresh secrets button
+  const refreshSecretsBtn = document.getElementById('btn-refresh-secrets');
+  if (refreshSecretsBtn) {
+    refreshSecretsBtn.addEventListener('click', async () => {
+      refreshSecretsBtn.disabled = true;
+      refreshSecretsBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing...';
+      await loadSecretsData();
+      showToast('Secrets status refreshed', 'info');
+      refreshSecretsBtn.disabled = false;
+      refreshSecretsBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh';
+    });
   }
 
   // Form Submit updates Voice routing Agent ID
@@ -1653,6 +1730,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (configRes.ok) {
           const config = await configRes.json();
           config.handoff_phone_number = handoffPhone;
+          config.agent_llm_model = model;
           
           const updateRes = await fetch('/api/v1/portal/config', {
             method: 'POST',
@@ -1671,9 +1749,61 @@ document.addEventListener('DOMContentLoaded', () => {
   // Secrets Encrypt Form
   const saveKeysForm = document.getElementById('save-api-keys-form');
   if (saveKeysForm) {
-    saveKeysForm.addEventListener('submit', (e) => {
+    saveKeysForm.addEventListener('submit', async (e) => {
       e.preventDefault();
-      showToast('API credentials encrypted and securely saved at rest!');
+      const submitBtn = document.getElementById('save-secrets-btn');
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Encrypting...';
+      }
+
+      const openaiVal = document.getElementById('key-openai')?.value.trim();
+      const geminiVal = document.getElementById('key-gemini')?.value.trim();
+      const anthropicVal = document.getElementById('key-anthropic')?.value.trim();
+      const elKeyVal = document.getElementById('key-elevenlabs')?.value.trim();
+      const elAgentVal = document.getElementById('key-elevenlabs-agent')?.value.trim();
+      const twilioVal = document.getElementById('key-twilio')?.value.trim();
+
+      const payload = {};
+      if (openaiVal) payload.openai_api_key = openaiVal;
+      if (geminiVal) payload.gemini_api_key = geminiVal;
+      if (anthropicVal) payload.anthropic_api_key = anthropicVal;
+      if (elKeyVal) payload.elevenlabs_api_key = elKeyVal;
+      if (elAgentVal) payload.elevenlabs_agent_id = elAgentVal;
+      if (twilioVal) payload.twilio_auth_token = twilioVal;
+
+      if (Object.keys(payload).length === 0) {
+        showToast('No new keys entered to save. Leave blank to keep existing defaults.', 'info');
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = 'Encrypt & Store Keys';
+        }
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/v1/portal/secrets', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || 'Failed to encrypt and store system secrets');
+        }
+
+        showToast('API credentials encrypted and securely saved at rest!', 'success');
+        await loadSecretsData();
+      } catch (err) {
+        console.error('Failed to save secrets:', err);
+        showToast('Error saving secrets: ' + err.message, 'error');
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = 'Encrypt & Store Keys';
+        }
+      }
     });
   }
 
@@ -3071,6 +3201,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  let currentMatrixChannel = 'SMS';
   async function loadSMSMatrixRules() {
     try {
       const res = await fetch('/api/v1/portal/sms/matrix-rules');
@@ -3078,46 +3209,81 @@ document.addEventListener('DOMContentLoaded', () => {
       const rules = await res.json();
       const tbody = document.getElementById('sms-matrix-rules-tbody');
       if (!tbody) return;
-      tbody.innerHTML = '';
 
-      const events = ['BOOKING', 'RESCHEDULED', 'REASSIGNED', 'RESCHEDULED_REASSIGNED', 'CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_ADMIN', 'REMINDER_24H', 'REMINDER_2H'];
+      const events = ['BOOKING', 'RESCHEDULED', 'REASSIGNED', 'RESCHEDULED_REASSIGNED', 'CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_ADMIN', 'REMINDER_24H', 'REMINDER_2H', 'ESCALATION'];
       const roles = ['customer', 'agent', 'previous_agent', 'admin'];
 
-      events.forEach(evt => {
-        const tr = document.createElement('tr');
-        const formattedEventName = evt.replace(/_/g, ' ');
-        tr.innerHTML = `<td><span style="font-size: 12px; font-weight: 500; color: var(--text-main);">${formattedEventName}</span></td>` + roles.map(r => {
-          const rule = rules.find(x => x.event_type === evt && x.recipient_role === r);
-          const checked = rule ? rule.enabled : (r !== 'admin' && !(evt === 'REASSIGNED' && r === 'customer'));
-          return `<td>
-            <label class="matrix-status-pill ${checked ? 'active' : 'disabled'}" style="cursor: pointer;">
-              <input type="checkbox" class="sms-matrix-cb" data-event="${evt}" data-role="${r}" ${checked ? 'checked' : ''} style="margin-right: 4px;">
-              <span>${checked ? 'Active' : 'Disabled'}</span>
-            </label>
-          </td>`;
-        }).join('');
-        tbody.appendChild(tr);
+      // Wire up channel buttons once
+      document.querySelectorAll('.matrix-channel-btn').forEach(btn => {
+        btn.onclick = (e) => {
+          e.preventDefault();
+          document.querySelectorAll('.matrix-channel-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          currentMatrixChannel = (btn.dataset.channel || 'SMS').toUpperCase();
+          renderMatrixTable();
+        };
       });
 
-      tbody.querySelectorAll('.sms-matrix-cb').forEach(cb => {
-        cb.addEventListener('change', async (e) => {
-          const event_type = e.target.dataset.event;
-          const recipient_role = e.target.dataset.role;
-          const enabled = e.target.checked;
-          const pill = e.target.closest('.matrix-status-pill');
-          if (pill) {
-            pill.className = `matrix-status-pill ${enabled ? 'active' : 'disabled'}`;
-            const labelSpan = pill.querySelector('span');
-            if (labelSpan) labelSpan.textContent = enabled ? 'Active' : 'Disabled';
-          }
-          await fetch('/api/v1/portal/sms/matrix-rules', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ event_type, recipient_role, enabled })
-          });
-          showToast('Notification matrix rule updated.');
+      function renderMatrixTable() {
+        tbody.innerHTML = '';
+        events.forEach(evt => {
+          const tr = document.createElement('tr');
+          const formattedEventName = evt.replace(/_/g, ' ');
+          tr.innerHTML = `<td><span style="font-size: 12px; font-weight: 500; color: var(--text-main);">${formattedEventName}</span></td>` + roles.map(r => {
+            const rule = rules.find(x => x.event_type === evt && x.recipient_role === r && (x.channel || 'WHATSAPP').toUpperCase() === currentMatrixChannel);
+            let checked = false;
+            if (rule) {
+              checked = Boolean(rule.enabled);
+            } else {
+              if (evt === 'ESCALATION') {
+                checked = (r === 'admin' && (currentMatrixChannel === 'SMS' || currentMatrixChannel === 'EMAIL'));
+              } else if (currentMatrixChannel === 'EMAIL') {
+                checked = (r === 'admin' && evt === 'BOOKING');
+              } else {
+                checked = (r !== 'admin' && !(evt === 'REASSIGNED' && r === 'customer'));
+              }
+            }
+            return `<td>
+              <label class="matrix-status-pill ${checked ? 'active' : 'disabled'}" style="cursor: pointer;">
+                <input type="checkbox" class="sms-matrix-cb" data-event="${evt}" data-role="${r}" ${checked ? 'checked' : ''} style="margin-right: 4px;">
+                <span>${checked ? 'Active' : 'Disabled'}</span>
+              </label>
+            </td>`;
+          }).join('');
+          tbody.appendChild(tr);
         });
-      });
+
+        tbody.querySelectorAll('.sms-matrix-cb').forEach(cb => {
+          cb.addEventListener('change', async (e) => {
+            const event_type = e.target.dataset.event;
+            const recipient_role = e.target.dataset.role;
+            const enabled = e.target.checked;
+            const pill = e.target.closest('.matrix-status-pill');
+            if (pill) {
+              pill.className = `matrix-status-pill ${enabled ? 'active' : 'disabled'}`;
+              const labelSpan = pill.querySelector('span');
+              if (labelSpan) labelSpan.textContent = enabled ? 'Active' : 'Disabled';
+            }
+
+            // Update local rules cache
+            const existing = rules.find(x => x.event_type === event_type && x.recipient_role === recipient_role && (x.channel || 'WHATSAPP').toUpperCase() === currentMatrixChannel);
+            if (existing) {
+              existing.enabled = enabled;
+            } else {
+              rules.push({ event_type, recipient_role, channel: currentMatrixChannel, enabled });
+            }
+
+            await fetch('/api/v1/portal/sms/matrix-rules', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ event_type, recipient_role, channel: currentMatrixChannel, enabled })
+            });
+            showToast(`Notification rule updated for ${currentMatrixChannel}.`);
+          });
+        });
+      }
+
+      renderMatrixTable();
     } catch (err) {
       console.error('Error loading matrix rules:', err);
     }
@@ -4672,6 +4838,392 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
     });
+  }
+
+  // ==========================================================================
+  // Operational Analytics & SLA Performance Controller
+  // ==========================================================================
+  const activeAnalyticsCharts = {};
+  let currentAnalyticsSubtab = 'sla';
+  let cachedTechnicianScorecard = [];
+
+  // Sub-subtab switcher
+  const analyticsSubBtns = document.querySelectorAll('.analytics-sub-btn');
+  analyticsSubBtns.forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const targetSub = btn.getAttribute('data-analytics-subtab');
+      if (!targetSub) return;
+      currentAnalyticsSubtab = targetSub;
+
+      analyticsSubBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      document.querySelectorAll('.analytics-pane').forEach(p => p.classList.remove('active'));
+      const activePane = document.getElementById(`analytics-pane-${targetSub}`);
+      if (activePane) activePane.classList.add('active');
+
+      // Trigger redraw/resize of charts in the newly visible pane
+      Object.values(activeAnalyticsCharts).forEach(chart => {
+        if (chart && typeof chart.resize === 'function') chart.resize();
+      });
+    });
+  });
+
+  // Technician table search input
+  const techSearchInput = document.getElementById('tech-search-input');
+  if (techSearchInput) {
+    techSearchInput.addEventListener('input', () => {
+      renderTechnicianScorecardTable(cachedTechnicianScorecard, techSearchInput.value.trim().toLowerCase());
+    });
+  }
+
+  // Hook global timeframe selector to reload analytics if on analytics tab
+  const globalTfSelect = document.getElementById('calls-timeframe-select');
+  if (globalTfSelect) {
+    globalTfSelect.addEventListener('change', () => {
+      if (activeConfigSubtab === 'analytics') {
+        loadAnalyticsView();
+      }
+    });
+  }
+
+  function destroyAnalyticsChart(id) {
+    if (activeAnalyticsCharts[id]) {
+      try {
+        activeAnalyticsCharts[id].destroy();
+      } catch (err) {
+        console.warn('Error destroying chart:', id, err);
+      }
+      delete activeAnalyticsCharts[id];
+    }
+  }
+
+  async function loadAnalyticsView() {
+    const tf = (globalTfSelect ? globalTfSelect.value : '7d') || '7d';
+
+    try {
+      // 1. Fetch Overview KPIs
+      const overviewRes = await fetch(`/api/v1/portal/analytics/overview?timeframe=${tf}`);
+      if (overviewRes.ok) {
+        const overview = await overviewRes.json();
+        renderAnalyticsOverviewKPIs(overview);
+      }
+
+      // 2. Fetch SLA Performance
+      const slaRes = await fetch(`/api/v1/portal/analytics/sla?timeframe=${tf}`);
+      if (slaRes.ok) {
+        const slaData = await slaRes.json();
+        renderSLACharts(slaData);
+      }
+
+      // 3. Fetch Escalation Recovery
+      const escRes = await fetch(`/api/v1/portal/analytics/escalations?timeframe=${tf}`);
+      if (escRes.ok) {
+        const escData = await escRes.json();
+        renderEscalationCharts(escData);
+      }
+
+      // 4. Fetch Technician Scorecard
+      const techRes = await fetch(`/api/v1/portal/analytics/technicians?timeframe=${tf}`);
+      if (techRes.ok) {
+        cachedTechnicianScorecard = await techRes.json();
+        renderTechnicianPerformanceChart(cachedTechnicianScorecard);
+        renderTechnicianScorecardTable(cachedTechnicianScorecard);
+      }
+    } catch (err) {
+      console.error('Error loading analytics:', err);
+      showToast('Error loading analytics data', 'error');
+    }
+  }
+
+  function renderAnalyticsOverviewKPIs(data) {
+    const slaEl = document.getElementById('kpi-sla-compliance');
+    const slaBadge = document.getElementById('badge-sla-compliance');
+    if (slaEl) slaEl.textContent = `${data.sla_on_time_pct ?? '--'}%`;
+    if (slaBadge) slaBadge.innerHTML = `<span class="badge-dot success"></span>${data.on_time_confirmed ?? 0} on-time confirmations`;
+
+    const recEl = document.getElementById('kpi-recovery-rate');
+    const recBadge = document.getElementById('badge-recovery-rate');
+    if (recEl) recEl.textContent = `${data.recovery_rate_pct ?? '--'}%`;
+    const resolvedSum = (data.escalations_resolved || 0) + (data.escalations_reassigned || 0);
+    if (recBadge) recBadge.innerHTML = `<span class="badge-dot success"></span>${resolvedSum} resolved (${data.escalations_resolved || 0} tech / ${data.escalations_reassigned || 0} reassigned)`;
+
+    const respEl = document.getElementById('kpi-avg-response');
+    if (respEl) respEl.textContent = `${data.avg_response_minutes ?? '--'} min`;
+
+    const escEl = document.getElementById('kpi-total-escalations');
+    const escBadge = document.getElementById('badge-reassigned-count');
+    if (escEl) escEl.textContent = data.total_escalated ?? 0;
+    if (escBadge) escBadge.innerHTML = `<span class="badge-dot warning"></span>${data.escalations_active || 0} currently active`;
+  }
+
+  function renderSLACharts(slaData) {
+    if (typeof Chart === 'undefined') return;
+
+    // A. Daily SLA Trend Chart
+    const trendCtx = document.getElementById('chart-sla-trend')?.getContext('2d');
+    if (trendCtx) {
+      destroyAnalyticsChart('sla-trend');
+      const timeline = slaData.timeline || [];
+      const labels = timeline.map(t => t.date);
+      const onTimeData = timeline.map(t => t.on_time);
+      const breachedData = timeline.map(t => t.breached);
+
+      activeAnalyticsCharts['sla-trend'] = new Chart(trendCtx, {
+        type: 'bar',
+        data: {
+          labels: labels.length ? labels : ['No Data'],
+          datasets: [
+            {
+              label: 'On-Time Confirmed',
+              data: onTimeData.length ? onTimeData : [0],
+              backgroundColor: '#34d399',
+              borderRadius: 4
+            },
+            {
+              label: 'SLA Breached',
+              data: breachedData.length ? breachedData : [0],
+              backgroundColor: '#f87171',
+              borderRadius: 4
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { labels: { color: '#94a3b8', font: { family: 'Inter', size: 12 } } }
+          },
+          scales: {
+            x: { stacked: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } },
+            y: { stacked: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8', precision: 0 } }
+          }
+        }
+      });
+    }
+
+    // B. Response Latency Distribution Chart
+    const latCtx = document.getElementById('chart-sla-latency')?.getContext('2d');
+    if (latCtx) {
+      destroyAnalyticsChart('sla-latency');
+      const dist = slaData.latency_distribution || {};
+      const latLabels = ['< 15 min', '15m - 1 hr', '1 - 2 hrs', '2 - 4 hrs', '> 4 hrs'];
+      const latValues = [
+        dist.under_15m || 0,
+        dist.between_15m_1h || 0,
+        dist.between_1h_2h || 0,
+        dist.between_2h_4h || 0,
+        dist.over_4h || 0
+      ];
+
+      activeAnalyticsCharts['sla-latency'] = new Chart(latCtx, {
+        type: 'doughnut',
+        data: {
+          labels: latLabels,
+          datasets: [{
+            data: latValues,
+            backgroundColor: ['#38bdf8', '#34d399', '#fbbf24', '#f97316', '#f87171'],
+            borderColor: '#0f172a',
+            borderWidth: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'right', labels: { color: '#94a3b8', font: { family: 'Inter', size: 11 } } }
+          }
+        }
+      });
+    }
+  }
+
+  function renderEscalationCharts(escData) {
+    if (typeof Chart === 'undefined') return;
+
+    // A. Escalation Funnel Outcomes
+    const funnelCtx = document.getElementById('chart-escalation-funnel')?.getContext('2d');
+    if (funnelCtx) {
+      destroyAnalyticsChart('esc-funnel');
+      const out = escData.outcomes || {};
+      const funnelLabels = ['Tech Late Confirm', 'Supervisor Reassigned', 'Active Pending', 'Cancelled'];
+      const funnelValues = [
+        out.recovered_by_agent || 0,
+        out.supervisor_reassigned || 0,
+        out.active_unresolved || 0,
+        out.cancelled || 0
+      ];
+
+      activeAnalyticsCharts['esc-funnel'] = new Chart(funnelCtx, {
+        type: 'doughnut',
+        data: {
+          labels: funnelLabels,
+          datasets: [{
+            data: funnelValues,
+            backgroundColor: ['#34d399', '#38bdf8', '#f87171', '#64748b'],
+            borderColor: '#0f172a',
+            borderWidth: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'right', labels: { color: '#94a3b8', font: { family: 'Inter', size: 11 } } }
+          }
+        }
+      });
+    }
+
+    // B. Escalation Reasons Breakdown
+    const reasonsCtx = document.getElementById('chart-escalation-reasons')?.getContext('2d');
+    if (reasonsCtx) {
+      destroyAnalyticsChart('esc-reasons');
+      const reasons = escData.reasons || {};
+      const labels = Object.keys(reasons);
+      const values = Object.values(reasons);
+
+      activeAnalyticsCharts['esc-reasons'] = new Chart(reasonsCtx, {
+        type: 'bar',
+        data: {
+          labels: labels.length ? labels : ['None'],
+          datasets: [{
+            label: 'Escalations Triggered',
+            data: values.length ? values : [0],
+            backgroundColor: '#fbbf24',
+            borderRadius: 4
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          indexAxis: 'y',
+          plugins: {
+            legend: { display: false }
+          },
+          scales: {
+            x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8', precision: 0 } },
+            y: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 11 } } }
+          }
+        }
+      });
+    }
+  }
+
+  function renderTechnicianPerformanceChart(scorecard) {
+    if (typeof Chart === 'undefined') return;
+
+    const techCtx = document.getElementById('chart-technician-performance')?.getContext('2d');
+    if (!techCtx) return;
+
+    destroyAnalyticsChart('tech-perf');
+    const validTechs = scorecard.slice(0, 10);
+    const names = validTechs.map(t => t.agent_name || `Tech #${t.agent_id}`);
+    const complianceRates = validTechs.map(t => t.on_time_pct);
+    const escalations = validTechs.map(t => t.escalated_count);
+
+    activeAnalyticsCharts['tech-perf'] = new Chart(techCtx, {
+      type: 'bar',
+      data: {
+        labels: names.length ? names : ['No Data'],
+        datasets: [
+          {
+            label: 'On-Time Compliance (%)',
+            data: complianceRates.length ? complianceRates : [0],
+            backgroundColor: 'rgba(56, 189, 248, 0.75)',
+            borderColor: '#38bdf8',
+            borderWidth: 1,
+            yAxisID: 'y',
+            borderRadius: 4
+          },
+          {
+            label: 'Escalations Triggered',
+            data: escalations.length ? escalations : [0],
+            backgroundColor: 'rgba(248, 113, 113, 0.75)',
+            borderColor: '#f87171',
+            borderWidth: 1,
+            yAxisID: 'y1',
+            borderRadius: 4
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { labels: { color: '#94a3b8', font: { family: 'Inter', size: 12 } } }
+        },
+        scales: {
+          x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } },
+          y: {
+            type: 'linear',
+            position: 'left',
+            max: 100,
+            grid: { color: 'rgba(255,255,255,0.05)' },
+            ticks: { color: '#38bdf8', callback: v => `${v}%` }
+          },
+          y1: {
+            type: 'linear',
+            position: 'right',
+            grid: { drawOnChartArea: false },
+            ticks: { color: '#f87171', precision: 0 }
+          }
+        }
+      }
+    });
+  }
+
+  function renderTechnicianScorecardTable(scorecard, filterQuery = '') {
+    const tbody = document.getElementById('technician-scorecard-tbody');
+    if (!tbody) return;
+
+    const filtered = scorecard.filter(t => {
+      if (!filterQuery) return true;
+      const name = (t.agent_name || '').toLowerCase();
+      const role = (t.role || '').toLowerCase();
+      const email = (t.email || '').toLowerCase();
+      return name.includes(filterQuery) || role.includes(filterQuery) || email.includes(filterQuery);
+    });
+
+    if (filtered.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="8" class="text-center py-6 text-muted">No technicians match search filter.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = filtered.map(t => {
+      const pct = t.on_time_pct ?? 100;
+      let barClass = 'high';
+      if (pct < 70) barClass = 'low';
+      else if (pct < 85) barClass = 'medium';
+
+      return `
+        <tr>
+          <td>
+            <div style="font-weight: 600; color: #fff;">${t.agent_name}</div>
+            <div style="font-size: 11px; color: var(--text-muted);">${t.email}</div>
+          </td>
+          <td><span class="badge neutral" style="font-size: 11px;">${t.role}</span></td>
+          <td><strong>${t.total_assigned}</strong></td>
+          <td>${t.confirmed_count}</td>
+          <td>
+            <div class="scorecard-bar-wrap">
+              <span style="font-weight: 600; min-width: 42px;">${pct}%</span>
+              <div class="scorecard-bar-track">
+                <div class="scorecard-bar-fill ${barClass}" style="width: ${pct}%;"></div>
+              </div>
+            </div>
+          </td>
+          <td>
+            ${t.escalated_count > 0 ? `<span class="badge danger" style="font-size: 11px;">${t.escalated_count}</span>` : `<span style="color: var(--text-muted);">0</span>`}
+          </td>
+          <td>
+            ${t.reassigned_count > 0 ? `<span class="badge warning" style="font-size: 11px;">${t.reassigned_count}</span>` : `<span style="color: var(--text-muted);">0</span>`}
+          </td>
+          <td>${t.avg_response_minutes > 0 ? `${t.avg_response_minutes} min` : `<span style="color: var(--text-muted);">--</span>`}</td>
+        </tr>
+      `;
+    }).join('');
   }
 
   loadTwilioSandboxInfo();

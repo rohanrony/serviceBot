@@ -62,6 +62,8 @@ class SMSNotificationRouter:
                 return bool(r["enabled"])
         # Defaults if not found in DB
         if recipient_role == "admin":
+            if event_type == "ESCALATION":
+                return True
             return False
         if event_type == "REASSIGNED" and recipient_role == "customer":
             return False
@@ -111,6 +113,8 @@ class SMSNotificationRouter:
             fallback_channels.append("SMS")
         if not fallback_channels:
             if recipient_role == "admin":
+                if event_type == "ESCALATION":
+                    return ["SMS"]
                 return []
             return ["SMS"]
         return fallback_channels
@@ -243,7 +247,7 @@ class SMSNotificationRouter:
 
         # Schedule or update reminders on booking / reschedule / cancel
         if event_type == "BOOKING" and raw_t_str:
-            schedule_appointment_reminders(appointment_id, raw_t_str, customer_phone, agent_phone, trigger_immediate=True)
+            schedule_appointment_reminders(appointment_id, raw_t_str, customer_phone, agent_phone, trigger_immediate=False)
         elif event_type in ("RESCHEDULED", "RESCHEDULED_REASSIGNED", "CONSOLIDATED") and raw_t_str:
             update_or_cancel_appointment_reminders(appointment_id, raw_t_str, customer_phone, agent_phone)
         elif event_type == "REASSIGNED" and raw_t_str:

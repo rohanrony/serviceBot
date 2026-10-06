@@ -222,3 +222,149 @@ def test_send_admin_notification_fallback_to_user_google_accounts(mock_load_cfg,
     _, kwargs = mock_send_via_api.call_args
     assert kwargs["agent_id"] == 8
     assert kwargs["recipient"] == "rohan.roy@edvenswainc.com"
+
+
+@patch("serviceBot.services.sms_reminders.TwilioSMSClient")
+@patch("serviceBot.services.gmail.send_admin_notification")
+@patch("serviceBot.db.connection.dict_cursor")
+@patch("serviceBot.db.connection.get_db_connection")
+@patch("serviceBot.api.portal.load_config")
+@patch("serviceBot.db.queries.get_sms_config")
+@patch("serviceBot.db.queries.get_sms_matrix_rules")
+def test_dispatch_escalation_alert_uses_admin_phone_from_sms_config(
+    mock_matrix_rules, mock_sms_cfg, mock_load_cfg, mock_get_conn, mock_dict_cursor, mock_send_admin_email, mock_twilio_cls
+):
+    """Verify that dispatch_supervisor_escalation_alert prioritizes admin_phone_number given by admin."""
+    mock_load_cfg.return_value = {"supervisor_alert_phone": ""}
+    mock_sms_cfg.return_value = {"admin_phone_number": "+14242704893"}
+    mock_matrix_rules.return_value = [
+        {"event_type": "ESCALATION", "recipient_role": "admin", "channel": "SMS", "enabled": True},
+        {"event_type": "ESCALATION", "recipient_role": "admin", "channel": "EMAIL", "enabled": True},
+    ]
+
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_get_conn.return_value.__enter__.return_value = mock_conn
+    mock_dict_cursor.return_value.__enter__.return_value = mock_cursor
+
+    mock_row = {
+        "id": 501,
+        "status": "pending",
+        "staff_agent_id": 10,
+        "customer_name": "Test Customer",
+        "agent_name": "Test Agent",
+        "agent_email": "agent@test.com"
+    }
+    mock_cursor.fetchone.return_value = mock_row
+
+    mock_twilio_inst = MagicMock()
+    mock_twilio_cls.return_value = mock_twilio_inst
+    mock_twilio_inst.send_sms.return_value = {"status": "SENT", "sid": "SM_ADMIN_01"}
+    mock_send_admin_email.return_value = True
+
+    res = dispatch_supervisor_escalation_alert(501, reason="AGENT_DECLINED")
+
+    assert res["success"] is True
+    assert res["admin_phone"] == "+14242704893"
+    assert res["email_sent"] is True
+    assert res["message_sent"] is True
+    assert mock_twilio_inst.send_sms.called
+    sms_call_kwargs = mock_twilio_inst.send_sms.call_args[1]
+    assert sms_call_kwargs["to"] == "+14242704893"
+    assert sms_call_kwargs["recipient_type"] == "admin"
+
+
+@patch("serviceBot.services.sms_reminders.TwilioSMSClient")
+@patch("serviceBot.services.gmail.send_admin_notification")
+@patch("serviceBot.db.connection.dict_cursor")
+@patch("serviceBot.db.connection.get_db_connection")
+@patch("serviceBot.api.portal.load_config")
+@patch("serviceBot.db.queries.get_sms_config")
+def test_dispatch_escalation_alert_does_not_default_to_hardcoded_fake_number(
+    mock_sms_cfg, mock_load_cfg, mock_get_conn, mock_dict_cursor, mock_send_admin_email, mock_twilio_cls
+):
+    """Verify that when no admin phone is configured, it does NOT send to +19195550199."""
+    mock_load_cfg.return_value = {}  # No supervisor_alert_phone or admin_phone
+    mock_sms_cfg.return_value = {}
+
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_get_conn.return_value.__enter__.return_value = mock_conn
+    mock_dict_cursor.return_value.__enter__.return_value = mock_cursor
+
+    mock_row = {
+        "id": 502,
+        "status": "pending",
+        "staff_agent_id": 10,
+        "customer_name": "No Phone Admin Appt",
+        "agent_name": "Test Agent",
+        "agent_email": "agent@test.com"
+    }
+    mock_cursor.fetchone.return_value = mock_row
+
+    mock_twilio_inst = MagicMock()
+    mock_twilio_cls.return_value = mock_twilio_inst
+    mock_send_admin_email.return_value = True
+
+    res = dispatch_supervisor_escalation_alert(502, reason="AGENT_DECLINED")
+
+    # Twilio send_sms should NOT be called with fake +19195550199
+    assert not mock_twilio_inst.send_sms.called
+    assert not mock_twilio_inst.send_whatsapp.called
+    assert res["admin_phone"] is None
+    assert res["message_sent"] is False
+    # Email should still be sent
+    assert res["email_sent"] is True
+    assert res["success"] is True
+
+
+@patch("serviceBot.services.sms_reminders.TwilioSMSClient")
+@patch("serviceBot.services.gmail.send_admin_notification")
+@patch("serviceBot.db.connection.dict_cursor")
+@patch("serviceBot.db.connection.get_db_connection")
+@patch("serviceBot.api.portal.load_config")
+@patch("serviceBot.db.queries.get_sms_config")
+@patch("serviceBot.db.queries.get_sms_matrix_rules")
+def test_dispatch_escalation_alert_with_matrix_whatsapp_channel(
+    mock_matrix_rules, mock_sms_cfg, mock_load_cfg, mock_get_conn, mock_dict_cursor, mock_send_admin_email, mock_twilio_cls
+):
+    """Verify that when WhatsApp is configured in matrix for ESCALATION admin, WhatsApp message is dispatched."""
+    mock_load_cfg.return_value = {"admin_phone_number": "+14242704893"}
+    mock_sms_cfg.return_value = {}
+    mock_matrix_rules.return_value = [
+        {"event_type": "ESCALATION", "recipient_role": "admin", "channel": "SMS", "enabled": False},
+        {"event_type": "ESCALATION", "recipient_role": "admin", "channel": "WHATSAPP", "enabled": True},
+        {"event_type": "ESCALATION", "recipient_role": "admin", "channel": "EMAIL", "enabled": True},
+    ]
+
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_get_conn.return_value.__enter__.return_value = mock_conn
+    mock_dict_cursor.return_value.__enter__.return_value = mock_cursor
+
+    mock_row = {
+        "id": 503,
+        "status": "pending",
+        "staff_agent_id": 10,
+        "customer_name": "WhatsApp Esc Appt",
+        "agent_name": "Tech 1",
+        "agent_email": "tech@test.com"
+    }
+    mock_cursor.fetchone.return_value = mock_row
+
+    mock_twilio_inst = MagicMock()
+    mock_twilio_cls.return_value = mock_twilio_inst
+    mock_twilio_inst.send_whatsapp.return_value = {"status": "SENT", "sid": "WA_ADMIN_01"}
+    mock_send_admin_email.return_value = True
+
+    res = dispatch_supervisor_escalation_alert(503, reason="TIMEOUT_NO_RESPONSE")
+
+    assert res["success"] is True
+    assert not mock_twilio_inst.send_sms.called
+    assert mock_twilio_inst.send_whatsapp.called
+    wa_kwargs = mock_twilio_inst.send_whatsapp.call_args[1]
+    assert wa_kwargs["to"] == "+14242704893"
+    assert wa_kwargs["recipient_type"] == "admin"
+    assert "WHATSAPP" in res["channels"]
+    assert "EMAIL" in res["channels"]
+

@@ -40,10 +40,11 @@ async def get_elevenlabs_voices():
 @router.patch("/elevenlabs/agent")
 async def update_elevenlabs_agent(payload: AgentUpdatePayload):
     import sys
+    from serviceBot.services.encryption import get_active_secret
     if not any(x in sys.modules for x in ["pytest", "unittest"]):
         load_dotenv(override=False)
-    api_key = os.getenv("ELEVENLABS_API_KEY", "")
-    agent_id = os.getenv("ELEVENLABS_AGENT_ID", "")
+    api_key = get_active_secret("elevenlabs_api_key")
+    agent_id = get_active_secret("elevenlabs_agent_id")
     
     if not agent_id:
         raise HTTPException(status_code=400, detail="ELEVENLABS_AGENT_ID is not configured in the environment")
@@ -83,9 +84,133 @@ async def update_elevenlabs_agent(payload: AgentUpdatePayload):
             )
             if response.status_code != 200:
                 raise HTTPException(status_code=response.status_code, detail="Failed to update agent settings in ElevenLabs")
+            
+            # Persist selected model to config.json if supplied
+            if payload.model:
+                try:
+                    cfg = load_config()
+                    cfg["agent_llm_model"] = payload.model
+                    save_config(cfg)
+                except Exception as save_err:
+                    logger.warning(f"Could not persist agent_llm_model to config: {save_err}")
+
             return {"success": True, "data": response.json()}
         except httpx.RequestError as e:
             raise HTTPException(status_code=500, detail=f"HTTP request failed: {str(e)}")
+
+
+class SecretsPayload(BaseModel):
+    openai_api_key: Optional[str] = None
+    gemini_api_key: Optional[str] = None
+    anthropic_api_key: Optional[str] = None
+    elevenlabs_api_key: Optional[str] = None
+    elevenlabs_agent_id: Optional[str] = None
+    twilio_auth_token: Optional[str] = None
+
+
+def mask_secret(value: str) -> str:
+    if not value:
+        return ""
+    val = value.strip()
+    if len(val) <= 8:
+        return "••••••••"
+    return f"{val[:4]}••••••••{val[-4:]}"
+
+
+@router.get("/secrets")
+async def get_system_secrets():
+    """
+    Returns masked secrets status and source ('env', 'custom', 'none').
+    Decrypted plaintext keys are NEVER exposed in the response.
+    """
+    from serviceBot.services.encryption import decrypt_key
+    
+    cfg = load_config()
+    system_secrets = cfg.get("system_secrets", {})
+    
+    keys_meta = {
+        "openai": {"config_key": "openai_api_key", "env_vars": ["OPENAI_API_KEY"]},
+        "gemini": {"config_key": "gemini_api_key", "env_vars": ["GEMINI_API_KEY", "GOOGLE_API_KEY"]},
+        "anthropic": {"config_key": "anthropic_api_key", "env_vars": ["ANTHROPIC_API_KEY"]},
+        "elevenlabs_key": {"config_key": "elevenlabs_api_key", "env_vars": ["ELEVENLABS_API_KEY"]},
+        "elevenlabs_agent": {"config_key": "elevenlabs_agent_id", "env_vars": ["ELEVENLABS_AGENT_ID"]},
+        "twilio": {"config_key": "twilio_auth_token", "env_vars": ["TWILIO_AUTH_TOKEN"]}
+    }
+    
+    result = {}
+    for key_id, meta in keys_meta.items():
+        c_val_enc = system_secrets.get(meta["config_key"])
+        c_val = decrypt_key(c_val_enc).strip() if c_val_enc else ""
+        
+        env_val = ""
+        for ev in meta["env_vars"]:
+            v = os.getenv(ev, "").strip()
+            if v:
+                env_val = v
+                break
+                
+        if c_val:
+            result[key_id] = {
+                "has_key": True,
+                "source": "custom",
+                "masked": mask_secret(c_val),
+                # For non-secret agent ID, return value directly for editing ease
+                "display_value": c_val if key_id == "elevenlabs_agent" else None
+            }
+        elif env_val:
+            result[key_id] = {
+                "has_key": True,
+                "source": "env",
+                "masked": mask_secret(env_val),
+                "display_value": env_val if key_id == "elevenlabs_agent" else None
+            }
+        else:
+            result[key_id] = {
+                "has_key": False,
+                "source": "none",
+                "masked": "",
+                "display_value": None
+            }
+            
+    return result
+
+
+@router.post("/secrets")
+async def update_system_secrets(payload: SecretsPayload):
+    """
+    Encrypts and persists custom secret overrides in config.json.
+    Passing empty string or clear command will remove the custom override,
+    reverting back to default environment variables.
+    """
+    from serviceBot.services.encryption import encrypt_key
+    
+    cfg = load_config()
+    if "system_secrets" not in cfg or not isinstance(cfg["system_secrets"], dict):
+        cfg["system_secrets"] = {}
+        
+    fields = {
+        "openai_api_key": payload.openai_api_key,
+        "gemini_api_key": payload.gemini_api_key,
+        "anthropic_api_key": payload.anthropic_api_key,
+        "elevenlabs_api_key": payload.elevenlabs_api_key,
+        "elevenlabs_agent_id": payload.elevenlabs_agent_id,
+        "twilio_auth_token": payload.twilio_auth_token,
+    }
+    
+    for k, val in fields.items():
+        if val is None:
+            continue
+        cleaned = val.strip()
+        if cleaned == "" or cleaned.lower() == "clear":
+            # Remove custom override so it falls back to environment defaults
+            cfg["system_secrets"].pop(k, None)
+        elif not (cleaned.startswith("•") or "••••" in cleaned):
+            # Only encrypt and store if it's an actual new key (not a dummy mask)
+            cfg["system_secrets"][k] = encrypt_key(cleaned)
+            
+    save_config(cfg)
+    return {"success": True, "message": "System secrets updated and encrypted at rest"}
+
 
 class StaffAgentCreate(BaseModel):
     name: str
@@ -1620,6 +1745,34 @@ async def get_stats(timeframe: Optional[str] = "7d", calls_timeframe: Optional[s
                 "total_callbacks": total_callbacks,
                 "timeframe": tf
             }
+
+
+@router.get("/analytics/overview")
+async def get_portal_analytics_overview(timeframe: Optional[str] = "7d"):
+    """Returns top-level SLA, escalation, and technician response KPIs."""
+    from serviceBot.services.analytics import get_analytics_overview
+    return get_analytics_overview(timeframe=timeframe)
+
+
+@router.get("/analytics/sla")
+async def get_portal_analytics_sla(timeframe: Optional[str] = "7d"):
+    """Returns SLA compliance timeline and confirmation latency breakdown."""
+    from serviceBot.services.analytics import get_sla_analytics
+    return get_sla_analytics(timeframe=timeframe)
+
+
+@router.get("/analytics/escalations")
+async def get_portal_analytics_escalations(timeframe: Optional[str] = "7d"):
+    """Returns escalation recovery funnels, resolution outcomes, and reason distributions."""
+    from serviceBot.services.analytics import get_escalation_analytics
+    return get_escalation_analytics(timeframe=timeframe)
+
+
+@router.get("/analytics/technicians")
+async def get_portal_analytics_technicians(timeframe: Optional[str] = "7d"):
+    """Returns per-technician SLA compliance and response time scorecard."""
+    from serviceBot.services.analytics import get_technician_scorecard
+    return get_technician_scorecard(timeframe=timeframe)
 
 
 

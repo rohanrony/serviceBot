@@ -2795,6 +2795,7 @@ def schedule_sms_reminder(
     scheduled_at: dt_mod.datetime,
     attempt_number: int = 1,
     attempt_kind: str = "final_reminder",
+    status: str = "PENDING",
 ) -> int:
     """Schedules a pre-appointment SMS reminder in sms_reminders table."""
     with get_db_connection() as conn:
@@ -2811,10 +2812,10 @@ def schedule_sms_reminder(
                     appointment_id, recipient_type, recipient_phone, reminder_type, scheduled_at, status,
                     attempt_number, attempt_kind, retry_count
                 )
-                VALUES (%s, %s, %s, %s, %s, 'PENDING', %s, %s, 0)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 0)
                 RETURNING id;
                 """,
-                (appointment_id, recipient_type, recipient_phone, reminder_type, scheduled_at, attempt_number, attempt_kind)
+                (appointment_id, recipient_type, recipient_phone, reminder_type, scheduled_at, status, attempt_number, attempt_kind)
             )
             return cursor.fetchone()["id"]
 

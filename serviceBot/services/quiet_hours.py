@@ -153,12 +153,17 @@ def start_quiet_hours_queue_worker(interval_seconds: int = 30):
 
     def _loop():
         logger.info("Quiet hours queue release worker thread started.")
+        consecutive_errors = 0
         while True:
             try:
                 run_quiet_hours_queue_worker_cycle()
+                consecutive_errors = 0
+                time.sleep(interval_seconds)
             except Exception as e:
-                logger.error(f"Error in quiet hours polling cycle: {e}", exc_info=e)
-            time.sleep(interval_seconds)
+                consecutive_errors += 1
+                sleep_time = min(120.0, float(interval_seconds) * (2 ** min(consecutive_errors, 4)))
+                logger.error(f"Error in quiet hours polling cycle (backing off for {sleep_time}s): {e}", exc_info=e)
+                time.sleep(sleep_time)
 
     t = threading.Thread(target=_loop, daemon=True, name="quiet-hours-queue-release")
     t.start()

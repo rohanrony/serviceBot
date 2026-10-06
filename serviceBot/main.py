@@ -4,6 +4,13 @@ from fastapi.responses import RedirectResponse
 import os
 import threading
 from contextlib import asynccontextmanager
+from dotenv import find_dotenv, load_dotenv
+
+_env = find_dotenv()
+if _env:
+    load_dotenv(dotenv_path=_env, override=True)
+else:
+    load_dotenv(override=True)
 
 from serviceBot.logger import get_logger, setup_logging
 from serviceBot.api.middleware import RequestLoggingMiddleware, global_exception_handler

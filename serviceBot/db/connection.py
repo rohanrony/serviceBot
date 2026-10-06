@@ -7,14 +7,18 @@ from contextlib import contextmanager
 import threading
 import sys
 
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 from serviceBot.db.migrations import apply_migrations
 from serviceBot.logger import get_logger
 
 logger = get_logger("db.connection")
 
-# Load environment variables from .env
-load_dotenv()
+# Load environment variables from .env with override=True to ensure unquoted or shell-expanded variables do not poison the process
+_env_path = find_dotenv()
+if _env_path:
+    load_dotenv(dotenv_path=_env_path, override=True)
+else:
+    load_dotenv(override=True)
 
 
 def get_db_url():
@@ -527,12 +531,33 @@ def init_db(db_url: str = None, force: bool = False):
                 ('CONSOLIDATED', 'customer', 'WHATSAPP', True),
                 ('CONSOLIDATED', 'agent', 'WHATSAPP', True),
                 ('CONSOLIDATED', 'admin', 'WHATSAPP', False),
+                ('ESCALATION', 'admin', 'SMS', True),
+                ('ESCALATION', 'admin', 'WHATSAPP', False),
+                ('ESCALATION', 'admin', 'EMAIL', True),
+                ('ESCALATION', 'agent', 'SMS', False),
+                ('ESCALATION', 'customer', 'SMS', False),
+                ('ESCALATION', 'previous_agent', 'SMS', False),
             ]
             for event_type, recipient_role, channel, enabled in default_rules:
                 cursor.execute(
                     "INSERT INTO sms_matrix_rules (event_type, recipient_role, channel, enabled) VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING;",
                     (event_type, recipient_role, channel, enabled)
                 )
+
+        # Ensure default ESCALATION rules exist even if table was already populated
+        escalation_defaults = [
+            ('ESCALATION', 'admin', 'SMS', True),
+            ('ESCALATION', 'admin', 'WHATSAPP', False),
+            ('ESCALATION', 'admin', 'EMAIL', True),
+            ('ESCALATION', 'agent', 'SMS', False),
+            ('ESCALATION', 'customer', 'SMS', False),
+            ('ESCALATION', 'previous_agent', 'SMS', False),
+        ]
+        for event_type, recipient_role, channel, enabled in escalation_defaults:
+            cursor.execute(
+                "INSERT INTO sms_matrix_rules (event_type, recipient_role, channel, enabled) VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING;",
+                (event_type, recipient_role, channel, enabled)
+            )
 
         conn.commit()
         _db_initialized = True

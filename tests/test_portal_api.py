@@ -39,14 +39,67 @@ def test_update_elevenlabs_agent_success(mock_patch):
 
     payload = {
         "voice_id": "voice_1",
-        "model": "gpt-4o"
-      }
+        "model": "gemini-2.5-flash"
+    }
     
     response = client.patch("/api/v1/portal/elevenlabs/agent", json=payload)
     
     assert response.status_code == 200
     data = response.json()
     assert data["success"] is True
+
+    # Verify that call to ElevenLabs included gemini-2.5-flash
+    mock_patch.assert_called_once()
+    call_kwargs = mock_patch.call_args.kwargs
+    assert call_kwargs["json"]["conversation_config"]["agent"]["language_model_settings"]["model"] == "gemini-2.5-flash"
+
+
+def test_get_and_post_secrets_endpoint():
+    # 1. GET /api/v1/portal/secrets
+    get_res = client.get("/api/v1/portal/secrets")
+    assert get_res.status_code == 200
+    secrets_data = get_res.json()
+    assert "openai" in secrets_data
+    assert "gemini" in secrets_data
+    assert "anthropic" in secrets_data
+    assert "elevenlabs_key" in secrets_data
+    assert "elevenlabs_agent" in secrets_data
+    assert "twilio" in secrets_data
+
+    # Ensure none of the masked fields leak plaintext if length > 8
+    for k, v in secrets_data.items():
+        assert "has_key" in v
+        assert "source" in v
+        assert "masked" in v
+        assert v["source"] in ["env", "custom", "none"]
+
+    # 2. POST /api/v1/portal/secrets with a custom override for Gemini
+    post_res = client.post("/api/v1/portal/secrets", json={
+        "gemini_api_key": "AIzaSyTestGeminiCustomKey12345"
+    })
+    assert post_res.status_code == 200
+    assert post_res.json()["success"] is True
+
+    # 3. GET again and verify Gemini is marked as custom
+    get_res2 = client.get("/api/v1/portal/secrets")
+    assert get_res2.status_code == 200
+    gemini_info = get_res2.json()["gemini"]
+    assert gemini_info["has_key"] is True
+    assert gemini_info["source"] == "custom"
+    assert "AIza" in gemini_info["masked"]
+
+    # 4. Clear the custom override to restore default env
+    clear_res = client.post("/api/v1/portal/secrets", json={
+        "gemini_api_key": "clear"
+    })
+    assert clear_res.status_code == 200
+
+    # 5. Verify it reverted
+    get_res3 = client.get("/api/v1/portal/secrets")
+    assert get_res3.status_code == 200
+    gemini_info_after = get_res3.json()["gemini"]
+    assert gemini_info_after["source"] in ["env", "none"]
+
 
 def test_get_services_endpoint():
     response = client.get("/api/v1/portal/services")

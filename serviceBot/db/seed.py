@@ -226,6 +226,12 @@ def seed_db(force: bool = False):
                 ("AGENT_CONFIRMED", "customer", "WHATSAPP", False),
                 ("AGENT_CONFIRMED", "agent", "WHATSAPP", True),
                 ("AGENT_CONFIRMED", "admin", "WHATSAPP", False),
+                ("ESCALATION", "admin", "SMS", True),
+                ("ESCALATION", "admin", "WHATSAPP", False),
+                ("ESCALATION", "admin", "EMAIL", True),
+                ("ESCALATION", "agent", "SMS", False),
+                ("ESCALATION", "customer", "SMS", False),
+                ("ESCALATION", "previous_agent", "SMS", False),
             ]
             for event_type, recipient_role, channel, enabled in default_rules:
                 cursor.execute(

@@ -289,7 +289,7 @@ def schedule_appointment_reminders(
             )
             conn.commit()
 
-    # 3. Attempt 1 (Immediate)
+    # 3. Attempt 1 (Immediate) - recorded as SENT since initial booking dispatch is handled directly by router
     if customer_phone:
         schedule_sms_reminder(
             appointment_id=appointment_id,
@@ -299,6 +299,7 @@ def schedule_appointment_reminders(
             scheduled_at=now,
             attempt_number=1,
             attempt_kind="immediate_booking",
+            status="SENT",
         )
 
     if agent_phone:
@@ -310,6 +311,7 @@ def schedule_appointment_reminders(
             scheduled_at=now,
             attempt_number=1,
             attempt_kind="immediate_booking",
+            status="SENT",
         )
 
     # 4. Attempt 2 (Intermediate Follow-up)
@@ -389,7 +391,7 @@ def update_or_cancel_appointment_reminders(
                 new_booking_time_str,
                 customer_phone=None,
                 agent_phone=agent_phone,
-                trigger_immediate=True,
+                trigger_immediate=False,
             )
         return
 
@@ -647,14 +649,32 @@ def run_reminder_polling_worker_cycle() -> int:
 
 def dispatch_supervisor_escalation_alert(service_request_id: int, reason: str = "TIMEOUT_NO_RESPONSE") -> dict:
     """
-    Dispatches an urgent escalation SMS and admin notification email to the supervisor/admin
+    Dispatches an urgent escalation alert (SMS/WhatsApp) and admin notification email to the supervisor/admin
     when an appointment confirmation times out, is declined, or fails delivery.
+    Adheres to the notification matrix and admin's configured phone number.
     """
     from serviceBot.api.portal import load_config
     from serviceBot.db.connection import get_db_connection, dict_cursor
+    from serviceBot.db.queries import get_sms_config, get_sms_matrix_rules
 
     cfg = load_config()
-    supervisor_phone = cfg.get("supervisor_alert_phone") or "+19195550199"
+
+    sms_cfg = {}
+    try:
+        sms_cfg = get_sms_config() or {}
+    except Exception as err:
+        logger.warning(f"Could not read sms_config for admin phone: {err}")
+
+    # Resolve phone number provided by the admin; NEVER default to +19195550199
+    admin_phone = (
+        sms_cfg.get("admin_phone_number")
+        or cfg.get("admin_phone_number")
+        or cfg.get("supervisor_alert_phone")
+        or ""
+    ).strip()
+
+    if admin_phone == "+19195550199":
+        admin_phone = ""
 
     customer_name = "Customer"
     customer_phone = None
@@ -712,30 +732,74 @@ def dispatch_supervisor_escalation_alert(service_request_id: int, reason: str = 
                 elif row.get("booking_time"):
                     time_str = str(row["booking_time"])
 
-            # Audit log entry
-            cursor.execute(
-                """
-                INSERT INTO service_request_audit_log (request_id, triggered_by, from_status, to_status, notes)
-                VALUES (%s, 'supervisor_escalation', NULL, NULL, %s);
-                """,
-                (service_request_id, f"Supervisor escalation alert sent to {supervisor_phone} (reason={reason})")
-            )
-            conn.commit()
-
     body = (
         f"URGENT ESCALATION: Appointment #{service_request_id} ({customer_name} at {time_str}) "
         f"is UNCONFIRMED by technician {technician_name} (Reason: {reason}). "
         f"Review & reassign: https://davidson.carcare/portal/reassign/{service_request_id}"
     )
 
-    client = TwilioSMSClient()
-    sms_res = client.send_sms(
-        to=supervisor_phone,
-        body=body,
-        template_type="supervisor_alert",
-        appointment_id=service_request_id
-    )
+    # Determine enabled channels from Notification Matrix
+    rules = []
+    try:
+        rules = get_sms_matrix_rules() or []
+    except Exception as e:
+        logger.warning(f"Could not load matrix rules: {e}")
 
+    admin_rules = [
+        r for r in rules
+        if (r.get("event_type") or "").upper() == "ESCALATION"
+        and (r.get("recipient_role") or "").lower() == "admin"
+    ]
+
+    if admin_rules:
+        sms_enabled = any((r.get("channel") or "").upper() == "SMS" and r.get("enabled") for r in admin_rules)
+        whatsapp_enabled = any((r.get("channel") or "").upper() == "WHATSAPP" and r.get("enabled") for r in admin_rules)
+        has_email_rule = any((r.get("channel") or "").upper() == "EMAIL" for r in admin_rules)
+        if has_email_rule:
+            email_enabled = any((r.get("channel") or "").upper() == "EMAIL" and r.get("enabled") for r in admin_rules)
+        else:
+            email_enabled = bool(cfg.get("gmail_enabled", True))
+    else:
+        # Default policy: on escalation, notify admin via email and message (SMS by default)
+        sms_enabled = True
+        whatsapp_enabled = False
+        email_enabled = bool(cfg.get("gmail_enabled", True))
+
+    # Send message (SMS and/or WhatsApp)
+    client = TwilioSMSClient()
+    dispatches = []
+    primary_msg_res = {}
+
+    if admin_phone:
+        if sms_enabled:
+            res_sms = client.send_sms(
+                to=admin_phone,
+                body=body,
+                template_type="supervisor_alert",
+                appointment_id=service_request_id,
+                recipient_type="admin"
+            )
+            primary_msg_res = res_sms
+            dispatches.append({"channel": "SMS", "result": res_sms})
+
+        if whatsapp_enabled:
+            res_wa = client.send_whatsapp(
+                to=admin_phone,
+                body=body,
+                template_type="supervisor_alert",
+                appointment_id=service_request_id,
+                recipient_type="admin"
+            )
+            if not primary_msg_res:
+                primary_msg_res = res_wa
+            dispatches.append({"channel": "WHATSAPP", "result": res_wa})
+    else:
+        logger.warning(
+            f"[ESCALATION ALERT] No admin phone number configured by admin; "
+            f"skipping message alert for appointment #{service_request_id}."
+        )
+
+    # Send Email
     details = {
         "appointment_id": service_request_id,
         "customer_name": customer_name,
@@ -749,28 +813,60 @@ def dispatch_supervisor_escalation_alert(service_request_id: int, reason: str = 
     }
 
     email_sent = False
-    try:
-        from serviceBot.services.gmail import send_admin_notification
-        email_sent = send_admin_notification(
-            booking_type="escalation",
-            details=details,
-            agent_name=technician_name,
-            agent_email=agent_email
-        )
-    except Exception as email_err:
-        logger.warning(f"[ESCALATION EMAIL WARNING] Failed to send admin escalation email for #{service_request_id}: {email_err}")
+    if email_enabled:
+        try:
+            from serviceBot.services.gmail import send_admin_notification
+            email_sent = send_admin_notification(
+                booking_type="escalation",
+                details=details,
+                agent_name=technician_name,
+                agent_email=agent_email
+            )
+        except Exception as email_err:
+            logger.warning(f"[ESCALATION EMAIL WARNING] Failed to send admin escalation email for #{service_request_id}: {email_err}")
+    else:
+        logger.info(f"[ESCALATION ALERT] Admin email notification disabled in matrix for escalation #{service_request_id}")
+
+    channels_dispatched = [d["channel"] for d in dispatches]
+    if email_sent:
+        channels_dispatched.append("EMAIL")
+
+    audit_note = (
+        f"Supervisor/admin escalation alert processed for {admin_phone or 'unconfigured phone'} "
+        f"(reason={reason}, channels={','.join(channels_dispatched) if channels_dispatched else 'none'})"
+    )
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                """
+                INSERT INTO service_request_audit_log (request_id, triggered_by, from_status, to_status, notes)
+                VALUES (%s, 'supervisor_escalation', NULL, NULL, %s);
+                """,
+                (service_request_id, audit_note)
+            )
+            conn.commit()
+
+    message_sent = any(
+        bool(d.get("result", {}).get("success") or d.get("result", {}).get("status") in ("DELIVERED", "SENT"))
+        for d in dispatches
+    )
+    is_success = bool(message_sent or email_sent)
 
     logger.warning(
-        f"[ESCALATION ALERT] Supervisor notified for appt #{service_request_id} "
-        f"at {supervisor_phone} (reason={reason}, status={sms_res.get('status')}, email_sent={email_sent})"
+        f"[ESCALATION ALERT] Supervisor/Admin notified for appt #{service_request_id} "
+        f"at phone={admin_phone or 'none'} (reason={reason}, message_sent={message_sent}, email_sent={email_sent}, channels={channels_dispatched})"
     )
 
     return {
-        "success": bool(sms_res.get("success") or sms_res.get("status") in ("DELIVERED", "SENT")),
-        "supervisor_phone": supervisor_phone,
+        "success": is_success,
+        "admin_phone": admin_phone or None,
+        "supervisor_phone": admin_phone or None,
         "body": body,
-        "sid": sms_res.get("sid"),
-        "email_sent": bool(email_sent)
+        "sid": primary_msg_res.get("sid"),
+        "email_sent": bool(email_sent),
+        "message_sent": bool(message_sent),
+        "dispatches": dispatches,
+        "channels": channels_dispatched
     }
 
 
@@ -813,16 +909,26 @@ def start_reminder_polling_worker(interval_seconds: int = 30):
 
     def _loop():
         logger.info("SMS reminder polling worker thread started.")
+        consecutive_errors = 0
         while True:
+            has_error = False
             try:
                 run_reminder_polling_worker_cycle()
             except Exception as e:
+                has_error = True
                 logger.error(f"Error in reminder worker cycle: {e}", exc_info=e)
             try:
                 check_and_escalate_unconfirmed_appointments()
             except Exception as esc_err:
+                has_error = True
                 logger.error(f"Error in unconfirmed escalation check: {esc_err}", exc_info=esc_err)
-            time.sleep(interval_seconds)
+            if has_error:
+                consecutive_errors += 1
+                sleep_time = min(120.0, float(interval_seconds) * (2 ** min(consecutive_errors, 4)))
+                time.sleep(sleep_time)
+            else:
+                consecutive_errors = 0
+                time.sleep(interval_seconds)
 
     t = threading.Thread(target=_loop, daemon=True, name="sms-reminder-polling")
     t.start()

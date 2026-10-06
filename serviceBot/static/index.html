@@ -12,6 +12,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
   <!-- Stylesheets -->
   <link rel="stylesheet" href="style.css?v=23">
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
 
@@ -592,6 +594,10 @@
               <svg class="ribbon-icon" viewBox="0 0 24 24"><path d="M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>
               <span>API Keys & Voice</span>
             </button>
+            <button type="button" class="config-ribbon-item" data-subtab="analytics">
+              <svg class="ribbon-icon" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/></svg>
+              <span>Analytics & Performance</span>
+            </button>
           </div>
 
           <!-- SUBTAB 1: STAFF CALENDAR CONFIG -->
@@ -1018,8 +1024,8 @@
 
               <div class="form-group">
                 <label class="form-label" for="config-supervisor-phone">Supervisor Alert Mobile Phone</label>
-                <input type="text" id="config-supervisor-phone" class="form-input" placeholder="+19195550199">
-                <small class="text-muted">Receives urgent SMS alerts on agent decline, timeout, or delivery failure.</small>
+                <input type="text" id="config-supervisor-phone" class="form-input" placeholder="+14242704893">
+                <small class="text-muted">Admin alert contact for agent declines, SLA timeouts, and urgent escalations.</small>
               </div>
 
               <div class="form-group">
@@ -1070,15 +1076,24 @@
           <div class="content-card sms-config-card mb-6">
             <div class="card-header">
               <h3>Notification Matrix Dispatch Rules</h3>
-              <p class="text-muted">Automated SMS distribution policy across booking lifecycle events.</p>
+              <p class="text-muted">Automated notification policy across lifecycle events (SMS, WhatsApp, Email).</p>
             </div>
 
-            <div class="table-container mt-4">
+            <div class="d-flex align-items-center justify-content-between mt-3 mb-2 flex-wrap gap-2">
+              <div class="channel-filter-group btn-group" role="group">
+                <button type="button" class="btn btn-sm btn-secondary active matrix-channel-btn" data-channel="SMS">SMS</button>
+                <button type="button" class="btn btn-sm btn-secondary matrix-channel-btn" data-channel="WHATSAPP">WhatsApp</button>
+                <button type="button" class="btn btn-sm btn-secondary matrix-channel-btn" data-channel="EMAIL">Email</button>
+              </div>
+              <small class="text-muted">Select channel to configure active delivery rules.</small>
+            </div>
+
+            <div class="table-container mt-2">
               <table class="data-table sms-matrix-table">
                 <thead>
                   <tr>
                     <th>Trigger Event</th>
-                    <th>Customer SMS</th>
+                    <th>Customer</th>
                     <th>Assigned Agent</th>
                     <th>Previous Agent</th>
                     <th>Admin</th>
@@ -1265,9 +1280,12 @@
                 <div class="form-group">
                   <label for="agent-llm-model">Language Model (LLM)</label>
                   <select id="agent-llm-model" class="form-input">
-                    <option value="claude-3-5-sonnet">Anthropic Claude 3.5 Sonnet</option>
+                    <option value="gemini-2.5-flash">Google Gemini 2.5 Flash (Recommended)</option>
+                    <option value="gemini-2.0-flash">Google Gemini 2.0 Flash</option>
+                    <option value="gemini-1.5-pro">Google Gemini 1.5 Pro</option>
                     <option value="gpt-4o" selected>OpenAI GPT-4o</option>
                     <option value="gpt-4o-mini">OpenAI GPT-4o-mini</option>
+                    <option value="claude-3-5-sonnet">Anthropic Claude 3.5 Sonnet</option>
                   </select>
                 </div>
                 
@@ -1290,42 +1308,223 @@
             <!-- Secrets Key configuration -->
             <div class="content-card flex-2">
               <div class="card-header">
-                <h3>Encrypted System Secrets</h3>
-                <p class="text-muted">API credentials stored encrypted at rest using local keys.</p>
+                <div class="d-flex justify-content-between align-items-center">
+                  <div>
+                    <h3>Encrypted System Secrets</h3>
+                    <p class="text-muted">API credentials stored encrypted at rest. Leave empty to use system defaults from .env, or enter a new key to override.</p>
+                  </div>
+                  <button type="button" class="btn btn-secondary btn-sm" id="btn-refresh-secrets" title="Reload secrets status">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                  </button>
+                </div>
               </div>
               
               <form id="save-api-keys-form" class="form-grid">
                 <div class="form-group">
-                  <label for="key-openai">OpenAI API Key</label>
-                  <input type="password" id="key-openai" class="form-input" placeholder="••••••••••••••••••••••••">
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <label for="key-openai" class="mb-0">OpenAI API Key</label>
+                    <span id="badge-openai" class="secret-status-badge badge-neutral">Checking...</span>
+                  </div>
+                  <input type="password" id="key-openai" class="form-input" placeholder="Enter key to override (or leave blank for default)">
+                </div>
+
+                <div class="form-group">
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <label for="key-gemini" class="mb-0">Google Gemini API Key</label>
+                    <span id="badge-gemini" class="secret-status-badge badge-neutral">Checking...</span>
+                  </div>
+                  <input type="password" id="key-gemini" class="form-input" placeholder="Enter key to override (or leave blank for default)">
                 </div>
                 
                 <div class="form-group">
-                  <label for="key-anthropic">Anthropic API Key</label>
-                  <input type="password" id="key-anthropic" class="form-input" placeholder="••••••••••••••••••••••••">
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <label for="key-anthropic" class="mb-0">Anthropic API Key</label>
+                    <span id="badge-anthropic" class="secret-status-badge badge-neutral">Checking...</span>
+                  </div>
+                  <input type="password" id="key-anthropic" class="form-input" placeholder="Enter key to override (or leave blank for default)">
                 </div>
                 
                 <div class="form-group">
-                  <label for="key-elevenlabs">ElevenLabs API Key</label>
-                  <input type="password" id="key-elevenlabs" class="form-input" placeholder="••••••••••••••••••••••••">
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <label for="key-elevenlabs" class="mb-0">ElevenLabs API Key</label>
+                    <span id="badge-elevenlabs-key" class="secret-status-badge badge-neutral">Checking...</span>
+                  </div>
+                  <input type="password" id="key-elevenlabs" class="form-input" placeholder="Enter key to override (or leave blank for default)">
                 </div>
                 
                 <div class="form-group">
-                  <label for="key-elevenlabs-agent">ElevenLabs Agent ID</label>
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <label for="key-elevenlabs-agent" class="mb-0">ElevenLabs Agent ID</label>
+                    <span id="badge-elevenlabs-agent" class="secret-status-badge badge-neutral">Checking...</span>
+                  </div>
                   <input type="text" id="key-elevenlabs-agent" class="form-input" placeholder="e.g. agent_abc123">
                 </div>
                 
-                <div class="form-group full-width">
-                  <label for="key-twilio">Twilio Auth Token</label>
-                  <input type="password" id="key-twilio" class="form-input" placeholder="••••••••••••••••••••••••">
+                <div class="form-group">
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <label for="key-twilio" class="mb-0">Twilio Auth Token</label>
+                    <span id="badge-twilio" class="secret-status-badge badge-neutral">Checking...</span>
+                  </div>
+                  <input type="password" id="key-twilio" class="form-input" placeholder="Enter key to override (or leave blank for default)">
                 </div>
                 
-                <div class="form-actions full-width">
+                <div class="form-actions full-width d-flex justify-content-between align-items-center mt-3">
+                  <span class="text-xs text-muted"><i class="fas fa-lock"></i> Passwords encrypted with AES-256 CTR. Type "clear" in any field to reset to .env default.</span>
                   <button type="submit" class="btn btn-primary" id="save-secrets-btn">Encrypt & Store Keys</button>
                 </div>
               </form>
             </div>
           </div>
+          </div>
+
+          <!-- SUBTAB 7: OPERATIONAL ANALYTICS & PERFORMANCE -->
+          <div id="analytics-view" class="config-subtab-pane" data-subtab-pane="analytics">
+            <!-- Executive Summary KPI Cards -->
+            <div class="analytics-kpi-grid">
+              <div class="metric-card analytics-kpi-card">
+                <span class="metric-label">SLA Compliance Rate</span>
+                <h3 class="metric-value text-accent-cyan" id="kpi-sla-compliance">--%</h3>
+                <div class="metric-badge" id="badge-sla-compliance"><span class="badge-dot success"></span>-- on-time confirmations</div>
+              </div>
+
+              <div class="metric-card analytics-kpi-card">
+                <span class="metric-label">Escalation Recovery</span>
+                <h3 class="metric-value text-accent-emerald" id="kpi-recovery-rate">--%</h3>
+                <div class="metric-badge" id="badge-recovery-rate"><span class="badge-dot success"></span>-- recovered / resolved</div>
+              </div>
+
+              <div class="metric-card analytics-kpi-card">
+                <span class="metric-label">Avg Technician Response</span>
+                <h3 class="metric-value text-accent-amber" id="kpi-avg-response">-- min</h3>
+                <div class="metric-badge"><span class="badge-dot info"></span>Confirmation latency</div>
+              </div>
+
+              <div class="metric-card analytics-kpi-card">
+                <span class="metric-label">Total Escalations Handled</span>
+                <h3 class="metric-value text-accent-rose" id="kpi-total-escalations">--</h3>
+                <div class="metric-badge" id="badge-reassigned-count"><span class="badge-dot warning"></span>-- supervisor reassignments</div>
+              </div>
+            </div>
+
+            <!-- Sub-Subtab Navigation Ribbon -->
+            <div class="analytics-sub-ribbon mt-6">
+              <button type="button" class="analytics-sub-btn active" data-analytics-subtab="sla">
+                <svg class="ribbon-icon" viewBox="0 0 24 24"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm.5-13H11v6l5.2 3.2.8-1.3-4.5-2.7V7z"/></svg>
+                <span>SLA Performance</span>
+              </button>
+              <button type="button" class="analytics-sub-btn" data-analytics-subtab="escalation">
+                <svg class="ribbon-icon" viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>
+                <span>Escalation Recovery</span>
+              </button>
+              <button type="button" class="analytics-sub-btn" data-analytics-subtab="technicians">
+                <svg class="ribbon-icon" viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+                <span>Technician Scorecard</span>
+              </button>
+            </div>
+
+            <!-- Sub-Subtab 1: SLA Performance -->
+            <div id="analytics-pane-sla" class="analytics-pane active">
+              <div class="analytics-grid-two">
+                <div class="content-card analytics-chart-card">
+                  <div class="card-header">
+                    <div>
+                      <h3>Daily SLA Compliance Trend</h3>
+                      <p class="text-muted">On-time confirmations vs. deadline breaches over time.</p>
+                    </div>
+                  </div>
+                  <div class="chart-wrapper">
+                    <canvas id="chart-sla-trend"></canvas>
+                  </div>
+                </div>
+
+                <div class="content-card analytics-chart-card">
+                  <div class="card-header">
+                    <div>
+                      <h3>Confirmation Latency Distribution</h3>
+                      <p class="text-muted">Response speed breakdown from appointment booking.</p>
+                    </div>
+                  </div>
+                  <div class="chart-wrapper">
+                    <canvas id="chart-sla-latency"></canvas>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Sub-Subtab 2: Escalation Recovery -->
+            <div id="analytics-pane-escalation" class="analytics-pane">
+              <div class="analytics-grid-two">
+                <div class="content-card analytics-chart-card">
+                  <div class="card-header">
+                    <div>
+                      <h3>Escalation Resolution Funnel</h3>
+                      <p class="text-muted">Technician recovery vs. supervisor reassignment outcomes.</p>
+                    </div>
+                  </div>
+                  <div class="chart-wrapper">
+                    <canvas id="chart-escalation-funnel"></canvas>
+                  </div>
+                </div>
+
+                <div class="content-card analytics-chart-card">
+                  <div class="card-header">
+                    <div>
+                      <h3>Escalation Reasons Breakdown</h3>
+                      <p class="text-muted">Root causes triggering automated appointment alerts.</p>
+                    </div>
+                  </div>
+                  <div class="chart-wrapper">
+                    <canvas id="chart-escalation-reasons"></canvas>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Sub-Subtab 3: Technician Scorecard -->
+            <div id="analytics-pane-technicians" class="analytics-pane">
+              <div class="content-card analytics-chart-card mb-6">
+                <div class="card-header">
+                  <div>
+                    <h3>Staff Performance Comparison</h3>
+                    <p class="text-muted">On-time confirmation rate vs. escalation frequency.</p>
+                  </div>
+                </div>
+                <div class="chart-wrapper chart-wrapper-tall">
+                  <canvas id="chart-technician-performance"></canvas>
+                </div>
+              </div>
+
+              <div class="content-card">
+                <div class="card-header card-header-split">
+                  <div>
+                    <h3>Technician Performance Leaderboard</h3>
+                    <p class="text-muted">Individual technician confirmation latency, compliance rate, and reassignments.</p>
+                  </div>
+                  <input type="text" id="tech-search-input" class="form-input filter-search" placeholder="Filter technicians...">
+                </div>
+                <div class="table-container">
+                  <table class="data-table" id="technician-scorecard-table">
+                    <thead>
+                      <tr>
+                        <th>Technician</th>
+                        <th>Role</th>
+                        <th>Assigned</th>
+                        <th>Confirmed</th>
+                        <th>On-Time Compliance</th>
+                        <th>Escalations</th>
+                        <th>Reassigned Out</th>
+                        <th>Avg Response</th>
+                      </tr>
+                    </thead>
+                    <tbody id="technician-scorecard-tbody">
+                      <tr>
+                        <td colspan="8" class="text-center py-6 text-muted">Loading technician scorecard...</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
       </div> <!-- /.views-panel -->

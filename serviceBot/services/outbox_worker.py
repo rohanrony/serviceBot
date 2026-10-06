@@ -238,6 +238,7 @@ def process_outbox_batch(batch_size: int = 10) -> int:
 
     except Exception as outer_err:
         logger.error(f"Outbox batch processing exception: {outer_err}", exc_info=outer_err)
+        raise
 
     return processed_count
 
@@ -525,11 +526,18 @@ def _execute_revert_compensation(conn, event_type: str, request_id: Optional[int
 def _worker_loop():
     """Background polling loop for outbox processing."""
     logger.info("Outbox processing background thread started.")
+    consecutive_failures = 0
     while True:
         try:
-            process_outbox_batch()
+            processed = process_outbox_batch()
+            if processed > 0:
+                consecutive_failures = 0
         except Exception as e:
-            logger.error(f"Worker loop error: {e}", exc_info=e)
+            consecutive_failures += 1
+            sleep_time = min(60.0, 2.0 * (2 ** min(consecutive_failures, 5)))
+            logger.error(f"Worker loop error (backing off for {sleep_time}s): {e}", exc_info=e)
+            time.sleep(sleep_time)
+            continue
         time.sleep(2.0)
 
 

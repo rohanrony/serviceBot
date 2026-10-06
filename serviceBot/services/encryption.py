@@ -156,3 +156,61 @@ def decrypt_key(encrypted_str: str) -> str:
     except Exception as e:
         logger.error(f"Failed to decrypt encrypted key token: {e}", exc_info=e)
         return ""
+
+
+def get_active_secret(secret_name: str) -> str:
+    """
+    Retrieve active secret value, preferring encrypted config.json overrides
+    and falling back to environment variables.
+    Supported secret_name values:
+      'openai', 'gemini', 'anthropic', 'elevenlabs', 'elevenlabs_agent', 'twilio'
+      (or standard env var names like 'OPENAI_API_KEY', 'GEMINI_API_KEY', etc.)
+    """
+    import json
+    
+    mapping = {
+        "openai": ("openai_api_key", ["OPENAI_API_KEY"]),
+        "openai_api_key": ("openai_api_key", ["OPENAI_API_KEY"]),
+        "OPENAI_API_KEY": ("openai_api_key", ["OPENAI_API_KEY"]),
+        "gemini": ("gemini_api_key", ["GEMINI_API_KEY", "GOOGLE_API_KEY"]),
+        "gemini_api_key": ("gemini_api_key", ["GEMINI_API_KEY", "GOOGLE_API_KEY"]),
+        "GEMINI_API_KEY": ("gemini_api_key", ["GEMINI_API_KEY", "GOOGLE_API_KEY"]),
+        "anthropic": ("anthropic_api_key", ["ANTHROPIC_API_KEY"]),
+        "anthropic_api_key": ("anthropic_api_key", ["ANTHROPIC_API_KEY"]),
+        "ANTHROPIC_API_KEY": ("anthropic_api_key", ["ANTHROPIC_API_KEY"]),
+        "elevenlabs": ("elevenlabs_api_key", ["ELEVENLABS_API_KEY"]),
+        "elevenlabs_api_key": ("elevenlabs_api_key", ["ELEVENLABS_API_KEY"]),
+        "ELEVENLABS_API_KEY": ("elevenlabs_api_key", ["ELEVENLABS_API_KEY"]),
+        "elevenlabs_agent": ("elevenlabs_agent_id", ["ELEVENLABS_AGENT_ID"]),
+        "elevenlabs_agent_id": ("elevenlabs_agent_id", ["ELEVENLABS_AGENT_ID"]),
+        "ELEVENLABS_AGENT_ID": ("elevenlabs_agent_id", ["ELEVENLABS_AGENT_ID"]),
+        "twilio": ("twilio_auth_token", ["TWILIO_AUTH_TOKEN"]),
+        "twilio_auth_token": ("twilio_auth_token", ["TWILIO_AUTH_TOKEN"]),
+        "TWILIO_AUTH_TOKEN": ("twilio_auth_token", ["TWILIO_AUTH_TOKEN"]),
+    }
+    
+    config_key, env_vars = mapping.get(secret_name, (secret_name.lower(), [secret_name.upper()]))
+    
+    # 1. Check config.json encrypted secrets
+    config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            secrets = cfg.get("system_secrets", {})
+            encrypted_val = secrets.get(config_key)
+            if encrypted_val:
+                decrypted = decrypt_key(encrypted_val).strip()
+                if decrypted:
+                    return decrypted
+        except Exception as e:
+            logger.warning(f"Error reading system_secrets from config.json: {e}")
+            
+    # 2. Fall back to environment variables
+    for env_var in env_vars:
+        val = os.getenv(env_var, "").strip()
+        if val:
+            return val
+            
+    return ""
+
