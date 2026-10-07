@@ -1365,7 +1365,7 @@ def get_customer_appointments(phone: str) -> list:
     LEFT JOIN vehicles v ON sr.vehicle_id = v.id
     WHERE (c.phone = %s OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(c.phone, '-', ''), ' ', ''), '(', ''), ')', ''), '+1', '') = %s)
       AND (sr.booking_type IN ('appointment', 'callback', 'appointment_and_callback') OR sr.booking_time IS NOT NULL)
-      AND sr.status IN ('pending', 'in_progress')
+      AND sr.status IN ('pending', 'in_progress', 'confirmed')
     ORDER BY sr.booking_time ASC NULLS LAST;
     """
     with get_db_connection() as conn:

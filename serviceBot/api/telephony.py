@@ -279,18 +279,49 @@ async def inbound_call(request: Request = None):
             appts = []
             try:
                 appts = get_appts(caller_phone)
+                if not appts and phone_for_param and phone_for_param != caller_phone:
+                    appts = get_appts(phone_for_param)
                 if appts:
-                    latest = appts[0]
-                    v_info = f"{latest.get('year', '')} {latest.get('make', '')} {latest.get('model', '')}".strip() or "Vehicle"
-                    srv = latest.get("service_type") or "Service"
-                    dt = latest.get("appointment_datetime") or "recent date"
-                    issue = latest.get("issue_description")
-                    duration = latest.get("duration_minutes") or 60
+                    # Filter for upcoming appointments (scheduled today or in the future)
+                    try:
+                        import zoneinfo
+                        tz = zoneinfo.ZoneInfo("America/New_York")
+                    except Exception:
+                        tz = None
+                    now_dt = datetime.now(tz) if tz else datetime.now()
+                    today_str = now_dt.strftime("%Y-%m-%d")
+
+                    upcoming_list = [
+                        a for a in appts
+                        if a.get("appointment_datetime") and str(a.get("appointment_datetime"))[:10] >= today_str
+                    ]
+                    target_appt = upcoming_list[0] if upcoming_list else appts[0]
+                    v_info = f"{target_appt.get('year', '')} {target_appt.get('make', '')} {target_appt.get('model', '')}".strip() or "Vehicle"
+                    srv = target_appt.get("service_type") or "Service"
+                    dt = target_appt.get("appointment_datetime") or "recent date"
+                    issue = target_appt.get("issue_description")
+                    duration = target_appt.get("duration_minutes") or 60
                     recent_booking_context = f"Recent booking on {dt} for {v_info} ({srv})".strip()
-                    if issue and issue.lower() != srv.lower():
-                        upcoming_appointments_summary = f"Scheduled for {dt} for {v_info} regarding {srv} ({issue}). Duration: {duration} min."
+
+                    if upcoming_list:
+                        if len(upcoming_list) == 1:
+                            if issue and issue.lower() != srv.lower():
+                                upcoming_appointments_summary = f"Scheduled for {dt} for {v_info} regarding {srv} ({issue}). Duration: {duration} min."
+                            else:
+                                upcoming_appointments_summary = f"Scheduled for {dt} for {v_info} regarding {srv}. Duration: {duration} min."
+                        else:
+                            summaries = []
+                            for idx, u in enumerate(upcoming_list, 1):
+                                u_dt = u.get("appointment_datetime")
+                                u_v = f"{u.get('year', '')} {u.get('make', '')} {u.get('model', '')}".strip() or "Vehicle"
+                                u_srv = u.get("service_type") or "Service"
+                                summaries.append(f"{idx}) {u_dt} for {u_v} ({u_srv})")
+                            upcoming_appointments_summary = f"Customer has {len(upcoming_list)} upcoming appointment(s): " + "; ".join(summaries)
                     else:
-                        upcoming_appointments_summary = f"Scheduled for {dt} for {v_info} regarding {srv}. Duration: {duration} min."
+                        if issue and issue.lower() != srv.lower():
+                            upcoming_appointments_summary = f"Scheduled for {dt} for {v_info} regarding {srv} ({issue}). Duration: {duration} min."
+                        else:
+                            upcoming_appointments_summary = f"Scheduled for {dt} for {v_info} regarding {srv}. Duration: {duration} min."
             except Exception as e:
                 print(f"Error fetching upcoming appointments context: {e}")
 
@@ -1536,7 +1567,7 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                                     JOIN customers c ON sr.customer_id = c.id
                                     LEFT JOIN vehicles v ON sr.vehicle_id = v.id
                                     WHERE RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(c.phone, '-', ''), ' ', ''), '(', ''), ')', ''), '+1', ''), 7) = %s
-                                      AND sr.status IN ('pending', 'in_progress')
+                                      AND sr.status IN ('pending', 'in_progress', 'confirmed')
                                       AND (sr.booking_type IN ('appointment', 'callback', 'appointment_and_callback') OR sr.booking_time IS NOT NULL)
                                     ORDER BY sr.booking_time ASC NULLS LAST;
                                     """,
@@ -1574,8 +1605,17 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                         past.append(a)
 
                 if not appts:
-                    msg = f"No active appointments or service requests found for phone number {phone}."
-                    summary_for_agent = f"No active appointments or callbacks on file for {phone}."
+                    msg = (
+                        f"No active appointments or service requests found for phone number {phone}. "
+                        "Note: The scheduling system only tracks active or upcoming bookings; "
+                        "completed service history and past visit records are not accessible over the phone."
+                    )
+                    summary_for_agent = (
+                        f"No active appointments or callbacks on file for {phone}. "
+                        "Important: Completed service records/invoices are not accessible over the phone. "
+                        "If the caller asks about past completed visits, clarify that the voice assistant only tracks "
+                        "active/upcoming bookings and offer an advisor callback or refer them to their invoice/portal."
+                    )
                 else:
                     parts = []
                     source_prefix = f"found under your calling number ({phone}) " if found_via_caller_phone else ""
@@ -1591,15 +1631,19 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                             parts.append(f"{idx}) {kind_label} at {dt_str} for {v_str} regarding {srv}{issue_part}.")
                     if past:
                         past_source = f" {source_prefix}".rstrip() if not upcoming and source_prefix else ""
-                        parts.append(f"Also found {len(past)} past service visit(s) from prior dates{past_source}.")
+                        parts.append(f"Also found {len(past)} prior uncompleted record(s) on file{past_source}.")
                     if unscheduled:
                         unsch_source = f" {source_prefix}".rstrip() if not upcoming and not past and source_prefix else ""
                         parts.append(f"Also found {len(unscheduled)} unscheduled request(s){unsch_source}.")
                     msg = " ".join(parts)
                     summary_for_agent = (
                         f"Customer {phone} has {len(upcoming)} upcoming scheduled request(s) on file. "
-                        f"Clearly inform the caller of both in-shop appointments and advisor callbacks, "
-                        f"and do not claim there are only in-shop appointments if advisor callbacks are also scheduled."
+                        "Clearly inform the caller of both in-shop appointments and advisor callbacks, "
+                        "and do not claim there are only in-shop appointments if advisor callbacks are also scheduled. "
+                        "Important (Option A Policy): The scheduling system only accesses active and upcoming bookings. "
+                        "If the caller asks about past completed appointments, work done earlier, or past invoices, "
+                        "explicitly inform them that you do not have access to completed service records over the phone, "
+                        "and offer to arrange an advisor callback or refer them to their invoice/portal."
                     )
 
                 result = {
@@ -1819,7 +1863,7 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                                     JOIN customers c ON sr.customer_id = c.id
                                     LEFT JOIN vehicles v ON sr.vehicle_id = v.id
                                     WHERE RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(c.phone, '-', ''), ' ', ''), '(', ''), ')', ''), '+1', ''), 7) = %s
-                                      AND sr.status IN ('pending', 'in_progress')
+                                      AND sr.status IN ('pending', 'in_progress', 'confirmed')
                                       AND (sr.booking_type IN ('appointment', 'callback', 'appointment_and_callback') OR sr.booking_time IS NOT NULL)
                                     ORDER BY sr.booking_time ASC NULLS LAST;
                                     """,
@@ -1897,7 +1941,7 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                                     JOIN customers c ON sr.customer_id = c.id
                                     LEFT JOIN vehicles v ON sr.vehicle_id = v.id
                                     WHERE RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(c.phone, '-', ''), ' ', ''), '(', ''), ')', ''), '+1', ''), 7) = %s
-                                      AND sr.status IN ('pending', 'in_progress')
+                                      AND sr.status IN ('pending', 'in_progress', 'confirmed')
                                       AND (sr.booking_type IN ('appointment', 'callback', 'appointment_and_callback') OR sr.booking_time IS NOT NULL)
                                     ORDER BY sr.booking_time ASC NULLS LAST;
                                     """,

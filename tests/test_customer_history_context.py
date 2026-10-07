@@ -112,3 +112,90 @@ def test_get_customer_appointments_tool_returns_issue_and_duration():
         assert appt["issue_description"] == "Front brake grinding and squeaking"
         assert appt["duration_minutes"] == 60
         assert appt["make"] == "Honda"
+
+
+def test_get_customer_appointments_option_a_and_confirmed_status():
+    """Verify get_customer_appointments includes Option A boundary and counts confirmed upcoming appointments."""
+    mock_appts = [
+        {
+            "id": 32,
+            "appointment_datetime": "2026-10-15 08:00:00",
+            "service_type": "Battery Replacement",
+            "issue_description": "Battery dead",
+            "duration_minutes": 60,
+            "status": "confirmed",
+            "year": 2012,
+            "make": "Kia",
+            "model": "Forte",
+            "booking_type": "appointment"
+        },
+        {
+            "id": 18,
+            "appointment_datetime": "2026-08-11 07:30:00",
+            "service_type": "Tire Rotation",
+            "issue_description": "Tire rotation",
+            "duration_minutes": 60,
+            "status": "pending",
+            "year": 2024,
+            "make": "Toyota",
+            "model": "Corolla",
+            "booking_type": "appointment"
+        }
+    ]
+
+    with patch("serviceBot.api.telephony.get_customer_appointments", return_value=mock_appts):
+        payload = {
+            "tool_call_id": "call_appt_2",
+            "name": "get_customer_appointments",
+            "arguments": {"phone": "4242704893"}
+        }
+        resp = client.post("/api/v1/voice/tools", json=payload)
+        assert resp.status_code == 200
+        data = resp.json()
+        result = data.get("result", data)
+        assert result["success"] is True
+        assert result["upcoming_count"] == 1
+        assert result["past_count"] == 1
+        assert "Option A Policy" in result["summary_for_agent"]
+        assert "completed service records over the phone" in result["summary_for_agent"].lower()
+
+
+def test_inbound_call_prioritizes_upcoming_over_old_past_appointments():
+    """Verify inbound call dynamic variables prioritize upcoming appointments over past ones."""
+    mock_customer = {
+        "customer_id": 17,
+        "name": "Rohan Roy",
+        "phone": "4242704893"
+    }
+    mock_appts = [
+        {
+            "id": 18,
+            "appointment_datetime": "2026-08-11 07:30:00",
+            "service_type": "Tire Rotation",
+            "status": "pending",
+            "booking_type": "appointment"
+        },
+        {
+            "id": 32,
+            "appointment_datetime": "2026-10-15 08:00:00",
+            "service_type": "Battery Replacement",
+            "status": "confirmed",
+            "booking_type": "appointment",
+            "year": 2012,
+            "make": "Kia",
+            "model": "Forte"
+        }
+    ]
+
+    with patch("serviceBot.api.telephony.lookup_customer_by_phone", return_value=mock_customer), \
+         patch("serviceBot.api.telephony.get_customer_appointments", return_value=mock_appts), \
+         patch("serviceBot.api.telephony.get_customer_service_history", return_value=[]):
+
+        resp = client.post("/api/v1/telephony/inbound", data={"From": "+14242704893", "CallSid": "CA_TEST"})
+        assert resp.status_code == 200
+        twiml = resp.text
+        assert '<Parameter name="customer_name" value="Rohan Roy"' in twiml
+        assert '<Parameter name="upcoming_appointments_summary"' in twiml
+        assert "Battery Replacement" in twiml
+        assert "Kia Forte" in twiml
+
