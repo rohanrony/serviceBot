@@ -45,7 +45,7 @@ def get_analytics_overview(timeframe: Optional[str] = "7d") -> Dict[str, Any]:
         COUNT(CASE WHEN sr.escalation_status != 'none' THEN 1 END) AS total_escalated,
         COUNT(CASE WHEN sr.escalation_status = 'resolved' THEN 1 END) AS escalations_resolved,
         COUNT(CASE WHEN sr.escalation_status = 'reassigned' THEN 1 END) AS escalations_reassigned,
-        COUNT(CASE WHEN sr.escalation_status = 'escalated' THEN 1 END) AS escalations_active_pending,
+        COUNT(CASE WHEN sr.escalation_status = 'escalated' AND sr.status NOT IN ('cancelled', 'cancelled_by_customer', 'completed', 'done') THEN 1 END) AS escalations_active_pending,
         AVG(CASE 
             WHEN sr.confirmed_at IS NOT NULL AND sr.created_at IS NOT NULL 
             THEN EXTRACT(EPOCH FROM (sr.confirmed_at - sr.created_at)) / 60.0 
@@ -206,7 +206,7 @@ def get_escalation_analytics(timeframe: Optional[str] = "7d") -> Dict[str, Any]:
     SELECT 
         COUNT(CASE WHEN sr.escalation_status = 'resolved' THEN 1 END) AS recovered_by_agent,
         COUNT(CASE WHEN sr.escalation_status = 'reassigned' THEN 1 END) AS supervisor_reassigned,
-        COUNT(CASE WHEN sr.escalation_status = 'escalated' THEN 1 END) AS active_unresolved,
+        COUNT(CASE WHEN sr.escalation_status = 'escalated' AND sr.status NOT IN ('cancelled', 'cancelled_by_customer', 'completed', 'done') THEN 1 END) AS active_unresolved,
         COUNT(CASE WHEN sr.status IN ('cancelled', 'cancelled_by_customer') THEN 1 END) AS cancelled
     FROM service_requests sr
     WHERE sr.escalation_status != 'none'

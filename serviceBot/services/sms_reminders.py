@@ -723,12 +723,12 @@ def dispatch_supervisor_escalation_alert(service_request_id: int, reason: str = 
                 (service_request_id,)
             )
             row = cursor.fetchone()
-            if not row or (row.get("status") or "").lower() in ("cancelled", "cancelled_by_customer"):
-                logger.info(f"Skipping supervisor escalation alert for cancelled or missing appointment #{service_request_id}")
+            if not row or (row.get("status") or "").lower() in ("completed", "done", "cancelled", "cancelled_by_customer"):
+                logger.info(f"Skipping supervisor escalation alert for completed, cancelled or missing appointment #{service_request_id}")
                 return {
                     "success": False,
                     "skipped": True,
-                    "reason": "Appointment is cancelled or not found"
+                    "reason": "Appointment is completed, cancelled or not found"
                 }
 
             if row:

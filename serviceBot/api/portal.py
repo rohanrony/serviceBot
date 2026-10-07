@@ -1242,9 +1242,9 @@ async def get_service_requests(
             params = []
 
             if escalated is True:
-                where_clauses.append("sr.escalation_status != 'none' AND sr.status NOT IN ('cancelled', 'cancelled_by_customer')")
+                where_clauses.append("sr.escalation_status != 'none' AND sr.status NOT IN ('cancelled', 'cancelled_by_customer', 'completed', 'done')")
             elif escalated is False:
-                where_clauses.append("(sr.escalation_status = 'none' OR sr.status IN ('cancelled', 'cancelled_by_customer'))")
+                where_clauses.append("(sr.escalation_status = 'none' OR sr.status IN ('cancelled', 'cancelled_by_customer', 'completed', 'done'))")
 
             where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
@@ -1325,10 +1325,10 @@ async def get_service_requests(
                     r["booking_start_time"] = None
                     r["booking_end_time"] = None
 
-                # Compute candidate replacement agents for escalated or reassigned items
+                # Compute candidate replacement agents for active escalated or reassigned items
                 candidates = []
-                is_cancelled_req = (r.get("status") or "").lower() in ("cancelled", "cancelled_by_customer")
-                if not is_cancelled_req and (escalated is True or r.get("escalation_status") in ("escalated", "reassigned")):
+                is_closed_req = (r.get("status") or "").lower() in ("cancelled", "cancelled_by_customer", "completed", "done")
+                if not is_closed_req and (escalated is True or r.get("escalation_status") in ("escalated", "reassigned")):
                     curr_agent_id = r.get("staff_agent_id") or -1
                     cursor.execute(
                         "SELECT id, name, role, phone_number, email FROM staff_agents WHERE id != %s ORDER BY name ASC;",
@@ -1402,7 +1402,7 @@ async def reassign_service_request(request_id: int, payload: ReassignRequestPayl
             if not sr:
                 raise HTTPException(status_code=404, detail=f"Service request {request_id} not found.")
 
-            if sr["status"] in ("completed", "cancelled", "cancelled_by_customer"):
+            if sr["status"] in ("completed", "done", "cancelled", "cancelled_by_customer"):
                 raise HTTPException(status_code=400, detail="Cannot reassign a closed or cancelled request.")
 
             # 2. Fetch new agent

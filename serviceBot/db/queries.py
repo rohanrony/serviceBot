@@ -1962,6 +1962,20 @@ def update_service_request_status(request_id: int, status: str, triggered_by: st
                     (normalized_status, request_id)
                 )
                 row = cursor.fetchone()
+            elif normalized_status == 'completed':
+                cursor.execute(
+                    """
+                    UPDATE service_requests
+                    SET status = %s,
+                        escalation_status = CASE WHEN escalation_status = 'escalated' THEN 'resolved' ELSE escalation_status END,
+                        escalation_reason = NULL,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                    RETURNING id, status, updated_at;
+                    """,
+                    (normalized_status, request_id)
+                )
+                row = cursor.fetchone()
             else:
                 cursor.execute(
                     "UPDATE service_requests SET status = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s RETURNING id, status, updated_at;",
@@ -3590,8 +3604,8 @@ def escalate_service_request(
                 raise ValueError(f"Service request #{request_id} not found.")
 
             curr_status = (current.get("status") or "").lower()
-            if curr_status in ("cancelled", "cancelled_by_customer"):
-                logger.info(f"Skipping escalation for cancelled service request #{request_id}.")
+            if curr_status in ("completed", "done", "cancelled", "cancelled_by_customer"):
+                logger.info(f"Skipping escalation for closed/completed or cancelled service request #{request_id}.")
                 return dict(current)
 
             cursor.execute(

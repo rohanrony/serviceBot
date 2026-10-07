@@ -583,6 +583,11 @@ document.addEventListener('DOMContentLoaded', () => {
           targetReq.escalation_status = 'none';
           targetReq.escalation_reason = null;
           targetReq.confirmation_status = 'cancelled';
+        } else if (['completed', 'done'].includes(targetReq.status)) {
+          if (targetReq.escalation_status === 'escalated') {
+            targetReq.escalation_status = 'resolved';
+          }
+          targetReq.escalation_reason = null;
         }
       }
       const statusLabels = {
@@ -773,12 +778,13 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
 
         const isCancelled = ['cancelled', 'cancelled_by_customer'].includes(currentStatus);
+        const isClosed = isCancelled || ['completed', 'done'].includes(currentStatus);
         let slaBadgeHtml = '';
-        if (req.escalation_status === 'escalated' && !isCancelled) {
+        if (req.escalation_status === 'escalated' && !isClosed) {
           slaBadgeHtml = `<div class="sla-warning-badge overdue" style="background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.4);" title="${req.escalation_reason || 'Escalated: Agent SLA Timeout'}"><span class="sla-dot" style="background: #ef4444;"></span> ⚠️ Escalated</div>`;
-        } else if (req.escalation_status === 'reassigned' && !isCancelled) {
+        } else if (req.escalation_status === 'reassigned' && !isClosed) {
           slaBadgeHtml = `<div class="sla-warning-badge" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3);"><span class="sla-dot" style="background: #60a5fa;"></span> Reassigned</div>`;
-        } else if ((currentStatus === 'pending' || currentStatus === 'rescheduled') && !isCancelled) {
+        } else if ((currentStatus === 'pending' || currentStatus === 'rescheduled') && !isClosed) {
           const slaStart = req.notification_dispatched_at || req.created_at;
           if (slaStart) {
             // Fix date parsing for Safari/cross-browser
@@ -817,7 +823,7 @@ document.addEventListener('DOMContentLoaded', () => {
           failedLabel = '⚠️ Failed Email';
         }
         const failedIndicator = failedLabel ? `<span class="badge danger failed-sms-badge" title="Delivery failed">${failedLabel}</span>` : '';
-        const reassignBtnHtml = (req.escalation_status === 'escalated' && !isCancelled)
+        const reassignBtnHtml = (req.escalation_status === 'escalated' && !isClosed)
           ? `<button type="button" class="btn btn-primary btn-sm reassign-sr-btn" data-id="${req.id}" style="background: #ef4444; border-color: #ef4444; color: #fff;">Reassign</button>`
           : '';
         const actionsHtml = `
@@ -1017,7 +1023,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
       const matchesType = type === 'all' || req.booking_type === type;
       const matchesStatus = status === 'all' || 
-        (status === 'escalated' ? (req.escalation_status === 'escalated' && !isCancelled) : (req.status === status || (status === 'completed' && req.status === 'done')));
+        (status === 'escalated' ? (req.escalation_status === 'escalated' && !isClosed) : (req.status === status || (status === 'completed' && req.status === 'done')));
       
       return matchesTime && matchesText && matchesType && matchesStatus;
     });
@@ -1029,7 +1035,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (banner) {
       const escalatedCount = allRequests.filter(r => 
         r.escalation_status === 'escalated' && 
-        !['cancelled', 'cancelled_by_customer'].includes(r.status)
+        !['cancelled', 'cancelled_by_customer', 'completed', 'done'].includes(r.status)
       ).length;
       if (escalatedCount > 0) {
         banner.style.display = 'flex';
@@ -4731,8 +4737,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- REASSIGN ESCALATED APPOINTMENT MODAL ---
   window.openReassignModal = async function(req) {
-    if (['cancelled', 'cancelled_by_customer'].includes(req.status)) {
-      showToast('Cannot reassign a cancelled appointment.', 'warning');
+    if (['cancelled', 'cancelled_by_customer', 'completed', 'done'].includes(req.status)) {
+      showToast('Cannot reassign a completed or cancelled appointment.', 'warning');
       return;
     }
     const modal = document.getElementById('reassign-modal');
