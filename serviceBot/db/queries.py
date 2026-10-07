@@ -1465,26 +1465,6 @@ def get_available_slots_for_date(target_date_str: str, duration_minutes: int = 6
                         return False
                 return True
 
-            # If is_agent_free is explicitly mocked (e.g., in unit tests), use standard fallback loop
-            if isinstance(is_agent_free, Mock):
-                current_slot_dt = dt_mod.datetime.combine(target_date, dt_mod.time(7, 0))
-                end_of_day = dt_mod.datetime.combine(target_date, dt_mod.time(17, 0))
-                while current_slot_dt <= end_of_day:
-                    if not _fits_hours(current_slot_dt):
-                        current_slot_dt += dt_mod.timedelta(minutes=30)
-                        continue
-                    slot_str = current_slot_dt.strftime("%Y-%m-%d %H:%M:%S")
-                    free_count = sum(1 for agent in agents if is_agent_free(agent["id"], slot_str, duration_minutes=duration_minutes))
-                    if free_count > 0:
-                        end_slot_dt = current_slot_dt + dt_mod.timedelta(minutes=duration_minutes)
-                        available_slots.append({
-                            "start_time": slot_str,
-                            "end_time": end_slot_dt.strftime("%Y-%m-%d %H:%M:%S"),
-                            "available_agents_count": free_count
-                        })
-                    current_slot_dt += dt_mod.timedelta(minutes=30)
-                return available_slots
-
             try:
                 tz = zoneinfo.ZoneInfo("America/New_York")
             except Exception:
@@ -1494,6 +1474,94 @@ def get_available_slots_for_date(target_date_str: str, duration_minutes: int = 6
             day_end_dt = dt_mod.datetime.combine(target_date, dt_mod.time(23, 59, 59)).replace(tzinfo=tz)
             start_iso = day_start_dt.isoformat()
             end_iso = day_end_dt.isoformat()
+
+            blocked_mock_slots = set()
+            reserved_segments = set()
+            try:
+                cursor.execute(
+                    """
+                    SELECT staff_agent_id, slot_datetime
+                    FROM mock_calendar_slots
+                    WHERE (reservation_status IN ('RESERVED', 'BLOCKED') OR is_booked = TRUE)
+                      AND slot_datetime >= %s AND slot_datetime <= %s;
+                    """,
+                    (day_start_dt.replace(tzinfo=None), day_end_dt.replace(tzinfo=None)),
+                )
+                for r in cursor.fetchall():
+                    s_dt = r["slot_datetime"]
+                    dt_str = s_dt.strftime("%Y-%m-%d %H:%M:%S") if hasattr(s_dt, "strftime") else str(s_dt)[:19]
+                    blocked_mock_slots.add((r["staff_agent_id"], dt_str))
+
+                cursor.execute(
+                    """
+                    SELECT staff_agent_id, segment_start
+                    FROM appointment_reservation_segments
+                    WHERE segment_start >= %s AND segment_start <= %s;
+                    """,
+                    (day_start_dt.replace(tzinfo=None), day_end_dt.replace(tzinfo=None)),
+                )
+                for r in cursor.fetchall():
+                    s_dt = r["segment_start"]
+                    dt_str = s_dt.strftime("%Y-%m-%d %H:%M:%S") if hasattr(s_dt, "strftime") else str(s_dt)[:19]
+                    reserved_segments.add((r["staff_agent_id"], dt_str))
+
+                cursor.execute(
+                    """
+                    SELECT staff_agent_id, booking_time, duration_minutes
+                    FROM service_requests
+                    WHERE status NOT IN ('cancelled', 'cancelled_by_customer', 'cancelled_by_admin')
+                      AND booking_type = 'appointment'
+                      AND staff_agent_id IS NOT NULL
+                      AND booking_time >= %s AND booking_time <= %s;
+                    """,
+                    (day_start_dt.replace(tzinfo=None), day_end_dt.replace(tzinfo=None)),
+                )
+                for r in cursor.fetchall():
+                    b_time = r["booking_time"]
+                    if isinstance(b_time, str):
+                        try:
+                            b_dt = dt_mod.datetime.strptime(b_time[:19].replace("T", " "), "%Y-%m-%d %H:%M:%S")
+                        except Exception:
+                            continue
+                    else:
+                        b_dt = b_time
+                    dur = r.get("duration_minutes") or 60
+                    norm_d = max(15, ((int(dur) + 14) // 15) * 15)
+                    for off in range(0, norm_d, 15):
+                        seg_dt = b_dt + dt_mod.timedelta(minutes=off)
+                        reserved_segments.add((r["staff_agent_id"], seg_dt.strftime("%Y-%m-%d %H:%M:%S")))
+            except Exception as db_err:
+                pass
+
+            # If is_agent_free is explicitly mocked (e.g., in unit tests), use standard fallback loop
+            if isinstance(is_agent_free, Mock):
+                current_slot_dt = dt_mod.datetime.combine(target_date, dt_mod.time(7, 0))
+                end_of_day = dt_mod.datetime.combine(target_date, dt_mod.time(17, 0))
+                while current_slot_dt <= end_of_day:
+                    if not _fits_hours(current_slot_dt):
+                        current_slot_dt += dt_mod.timedelta(minutes=30)
+                        continue
+                    slot_str = current_slot_dt.strftime("%Y-%m-%d %H:%M:%S")
+                    free_count = 0
+                    for agent in agents:
+                        aid = agent["id"]
+                        is_local_blocked = False
+                        for off in range(0, norm_dur, 15):
+                            seg_str = (current_slot_dt + dt_mod.timedelta(minutes=off)).strftime("%Y-%m-%d %H:%M:%S")
+                            if (aid, seg_str) in blocked_mock_slots or (aid, seg_str) in reserved_segments:
+                                is_local_blocked = True
+                                break
+                        if not is_local_blocked and is_agent_free(aid, slot_str, duration_minutes=duration_minutes):
+                            free_count += 1
+                    if free_count > 0:
+                        end_slot_dt = current_slot_dt + dt_mod.timedelta(minutes=duration_minutes)
+                        available_slots.append({
+                            "start_time": slot_str,
+                            "end_time": end_slot_dt.strftime("%Y-%m-%d %H:%M:%S"),
+                            "available_agents_count": free_count
+                        })
+                    current_slot_dt += dt_mod.timedelta(minutes=30)
+                return available_slots
 
             agent_busy_ranges = {}
 
@@ -1538,6 +1606,17 @@ def get_available_slots_for_date(target_date_str: str, duration_minutes: int = 6
                     busy_ranges = agent_busy_ranges.get(aid)
                     if busy_ranges is None:
                         continue
+
+                    # Check local DB blocks & reservations across all 15-minute segments of the slot
+                    is_local_blocked = False
+                    for off in range(0, norm_dur, 15):
+                        seg_str = (current_slot_dt + dt_mod.timedelta(minutes=off)).strftime("%Y-%m-%d %H:%M:%S")
+                        if (aid, seg_str) in blocked_mock_slots or (aid, seg_str) in reserved_segments:
+                            is_local_blocked = True
+                            break
+                    if is_local_blocked:
+                        continue
+
                     is_busy = False
                     for b_start, b_end in busy_ranges:
                         if slot_start_localized < b_end and slot_end_localized > b_start:
@@ -1750,7 +1829,7 @@ def update_service_request_status(request_id: int, status: str, triggered_by: st
     normalized_status = raw_status
     if normalized_status in ('done', 'completed'):
         normalized_status = 'completed'
-    elif normalized_status in ('cancelled_by_customer', 'cancelled'):
+    elif normalized_status in ('cancelled_by_customer', 'cancelled', 'cancelled_by_admin'):
         normalized_status = 'cancelled'
     elif normalized_status == 'rescheduled':
         normalized_status = 'pending'
@@ -1776,6 +1855,40 @@ def update_service_request_status(request_id: int, status: str, triggered_by: st
                     raise ValueError(f"Invalid FSM transition: Cannot move from '{current_status}' to '{normalized_status}'.")
 
             if normalized_status == 'cancelled':
+                # First retrieve staff_agent_id and booking_time to release any matching slots
+                cursor.execute(
+                    """
+                    SELECT staff_agent_id, booking_time, duration_minutes
+                    FROM service_requests
+                    WHERE id = %s;
+                    """,
+                    (request_id,)
+                )
+                sr_data = cursor.fetchone()
+                if sr_data and sr_data.get("staff_agent_id") and sr_data.get("booking_time"):
+                    try:
+                        from serviceBot.services.booking import parse_reservation_start, reservation_segments
+                        b_start = parse_reservation_start(sr_data["booking_time"])
+                        dur = sr_data.get("duration_minutes") or 60
+                        segs = reservation_segments(b_start, dur)
+                        cursor.execute(
+                            """
+                            UPDATE mock_calendar_slots
+                            SET is_booked = FALSE,
+                                reservation_status = 'AVAILABLE',
+                                service_request_id = NULL,
+                                calendar_integration_status = 'PENDING_CALENDAR',
+                                calendar_event_id = NULL,
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE staff_agent_id = %s
+                              AND (service_request_id = %s OR service_request_id IS NULL)
+                              AND slot_datetime = ANY(%s);
+                            """,
+                            (sr_data["staff_agent_id"], request_id, segs),
+                        )
+                    except Exception:
+                        pass
+
                 cursor.execute(
                     """
                     UPDATE service_requests
@@ -1810,7 +1923,12 @@ def update_service_request_status(request_id: int, status: str, triggered_by: st
                 cursor.execute(
                     """
                     UPDATE mock_calendar_slots
-                    SET is_booked = FALSE, service_request_id = NULL
+                    SET is_booked = FALSE,
+                        reservation_status = 'AVAILABLE',
+                        service_request_id = NULL,
+                        calendar_integration_status = 'PENDING_CALENDAR',
+                        calendar_event_id = NULL,
+                        updated_at = CURRENT_TIMESTAMP
                     WHERE service_request_id = %s;
                     """,
                     (request_id,)
@@ -1868,6 +1986,10 @@ def update_service_request_status(request_id: int, status: str, triggered_by: st
                     notification_event = "CANCELLED_BY_CUSTOMER" if raw_status == "cancelled_by_customer" or triggered_by == "customer" else "CANCELLED_BY_ADMIN"
                 elif raw_status == 'rescheduled':
                     notification_event = "RESCHEDULED"
+                elif normalized_status == 'in_progress':
+                    notification_event = "STATUS_IN_PROGRESS"
+                elif normalized_status == 'completed':
+                    notification_event = "STATUS_COMPLETED"
 
                 if notification_event:
                     cursor.execute(
@@ -2655,7 +2777,7 @@ def log_sms_dispatch(
                 (
                     valid_appt_id, recipient_type, recipient_phone, template_type,
                     twilio_message_sid, status, error_code, error_message, retry_count,
-                    scheduled_send_at, dt_mod.datetime.utcnow() if status in ("SENT", "DELIVERED") else None,
+                    scheduled_send_at, dt_mod.datetime.now(dt_mod.timezone.utc) if status in ("SENT", "DELIVERED") else None,
                     body, (channel or "SMS").upper(),
                 )
             )
@@ -3044,15 +3166,34 @@ def consolidate_appointment_service(
     Consolidates an additional service or symptom into an existing appointment.
     Appends the additional issue description and extends duration_minutes.
     Optionally cancels and links source appointment/callback IDs so duplicate requests are closed.
-    Updates linked appointment_reservations and enqueues outbox SMS notification.
+    Updates linked appointment_reservations, reservation segments, and enqueues outbox SMS notification.
     """
     import datetime as dt_mod
+
+    try:
+        additional_duration_minutes = int(additional_duration_minutes)
+    except (ValueError, TypeError):
+        return {"success": False, "error": "additional_duration_minutes must be a positive integer"}
+    if additional_duration_minutes <= 0:
+        return {"success": False, "error": "additional_duration_minutes must be positive"}
+
+    parsed_source_ids = []
+    if source_appointment_ids:
+        if isinstance(source_appointment_ids, (list, tuple, set)):
+            parsed_source_ids = [int(x) for x in source_appointment_ids if str(x).isdigit()]
+        elif isinstance(source_appointment_ids, int):
+            parsed_source_ids = [source_appointment_ids]
+        elif isinstance(source_appointment_ids, str):
+            import re
+            clean_str = re.sub(r"[\[\]'\"]", "", source_appointment_ids)
+            parsed_source_ids = [int(x.strip()) for x in clean_str.split(",") if x.strip().isdigit()]
+
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             cursor.execute(
                 """
                 SELECT sr.id, sr.customer_id, sr.booking_time, sr.issue_description, sr.service_type,
-                       COALESCE(sr.duration_minutes, 60) AS duration_minutes, sr.vehicle_id,
+                       COALESCE(sr.duration_minutes, 60) AS duration_minutes, sr.vehicle_id, sr.staff_agent_id,
                        v.year, v.make, v.model,
                        c.phone, c.name AS customer_name
                 FROM service_requests sr
@@ -3064,12 +3205,26 @@ def consolidate_appointment_service(
             )
             sr = cursor.fetchone()
             if not sr:
-                raise ValueError(f"Appointment #{appointment_id} not found.")
+                return {"success": False, "error": f"Appointment #{appointment_id} not found."}
+
+            customer_id = sr.get("customer_id")
+            if parsed_source_ids:
+                cursor.execute(
+                    "SELECT id, customer_id, status FROM service_requests WHERE id = ANY(%s);",
+                    (list(set(parsed_source_ids)),)
+                )
+                source_rows = cursor.fetchall()
+                for s_row in source_rows:
+                    if s_row["customer_id"] != customer_id:
+                        conn.rollback()
+                        return {
+                            "success": False,
+                            "error": "Cross-customer source IDs must be rejected atomically"
+                        }
 
             existing_desc = (sr.get("issue_description") or "").strip()
             existing_duration = sr.get("duration_minutes") or 60
             booking_time = sr.get("booking_time")
-            customer_id = sr.get("customer_id")
             vehicle_id = sr.get("vehicle_id")
 
             clean_add = (additional_issue or "").strip()
@@ -3090,7 +3245,7 @@ def consolidate_appointment_service(
             if additional_service_type and additional_service_type not in (new_service_type or ""):
                 new_service_type = f"{new_service_type}, {additional_service_type}"
 
-            # Calculate new end datetime
+            start_dt = None
             new_end_dt = None
             if booking_time:
                 try:
@@ -3105,6 +3260,67 @@ def consolidate_appointment_service(
 
             cursor.execute(
                 """
+                SELECT id, staff_agent_id, starts_at, ends_at
+                FROM appointment_reservations
+                WHERE service_request_id = %s;
+                """,
+                (appointment_id,)
+            )
+            res_row = cursor.fetchone()
+            agent_id = sr.get("staff_agent_id") or (res_row.get("staff_agent_id") if res_row else None)
+
+            extra_segments = []
+            if start_dt:
+                cur_seg = start_dt + dt_mod.timedelta(minutes=existing_duration)
+                end_seg = start_dt + dt_mod.timedelta(minutes=new_duration)
+                while cur_seg < end_seg:
+                    extra_segments.append(cur_seg)
+                    cur_seg += dt_mod.timedelta(minutes=15)
+
+            if extra_segments and agent_id:
+                cursor.execute(
+                    """
+                    SELECT 1
+                    FROM mock_calendar_slots
+                    WHERE staff_agent_id = %s
+                      AND slot_datetime = ANY(%s)
+                      AND (reservation_status IN ('RESERVED', 'BLOCKED') OR is_booked = TRUE)
+                      AND service_request_id IS DISTINCT FROM %s;
+                    """,
+                    (agent_id, extra_segments, appointment_id)
+                )
+                if cursor.fetchone():
+                    conn.rollback()
+                    return {
+                        "success": False,
+                        "capacity_blocked": True,
+                        "appointment_id": appointment_id,
+                        "message": "Technician schedule cannot accommodate the extra duration contiguous with this appointment."
+                    }
+
+                cursor.execute(
+                    """
+                    SELECT 1
+                    FROM appointment_reservation_segments ars
+                    JOIN appointment_reservations ar ON ar.id = ars.reservation_id
+                    WHERE ars.staff_agent_id = %s
+                      AND ars.segment_start = ANY(%s)
+                      AND ar.service_request_id IS DISTINCT FROM %s
+                      AND ar.status = 'ACTIVE';
+                    """,
+                    (agent_id, extra_segments, appointment_id)
+                )
+                if cursor.fetchone():
+                    conn.rollback()
+                    return {
+                        "success": False,
+                        "capacity_blocked": True,
+                        "appointment_id": appointment_id,
+                        "message": "Technician schedule cannot accommodate the extra duration contiguous with this appointment."
+                    }
+
+            cursor.execute(
+                """
                 UPDATE service_requests
                 SET issue_description = %s,
                     duration_minutes = %s,
@@ -3116,35 +3332,46 @@ def consolidate_appointment_service(
                 (combined_issues, new_duration, new_service_type, new_end_dt, appointment_id)
             )
 
-            # Update appointment_reservations (correct table name and columns)
-            if new_end_dt:
-                try:
+            if new_end_dt and res_row:
+                res_id = res_row["id"]
+                cursor.execute(
+                    """
+                    UPDATE appointment_reservations
+                    SET ends_at = %s,
+                        updated_at = NOW()
+                    WHERE id = %s;
+                    """,
+                    (new_end_dt, res_id)
+                )
+                for seg in extra_segments:
                     cursor.execute(
                         """
-                        UPDATE appointment_reservations
-                        SET ends_at = %s,
-                            updated_at = NOW()
-                        WHERE service_request_id = %s;
+                        INSERT INTO appointment_reservation_segments (reservation_id, staff_agent_id, segment_start)
+                        VALUES (%s, %s, %s)
+                        ON CONFLICT (staff_agent_id, segment_start) DO NOTHING;
                         """,
-                        (new_end_dt, appointment_id)
+                        (res_id, agent_id, seg)
                     )
-                except Exception as res_err:
-                    logger.warning(f"Failed to update appointment_reservations for #{appointment_id}: {res_err}")
+
+            if extra_segments and agent_id:
+                for seg in extra_segments:
+                    cursor.execute(
+                        """
+                        INSERT INTO mock_calendar_slots
+                        (slot_datetime, is_booked, staff_agent_id, reservation_status, service_request_id, calendar_integration_status)
+                        VALUES (%s, TRUE, %s, 'RESERVED', %s, 'PENDING_CALENDAR')
+                        ON CONFLICT (slot_datetime, staff_agent_id) DO UPDATE
+                        SET is_booked = TRUE,
+                            reservation_status = 'RESERVED',
+                            service_request_id = EXCLUDED.service_request_id,
+                            calendar_integration_status = 'PENDING_CALENDAR',
+                            updated_at = CURRENT_TIMESTAMP;
+                        """,
+                        (seg, agent_id, appointment_id)
+                    )
 
             # Process source appointments / callbacks to merge & cancel
             cancelled_ids = []
-            parsed_source_ids = []
-            if source_appointment_ids:
-                if isinstance(source_appointment_ids, (list, tuple, set)):
-                    parsed_source_ids = [int(x) for x in source_appointment_ids if str(x).isdigit()]
-                elif isinstance(source_appointment_ids, int):
-                    parsed_source_ids = [source_appointment_ids]
-                elif isinstance(source_appointment_ids, str):
-                    import re
-                    clean_str = re.sub(r"[\[\]'\"]", "", source_appointment_ids)
-                    parsed_source_ids = [int(x.strip()) for x in clean_str.split(",") if x.strip().isdigit()]
-
-            # If no explicit source IDs provided, look for other pending requests for the same customer & vehicle on the same date
             if not parsed_source_ids and customer_id and vehicle_id and booking_time:
                 b_date_str = str(booking_time)[:10]
                 cursor.execute(
@@ -3220,10 +3447,12 @@ def consolidate_appointment_service(
             conn.commit()
 
             return {
+                "success": True,
                 "appointment_id": appointment_id,
                 "combined_issues": combined_issues,
                 "new_duration_minutes": new_duration,
                 "booking_time": str(booking_time),
+                "booking_end_time": new_end_dt.strftime("%Y-%m-%d %H:%M:%S") if new_end_dt else None,
                 "service_type": new_service_type,
                 "cancelled_source_ids": cancelled_ids,
                 "vehicle": {

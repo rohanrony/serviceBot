@@ -401,3 +401,62 @@ def test_agent_confirm_matches_shared_phone_across_multiple_agents(setup_agent_a
         with dict_cursor(conn) as cursor:
             cursor.execute("SELECT confirmation_status FROM service_requests WHERE id = %s;", (sr_id,))
             assert cursor.fetchone()["confirmation_status"] == "confirmed"
+
+
+def test_agent_decline_via_whatsapp_triggers_supervisor_escalation(setup_agent_and_appointment):
+    """Verify that an advisor declining via WhatsApp updates DB and triggers supervisor escalation."""
+    fixture = setup_agent_and_appointment
+    agent_id = fixture["agent_id"]
+    agent_phone = fixture["agent_phone"]
+
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                """
+                INSERT INTO service_requests (
+                    customer_id, vehicle_id, service_type, issue_description,
+                    status, booking_type, staff_agent_id, confirmation_status, escalation_status
+                )
+                VALUES (%s, %s, 'Transmission Inspection', 'Slipping gears',
+                        'pending', 'appointment', %s, 'pending_agent_confirmation', 'none')
+                RETURNING id;
+                """,
+                (fixture["customer_id"], fixture["vehicle_id"], agent_id)
+            )
+            sr_id = cursor.fetchone()["id"]
+            conn.commit()
+
+    with patch("serviceBot.services.twilio_sms.TwilioSMSClient.send_whatsapp") as mock_wa, \
+         patch("serviceBot.services.sms_reminders.dispatch_supervisor_escalation_alert") as mock_sup_alert:
+        mock_wa.return_value = {"success": True, "status": "SENT", "channel": "WHATSAPP"}
+        mock_sup_alert.return_value = {"success": True, "dispatches": [{"channel": "SMS", "status": "DELIVERED"}]}
+
+        inbound_whatsapp_sender = f"whatsapp:{agent_phone}"
+        res = process_inbound_sms(
+            from_phone=inbound_whatsapp_sender,
+            body="DECLINE",
+            twilio_message_sid="SM_WA_DECLINE_TEST"
+        )
+
+        assert res["status"] == "processed"
+        assert res["category"] == "agent_decline"
+        assert "declined" in res["reply"].lower()
+
+        # Decline acknowledgement sent back to advisor on WhatsApp
+        assert mock_wa.called
+        assert mock_wa.call_args.kwargs["to"] == inbound_whatsapp_sender
+
+        # Supervisor alert was triggered
+        mock_sup_alert.assert_called_once()
+        call_kwargs = mock_sup_alert.call_args
+        assert call_kwargs.args[0] == sr_id or call_kwargs.kwargs.get("service_request_id") == sr_id
+
+    # Verify database state
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT confirmation_status, escalation_status, escalation_reason FROM service_requests WHERE id = %s;", (sr_id,))
+            row = cursor.fetchone()
+            assert row["confirmation_status"] == "declined"
+            assert row["escalation_status"] == "escalated"
+            assert row["escalation_reason"] == "AGENT_DECLINED"
+

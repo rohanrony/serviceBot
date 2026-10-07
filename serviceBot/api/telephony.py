@@ -1590,9 +1590,11 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                             issue_part = f" ({issue})" if issue and issue.lower() != srv.lower() else ""
                             parts.append(f"{idx}) {kind_label} at {dt_str} for {v_str} regarding {srv}{issue_part}.")
                     if past:
-                        parts.append(f"Also found {len(past)} past service visit(s) from prior dates.")
+                        past_source = f" {source_prefix}".rstrip() if not upcoming and source_prefix else ""
+                        parts.append(f"Also found {len(past)} past service visit(s) from prior dates{past_source}.")
                     if unscheduled:
-                        parts.append(f"Also found {len(unscheduled)} unscheduled request(s).")
+                        unsch_source = f" {source_prefix}".rstrip() if not upcoming and not past and source_prefix else ""
+                        parts.append(f"Also found {len(unscheduled)} unscheduled request(s){unsch_source}.")
                     msg = " ".join(parts)
                     summary_for_agent = (
                         f"Customer {phone} has {len(upcoming)} upcoming scheduled request(s) on file. "
@@ -1620,18 +1622,35 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                     pass
             additional_issue = args.get("additional_issue") or args.get("issue_description") or args.get("issue")
             additional_service_type = args.get("additional_service_type") or args.get("service_type")
-            additional_duration = int(args.get("additional_duration_minutes") or args.get("duration_minutes") or 30)
+            raw_duration = args.get("additional_duration_minutes")
+            if raw_duration is None:
+                raw_duration = args.get("duration_minutes")
+            if raw_duration is None:
+                raw_duration = 30
+            try:
+                additional_duration = int(raw_duration)
+            except (ValueError, TypeError):
+                additional_duration = -1
+
             phone = args.get("phone") or args.get("phone_number")
             source_ids = args.get("source_appointment_ids") or args.get("source_appointment_id") or args.get("cancelled_appointment_ids")
 
-            if not appt_id and phone:
+            if additional_duration <= 0:
+                result = {
+                    "success": False,
+                    "error": "additional_duration_minutes must be a positive integer",
+                    "message": "Additional duration must be a positive integer."
+                }
+            elif not appt_id and phone:
                 p_clean = clean_and_validate_phone(phone)
                 if p_clean:
                     active_appts = get_customer_appointments(p_clean)
                     if active_appts:
                         appt_id = active_appts[0]["id"]
 
-            if not appt_id:
+            if additional_duration <= 0:
+                pass
+            elif not appt_id:
                 result = {
                     "success": False,
                     "message": "Appointment ID is required to consolidate services."
@@ -1689,10 +1708,13 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                             additional_duration_minutes=additional_duration,
                             source_appointment_ids=source_ids
                         )
-                        combined_issues = cons_res.get("combined_issues")
-                        new_dur = cons_res.get("new_duration_minutes", new_total_duration)
-                        b_time = cons_res.get("booking_time") or booking_time or ""
-                        cancelled_sources = cons_res.get("cancelled_source_ids") or []
+                        if cons_res.get("success") is False:
+                            result = cons_res
+                        else:
+                            combined_issues = cons_res.get("combined_issues")
+                            new_dur = cons_res.get("new_duration_minutes", new_total_duration)
+                            b_time = cons_res.get("booking_time") or booking_time or ""
+                            cancelled_sources = cons_res.get("cancelled_source_ids") or []
 
                         start_str = str(b_time)
                         end_str = ""
@@ -2083,15 +2105,21 @@ async def sms_status_callback_webhook(request: Request):
         if mapped_status:
             with get_db_connection() as conn:
                 with dict_cursor(conn) as cursor:
-                    cursor.execute("SELECT id FROM sms_log WHERE twilio_message_sid = %s;", (message_sid,))
+                    cursor.execute("SELECT id, status FROM sms_log WHERE twilio_message_sid = %s;", (message_sid,))
                     row = cursor.fetchone()
                     if row:
-                        update_sms_log_status(
-                            log_id=row["id"],
-                            status=mapped_status,
-                            error_code=error_code,
-                            error_message=error_message,
-                        )
+                        curr_status = row.get("status")
+                        if curr_status in ("DELIVERED", "FAILED") and mapped_status == "SENT":
+                            logger.info(
+                                f"Ignoring regressive status {mapped_status} for {message_sid} (currently {curr_status})"
+                            )
+                        else:
+                            update_sms_log_status(
+                                log_id=row["id"],
+                                status=mapped_status,
+                                error_code=error_code,
+                                error_message=error_message,
+                            )
 
         event_store.complete("twilio_sms_status", event_id)
         return {"status": "recorded"}

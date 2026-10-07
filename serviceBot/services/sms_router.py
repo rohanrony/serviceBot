@@ -116,7 +116,7 @@ class SMSNotificationRouter:
                 if event_type == "ESCALATION":
                     return ["SMS"]
                 return []
-            return ["SMS"]
+            return []
         return fallback_channels
 
     def _dispatch_to(
@@ -130,8 +130,48 @@ class SMSNotificationRouter:
         appointment_id: int,
     ) -> list[dict]:
         """Send each configured channel and retain its independent delivery outcome."""
+        existing_deliveries = {}
+        if appointment_id:
+            try:
+                from serviceBot.db.connection import get_db_connection, dict_cursor
+                with get_db_connection() as conn:
+                    with dict_cursor(conn) as cursor:
+                        cursor.execute(
+                            """
+                            SELECT id, channel, twilio_message_sid, status
+                            FROM sms_log
+                            WHERE appointment_id = %s
+                              AND recipient_type = %s
+                              AND template_type = %s
+                              AND status IN ('SENT', 'DELIVERED', 'READ');
+                            """,
+                            (appointment_id, recipient_type, template_type)
+                        )
+                        for row in cursor.fetchall():
+                            existing_deliveries[(row.get("channel") or "SMS").upper()] = row
+            except Exception as e:
+                logger.warning(f"Failed to query existing sms_log: {e}")
+
         dispatches = []
         for channel in channels:
+            ch_upper = (channel or "SMS").upper()
+            if ch_upper in existing_deliveries:
+                existing_row = existing_deliveries[ch_upper]
+                logger.info(
+                    f"Skipping duplicate dispatch for {recipient_type} on {channel} "
+                    f"(appointment_id={appointment_id}, template_type={template_type}, status={existing_row.get('status')})"
+                )
+                dispatches.append({
+                    "recipient": recipient_type,
+                    "channel": channel,
+                    "success": True,
+                    "status": existing_row.get("status") or "DELIVERED",
+                    "sid": existing_row.get("twilio_message_sid"),
+                    "log_id": existing_row.get("id"),
+                    "duplicate_suppressed": True,
+                })
+                continue
+
             if channel == "WHATSAPP":
                 result = self.twilio_client.send_whatsapp(
                     to=recipient_phone,
@@ -292,6 +332,22 @@ class SMSNotificationRouter:
                     f"Assigned Advisor: {new_ag}\n"
                     f"Vehicle: {veh}\n"
                     f"Combined Issues: {iss}"
+                    f"{loc_suffix}"
+                )
+            elif event_type == "STATUS_IN_PROGRESS":
+                customer_body = (
+                    f"🔧 [SERVICE IN PROGRESS]\n"
+                    f"Service: {srv}\n"
+                    f"Vehicle: {veh}\n"
+                    f"Your vehicle is now being serviced. We will notify you as soon as work is finished."
+                    f"{loc_suffix}"
+                )
+            elif event_type == "STATUS_COMPLETED":
+                customer_body = (
+                    f"🎉 [VEHICLE READY FOR PICKUP]\n"
+                    f"Service: {srv}\n"
+                    f"Vehicle: {veh}\n"
+                    f"Great news! Your service is complete and your vehicle is ready for pickup."
                     f"{loc_suffix}"
                 )
             else:

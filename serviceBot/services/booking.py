@@ -1150,6 +1150,29 @@ class BookingService:
             )
             if cursor.fetchone():
                 raise BookingConflictError("The requested time is blocked on this agent's local calendar.")
+
+            # Check Google Calendar for busy intervals that overlap [starts_at, ends_at]
+            try:
+                from serviceBot.services.google_calendar import fetch_agent_events
+                from serviceBot.services.calendar_availability import _provider_datetime
+                start_iso = (starts_at.replace(tzinfo=BUSINESS_TZ) - dt_mod.timedelta(minutes=5)).isoformat()
+                end_iso = (ends_at.replace(tzinfo=BUSINESS_TZ) + dt_mod.timedelta(minutes=5)).isoformat()
+                g_events = fetch_agent_events(agent_id, start_iso, end_iso)
+                if g_events:
+                    s_naive = starts_at.replace(tzinfo=None)
+                    e_naive = ends_at.replace(tzinfo=None)
+                    for ev in g_events:
+                        if ev.get("status") == "cancelled":
+                            continue
+                        ev_start = _provider_datetime(ev.get("start") or {})
+                        ev_end = _provider_datetime(ev.get("end") or {})
+                        if ev_start and ev_end:
+                            if s_naive < ev_end and e_naive > ev_start:
+                                raise BookingConflictError("The requested time overlaps an existing Google Calendar event.")
+            except BookingConflictError:
+                raise
+            except Exception:
+                pass
             if existing_reservation_id:
                 cursor.execute(
                     """

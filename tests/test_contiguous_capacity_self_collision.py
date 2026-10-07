@@ -142,7 +142,7 @@ def test_get_customer_appointments_cross_references_caller_phone():
                 return [
                     {
                         "id": 27,
-                        "appointment_datetime": "2026-10-05 11:00:00",
+                        "appointment_datetime": "2026-10-25 11:00:00",
                         "booking_type": "appointment",
                         "service_type": "Engine Diagnostic",
                         "issue_description": "engine heating",

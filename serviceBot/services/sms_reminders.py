@@ -214,7 +214,7 @@ def calculate_effective_confirmation_cutoff(
     elif horizon_hours >= 6.0:
         sla_hours = float(config.get("sla_medium_booking_hours", 3.0))
     else:
-        sla_hours = float(config.get("sla_short_booking_hours", 1.5))
+        sla_hours = float(config.get("sla_short_booking_hours", 2.0))
 
     acceptance_deadline = compute_business_hours_deadline(
         booked_at, sla_hours, business_days=b_days, business_hours=b_hours
@@ -247,10 +247,11 @@ def calculate_effective_confirmation_cutoff(
 def schedule_appointment_reminders(
     appointment_id: int,
     booking_time_str: str,
-    customer_phone: str,
+    customer_phone: str = None,
     agent_phone: str = None,
     booked_at: dt_mod.datetime = None,
     trigger_immediate: bool = False,
+    reassign_only: bool = False,
 ):
     """
     Schedules 3-attempt reminder cadence:
@@ -271,7 +272,11 @@ def schedule_appointment_reminders(
     cfg = load_config()
 
     # 1. Compute effective confirmation cutoff
-    cutoff = calculate_effective_confirmation_cutoff(booked_at, apt_dt, cfg)
+    if reassign_only:
+        reassign_window = int(cfg.get("reassignment_confirmation_window_minutes", 15))
+        cutoff = now + dt_mod.timedelta(minutes=reassign_window)
+    else:
+        cutoff = calculate_effective_confirmation_cutoff(booked_at, apt_dt, cfg)
 
     # 2. Persist confirmation_cutoff_at on service request
     from serviceBot.db.connection import get_db_connection, dict_cursor
@@ -290,7 +295,7 @@ def schedule_appointment_reminders(
             conn.commit()
 
     # 3. Attempt 1 (Immediate) - recorded as SENT since initial booking dispatch is handled directly by router
-    if customer_phone:
+    if not reassign_only and customer_phone:
         schedule_sms_reminder(
             appointment_id=appointment_id,
             recipient_type="customer",
@@ -316,21 +321,34 @@ def schedule_appointment_reminders(
 
     # 4. Attempt 2 (Intermediate Follow-up)
     horizon_hours = (apt_dt - booked_at).total_seconds() / 3600.0
-    if horizon_hours >= 6.0 and cutoff > now:
-        t_mid = now + (cutoff - now) / 2
-        if t_mid > now + dt_mod.timedelta(minutes=15) and t_mid < cutoff:
-            if agent_phone:
-                schedule_sms_reminder(
-                    appointment_id=appointment_id,
-                    recipient_type="agent",
-                    recipient_phone=agent_phone,
-                    reminder_type="followup",
-                    scheduled_at=t_mid,
-                    attempt_number=2,
-                    attempt_kind="intermediate_followup",
-                )
+    if not reassign_only and agent_phone and cutoff > now:
+        if horizon_hours >= 24.0:
+            followup_sla = 2.0
+        elif horizon_hours >= 6.0:
+            followup_sla = 1.5
+        else:
+            followup_sla = 0.75
+        from serviceBot.services.calendar_sync import get_configured_business_hours, get_configured_business_days
+        start_h = cfg.get("business_hours_start")
+        end_h = cfg.get("business_hours_end")
+        if start_h is not None and end_h is not None:
+            b_hours = list(range(int(start_h), int(end_h)))
+        else:
+            b_hours = get_configured_business_hours()
+        b_days = cfg.get("business_days") if cfg.get("business_days") is not None else get_configured_business_days()
+        t_mid = compute_business_hours_deadline(now, followup_sla, business_days=b_days, business_hours=b_hours)
+        if t_mid < cutoff and t_mid > now:
+            schedule_sms_reminder(
+                appointment_id=appointment_id,
+                recipient_type="agent",
+                recipient_phone=agent_phone,
+                reminder_type="followup",
+                scheduled_at=t_mid,
+                attempt_number=2,
+                attempt_kind="intermediate_followup",
+            )
 
-    if horizon_hours >= 24.0 and customer_phone:
+    if not reassign_only and horizon_hours >= 24.0 and customer_phone:
         t_24h = apt_dt - dt_mod.timedelta(hours=24)
         if t_24h > now:
             schedule_sms_reminder(
@@ -355,7 +373,7 @@ def schedule_appointment_reminders(
             attempt_kind="final_reminder",
         )
 
-    if customer_phone:
+    if not reassign_only and customer_phone:
         t_2h = apt_dt - dt_mod.timedelta(hours=2)
         if t_2h > now:
             schedule_sms_reminder(
@@ -392,6 +410,7 @@ def update_or_cancel_appointment_reminders(
                 customer_phone=None,
                 agent_phone=agent_phone,
                 trigger_immediate=False,
+                reassign_only=True,
             )
         return
 
@@ -840,7 +859,7 @@ def dispatch_supervisor_escalation_alert(service_request_id: int, reason: str = 
             cursor.execute(
                 """
                 INSERT INTO service_request_audit_log (request_id, triggered_by, from_status, to_status, notes)
-                VALUES (%s, 'supervisor_escalation', NULL, NULL, %s);
+                VALUES (%s, 'supervisor_escalation', 'escalated', 'escalated', %s);
                 """,
                 (service_request_id, audit_note)
             )

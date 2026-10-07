@@ -80,3 +80,60 @@ def test_sms_router_resolves_customer_phone_from_db():
         mock_whatsapp.assert_called_once()
         called_phone = mock_whatsapp.call_args.kwargs.get("to")
         assert "+15559876543" in called_phone
+
+
+def test_status_update_queues_notifications_for_in_progress_and_completed():
+    cust_id, veh_id, sr_id = create_test_data("Shop Status User", "+15551239999")
+
+    # Update to in_progress
+    update_service_request_status(sr_id, "in_progress", triggered_by="admin")
+
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT payload ->> 'sms_event_type' AS sms_event_type FROM outbox_notifications WHERE request_id = %s ORDER BY id DESC LIMIT 1;", (sr_id,))
+            row = cursor.fetchone()
+            assert row["sms_event_type"] == "STATUS_IN_PROGRESS"
+
+    # Update to completed
+    update_service_request_status(sr_id, "completed", triggered_by="admin")
+
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT payload ->> 'sms_event_type' AS sms_event_type FROM outbox_notifications WHERE request_id = %s ORDER BY id DESC LIMIT 1;", (sr_id,))
+            row = cursor.fetchone()
+            assert row["sms_event_type"] == "STATUS_COMPLETED"
+
+
+def test_sms_router_dispatches_in_progress_and_completed_templates():
+    router = SMSNotificationRouter()
+    cust_id, veh_id, sr_id = create_test_data("Progress User", "+15558887777")
+
+    rules = [
+        {"event_type": "STATUS_IN_PROGRESS", "recipient_role": "customer", "channel": "WHATSAPP", "enabled": True},
+        {"event_type": "STATUS_COMPLETED", "recipient_role": "customer", "channel": "WHATSAPP", "enabled": True},
+    ]
+
+    with patch.object(router.twilio_client, "send_whatsapp") as mock_whatsapp, \
+         patch("serviceBot.services.twilio_sms.is_phone_whitelisted", return_value=True), \
+         patch("serviceBot.services.sms_router.get_customer_opt_in", return_value=True), \
+         patch("serviceBot.services.sms_router.is_in_quiet_hours", return_value=False), \
+         patch("serviceBot.services.sms_router.get_sms_matrix_rules", return_value=rules):
+        mock_whatsapp.return_value = {"success": True, "sid": "SMmock_in_progress"}
+
+        res_in_prog = router.process_event(
+            event_type="STATUS_IN_PROGRESS",
+            appointment_id=sr_id,
+            customer_phone="+15558887777"
+        )
+        assert res_in_prog["dispatches"][0]["recipient"] == "customer"
+        assert "[SERVICE IN PROGRESS]" in mock_whatsapp.call_args.kwargs["body"]
+
+        mock_whatsapp.return_value = {"success": True, "sid": "SMmock_completed"}
+        res_comp = router.process_event(
+            event_type="STATUS_COMPLETED",
+            appointment_id=sr_id,
+            customer_phone="+15558887777"
+        )
+        assert res_comp["dispatches"][0]["recipient"] == "customer"
+        assert "[VEHICLE READY FOR PICKUP]" in mock_whatsapp.call_args.kwargs["body"]
+

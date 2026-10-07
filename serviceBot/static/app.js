@@ -3265,20 +3265,34 @@ document.addEventListener('DOMContentLoaded', () => {
               if (labelSpan) labelSpan.textContent = enabled ? 'Active' : 'Disabled';
             }
 
-            // Update local rules cache
-            const existing = rules.find(x => x.event_type === event_type && x.recipient_role === recipient_role && (x.channel || 'WHATSAPP').toUpperCase() === currentMatrixChannel);
-            if (existing) {
-              existing.enabled = enabled;
-            } else {
-              rules.push({ event_type, recipient_role, channel: currentMatrixChannel, enabled });
-            }
+            try {
+              const res = await fetch('/api/v1/portal/sms/matrix-rules', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ event_type, recipient_role, channel: currentMatrixChannel, enabled })
+              });
+              if (!res.ok) {
+                throw new Error(`HTTP ${res.status}`);
+              }
 
-            await fetch('/api/v1/portal/sms/matrix-rules', {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ event_type, recipient_role, channel: currentMatrixChannel, enabled })
-            });
-            showToast(`Notification rule updated for ${currentMatrixChannel}.`);
+              // Update local rules cache on success
+              const existing = rules.find(x => x.event_type === event_type && x.recipient_role === recipient_role && (x.channel || 'WHATSAPP').toUpperCase() === currentMatrixChannel);
+              if (existing) {
+                existing.enabled = enabled;
+              } else {
+                rules.push({ event_type, recipient_role, channel: currentMatrixChannel, enabled });
+              }
+              showToast(`Notification rule updated for ${currentMatrixChannel}.`);
+            } catch (err) {
+              // Revert UI on failure
+              e.target.checked = !enabled;
+              if (pill) {
+                pill.className = `matrix-status-pill ${!enabled ? 'active' : 'disabled'}`;
+                const labelSpan = pill.querySelector('span');
+                if (labelSpan) labelSpan.textContent = !enabled ? 'Active' : 'Disabled';
+              }
+              showToast(`Failed to update notification rule.`, 'error');
+            }
           });
         });
       }

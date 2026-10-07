@@ -6,11 +6,21 @@ import threading
 from contextlib import asynccontextmanager
 from dotenv import find_dotenv, load_dotenv
 
-_env = find_dotenv()
-if _env:
-    load_dotenv(dotenv_path=_env, override=True)
-else:
-    load_dotenv(override=True)
+import sys
+if os.getenv("PYTHON_DOTENV_DISABLED") != "1":
+    _is_testing_env = (
+        "pytest" in sys.modules
+        or any("pytest" in arg or "unittest" in arg or "run_tests" in arg for arg in sys.argv)
+        or os.getenv("TESTING") == "1"
+        or os.getenv("TEST_DATABASE_URL") is not None
+        or os.getenv("TEST_LOG_FILE") is not None
+    )
+    _override = not _is_testing_env
+    _env = find_dotenv()
+    if _env:
+        load_dotenv(dotenv_path=_env, override=_override)
+    else:
+        load_dotenv(override=_override)
 
 from serviceBot.logger import get_logger, setup_logging
 from serviceBot.api.middleware import RequestLoggingMiddleware, global_exception_handler

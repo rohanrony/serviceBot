@@ -344,7 +344,7 @@ def test_aggregate_service_duration_slot_checking_and_booking(mock_db):
 
     # 2. Get unbooked dynamic slots
     from serviceBot.db.queries import _generate_dynamic_slots
-    rows = _generate_dynamic_slots(None, 60)
+    rows = _generate_dynamic_slots(None, fields["duration_minutes"])
     assert len(rows) >= 4
 
     slot1_str = rows[0]

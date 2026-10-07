@@ -142,8 +142,26 @@ class TwilioSMSClient:
                 "error_message": "Phone number is not whitelisted for staging."
             }
 
+        account_sid = os.environ.get("TWILIO_ACCOUNT_SID")
+        auth_token = os.environ.get("TWILIO_AUTH_TOKEN")
+
+        # In PRODUCTION mode, missing credentials must fail, never mock as SENT
+        if env_mode == "PRODUCTION" and (not account_sid or not auth_token):
+            log_id = record(
+                "FAILED",
+                error_message="Missing Twilio credentials in production.",
+                error_code="30001",
+            )
+            return {
+                "success": False,
+                "status": "FAILED",
+                "log_id": log_id,
+                "channel": normalized_channel,
+                "error_message": "Missing Twilio credentials in production.",
+            }
+
         # Check Twilio credentials & mock execution environment
-        is_testing = any(k in os.environ for k in ["PYTEST_CURRENT_TEST", "TESTING"]) or not (self.account_sid and self.auth_token)
+        is_testing = any(k in os.environ for k in ["PYTEST_CURRENT_TEST", "TESTING"]) or not (account_sid and auth_token)
 
         if is_testing:
             mock_sid = f"SMmock_{os.urandom(8).hex()}"
@@ -159,7 +177,7 @@ class TwilioSMSClient:
         # Real Twilio API Call
         try:
             from twilio.rest import Client
-            client = Client(self.account_sid, self.auth_token)
+            client = Client(account_sid, auth_token)
 
             # Handle channel formatting for SMS vs WhatsApp
             target_to = clean_to.replace("whatsapp:", "").strip()

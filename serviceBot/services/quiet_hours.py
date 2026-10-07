@@ -118,15 +118,28 @@ def run_quiet_hours_queue_worker_cycle():
                 )
             conn.commit()
 
+    from serviceBot.db.queries import get_customer_opt_in, update_sms_log_status
+
     client = TwilioSMSClient()
     dispatched_count = 0
     for log_item in due_logs:
+        phone = log_item["recipient_phone"]
+        rec_type = (log_item.get("recipient_type") or "customer").lower()
+        if rec_type == "customer" and not get_customer_opt_in(phone):
+            logger.info(f"Skipping quiet hours release for opted-out customer {phone} (log_id={log_item['id']})")
+            update_sms_log_status(
+                log_id=log_item["id"],
+                status="SKIPPED_OPT_OUT",
+                error_message="Customer opted out of SMS notifications.",
+            )
+            continue
+
         body = log_item.get("body") or (
             f"Appointment Notification for Appointment #{log_item.get('appointment_id')}."
         )
         channel = (log_item.get("channel") or "SMS").upper()
         kwargs = {
-            "to": log_item["recipient_phone"],
+            "to": phone,
             "body": body,
             "template_type": log_item.get("template_type", "notification"),
             "appointment_id": log_item.get("appointment_id"),

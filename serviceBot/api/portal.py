@@ -326,6 +326,16 @@ Speak the filler naturally as part of the conversation so the caller experiences
         "gmail_refresh_token": "",
         "gmail_token_expires_at": 0,
         "min_booking_buffer_hours": 4,
+        "initial_notification_enabled": True,
+        "max_dispatch_retries": 3,
+        "sla_advance_booking_hours": 4.0,
+        "sla_medium_booking_hours": 3.0,
+        "sla_short_booking_hours": 2.0,
+        "final_reminder_hours": 2.0,
+        "overnight_grace_minutes": 30,
+        "auto_reassign_on_escalation": True,
+        "reassignment_confirmation_window_minutes": 15,
+        "supervisor_alert_phone": "+14242704893",
         "cutoff_window_hours": 2,
         "extended_cutoff_window_hours": 4,
         "morning_opening_grace_minutes": 60,
@@ -474,11 +484,13 @@ class ConfigUpdatePayload(BaseModel):
     business_hours: Optional[list] = None
     business_days: Optional[list] = None
     min_booking_buffer_hours: Optional[int] = None
+    initial_notification_enabled: Optional[bool] = None
     sla_advance_booking_hours: Optional[float] = None
     sla_medium_booking_hours: Optional[float] = None
     sla_short_booking_hours: Optional[float] = None
     final_reminder_hours: Optional[float] = None
     overnight_grace_minutes: Optional[int] = None
+    max_dispatch_retries: Optional[int] = None
     supervisor_alert_phone: Optional[str] = None
     auto_reassign_on_escalation: Optional[bool] = None
     reassignment_confirmation_window_minutes: Optional[int] = None
@@ -528,6 +540,8 @@ async def update_config(payload: ConfigUpdatePayload):
 
     if payload.min_booking_buffer_hours is not None:
         config_data["min_booking_buffer_hours"] = int(payload.min_booking_buffer_hours)
+    if payload.initial_notification_enabled is not None:
+        config_data["initial_notification_enabled"] = bool(payload.initial_notification_enabled)
     if payload.sla_advance_booking_hours is not None:
         config_data["sla_advance_booking_hours"] = float(payload.sla_advance_booking_hours)
     if payload.sla_medium_booking_hours is not None:
@@ -538,6 +552,8 @@ async def update_config(payload: ConfigUpdatePayload):
         config_data["final_reminder_hours"] = float(payload.final_reminder_hours)
     if payload.overnight_grace_minutes is not None:
         config_data["overnight_grace_minutes"] = int(payload.overnight_grace_minutes)
+    if payload.max_dispatch_retries is not None:
+        config_data["max_dispatch_retries"] = int(payload.max_dispatch_retries)
     if payload.supervisor_alert_phone is not None:
         config_data["supervisor_alert_phone"] = str(payload.supervisor_alert_phone)
     if payload.auto_reassign_on_escalation is not None:
@@ -1399,6 +1415,10 @@ async def reassign_service_request(request_id: int, payload: ReassignRequestPayl
             old_agent_phone = sr.get("old_agent_phone")
             new_agent_phone = new_agent.get("phone_number")
 
+            reassign_window = int(load_config().get("reassignment_confirmation_window_minutes", 15))
+            from serviceBot.services.sms_reminders import get_current_business_time
+            reassign_cutoff = get_current_business_time() + dt_mod.timedelta(minutes=reassign_window)
+
             # 3. Update service_request
             cursor.execute(
                 """
@@ -1407,11 +1427,12 @@ async def reassign_service_request(request_id: int, payload: ReassignRequestPayl
                     status = 'pending',
                     escalation_status = 'reassigned',
                     confirmation_status = 'pending_agent_confirmation',
+                    confirmation_cutoff_at = %s,
                     confirmed_at = NULL,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s;
                 """,
-                (payload.new_agent_id, request_id)
+                (payload.new_agent_id, reassign_cutoff, request_id)
             )
 
             # 4. Update appointment_reservations
@@ -1487,8 +1508,8 @@ async def reassign_service_request(request_id: int, payload: ReassignRequestPayl
                 "new_agent_id": payload.new_agent_id,
                 "new_agent_name": new_agent.get("name"),
                 "new_agent_email": new_agent.get("email"),
-                "agent_phone": None,  # already notified via direct reassignment_prompt SMS below
-                "previous_agent_phone": None,  # already notified via direct reassignment_notice SMS below
+                "agent_phone": new_agent_phone,
+                "previous_agent_phone": old_agent_phone if old_agent_id != payload.new_agent_id else None,
                 "booking_time_str": t_str[:19] if t_str else None,
                 "details": details
             }
@@ -1496,32 +1517,12 @@ async def reassign_service_request(request_id: int, payload: ReassignRequestPayl
 
             conn.commit()
 
-    # Trigger immediate outbox batch processing for fast email & calendar dispatch
+    # Trigger immediate outbox batch processing for fast email, calendar & SMS/WhatsApp dispatch
     try:
         from serviceBot.services.outbox_worker import process_outbox_batch
         process_outbox_batch()
     except Exception as ob_err:
         logger.warning(f"Immediate outbox processing triggered warning: {ob_err}")
-
-    # 8. SMS notifications
-    client = TwilioSMSClient()
-    c_name = sr.get("customer_name") or "Customer"
-    v_str = f"{sr.get('year') or ''} {sr.get('make') or ''} {sr.get('model') or ''}".strip() or "Vehicle"
-    s_type = sr.get("service_type") or "Service"
-    t_str = str(sr.get("booking_time") or "Scheduled Time")
-
-    # High-priority alert to new agent
-    if new_agent_phone:
-        new_msg = (
-            f"Davidson Car Care URGENT ASSIGNMENT: Appointment #{request_id} has been reassigned to you "
-            f"on {t_str} for {c_name} ({v_str} - {s_type}). Reply CONFIRM or C to accept."
-        )
-        client.send_sms(to=new_agent_phone, body=new_msg, template_type="reassignment_prompt", appointment_id=request_id)
-
-    # Courtesy update to old agent
-    if old_agent_phone and old_agent_id != payload.new_agent_id:
-        old_msg = f"Davidson Car Care: Appointment #{request_id} on {t_str} has been reassigned to another technician. No further action needed."
-        client.send_sms(to=old_agent_phone, body=old_msg, template_type="reassignment_notice", appointment_id=request_id)
 
     return {
         "success": True,
@@ -1991,7 +1992,18 @@ async def gmail_oauth_callback(request: Request, code: str = None, error: str = 
     agent_id = None
     action_type = "calendar"
     
-    if state:
+    if "state" in request.query_params:
+        if not state:
+            return HTMLResponse(content="""
+            <html>
+            <body style="font-family: sans-serif; background-color: #0c0d0e; color: #ef4444; padding: 50px; text-align: center;">
+                <h2>Authentication Failed</h2>
+                <p>Invalid or expired state parameter. Please request connection again.</p>
+                <button onclick="window.close()" style="padding: 10px 20px; background: #ffffff; color: #000000; border: none; border-radius: 6px; cursor: pointer; font-weight: 550; margin-top: 20px;">Close Window</button>
+            </body>
+            </html>
+            """)
+            
         from serviceBot.db.connection import get_db_connection, dict_cursor
         with get_db_connection() as conn:
             with dict_cursor(conn) as cursor:
@@ -2004,12 +2016,6 @@ async def gmail_oauth_callback(request: Request, code: str = None, error: str = 
                     action_type = state_row["action_type"]
                     cursor.execute("DELETE FROM oauth_states WHERE state = %s;", (state,))
                     conn.commit()
-                elif state.startswith("agent_"):
-                    try:
-                        agent_id = int(state.split("_")[1])
-                        action_type = "calendar"
-                    except ValueError:
-                        pass
                 else:
                     return HTMLResponse(content="""
                     <html>
@@ -2384,7 +2390,7 @@ async def get_sms_config_endpoint():
 @router.put("/sms/config")
 async def update_sms_config_endpoint(payload: SMSConfigPayload):
     from serviceBot.db.queries import update_sms_config
-    data = payload.dict(exclude_unset=True)
+    data = payload.model_dump(exclude_unset=True) if hasattr(payload, "model_dump") else payload.dict(exclude_unset=True)
 
     # Sync address / business settings into config.json
     loc_updates = {}
@@ -2487,15 +2493,30 @@ async def retry_sms_dispatch_endpoint(log_id: int):
 
     client = TwilioSMSClient()
     template_type = log_entry.get("template_type", "notification")
-    body = f"Appointment alert: Update regarding appointment #{log_entry.get('appointment_id')}."
-    
-    result = client.send_sms(
-        to=log_entry["recipient_phone"],
-        body=body,
-        template_type=template_type,
-        appointment_id=log_entry.get("appointment_id")
-    )
-    
+    body = log_entry.get("body") or f"Appointment alert: Update regarding appointment #{log_entry.get('appointment_id')}."
+    channel = (log_entry.get("channel") or "SMS").upper()
+    recipient_type = log_entry.get("recipient_type") or "customer"
+
+    if channel == "WHATSAPP":
+        result = client.send_whatsapp(
+            to=log_entry["recipient_phone"],
+            body=body,
+            template_type=template_type,
+            appointment_id=log_entry.get("appointment_id"),
+            recipient_type=recipient_type,
+            dispatch_log_id=log_id,
+        )
+    else:
+        result = client.send_sms(
+            to=log_entry["recipient_phone"],
+            body=body,
+            template_type=template_type,
+            appointment_id=log_entry.get("appointment_id"),
+            recipient_type=recipient_type,
+            channel="SMS",
+            dispatch_log_id=log_id,
+        )
+
     update_sms_log_status(
         log_id=log_id,
         status=result["status"],

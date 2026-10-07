@@ -1,61 +1,61 @@
 # Auto Service Catalog and Offerings
-## Oil Change (Full Synthetic)
-Description: Full synthetic motor oil replacement, premium filter replacement, fluid top-offs, tire pressure check, and a complimentary courtesy inspection.
+## Standard System Inspection
+Description: Full system diagnostic check, filter replacement, fluid top-offs, pressure check, and a complimentary courtesy inspection.
 Price Range: $79 - $119
 Duration: 45 minutes
 
-## Brake Repair & Pad Replacement
-Description: Full braking system diagnostic check, premium ceramic/semi-metallic brake pad replacement, rotor resurfacing or replacement, and caliper checks.
-Price Range: $199 - $399 per axle
+## Component Repair & Pad Replacement
+Description: Full system diagnostic check, premium component replacement, rotor/part resurfacing or replacement, and safety checks.
+Price Range: $199 - $399
 Duration: 90 minutes
 
-## A/C Service & System Diagnostic
-Description: A/C system performance test, pressure testing, visual inspection of lines and components, leak detection using UV dye, and full refrigerant recharge.
+## Climate Control Service & System Diagnostic
+Description: A/C and heating system performance test, pressure testing, visual inspection of lines and components, leak detection, and full refrigerant recharge.
 Price Range: $99 - $249
 Duration: 60 minutes
 
-## Wheel Alignment (4-Wheel)
-Description: Precision computerized alignment adjusting front and rear caster, camber, and toe angles to original manufacturer specifications.
+## Precision System Alignment & Calibration
+Description: Precision computerized alignment adjusting operating angles to original manufacturer specifications.
 Price Range: $119 - $149
 Duration: 60 minutes
 
-## Manufacturer Scheduled Maintenance (30k/60k/90k)
-Description: Comprehensive mileage-specific maintenance conforming to manufacturer warranty standards, including fluids flush, cabin/air filters, spark plugs check, and multi-point safety inspections.
+## Scheduled Maintenance (Periodic)
+Description: Comprehensive periodic maintenance conforming to manufacturer warranty standards, including fluids flush, cabin/air filters, and multi-point safety inspections.
 Price Range: $249 - $599
 Duration: 120 minutes
 
-## Check Engine Light Diagnostic
-Description: Full scanning and diagnostics of the vehicle OBD-II system, sensor testing, freeze-frame data analysis, and visual checks of affected components.
+## System Error Light Diagnostic
+Description: Full scanning and diagnostics of system sensors, freeze-frame data analysis, and visual checks of affected components.
 Price Range: $99 - $149
 Duration: 60 minutes
 
-## Transmission Fluid Exchange
-Description: Complete exchange of old transmission fluid with high-quality OEM spec fluid, cleaning of transmission pan, and replacement of transmission filter (if applicable).
+## Fluid Exchange & Service
+Description: Complete exchange of old system fluid with high-quality spec fluid, cleaning of fluid reservoir, and replacement of filter.
 Price Range: $189 - $299
 Duration: 60 minutes
 
-## Suspension Repair (Shocks & Struts)
-Description: Inspection and replacement of worn front and rear struts, shock absorbers, sway bar links, and bushings to restore ride control and safety.
+## Suspension & Structural Inspection
+Description: Inspection and replacement of worn struts, shock absorbers, links, and bushings to restore control and safety.
 Price Range: $299 - $899
 Duration: 120 minutes
 
-## Battery Replacement & System Test
-Description: Automotive battery voltage and cold-cranking amps diagnostic check, cleaning of battery terminals, and professional installation of a new premium battery.
+## Power & Electrical System Service
+Description: Power supply voltage and diagnostic check, terminal cleaning, and professional component installation.
 Price Range: $149 - $249
 Duration: 30 minutes
 
 ## Cooling System Flush & Diagnostic
-Description: Radiator performance inspection, pressure testing for leaks, full drainage of old coolant, flush of heater core/radiator, and refill with fresh OEM coolant.
+Description: Performance inspection, pressure testing for leaks, full drainage of old coolant, and refill with fresh coolant.
 Price Range: $129 - $199
 Duration: 60 minutes
 
-## Air Filtration (Engine & Cabin)
-Description: Inspection and replacement of engine intake air filters and passenger cabin air filters to maintain engine performance and interior air quality.
+## Air Filtration System
+Description: Inspection and replacement of intake air filters and passenger cabin air filters to maintain interior air quality.
 Price Range: $49 - $99
 Duration: 30 minutes
 
-## Alternator & Starter Service
-Description: Testing and replacement of starter motors, alternators, battery cables, and related ignition/charging system electronics.
+## Electronics & Ignition Service
+Description: Testing and replacement of starter motors, alternators, power cables, and related electronics.
 Price Range: $249 - $599
 Duration: 90 minutes
 
@@ -169,62 +169,12 @@ Description: A 15-minute scheduled phone consultation or callback request with a
 Price Range: $0
 Duration: 15 minutes
 
-## Standard System Inspection
-Description: Full system diagnostic check, filter replacement, fluid top-offs, pressure check, and a complimentary courtesy inspection.
-Price Range: $79 - $119
+## E2E Synthetic Service 1791323668
+Description: Automated end-to-end synthetic service validation.
+Price Range: $99 - $149
 Duration: 45 minutes
 
-## Component Repair & Pad Replacement
-Description: Full system diagnostic check, premium component replacement, rotor/part resurfacing or replacement, and safety checks.
-Price Range: $199 - $399
-Duration: 90 minutes
-
-## Climate Control Service & System Diagnostic
-Description: A/C and heating system performance test, pressure testing, visual inspection of lines and components, leak detection, and full refrigerant recharge.
-Price Range: $99 - $249
-Duration: 60 minutes
-
-## Precision System Alignment & Calibration
-Description: Precision computerized alignment adjusting operating angles to original manufacturer specifications.
-Price Range: $119 - $149
-Duration: 60 minutes
-
-## Scheduled Maintenance (Periodic)
-Description: Comprehensive periodic maintenance conforming to manufacturer warranty standards, including fluids flush, cabin/air filters, and multi-point safety inspections.
-Price Range: $249 - $599
-Duration: 120 minutes
-
-## System Error Light Diagnostic
-Description: Full scanning and diagnostics of system sensors, freeze-frame data analysis, and visual checks of affected components.
+## E2E Synthetic Service 1791324936
+Description: Automated end-to-end synthetic service validation.
 Price Range: $99 - $149
-Duration: 60 minutes
-
-## Fluid Exchange & Service
-Description: Complete exchange of old system fluid with high-quality spec fluid, cleaning of fluid reservoir, and replacement of filter.
-Price Range: $189 - $299
-Duration: 60 minutes
-
-## Suspension & Structural Inspection
-Description: Inspection and replacement of worn struts, shock absorbers, links, and bushings to restore control and safety.
-Price Range: $299 - $899
-Duration: 120 minutes
-
-## Power & Electrical System Service
-Description: Power supply voltage and diagnostic check, terminal cleaning, and professional component installation.
-Price Range: $149 - $249
-Duration: 30 minutes
-
-## Air Filtration System
-Description: Inspection and replacement of intake air filters and passenger cabin air filters to maintain interior air quality.
-Price Range: $49 - $99
-Duration: 30 minutes
-
-## Electronics & Ignition Service
-Description: Testing and replacement of starter motors, alternators, power cables, and related electronics.
-Price Range: $249 - $599
-Duration: 90 minutes
-
-## Brake Service
-Description: Standard brake inspection, pad replacement, and rotor service.
-Price Range: $150 - $350
-Duration: 60 minutes
+Duration: 45 minutes

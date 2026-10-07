@@ -54,7 +54,7 @@ def test_get_customer_appointments_merges_caller_phone_and_suffix():
     appts_for_444 = [
         {
             "id": 23,
-            "appointment_datetime": "2026-10-06 07:00:00",
+            "appointment_datetime": "2026-10-20 07:00:00",
             "booking_type": "appointment",
             "service_type": "Repair",
             "issue_description": "Windshield",
@@ -68,7 +68,7 @@ def test_get_customer_appointments_merges_caller_phone_and_suffix():
     appts_for_caller = [
         {
             "id": 27,
-            "appointment_datetime": "2026-10-05 12:00:00",
+            "appointment_datetime": "2026-10-21 12:00:00",
             "booking_type": "appointment",
             "service_type": "Engine Diagnostic",
             "issue_description": "Heating",

@@ -13,12 +13,20 @@ from serviceBot.logger import get_logger
 
 logger = get_logger("db.connection")
 
-# Load environment variables from .env with override=True to ensure unquoted or shell-expanded variables do not poison the process
-_env_path = find_dotenv()
-if _env_path:
-    load_dotenv(dotenv_path=_env_path, override=True)
-else:
-    load_dotenv(override=True)
+if os.getenv("PYTHON_DOTENV_DISABLED") != "1":
+    _is_testing_env = (
+        "pytest" in sys.modules
+        or any("pytest" in arg or "unittest" in arg or "run_tests" in arg for arg in sys.argv)
+        or os.getenv("TESTING") == "1"
+        or os.getenv("TEST_DATABASE_URL") is not None
+        or os.getenv("TEST_LOG_FILE") is not None
+    )
+    _override = not _is_testing_env
+    _env_path = find_dotenv()
+    if _env_path:
+        load_dotenv(dotenv_path=_env_path, override=_override)
+    else:
+        load_dotenv(override=_override)
 
 
 def get_db_url():
@@ -554,6 +562,22 @@ def init_db(db_url: str = None, force: bool = False):
             ('ESCALATION', 'previous_agent', 'SMS', False),
         ]
         for event_type, recipient_role, channel, enabled in escalation_defaults:
+            cursor.execute(
+                "INSERT INTO sms_matrix_rules (event_type, recipient_role, channel, enabled) VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING;",
+                (event_type, recipient_role, channel, enabled)
+            )
+
+        status_defaults = [
+            ('STATUS_IN_PROGRESS', 'customer', 'WHATSAPP', True),
+            ('STATUS_IN_PROGRESS', 'customer', 'SMS', True),
+            ('STATUS_IN_PROGRESS', 'agent', 'WHATSAPP', False),
+            ('STATUS_IN_PROGRESS', 'admin', 'WHATSAPP', False),
+            ('STATUS_COMPLETED', 'customer', 'WHATSAPP', True),
+            ('STATUS_COMPLETED', 'customer', 'SMS', True),
+            ('STATUS_COMPLETED', 'agent', 'WHATSAPP', False),
+            ('STATUS_COMPLETED', 'admin', 'WHATSAPP', False),
+        ]
+        for event_type, recipient_role, channel, enabled in status_defaults:
             cursor.execute(
                 "INSERT INTO sms_matrix_rules (event_type, recipient_role, channel, enabled) VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING;",
                 (event_type, recipient_role, channel, enabled)

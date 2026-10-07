@@ -35,15 +35,21 @@ print_usage() {
     echo -e "${BOLD}Usage:${NC} $0 [options]"
     echo ""
     echo "Options:"
-    echo "  --all              Run the entire test suite (Default)"
-    echo "  --service <name>   Run unit tests for a specific service (encryption, calendar_sync, gmail, google_calendar, rag)"
+    echo "  --all              Run the entire unit/integration test suite (Default)"
+    echo "  --e2e              Run Playwright headless browser E2E tests (e2e/)"
+    echo "  --e2e-headed       Run Playwright E2E tests in a visible Chromium browser"
+    echo "  --validate-customer Run customer Rohan Roy WhatsApp notification test & audit"
+    echo "  --inspect-calls    Fetch and evaluate recent ElevenLabs voice agent call transcripts"
+    echo "  --service <name>   Run unit tests for a specific service"
     echo "  --file <path>      Run tests in a specific test file"
     echo "  --create <name>    Generate a template test file at tests/test_<name>.py"
     echo "  --help             Show this help guide"
     echo ""
     echo "Examples:"
+    echo "  $0 --e2e"
+    echo "  $0 --validate-customer"
+    echo "  $0 --inspect-calls"
     echo "  $0 --service encryption"
-    echo "  $0 --create database_backup"
 }
 
 create_template() {
@@ -108,6 +114,22 @@ case "$1" in
         fi
         echo -e "${BLUE}${BOLD}Running tests in file: $FILE_PATH...${NC}"
         PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 "$PYTEST_BIN" "$FILE_PATH" -s -o cache_dir="$CACHE_DIR"
+        ;;
+    --e2e)
+        echo -e "${BLUE}${BOLD}Running Playwright headless browser E2E tests...${NC}"
+        PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 "$PYTEST_BIN" "$WORKSPACE_DIR/e2e" -v -o cache_dir="$CACHE_DIR"
+        ;;
+    --e2e-headed)
+        echo -e "${BLUE}${BOLD}Running Playwright E2E tests in visible browser (headed)...${NC}"
+        PLAYWRIGHT_HEADED=1 PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 "$PYTEST_BIN" "$WORKSPACE_DIR/e2e" --e2e-headed -v -o cache_dir="$CACHE_DIR"
+        ;;
+    --validate-customer)
+        echo -e "${BLUE}${BOLD}Running Customer Rohan Roy WhatsApp Notification validation...${NC}"
+        "$WORKSPACE_DIR/.venv/bin/python" "$WORKSPACE_DIR/scripts/validate_customer_flow.py" --action audit --local-db
+        ;;
+    --inspect-calls)
+        echo -e "${BLUE}${BOLD}Inspecting recent ElevenLabs calls and evaluating quality...${NC}"
+        "$WORKSPACE_DIR/.venv/bin/python" "$WORKSPACE_DIR/scripts/inspect_calls_history.py" --limit 5 --evaluate
         ;;
     --all|"")
         echo -e "${BLUE}${BOLD}Running entire test suite...${NC}"
