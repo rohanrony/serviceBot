@@ -1,21 +1,14 @@
 <!--
 Sync Impact Report
-Version change: unadopted scaffold -> 1.0.0 (initial adoption)
-Modified principles: none; all five principles replace undefined scaffold slots.
-Added principles:
-- I. Simple Architecture and Clear Ownership
-- II. Reliable State and Provider Operations
-- III. Privacy and Trusted Integrations
-- IV. Strict Test-First Development
-- V. Observable Calls and Human Recovery
-Added sections:
-- Operational Constraints
-- Development Workflow and Quality Gates
-- Governance (initial project rules)
-Removed sections: none.
-Template synchronization: dependent templates and commands read this constitution at runtime;
-no template or command changes are required or included.
-Deferred fields and follow-up TODOs: none.
+Version change: 1.0.0 -> 1.1.0
+Modified principles:
+- IV. Strict Test-First Development -> IV. Strict Test-First Development and Contract Coverage (expanded with non-negotiable Red-Green-Refactor cycle, behavioral contract coverage, dual-suite isolation, and regression prevention)
+Modified sections:
+- Operational Constraints -> Operational and Testing Constraints (codified dual-suite test architecture, disposable test databases, captured SDK boundaries, deterministic time manipulation, and offline mock isolation)
+- Development Workflow and Quality Gates (expanded with explicit TDD execution protocol, run_tests.sh verification requirements, acceptance contract mapping, and quality gate criteria)
+Added sections: none
+Removed sections: none
+Deferred fields and follow-up TODOs: none
 -->
 
 # VoiceAI Constitution
@@ -45,14 +38,20 @@ MUST redact sensitive customer content. Production call-data storage MUST have a
 retention policy. These controls protect customer information and prevent untrusted requests
 from changing business state.
 
-### IV. Strict Test-First Development
+### IV. Strict Test-First Development and Contract Coverage
 
-Every behavioral change MUST begin with a meaningful test that fails for the intended reason,
-followed by implementation and refactoring. Tests MUST assert observable behavior and persisted
-outcomes where the operation changes stored state. Automated tests MUST use isolated test
-databases and mocked providers. Assertions MUST NOT be weakened merely to make implementation
-pass. The red-green-refactor sequence makes the requirement demonstrable before the change and
-preserves it afterward.
+Every feature addition, bug fix, or behavioral modification MUST strictly adhere to Test-Driven
+Development (TDD): a meaningful automated test that fails for the intended reason (Red) MUST be
+authored before implementation code (Green), followed by necessary design improvements (Refactor).
+Tests MUST assert observable business behavior and durable persisted state. Assertions MUST NOT
+be weakened, skipped, or commented out merely to allow an implementation to pass.
+
+Testing coverage MUST be evaluated through comprehensive behavioral contract coverage across all
+documented functional requirements (including happy paths, boundary conditions, concurrent races,
+and error rollbacks), rather than superficial line-coverage statistics. Every resolved defect MUST
+retain permanent regression test coverage. Automated test suites MUST run entirely offline with
+external services mocked or captured, preventing unintended network side-effects and ensuring
+repeatable, deterministic execution.
 
 ### V. Observable Calls and Human Recovery
 
@@ -63,50 +62,69 @@ callback path. Latency-sensitive changes MUST define and verify measurable budge
 feature specifications. These requirements let callers and operators recover from failures
 without relying on misleading success messages or unmeasured performance claims.
 
-## Operational Constraints
+## Operational and Testing Constraints
 
-Automated testing and live-provider acceptance MUST remain separate. Passing tests with mocked
-providers MUST NOT be presented as evidence of live-provider behavior. Production releases MUST
-satisfy portal-authentication and affected provider-validation gates, with recorded evidence of
-the relevant checks. Database changes MUST document migration, recovery, and rollback procedures.
+Automated testing and live-provider acceptance MUST remain strictly separated. The project
+maintains two distinct, non-overlapping automated test layers with isolated lifecycles:
+1. Fast unit and integration tests under `tests/`, utilizing localized test database instances and
+   mocked external services (Google Calendar, Gmail, Twilio, ElevenLabs, OpenAI).
+2. End-to-end acceptance tests under `e2e/`, exercising Chromium browser automation, real HTTP
+   transports, domain services, and dedicated disposable loopback PostgreSQL databases
+   (`voice_e2e_<random>_test`).
 
-Numerical latency targets MUST remain in feature specifications. Those specifications MUST
-define the measured operation, its budget, and its acceptance measurement so that performance
-can be verified without imposing one undocumented measurement across every workflow.
+Test suites MUST execute with zero external network dependencies:
+- External provider interactions (Twilio dispatch, Google Calendar/OAuth, ElevenLabs) MUST be
+  stubbed via isolated mocks or captured SDK HTTP boundaries.
+- Time-dependent logic (operating-hours deadlines, horizon reminder cadences, 4-hour lead times,
+  cutoff calculations, and quiet-hour releases) MUST use deterministic simulated clocks; timing
+  sleeps (`time.sleep`) MUST NOT be used in automated tests.
+- Knowledge-base and temporary file operations MUST redirect to isolated scratch directories.
+- Passing tests with mocked or captured providers MUST NOT be presented as evidence of live
+  provider delivery. Separate operational and live-acceptance gates apply.
+- Database schema changes MUST include migration, verification, and rollback scripts.
+
+Numerical latency targets MUST remain in feature specifications, defining the measured operation,
+its budget, and its acceptance measurement.
 
 ## Development Workflow and Quality Gates
 
-Behavioral changes MUST have explicit acceptance criteria and recorded red-green-refactor
-evidence. Contributors MUST run focused validation for the affected behavior and the full suite
-through `bash run_tests.sh --all` before declaring a behavioral change complete. Automated
-validation MUST use test-only resources and MUST NOT contact live providers.
+All behavioral changes MUST follow the mandatory TDD execution protocol:
+1. **Requirement & Contract Analysis**: Define explicit acceptance criteria, state transitions,
+   and boundary conditions based on feature specifications or PRDs.
+2. **Red Phase**: Write unit/integration tests in `tests/test_<name>.py` (or acceptance contracts
+   in `e2e/`) that fail for the targeted reason prior to any application changes.
+3. **Green Phase**: Implement the minimal correct application logic in `serviceBot/` necessary to
+   satisfy the test assertions.
+4. **Refactor & Verification**: Refactor for clarity, efficiency, and resource cleanup. Validate
+   locally using `./run_tests.sh` (e.g., `--file <path>`, `--service <name>`, or `--all`).
 
-Reviews MUST assess test sufficiency against the acceptance criteria, including affected
-failure paths, state transitions, and integration contracts. Test counts or a passing suite alone
-MUST NOT substitute for this assessment. Reviews MUST verify constitution compliance and
-identify any unmet production release gates.
-
-Documentation-only changes MUST receive document and diff validation; application tests are not
-required when application behavior is unchanged.
+Before declaring any behavioral change complete:
+- Contributors MUST run focused test validation for the affected service and ensure the full
+  relevant suite passes cleanly without regressions.
+- Code reviews MUST assess test sufficiency against acceptance criteria, verifying failure paths,
+  concurrent races, and contract boundaries. Test counts or a green status alone MUST NOT substitute
+  for contract verification.
+- Documentation-only changes MUST receive document and diff validation; application tests are not
+  required when application logic remains unchanged.
 
 ## Governance
 
-This constitution governs project engineering and release requirements. Conflicts with older
-project guidance MUST be identified and resolved explicitly rather than silently bypassing a
-principle. Reviews MUST assess changes against the current constitution and record any conflict
-or unmet requirement before acceptance.
+This constitution governs project engineering, testing standards, and release requirements.
+Conflicts with legacy project documentation or informal practices MUST be explicitly resolved
+in favor of this constitution. Reviews MUST evaluate changes against this constitution and block
+any PR or commit that bypasses these principles.
 
-Amendments MUST document their rationale, compatibility impact, and transition requirements and
-receive project-maintainer approval. Each amendment MUST update the version, last-amended date,
+Amendments MUST document their rationale, compatibility impact, and transition requirements, and
+must be approved by project maintainers. Each amendment MUST update the version, last-amended date,
 and Sync Impact Report. The original ratification date MUST remain unchanged.
 
 Constitution versions MUST follow semantic versioning:
-
 - MAJOR increments apply to incompatible principle changes, removals, or redefinitions.
 - MINOR increments apply to new principles, new sections, or substantive guidance additions.
 - PATCH increments apply to clarifications and other changes that do not alter obligations.
 
-Version 1.0.0 is the initial adoption of project-specific principles and governance, replacing an
-unadopted scaffold.
+Version 1.1.0 expands Principle IV, Operational and Testing Constraints, and Development Workflow
+to formalize mandatory Test-Driven Development (TDD), dual-suite test architecture (`tests/` and
+`e2e/`), behavioral contract coverage, and regression prevention.
 
-**Version**: 1.0.0 | **Ratified**: 2026-10-03 | **Last Amended**: 2026-10-03
+**Version**: 1.1.0 | **Ratified**: 2026-10-03 | **Last Amended**: 2026-10-07
