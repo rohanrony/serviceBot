@@ -1,4 +1,5 @@
 import os
+import json
 import httpx
 import datetime as dt_mod
 from datetime import datetime
@@ -1478,10 +1479,19 @@ async def reassign_service_request(request_id: int, payload: ReassignRequestPayl
             # 6. Audit log entry
             cursor.execute(
                 """
-                INSERT INTO service_request_audit_log (request_id, triggered_by, from_status, to_status, notes)
-                VALUES (%s, 'supervisor_reassign', %s, 'reassigned', %s);
+                INSERT INTO service_request_audit_log (request_id, triggered_by, from_status, to_status, notes, event_type, actor_name, metadata)
+                VALUES (%s, 'supervisor_reassign', %s, 'reassigned', %s, 'AGENT_REASSIGNED', 'Supervisor', %s);
                 """,
-                (request_id, sr.get("escalation_status") or "escalated", f"Reassigned from agent {old_agent_id} to {payload.new_agent_id} ({payload.reason})")
+                (
+                    request_id,
+                    sr.get("escalation_status") or "escalated",
+                    f"Reassigned from agent {old_agent_id} to {payload.new_agent_id} ({payload.reason})",
+                    json.dumps({
+                        "old_agent_id": old_agent_id,
+                        "new_agent_id": payload.new_agent_id,
+                        "reason": payload.reason
+                    })
+                )
             )
 
             # 7. Transactional Outbox Event: Atomically enqueue agent_reassignment
@@ -2480,6 +2490,15 @@ async def get_appointment_sms_logs_endpoint(appointment_id: int):
         "appointment": appointment,
         "logs": logs
     }
+
+
+@router.get("/service-requests/{request_id}/trace")
+async def get_service_request_trace_endpoint(request_id: int):
+    from serviceBot.db.queries import get_appointment_full_trace
+    trace_data = get_appointment_full_trace(request_id)
+    if not trace_data:
+        raise HTTPException(status_code=404, detail=f"Service request #{request_id} not found.")
+    return trace_data
 
 
 @router.post("/sms/retry/{log_id}")

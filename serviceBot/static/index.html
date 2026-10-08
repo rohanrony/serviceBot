@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
   <!-- Stylesheets -->
-  <link rel="stylesheet" href="style.css?v=23">
+  <link rel="stylesheet" href="style.css?v=24">
   <!-- Chart.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
@@ -1699,21 +1699,65 @@
     </div>
   </div>
 
-  <!-- SMS Delivery Log Drawer / Modal -->
+  <!-- Appointment Details & Lifecycle Audit Drawer -->
   <div class="drawer-overlay" id="sms-log-drawer-overlay"></div>
-  <div class="drawer" id="sms-log-drawer">
+  <div class="drawer drawer-wide" id="sms-log-drawer">
     <div class="drawer-header">
       <div>
-        <h3 id="sms-log-drawer-title">SMS Delivery Logs</h3>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <h3 id="sms-log-drawer-title">Appointment Details & Trace</h3>
+          <span id="details-drawer-status-badge" class="badge" style="display: none;">--</span>
+        </div>
         <p class="text-muted" id="sms-log-drawer-subtitle">Appointment #--</p>
       </div>
-      <button class="btn-close" id="close-sms-log-drawer-btn">
+      <button class="btn-close" id="close-sms-log-drawer-btn" aria-label="Close Drawer">
         <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
       </button>
     </div>
+
+    <!-- Drawer Tabs -->
+    <div class="details-tabs-bar" id="details-drawer-tabs">
+      <button type="button" class="details-tab-btn active" data-tab="trace">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
+        Full Lifecycle Trace <span id="trace-event-count" class="badge-pill">0</span>
+      </button>
+      <button type="button" class="details-tab-btn" data-tab="sms">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/></svg>
+        SMS Dispatches <span id="sms-log-count" class="badge-pill">0</span>
+      </button>
+      <button type="button" class="details-tab-btn" data-tab="metadata">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+        Service Context
+      </button>
+    </div>
+
     <div class="drawer-content">
-      <div id="sms-log-items-container" style="display: flex; flex-direction: column; gap: 12px;">
-        <p class="text-muted">Loading SMS logs...</p>
+      <!-- Appointment Overview Header Card (Persistent Context) -->
+      <div id="details-overview-header-card"></div>
+
+      <!-- Tab 1: Full Lifecycle Trace -->
+      <div id="tab-pane-trace" class="details-tab-pane active">
+        <div class="trace-filter-chips" id="trace-filter-chips">
+          <button type="button" class="trace-filter-chip active" data-filter="all">All Events</button>
+          <button type="button" class="trace-filter-chip" data-filter="agent">Assignments & Technicians</button>
+          <button type="button" class="trace-filter-chip" data-filter="escalation">Escalations & Alerts</button>
+          <button type="button" class="trace-filter-chip" data-filter="status">Status & Cancellation</button>
+        </div>
+        <div id="trace-timeline-container" class="trace-timeline">
+          <p class="text-muted" style="font-size: 13px;">Loading lifecycle trace...</p>
+        </div>
+      </div>
+
+      <!-- Tab 2: SMS Dispatches -->
+      <div id="tab-pane-sms" class="details-tab-pane" style="display: none;">
+        <div id="sms-log-items-container" style="display: flex; flex-direction: column; gap: 10px;">
+          <p class="text-muted" style="font-size: 13px;">Loading SMS logs...</p>
+        </div>
+      </div>
+
+      <!-- Tab 3: Service Context -->
+      <div id="tab-pane-metadata" class="details-tab-pane" style="display: none;">
+        <div id="service-context-container" style="display: flex; flex-direction: column; gap: 12px;"></div>
       </div>
     </div>
   </div>
@@ -1963,6 +2007,6 @@
   <div class="toast" id="app-toast">Action completed successfully</div>
 
   <!-- Javascript Logic -->
-  <script src="app.js?v=35"></script>
+  <script src="app.js?v=38"></script>
 </body>
 </html>

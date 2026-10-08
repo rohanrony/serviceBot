@@ -28,6 +28,8 @@
 # <<< Switchboard managed exclusions <<<
 AGENTS.md
 .agents/*
+!.agents/skills/
+!.agents/skills/**
 .agent/*
 .env
 .venv/*

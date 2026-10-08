@@ -3804,162 +3804,382 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // SMS Log Drawer - Minimalist, Theme-Matched Detail Viewer
+  // Relative time helper
+  function formatRelativeTime(dateStr) {
+    if (!dateStr) return '';
+    try {
+      let cleanStr = String(dateStr).trim();
+      if (cleanStr.includes(' ') && !cleanStr.includes('T')) cleanStr = cleanStr.replace(' ', 'T');
+      if (!cleanStr.endsWith('Z') && !/[+-]\d{2}:?\d{2}$/.test(cleanStr)) cleanStr += 'Z';
+      const d = new Date(cleanStr);
+      if (isNaN(d.getTime())) return '';
+      const diffMs = Date.now() - d.getTime();
+      const diffSecs = Math.round(diffMs / 1000);
+      if (diffSecs < 60) return 'just now';
+      const diffMins = Math.round(diffSecs / 60);
+      if (diffMins < 60) return `${diffMins}m ago`;
+      const diffHours = Math.round(diffMins / 60);
+      if (diffHours < 24) return `${diffHours}h ago`;
+      const diffDays = Math.round(diffHours / 24);
+      return `${diffDays}d ago`;
+    } catch {
+      return '';
+    }
+  }
+
+  // Appointment Details & Lifecycle Audit Drawer
   window.openSMSLogDrawer = async function(appointmentId) {
     try {
-      document.getElementById('sms-log-drawer-subtitle').innerText = `Appointment #${appointmentId}`;
+      const subtitleEl = document.getElementById('sms-log-drawer-subtitle');
+      if (subtitleEl) subtitleEl.innerText = `Appointment #${appointmentId}`;
+      const statusBadgeEl = document.getElementById('details-drawer-status-badge');
+      if (statusBadgeEl) statusBadgeEl.style.display = 'none';
+
       document.getElementById('sms-log-drawer-overlay').classList.add('active');
       document.getElementById('sms-log-drawer').classList.add('active');
 
-      const res = await fetch(`/api/v1/portal/sms/logs/appointment/${appointmentId}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      
-      const logs = Array.isArray(data) ? data : (data.logs || []);
-      const app = Array.isArray(data) ? null : data.appointment;
-
-      const container = document.getElementById('sms-log-items-container');
-      container.innerHTML = '';
-
-      // 1. Appointment Overview Context Header (Sleek & Minimal)
-      if (app) {
-        const appCard = document.createElement('div');
-        appCard.style.cssText = 'background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px;';
-        
-        const vehicleStr = [app.vehicle_year, app.vehicle_make, app.vehicle_model].filter(Boolean).join(' ');
-        const statusUpper = (app.status || 'PENDING').toUpperCase();
-        const statusClass = statusUpper === 'CONFIRMED' || statusUpper === 'DONE' || statusUpper === 'COMPLETED' ? 'success' : 'warning';
-        
-        let appTimeStr = app.booking_time || app.time_slot || 'N/A';
-        if (app.booking_start_time && app.booking_end_time) {
-          appTimeStr = `Start: ${formatShortDate(app.booking_start_time)} — End: ${formatShortDate(app.booking_end_time)} (${app.duration_minutes || 60} mins)`;
-        } else if (app.booking_time) {
-          appTimeStr = formatShortDate(app.booking_time);
-        }
-
-        appCard.innerHTML = `
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-            <strong style="color: #fff; font-size: 13px; font-weight: 600;">Appointment Details</strong>
-            <span class="badge ${statusClass}">${statusUpper}</span>
-          </div>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; font-size: 12px;">
-            <div><span style="color: var(--text-muted);">Submitted At:</span> <span style="color: var(--text-main); font-weight: 500;">${app.created_at ? formatShortDate(app.created_at) : 'N/A'}</span></div>
-            <div><span style="color: var(--text-muted);">Customer:</span> <span style="color: var(--text-main); font-weight: 500;">${app.customer_name || 'N/A'}</span></div>
-            <div><span style="color: var(--text-muted);">Phone:</span> <span style="color: var(--text-main); font-weight: 500;">${app.customer_phone || 'N/A'}</span></div>
-            <div><span style="color: var(--text-muted);">Agent:</span> <span style="color: var(--text-main); font-weight: 500;">${app.staff_agent_name || 'Unassigned'}</span></div>
-            <div><span style="color: var(--text-muted);">Service:</span> <span style="color: var(--text-main); font-weight: 500;">${formatIssueDescription(app.service_type) || 'N/A'} ${vehicleStr ? `(${vehicleStr})` : ''}</span></div>
-            <div style="grid-column: span 2;"><span style="color: var(--text-muted);">Start & End Time:</span> <span style="color: var(--text-main); font-weight: 500;">${appTimeStr}</span></div>
-          </div>
-        `;
-        container.appendChild(appCard);
-      }
-
-      // 2. Section Header
-      const logsHeader = document.createElement('div');
-      logsHeader.style.cssText = 'font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.8px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;';
-      logsHeader.innerHTML = `<span>SMS Dispatch Logs</span><span>${logs.length} ${logs.length === 1 ? 'LOG' : 'LOGS'}</span>`;
-      container.appendChild(logsHeader);
-
-      if (logs.length === 0) {
-        const emptyMsg = document.createElement('p');
-        emptyMsg.className = 'text-muted';
-        emptyMsg.style.fontSize = '13px';
-        emptyMsg.innerText = 'No SMS logs recorded for this appointment.';
-        container.appendChild(emptyMsg);
-        return;
-      }
-
-      // Helper mappers
-      const templateLabels = {
-        'booking': 'Booking Confirmation',
-        'booking_confirmation': 'Booking Confirmation',
-        'agent_booking': 'Agent Assignment Alert',
-        'admin_booking': 'Admin Notification Alert',
-        'agent_reassigned': 'Agent Reassignment Notice',
-        'unassignment': 'Previous Agent Unassigned Notice',
-        'reschedule': 'Reschedule Confirmation',
-        'cancellation': 'Cancellation Notice',
-        'reminder_24h': '24h Pre-Appointment Reminder',
-        'reminder_2h': '2h Pre-Appointment Reminder'
-      };
-
-      const getTemplateTitle = (raw) => {
-        if (!raw) return 'SMS Notification';
-        if (templateLabels[raw]) return templateLabels[raw];
-        return raw.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-      };
-
-      const getStatusBadgeHtml = (status) => {
-        const s = (status || '').toUpperCase();
-        if (s === 'DELIVERED') return `<span class="badge success">✅ Delivered</span>`;
-        if (s === 'SENT') return `<span class="badge success">✓ Sent</span>`;
-        if (s === 'FAILED') return `<span class="badge" style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2); color: #f87171;">❌ Failed</span>`;
-        if (s === 'SKIPPED_NOT_WHITELISTED') return `<span class="badge warning">⚠️ Skipped (Not Whitelisted)</span>`;
-        if (s === 'SKIPPED_OPT_OUT') return `<span class="badge warning">⚠️ Skipped (Opt-out)</span>`;
-        if (s === 'QUEUED') return `<span class="badge" style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.2); color: #60a5fa;">⏳ Queued</span>`;
-        return `<span class="badge" style="background: rgba(255,255,255,0.05); color: var(--text-muted); border: 1px solid var(--border-card);">${s || 'PENDING'}</span>`;
-      };
-
-      logs.forEach(l => {
-        const item = document.createElement('div');
-        item.style.cssText = 'padding: 12px 14px; border: 1px solid var(--border-card); border-radius: 8px; background: var(--bg-card); display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px;';
-        
-        const recipientRole = (l.recipient_type || 'CUSTOMER').toUpperCase();
-        const isFailed = l.status === 'FAILED';
-        const isNotWhitelisted = l.status === 'SKIPPED_NOT_WHITELISTED';
-        const isOptOut = l.status === 'SKIPPED_OPT_OUT';
-        const isQueued = l.status === 'QUEUED';
-
-        let reasonHtml = '';
-        if (isNotWhitelisted) {
-          reasonHtml = `<div style="font-size: 12px; color: var(--text-muted); border-left: 2px solid #d97706; padding-left: 8px; margin-top: 4px; line-height: 1.4;"><strong style="color: #d97706;">Skip Reason:</strong> Recipient phone number is not on the staging whitelist. Add number to SMS Config Whitelist to enable delivery.</div>`;
-        } else if (isOptOut) {
-          reasonHtml = `<div style="font-size: 12px; color: var(--text-muted); border-left: 2px solid #d97706; padding-left: 8px; margin-top: 4px; line-height: 1.4;"><strong style="color: #d97706;">Skip Reason:</strong> Customer has opted out of receiving automated SMS alerts.</div>`;
-        } else if (isFailed) {
-          reasonHtml = `<div style="font-size: 12px; color: var(--text-muted); border-left: 2px solid #dc2626; padding-left: 8px; margin-top: 4px; line-height: 1.4;"><strong style="color: #dc2626;">Error Details:</strong> ${l.error_message || l.error_code || 'Twilio delivery failed.'}</div>`;
-        } else if (isQueued && l.scheduled_send_at) {
-          reasonHtml = `<div style="font-size: 12px; color: var(--text-muted); border-left: 2px solid #38bdf8; padding-left: 8px; margin-top: 4px; line-height: 1.4;"><strong style="color: #38bdf8;">Quiet Hours Queue:</strong> Scheduled for release at ${formatLocalTimestamp(l.scheduled_send_at)}</div>`;
-        }
-
-        const canRetry = isFailed || isNotWhitelisted || isOptOut;
-
-        const metaParts = [];
-        metaParts.push(`Recipient: <span style="color: var(--text-main);">${l.recipient_phone}</span>`);
-        metaParts.push(`Logged: <span style="color: var(--text-main);">${formatLocalTimestamp(l.created_at)}</span>`);
-        if (l.sent_at) metaParts.push(`Sent: <span style="color: var(--text-main);">${formatLocalTimestamp(l.sent_at)}</span>`);
-        if (l.twilio_message_sid) metaParts.push(`SID: <code style="font-size: 10.5px; color: var(--text-main);">${l.twilio_message_sid}</code>`);
-        if (l.retry_count > 0) metaParts.push(`Retries: <span style="color: var(--text-main);">${l.retry_count}</span>`);
-
-        item.innerHTML = `
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <div>
-              <span style="font-size: 11px; font-weight: 600; color: var(--text-muted); margin-right: 6px; letter-spacing: 0.5px;">[${recipientRole}]</span>
-              <strong style="color: #fff; font-size: 13px; font-weight: 500;">${getTemplateTitle(l.template_type)}</strong>
-            </div>
-            <div>${getStatusBadgeHtml(l.status)}</div>
-          </div>
-
-          <div style="font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-top: 2px;">
-            ${metaParts.join(' &nbsp;•&nbsp; ')}
-          </div>
-
-          ${reasonHtml}
-
-          ${canRetry ? `<button class="btn btn-secondary btn-sm retry-sms-btn" data-id="${l.id}" style="align-self: flex-start; margin-top: 6px; font-size: 11.5px; padding: 4px 10px;">Retry SMS Dispatch</button>` : ''}
-        `;
-        container.appendChild(item);
-      });
-
-      container.querySelectorAll('.retry-sms-btn').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-          const logId = e.target.dataset.id;
-          await fetch(`/api/v1/portal/sms/retry/${logId}`, { method: 'POST' });
-          showToast('Retry SMS dispatched.');
-          window.openSMSLogDrawer(appointmentId);
+      // Initialize tabs
+      const tabBtns = document.querySelectorAll('.details-tab-btn');
+      const tabPanes = document.querySelectorAll('.details-tab-pane');
+      const switchTab = (tabName) => {
+        tabBtns.forEach(b => {
+          b.classList.toggle('active', b.dataset.tab === tabName);
         });
+        tabPanes.forEach(p => {
+          if (p.id === `tab-pane-${tabName}`) {
+            p.style.display = 'flex';
+            p.classList.add('active');
+          } else {
+            p.style.display = 'none';
+            p.classList.remove('active');
+          }
+        });
+      };
+
+      tabBtns.forEach(btn => {
+        btn.onclick = () => switchTab(btn.dataset.tab);
       });
+      // Default to trace
+      switchTab('trace');
+
+      // Fetch unified trace API
+      let traceData = null;
+      try {
+        const res = await fetch(`/api/v1/portal/service-requests/${appointmentId}/trace`);
+        if (res.ok) {
+          traceData = await res.json();
+        }
+      } catch (e) {
+        console.warn('Trace endpoint fetch failed, falling back to SMS logs endpoint:', e);
+      }
+
+      // Fallback if trace endpoint returned non-200
+      if (!traceData) {
+        const fbRes = await fetch(`/api/v1/portal/sms/logs/appointment/${appointmentId}`);
+        if (!fbRes.ok) return;
+        const fbJson = await fbRes.json();
+        traceData = {
+          appointment: fbJson.appointment,
+          raw_sms_logs: fbJson.logs || [],
+          trace: []
+        };
+      }
+
+      const app = traceData.appointment;
+      const trace = traceData.trace || [];
+      const logs = traceData.raw_sms_logs || [];
+
+      // Update counters
+      const traceCountEl = document.getElementById('trace-event-count');
+      if (traceCountEl) traceCountEl.innerText = trace.length;
+      const smsCountEl = document.getElementById('sms-log-count');
+      if (smsCountEl) smsCountEl.innerText = logs.length;
+
+      // Update Header Subtitle & Status Badge
+      if (app) {
+        if (subtitleEl) {
+          subtitleEl.innerText = `Appointment #${appointmentId} • ${app.customer_name || 'Customer'}`;
+        }
+        if (statusBadgeEl) {
+          const st = (app.status || 'PENDING').toUpperCase();
+          const isCancelled = st.includes('CANCEL');
+          const isDone = st === 'CONFIRMED' || st === 'COMPLETED' || st === 'DONE';
+          statusBadgeEl.textContent = st;
+          statusBadgeEl.className = `badge ${isDone ? 'success' : (isCancelled ? 'danger' : 'warning')}`;
+          statusBadgeEl.style.display = 'inline-block';
+        }
+      }
+
+      // 1. Persistent Context Header Card
+      const overviewCard = document.getElementById('details-overview-header-card');
+      if (overviewCard) {
+        if (app) {
+          const vehicleStr = [app.vehicle_year, app.vehicle_make, app.vehicle_model].filter(Boolean).join(' ') || (app.vehicle_str || 'N/A');
+          let appTimeStr = app.booking_time || app.time_slot || 'N/A';
+          if (app.booking_start_time && app.booking_end_time) {
+            appTimeStr = `${formatShortDate(app.booking_start_time)} — ${formatShortDate(app.booking_end_time)} (${app.duration_minutes || 60} mins)`;
+          } else if (app.booking_time) {
+            appTimeStr = formatShortDate(app.booking_time);
+          }
+
+          const escBadge = (app.escalation_status === 'escalated')
+            ? `<span class="badge danger" style="font-size: 10px; margin-left: 6px;">Escalated (${app.escalation_reason || 'Alert'})</span>`
+            : (app.escalation_status === 'reassigned' ? `<span class="badge warning" style="font-size: 10px; margin-left: 6px;">Reassigned</span>` : '');
+
+          overviewCard.innerHTML = `
+            <div style="background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <div style="display: flex; align-items: center;">
+                  <strong style="color: #fff; font-size: 13px; font-weight: 600;">Service Overview</strong>
+                  ${escBadge}
+                </div>
+                <span class="text-muted" style="font-size: 11px;">Created: ${app.created_at ? formatShortDate(app.created_at) : 'N/A'}</span>
+              </div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; font-size: 12px;">
+                <div><span style="color: var(--text-muted);">Customer:</span> <span style="color: var(--text-main); font-weight: 500;">${app.customer_name || 'N/A'}</span></div>
+                <div><span style="color: var(--text-muted);">Phone:</span> <span style="color: var(--text-main); font-weight: 500;">${app.customer_phone || 'N/A'}</span></div>
+                <div><span style="color: var(--text-muted);">Technician:</span> <span style="color: var(--text-main); font-weight: 500;">${app.staff_agent_name || app.assigned_agent_name || 'Unassigned'}</span></div>
+                <div><span style="color: var(--text-muted);">Vehicle:</span> <span style="color: var(--text-main); font-weight: 500;">${vehicleStr}</span></div>
+                <div style="grid-column: span 2;"><span style="color: var(--text-muted);">Service:</span> <span style="color: var(--text-main); font-weight: 500;">${formatIssueDescription(app.service_type) || 'N/A'}</span></div>
+                <div style="grid-column: span 2;"><span style="color: var(--text-muted);">Scheduled Window:</span> <span style="color: var(--text-main); font-weight: 500;">${appTimeStr}</span></div>
+              </div>
+            </div>
+          `;
+        } else {
+          overviewCard.innerHTML = '';
+        }
+      }
+
+      // 2. Render Tab 1: Full Lifecycle Trace
+      const timelineContainer = document.getElementById('trace-timeline-container');
+      const filterChips = document.querySelectorAll('.trace-filter-chip');
+
+      const renderTimeline = (activeFilter = 'all') => {
+        if (!timelineContainer) return;
+        timelineContainer.innerHTML = '';
+
+        const filteredEvents = trace.filter(ev => {
+          if (activeFilter === 'all') return true;
+          if (activeFilter === 'agent') return ['ASSIGNMENT', 'REASSIGNMENT', 'CONFIRMATION', 'DECLINE'].includes(ev.category);
+          if (activeFilter === 'escalation') return ev.category === 'ESCALATION';
+          if (activeFilter === 'status') return ['STATUS', 'CREATION', 'RESCHEDULE'].includes(ev.category);
+          return true;
+        });
+
+        if (filteredEvents.length === 0) {
+          timelineContainer.innerHTML = `
+            <p class="text-muted" style="font-size: 13px; padding: 12px 0;">
+              No events recorded matching this filter.
+            </p>
+          `;
+          return;
+        }
+
+        filteredEvents.forEach(ev => {
+          const item = document.createElement('div');
+          item.className = 'timeline-item';
+
+          const nodeColorClass = `node-${ev.badge_color || 'info'}`;
+          const formattedTs = ev.timestamp ? formatLocalTimestamp(ev.timestamp) : 'N/A';
+          const relTime = ev.timestamp ? formatRelativeTime(ev.timestamp) : '';
+          const relTimeHtml = relTime ? `<span style="opacity: 0.7; font-size: 11px;">(${relTime})</span>` : '';
+
+          // Meta tags rendering
+          let tagsHtml = '';
+          if (ev.metadata && typeof ev.metadata === 'object') {
+            const metaTags = [];
+            if (ev.metadata.old_agent_name && ev.metadata.new_agent_name) {
+              metaTags.push(`From: ${ev.metadata.old_agent_name} → To: ${ev.metadata.new_agent_name}`);
+            }
+            if (ev.metadata.reason) metaTags.push(`Reason: ${ev.metadata.reason}`);
+            if (ev.metadata.reply_text) metaTags.push(`Reply: "${ev.metadata.reply_text}"`);
+            if (ev.metadata.twilio_sid) metaTags.push(`SID: ${ev.metadata.twilio_sid.slice(0, 10)}...`);
+            if (ev.metadata.status && ev.category === 'DISPATCH') metaTags.push(`Status: ${ev.metadata.status}`);
+
+            if (metaTags.length > 0) {
+              tagsHtml = `
+                <div class="timeline-tags-wrap">
+                  ${metaTags.map(t => `<span class="timeline-meta-tag">${t}</span>`).join('')}
+                </div>
+              `;
+            }
+          }
+
+          // Optional quick action if escalated or declined
+          const isActionable = (ev.category === 'ESCALATION' || ev.category === 'DECLINE') &&
+                               app && !['completed', 'done', 'cancelled', 'cancelled_by_customer'].includes(app.status);
+          const actionBtnHtml = isActionable ? `
+            <button type="button" class="btn btn-primary btn-sm timeline-quick-reassign" style="background: #ef4444; border-color: #ef4444; color: #fff; margin-top: 8px; font-size: 11.5px; padding: 3px 8px;">
+              Reassign Technician
+            </button>
+          ` : '';
+
+          item.innerHTML = `
+            <div class="timeline-node-icon ${nodeColorClass}"></div>
+            <div class="timeline-card">
+              <div class="timeline-header">
+                <div class="timeline-title-wrap">
+                  <span class="timeline-category-tag">${ev.category || 'EVENT'}</span>
+                  <span class="timeline-title">${ev.title || 'Event Log'}</span>
+                </div>
+                <span class="badge ${ev.badge_color || 'info'}" style="font-size: 10.5px; padding: 2px 7px;">${ev.badge_color === 'success' ? '✓ Resolved' : (ev.badge_color === 'danger' ? '⚠️ Alert' : 'Log')}</span>
+              </div>
+              <div class="timeline-meta">
+                <span>By <span class="timeline-actor-pill">${ev.actor || 'System'}</span></span>
+                <span>•</span>
+                <span>${formattedTs} ${relTimeHtml}</span>
+              </div>
+              <div class="timeline-desc">${ev.description || ''}</div>
+              ${tagsHtml}
+              ${actionBtnHtml}
+            </div>
+          `;
+
+          const reassignBtn = item.querySelector('.timeline-quick-reassign');
+          if (reassignBtn) {
+            reassignBtn.addEventListener('click', () => {
+              if (window.openReassignModal) window.openReassignModal(app);
+            });
+          }
+
+          timelineContainer.appendChild(item);
+        });
+      };
+
+      // Filter chips event listeners
+      filterChips.forEach(chip => {
+        chip.onclick = () => {
+          filterChips.forEach(c => c.classList.remove('active'));
+          chip.classList.add('active');
+          renderTimeline(chip.dataset.filter);
+        };
+      });
+
+      renderTimeline('all');
+
+      // 3. Render Tab 2: SMS Dispatches
+      const smsContainer = document.getElementById('sms-log-items-container');
+      if (smsContainer) {
+        smsContainer.innerHTML = '';
+        if (logs.length === 0) {
+          smsContainer.innerHTML = `<p class="text-muted" style="font-size: 13px;">No SMS logs recorded for this appointment.</p>`;
+        } else {
+          const templateLabels = {
+            'booking': 'Booking Confirmation',
+            'booking_confirmation': 'Booking Confirmation',
+            'agent_booking': 'Agent Assignment Alert',
+            'admin_booking': 'Admin Notification Alert',
+            'agent_reassigned': 'Agent Reassignment Notice',
+            'unassignment': 'Previous Agent Unassigned Notice',
+            'reschedule': 'Reschedule Confirmation',
+            'cancellation': 'Cancellation Notice',
+            'reminder_24h': '24h Pre-Appointment Reminder',
+            'reminder_2h': '2h Pre-Appointment Reminder'
+          };
+          const getTemplateTitle = (raw) => {
+            if (!raw) return 'SMS Notification';
+            if (templateLabels[raw]) return templateLabels[raw];
+            return raw.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+          };
+          const getStatusBadgeHtml = (status) => {
+            const s = (status || '').toUpperCase();
+            if (s === 'DELIVERED') return `<span class="badge success">✅ Delivered</span>`;
+            if (s === 'SENT') return `<span class="badge success">✓ Sent</span>`;
+            if (s === 'FAILED') return `<span class="badge" style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2); color: #f87171;">❌ Failed</span>`;
+            if (s === 'SKIPPED_NOT_WHITELISTED') return `<span class="badge warning">⚠️ Skipped (Not Whitelisted)</span>`;
+            if (s === 'SKIPPED_OPT_OUT') return `<span class="badge warning">⚠️ Skipped (Opt-out)</span>`;
+            if (s === 'QUEUED') return `<span class="badge" style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.2); color: #60a5fa;">⏳ Queued</span>`;
+            return `<span class="badge" style="background: rgba(255,255,255,0.05); color: var(--text-muted); border: 1px solid var(--border-card);">${s || 'PENDING'}</span>`;
+          };
+
+          logs.forEach(l => {
+            const item = document.createElement('div');
+            item.style.cssText = 'padding: 12px 14px; border: 1px solid var(--border-card); border-radius: 8px; background: var(--bg-card); display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px;';
+            
+            const recipientRole = (l.recipient_type || 'CUSTOMER').toUpperCase();
+            const isFailed = l.status === 'FAILED';
+            const isNotWhitelisted = l.status === 'SKIPPED_NOT_WHITELISTED';
+            const isOptOut = l.status === 'SKIPPED_OPT_OUT';
+            const isQueued = l.status === 'QUEUED';
+
+            let reasonHtml = '';
+            if (isNotWhitelisted) {
+              reasonHtml = `<div style="font-size: 12px; color: var(--text-muted); border-left: 2px solid #d97706; padding-left: 8px; margin-top: 4px; line-height: 1.4;"><strong style="color: #d97706;">Skip Reason:</strong> Recipient phone number is not on the staging whitelist. Add number to SMS Config Whitelist to enable delivery.</div>`;
+            } else if (isOptOut) {
+              reasonHtml = `<div style="font-size: 12px; color: var(--text-muted); border-left: 2px solid #d97706; padding-left: 8px; margin-top: 4px; line-height: 1.4;"><strong style="color: #d97706;">Skip Reason:</strong> Customer has opted out of receiving automated SMS alerts.</div>`;
+            } else if (isFailed) {
+              reasonHtml = `<div style="font-size: 12px; color: var(--text-muted); border-left: 2px solid #dc2626; padding-left: 8px; margin-top: 4px; line-height: 1.4;"><strong style="color: #dc2626;">Error Details:</strong> ${l.error_message || l.error_code || 'Twilio delivery failed.'}</div>`;
+            } else if (isQueued && l.scheduled_send_at) {
+              reasonHtml = `<div style="font-size: 12px; color: var(--text-muted); border-left: 2px solid #38bdf8; padding-left: 8px; margin-top: 4px; line-height: 1.4;"><strong style="color: #38bdf8;">Quiet Hours Queue:</strong> Scheduled for release at ${formatLocalTimestamp(l.scheduled_send_at)}</div>`;
+            }
+
+            const canRetry = isFailed || isNotWhitelisted || isOptOut;
+
+            const metaParts = [];
+            metaParts.push(`Recipient: <span style="color: var(--text-main);">${l.recipient_phone}</span>`);
+            metaParts.push(`Logged: <span style="color: var(--text-main);">${formatLocalTimestamp(l.created_at)}</span>`);
+            if (l.sent_at) metaParts.push(`Sent: <span style="color: var(--text-main);">${formatLocalTimestamp(l.sent_at)}</span>`);
+            if (l.twilio_message_sid) metaParts.push(`SID: <code style="font-size: 10.5px; color: var(--text-main);">${l.twilio_message_sid}</code>`);
+            if (l.retry_count > 0) metaParts.push(`Retries: <span style="color: var(--text-main);">${l.retry_count}</span>`);
+
+            item.innerHTML = `
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <span style="font-size: 11px; font-weight: 600; color: var(--text-muted); margin-right: 6px; letter-spacing: 0.5px;">[${recipientRole}]</span>
+                  <strong style="color: #fff; font-size: 13px; font-weight: 500;">${getTemplateTitle(l.template_type)}</strong>
+                </div>
+                <div>${getStatusBadgeHtml(l.status)}</div>
+              </div>
+
+              <div style="font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-top: 2px;">
+                ${metaParts.join(' &nbsp;•&nbsp; ')}
+              </div>
+
+              ${reasonHtml}
+
+              ${canRetry ? `<button class="btn btn-secondary btn-sm retry-sms-btn" data-id="${l.id}" style="align-self: flex-start; margin-top: 6px; font-size: 11.5px; padding: 4px 10px;">Retry SMS Dispatch</button>` : ''}
+            `;
+            smsContainer.appendChild(item);
+          });
+
+          smsContainer.querySelectorAll('.retry-sms-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+              const logId = e.target.dataset.id;
+              await fetch(`/api/v1/portal/sms/retry/${logId}`, { method: 'POST' });
+              showToast('Retry SMS dispatched.');
+              window.openSMSLogDrawer(appointmentId);
+            });
+          });
+        }
+      }
+
+      // 4. Render Tab 3: Service Context
+      const contextContainer = document.getElementById('service-context-container');
+      if (contextContainer && app) {
+        contextContainer.innerHTML = `
+          <div style="background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 8px; padding: 14px; font-size: 12.5px; line-height: 1.6;">
+            <h4 style="color: #fff; font-size: 13px; font-weight: 600; margin-bottom: 10px;">Appointment Parameters</h4>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px;">
+              <div><span style="color: var(--text-muted);">Request ID:</span> #${app.id}</div>
+              <div><span style="color: var(--text-muted);">Booking Type:</span> ${app.booking_type || 'appointment'}</div>
+              <div><span style="color: var(--text-muted);">Estimated Duration:</span> ${app.duration_minutes || 60} mins</div>
+              <div><span style="color: var(--text-muted);">Assigned Agent ID:</span> ${app.staff_agent_id ? '#' + app.staff_agent_id : 'None'}</div>
+              <div><span style="color: var(--text-muted);">Confirmation Cutoff:</span> ${app.confirmation_cutoff_at ? formatLocalTimestamp(app.confirmation_cutoff_at) : 'None'}</div>
+              <div><span style="color: var(--text-muted);">Confirmed At:</span> ${app.confirmed_at ? formatLocalTimestamp(app.confirmed_at) : 'Not confirmed'}</div>
+              <div><span style="color: var(--text-muted);">Escalation Status:</span> ${app.escalation_status || 'none'}</div>
+              <div><span style="color: var(--text-muted);">Escalation Reason:</span> ${app.escalation_reason || 'None'}</div>
+            </div>
+            <div style="margin-top: 12px; border-top: 1px solid var(--border-card); padding-top: 10px;">
+              <span style="color: var(--text-muted);">Reported Issue Description:</span>
+              <p style="color: var(--text-main); margin-top: 4px; background: rgba(0,0,0,0.2); padding: 8px 10px; border-radius: 6px;">
+                ${app.issue_description || 'No additional issue description provided.'}
+              </p>
+            </div>
+          </div>
+        `;
+      }
     } catch (err) {
-      console.error('Error opening SMS log drawer:', err);
+      console.error('Error opening Appointment Details & Trace drawer:', err);
     }
   };
 

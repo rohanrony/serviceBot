@@ -1,3 +1,4 @@
+import json
 import datetime as dt_mod
 from serviceBot.db.queries import (
     update_customer_opt_in,
@@ -220,6 +221,24 @@ def handle_agent_confirmation_action(staff_agent: dict, body: str, twilio_messag
             # Case: Normal timely confirmation
             update_appointment_confirmation_status(sr_id, "confirmed", confirmed_at=now_ts)
             cancel_pending_sms_reminders(sr_id, recipient_type="agent")
+            agent_name = staff_agent.get("name") or "Technician"
+            with get_db_connection() as conn:
+                with dict_cursor(conn) as cursor:
+                    cursor.execute(
+                        """
+                        INSERT INTO service_request_audit_log 
+                        (request_id, event_type, from_status, to_status, triggered_by, actor_name, notes, metadata)
+                        VALUES (%s, 'AGENT_CONFIRMED', %s, 'confirmed', 'agent_sms', %s, %s, %s);
+                        """,
+                        (
+                            sr_id,
+                            curr_sr.get("confirmation_status") or "pending_agent_confirmation",
+                            agent_name,
+                            f"Technician {agent_name} replied '{body.strip()}' via SMS. Assignment confirmed.",
+                            json.dumps({"agent_id": staff_agent.get("id"), "agent_name": agent_name, "reply": body.strip(), "phone": from_phone})
+                        )
+                    )
+                    conn.commit()
             reply_text = f"Appointment #{sr_id} confirmed. Thank you!"
             dispatch_agent_receipt(reply_text)
             return {
@@ -250,9 +269,28 @@ def handle_agent_confirmation_action(staff_agent: dict, body: str, twilio_messag
 
         if curr_sr:
             sr_id = curr_sr["id"]
+            agent_name = staff_agent.get("name") or "Technician"
             update_appointment_confirmation_status(sr_id, "declined")
             escalate_service_request(sr_id, reason="AGENT_DECLINED", triggered_by="agent_sms")
             cancel_pending_sms_reminders(sr_id, recipient_type="agent")
+
+            with get_db_connection() as conn:
+                with dict_cursor(conn) as cursor:
+                    cursor.execute(
+                        """
+                        INSERT INTO service_request_audit_log 
+                        (request_id, event_type, from_status, to_status, triggered_by, actor_name, notes, metadata)
+                        VALUES (%s, 'AGENT_DECLINED', %s, 'declined', 'agent_sms', %s, %s, %s);
+                        """,
+                        (
+                            sr_id,
+                            curr_sr.get("confirmation_status") or "pending_agent_confirmation",
+                            agent_name,
+                            f"Technician {agent_name} replied '{body.strip()}' via SMS. Assignment declined.",
+                            json.dumps({"agent_id": staff_agent.get("id"), "agent_name": agent_name, "reply": body.strip(), "phone": from_phone})
+                        )
+                    )
+                    conn.commit()
 
             from serviceBot.services.sms_reminders import dispatch_supervisor_escalation_alert
             dispatch_supervisor_escalation_alert(sr_id, reason="AGENT_DECLINED")

@@ -54,6 +54,7 @@ def test_booking_integrity_migrations_have_explicit_rollbacks():
         "0001_booking_integrity",
         "0002_webhook_replay_and_reservation_backfill",
         "0003_reminders_escalation",
+        "0004_audit_trace_enrichment",
     ]
 
     for forward in migrations:

@@ -6,6 +6,7 @@ import os
 from contextlib import contextmanager
 import threading
 import sys
+import time
 
 from dotenv import find_dotenv, load_dotenv
 from serviceBot.db.migrations import apply_migrations
@@ -51,40 +52,45 @@ def get_db_url():
 
 # Lazy connection pool (initialized on first use)
 _pool = None
+_pool_lock = threading.Lock()
 
 
 def _get_pool():
     global _pool
     if _pool is None:
-        db_url = get_db_url()
-        if not db_url or not (db_url.startswith("postgresql") or db_url.startswith("postgres")):
-            logger.error(f"Invalid DATABASE_URL configuration: {db_url!r}")
-            raise RuntimeError(
-                "DATABASE_URL must be a PostgreSQL connection string "
-                "(e.g. postgresql://user:pass@host/dbname). "
-                f"Current value: {db_url!r}"
-            )
-        _pool = psycopg2.pool.SimpleConnectionPool(
-            minconn=1,
-            maxconn=50,
-            dsn=db_url,
-            keepalives=1,
-            keepalives_idle=30,
-            keepalives_interval=10,
-            keepalives_count=5,
-        )
-        logger.info("Initialized PostgreSQL connection pool (minconn=1, maxconn=50).")
+        with _pool_lock:
+            if _pool is None:
+                db_url = get_db_url()
+                if not db_url or not (db_url.startswith("postgresql") or db_url.startswith("postgres")):
+                    logger.error(f"Invalid DATABASE_URL configuration: {db_url!r}")
+                    raise RuntimeError(
+                        "DATABASE_URL must be a PostgreSQL connection string "
+                        "(e.g. postgresql://user:pass@host/dbname). "
+                        f"Current value: {db_url!r}"
+                    )
+                _pool = psycopg2.pool.ThreadedConnectionPool(
+                    minconn=1,
+                    maxconn=50,
+                    dsn=db_url,
+                    keepalives=1,
+                    keepalives_idle=30,
+                    keepalives_interval=10,
+                    keepalives_count=5,
+                )
+                logger.info("Initialized PostgreSQL connection pool (minconn=1, maxconn=50).")
     return _pool
 
 
 def close_db_pool():
     global _pool
     if _pool is not None:
-        try:
-            _pool.closeall()
-        except Exception:
-            pass
-        _pool = None
+        with _pool_lock:
+            if _pool is not None:
+                try:
+                    _pool.closeall()
+                except Exception:
+                    pass
+                _pool = None
 
 
 # PostgreSQL DDL Schema
@@ -158,10 +164,14 @@ CREATE TABLE IF NOT EXISTS service_request_audit_log (
     to_status VARCHAR(50) NOT NULL,
     triggered_by VARCHAR(100) NOT NULL,
     notes TEXT DEFAULT NULL,
+    event_type VARCHAR(50) DEFAULT 'STATUS_CHANGE',
+    actor_name VARCHAR(100) DEFAULT NULL,
+    metadata JSONB DEFAULT '{}'::jsonb,
     created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_sr_audit_log_request_id ON service_request_audit_log(request_id);
+CREATE INDEX IF NOT EXISTS idx_sr_audit_log_event_type ON service_request_audit_log(request_id, event_type);
 
 CREATE TABLE IF NOT EXISTS crm_notes (
     id SERIAL PRIMARY KEY,
@@ -601,19 +611,25 @@ def init_db(db_url: str = None, force: bool = False):
 
 
 _init_lock = threading.Lock()
+_last_init_attempt = 0.0
 
 
 @contextmanager
 def get_db_connection():
     """Context manager yielding a psycopg2 connection with RealDictCursor support."""
-    global _db_initialized
+    global _db_initialized, _last_init_attempt
     db_url = get_db_url()
     conn = None
     try:
         if not _db_initialized:
             with _init_lock:
-                if not _db_initialized:
-                    init_db(db_url)
+                now = time.time()
+                if not _db_initialized and (now - _last_init_attempt > 15.0):
+                    _last_init_attempt = now
+                    try:
+                        init_db(db_url)
+                    except Exception as init_err:
+                        logger.error(f"Failed to initialize database schema: {init_err}")
 
         pool = _get_pool()
 
@@ -641,11 +657,13 @@ def get_db_connection():
                         except Exception:
                             pass
 
+        from_pool = True
         if conn is None:
             try:
                 conn = pool.getconn()
             except Exception:
                 conn = psycopg2.connect(get_db_url())
+                from_pool = False
 
         conn.cursor_factory = psycopg2.extras.DictCursor
         conn.autocommit = False
@@ -663,10 +681,16 @@ def get_db_connection():
         finally:
             if conn:
                 is_closed = (conn.closed != 0)
-                try:
-                    pool.putconn(conn, close=is_closed)
-                except Exception:
-                    pass
+                if from_pool:
+                    try:
+                        pool.putconn(conn, close=is_closed)
+                    except Exception:
+                        pass
+                else:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
     except Exception as err:
         logger.error(f"Database connection error: {err}", exc_info=err)
         raise

@@ -1,11 +1,10 @@
 <!--
 Sync Impact Report
-Version change: 1.0.0 -> 1.1.0
+Version change: 1.1.0 -> 1.2.0
 Modified principles:
-- IV. Strict Test-First Development -> IV. Strict Test-First Development and Contract Coverage (expanded with non-negotiable Red-Green-Refactor cycle, behavioral contract coverage, dual-suite isolation, and regression prevention)
+- IV. Strict Test-First Development and Contract Coverage (require test selection for every behavioral update, including browser-level coverage where user journeys cross the browser)
 Modified sections:
-- Operational Constraints -> Operational and Testing Constraints (codified dual-suite test architecture, disposable test databases, captured SDK boundaries, deterministic time manipulation, and offline mock isolation)
-- Development Workflow and Quality Gates (expanded with explicit TDD execution protocol, run_tests.sh verification requirements, acceptance contract mapping, and quality gate criteria)
+- Development Workflow and Quality Gates (require the complete Spec-Kit lifecycle and an iterative converge-to-implementation feedback loop)
 Added sections: none
 Removed sections: none
 Deferred fields and follow-up TODOs: none
@@ -52,6 +51,11 @@ and error rollbacks), rather than superficial line-coverage statistics. Every re
 retain permanent regression test coverage. Automated test suites MUST run entirely offline with
 external services mocked or captured, preventing unintended network side-effects and ensuring
 repeatable, deterministic execution.
+Every behavioral update MUST add or update tests for each affected acceptance contract; existing
+coverage alone is not sufficient when behavior changes. User-visible browser flows MUST have
+browser-based end-to-end coverage in `e2e/` in addition to focused lower-level tests. Browser
+tests MUST verify observable outcomes (including notification delivery or visible notification
+state when in scope), not merely that an action was submitted.
 
 ### V. Observable Calls and Human Recovery
 
@@ -98,6 +102,15 @@ All behavioral changes MUST follow the mandatory TDD execution protocol:
 4. **Refactor & Verification**: Refactor for clarity, efficiency, and resource cleanup. Validate
    locally using `./run_tests.sh` (e.g., `--file <path>`, `--service <name>`, or `--all`).
 
+Changes managed through Spec-Kit MUST follow the project-level iterative workflow in
+`docs/SPECKIT_WORKFLOW.md`: specify and clarify requirements, plan, generate tasks, analyze
+artifact consistency, implement test-first, then converge against the implemented behavior.
+Converge feedback MUST be routed to its source: implementation or test gaps become appended tasks
+for another test-first implementation pass; requirement changes return to specify/clarify; design
+changes return to plan. When an upstream artifact changes, its downstream artifacts MUST be
+reconciled and analyzed again before implementation resumes. Repeat implementation and convergence
+until converge reports no actionable findings.
+
 Before declaring any behavioral change complete:
 - Contributors MUST run focused test validation for the affected service and ensure the full
   relevant suite passes cleanly without regressions.
@@ -106,6 +119,10 @@ Before declaring any behavioral change complete:
   for contract verification.
 - Documentation-only changes MUST receive document and diff validation; application tests are not
   required when application logic remains unchanged.
+
+For every update, validation MUST cover the changed behavior at the lowest useful level and at each
+affected integration boundary. If a user journey is performed in a browser, the relevant browser
+end-to-end test MUST be included in validation; unit or API tests alone do not cover that journey.
 
 ## Governance
 
@@ -123,8 +140,8 @@ Constitution versions MUST follow semantic versioning:
 - MINOR increments apply to new principles, new sections, or substantive guidance additions.
 - PATCH increments apply to clarifications and other changes that do not alter obligations.
 
-Version 1.1.0 expands Principle IV, Operational and Testing Constraints, and Development Workflow
-to formalize mandatory Test-Driven Development (TDD), dual-suite test architecture (`tests/` and
-`e2e/`), behavioral contract coverage, and regression prevention.
+Version 1.2.0 expands Principle IV and Development Workflow to require changed-contract test
+coverage, browser-level end-to-end coverage for user-visible browser journeys, and the complete
+iterative Spec-Kit workflow, including routing converge feedback to the appropriate upstream stage.
 
-**Version**: 1.1.0 | **Ratified**: 2026-10-03 | **Last Amended**: 2026-10-07
+**Version**: 1.2.0 | **Ratified**: 2026-10-03 | **Last Amended**: 2026-10-07

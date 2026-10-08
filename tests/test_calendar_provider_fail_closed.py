@@ -5,6 +5,11 @@ from serviceBot.services.calendar_availability import CalendarAvailabilityServic
 
 
 def test_provider_failure_blocks_populated_slots_instead_of_marking_them_available():
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("DELETE FROM mock_calendar_slots WHERE staff_agent_id = 1;")
+            conn.commit()
+
     service = CalendarAvailabilityService(fetch_events=lambda *_args: None)
 
     result = service.populate_agent(1, days=7, hours=[10])

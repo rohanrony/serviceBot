@@ -2344,11 +2344,53 @@ def assign_staff_agent_to_service_request(request_id: int, staff_agent_id: int =
         )
         with get_db_connection() as conn:
             with dict_cursor(conn) as cursor:
+                # Log agent assignment/reassignment to audit log
+                old_agent_id = request.get("staff_agent_id")
+                old_agent_name = "Unassigned"
+                new_agent_name = "Unassigned"
+                if old_agent_id or staff_agent_id:
+                    cursor.execute(
+                        "SELECT id, name FROM staff_agents WHERE id IN (%s, %s);",
+                        (old_agent_id or -1, staff_agent_id or -1)
+                    )
+                    agent_rows = {a["id"]: a["name"] for a in cursor.fetchall()}
+                    if old_agent_id:
+                        old_agent_name = agent_rows.get(old_agent_id, f"Agent #{old_agent_id}")
+                    if staff_agent_id:
+                        new_agent_name = agent_rows.get(staff_agent_id, f"Agent #{staff_agent_id}")
+
+                is_reassign = (old_agent_id is not None and old_agent_id != staff_agent_id)
+                evt_type = "AGENT_REASSIGNED" if is_reassign else "AGENT_ASSIGNED"
+                audit_note = (
+                    f"Reassigned from {old_agent_name} to {new_agent_name} by portal staff"
+                    if is_reassign
+                    else f"Assigned to {new_agent_name} by portal staff"
+                )
+                cursor.execute(
+                    """
+                    INSERT INTO service_request_audit_log
+                    (request_id, from_status, to_status, triggered_by, actor_name, event_type, notes, metadata)
+                    VALUES (%s, %s, 'pending', 'portal_staff', 'Portal Staff', %s, %s, %s);
+                    """,
+                    (
+                        request_id,
+                        request.get("status") or "pending",
+                        evt_type,
+                        audit_note,
+                        json.dumps({
+                            "old_agent_id": old_agent_id,
+                            "old_agent_name": old_agent_name,
+                            "new_agent_id": staff_agent_id,
+                            "new_agent_name": new_agent_name,
+                        }),
+                    ),
+                )
                 cursor.execute(
                     "SELECT id, staff_agent_id, status, confirmation_status, updated_at FROM service_requests WHERE id = %s;",
                     (request_id,),
                 )
                 updated_row = cursor.fetchone()
+                conn.commit()
         return dict(updated_row) if updated_row else {
             "id": receipt.request_id,
             "staff_agent_id": receipt.staff_agent_id,
@@ -2375,6 +2417,49 @@ def assign_staff_agent_to_service_request(request_id: int, staff_agent_id: int =
             row = cursor.fetchone()
             if not row:
                 raise ValueError(f"Service request with ID {request_id} was not found.")
+
+            # Log agent assignment/reassignment to audit log
+            old_agent_id = request.get("staff_agent_id")
+            old_agent_name = "Unassigned"
+            new_agent_name = "Unassigned"
+            if old_agent_id or staff_agent_id:
+                cursor.execute(
+                    "SELECT id, name FROM staff_agents WHERE id IN (%s, %s);",
+                    (old_agent_id or -1, staff_agent_id or -1)
+                )
+                agent_rows = {a["id"]: a["name"] for a in cursor.fetchall()}
+                if old_agent_id:
+                    old_agent_name = agent_rows.get(old_agent_id, f"Agent #{old_agent_id}")
+                if staff_agent_id:
+                    new_agent_name = agent_rows.get(staff_agent_id, f"Agent #{staff_agent_id}")
+
+            is_reassign = (old_agent_id is not None and old_agent_id != staff_agent_id)
+            evt_type = "AGENT_REASSIGNED" if is_reassign else "AGENT_ASSIGNED"
+            audit_note = (
+                f"Reassigned from {old_agent_name} to {new_agent_name} by portal staff"
+                if is_reassign
+                else f"Assigned to {new_agent_name} by portal staff"
+            )
+            cursor.execute(
+                """
+                INSERT INTO service_request_audit_log
+                (request_id, from_status, to_status, triggered_by, actor_name, event_type, notes, metadata)
+                VALUES (%s, %s, 'pending', 'portal_staff', 'Portal Staff', %s, %s, %s);
+                """,
+                (
+                    request_id,
+                    request.get("status") or "pending",
+                    evt_type,
+                    audit_note,
+                    json.dumps({
+                        "old_agent_id": old_agent_id,
+                        "old_agent_name": old_agent_name,
+                        "new_agent_id": staff_agent_id,
+                        "new_agent_name": new_agent_name,
+                    }),
+                ),
+            )
+            conn.commit()
             return dict(row)
 
 
@@ -2873,10 +2958,11 @@ def get_appointment_details_by_id(appointment_id: int) -> dict:
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             cursor.execute("""
-                SELECT sr.id, sr.service_type, sr.issue_description, sr.status, sr.time_slot, sr.booking_time, sr.booking_type, sr.created_at,
-                       c.name AS customer_name, c.phone AS customer_phone,
-                       v.make AS vehicle_make, v.model AS vehicle_model, v.year AS vehicle_year,
-                       sa.name AS staff_agent_name, sa.role AS staff_agent_role
+                SELECT sr.id, sr.service_type, sr.issue_description, sr.status, sr.time_slot, sr.booking_time, sr.booking_type, sr.created_at, sr.updated_at,
+                       sr.staff_agent_id, sr.confirmation_status, sr.escalation_status, sr.escalation_reason, sr.confirmation_cutoff_at, sr.confirmed_at,
+                       c.id AS customer_id, c.name AS customer_name, c.phone AS customer_phone,
+                       v.id AS vehicle_id, v.make AS vehicle_make, v.model AS vehicle_model, v.year AS vehicle_year,
+                       sa.name AS staff_agent_name, sa.role AS staff_agent_role, sa.phone_number AS staff_agent_phone
                 FROM service_requests sr
                 LEFT JOIN customers c ON sr.customer_id = c.id
                 LEFT JOIN vehicles v ON sr.vehicle_id = v.id
@@ -2886,10 +2972,9 @@ def get_appointment_details_by_id(appointment_id: int) -> dict:
             row = cursor.fetchone()
             if row:
                 r = dict(row)
-                if r.get("created_at") and not isinstance(r["created_at"], str):
-                    r["created_at"] = r["created_at"].strftime("%Y-%m-%d %H:%M:%S")
-                if r.get("booking_time") and not isinstance(r["booking_time"], str):
-                    r["booking_time"] = r["booking_time"].strftime("%Y-%m-%d %H:%M:%S")
+                for ts_field in ("created_at", "updated_at", "booking_time", "confirmation_cutoff_at", "confirmed_at"):
+                    if r.get(ts_field) and not isinstance(r[ts_field], str):
+                        r[ts_field] = r[ts_field].strftime("%Y-%m-%d %H:%M:%S")
 
                 svc = r.get("service_type") or r.get("issue_description") or ""
                 svc_fields = get_service_required_fields(svc) if svc else None
@@ -2912,6 +2997,289 @@ def get_appointment_details_by_id(appointment_id: int) -> dict:
 
                 return r
             return None
+
+
+def get_appointment_full_trace(appointment_id: int) -> Optional[dict]:
+    """
+    Synthesizes a unified, chronological lifecycle audit trace for an appointment.
+    Aggregates service_request_audit_log, sms_log, inbound sms responses, and crm_notes.
+    """
+    app = get_appointment_details_by_id(appointment_id)
+    if not app:
+        return None
+
+    raw_sms = get_sms_logs_by_appointment(appointment_id)
+
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            # 1. Fetch all audit logs for this appointment
+            cursor.execute(
+                """
+                SELECT id, request_id, event_type, from_status, to_status,
+                       triggered_by, actor_name, notes, metadata, created_at
+                FROM service_request_audit_log
+                WHERE request_id = %s
+                ORDER BY created_at ASC, id ASC;
+                """,
+                (appointment_id,)
+            )
+            audit_rows = cursor.fetchall()
+
+    timeline = []
+
+    # Map SMS templates to readable titles & categories
+    sms_template_titles = {
+        "booking": "Customer Confirmation Dispatched",
+        "booking_confirmation": "Customer Confirmation Dispatched",
+        "agent_booking": "Technician Assignment Alert Dispatched",
+        "agent_reassigned": "Replacement Technician Alert Dispatched",
+        "unassignment": "Previous Technician Unassigned Notice",
+        "reschedule": "Reschedule Notice Dispatched",
+        "cancellation": "Cancellation Notice Dispatched",
+        "reminder_24h": "24h Pre-Appointment Reminder Dispatched",
+        "reminder_2h": "2h Pre-Appointment Reminder Dispatched",
+        "admin_booking": "Admin Notification Alert Dispatched",
+    }
+
+    # Transform SMS logs to timeline events
+    for s in raw_sms:
+        sid = s.get("id")
+        created_str = str(s.get("created_at") or "")[:19]
+        tmpl = s.get("template_type") or "sms_notification"
+        title = sms_template_titles.get(tmpl, f"SMS Dispatch ({tmpl})")
+        status = (s.get("status") or "PENDING").upper()
+        recip_type = (s.get("recipient_type") or "customer").capitalize()
+        phone = s.get("recipient_phone") or ""
+
+        badge_color = "success" if status in ("SENT", "DELIVERED") else ("danger" if status == "FAILED" else "warning")
+        desc = f"Sent to {recip_type} ({phone}). Status: {status}."
+        if s.get("error_message"):
+            desc += f" Error: {s['error_message']}"
+        elif s.get("error_code"):
+            desc += f" Error Code: {s['error_code']}"
+
+        timeline.append({
+            "id": f"sms-{sid}",
+            "raw_timestamp": s.get("created_at"),
+            "timestamp": created_str,
+            "category": "DISPATCH",
+            "event_type": f"SMS_{status}",
+            "title": title,
+            "actor": "Twilio SMS Gateway",
+            "actor_type": "system",
+            "badge_color": badge_color,
+            "description": desc,
+            "metadata": {
+                "recipient_type": s.get("recipient_type"),
+                "recipient_phone": phone,
+                "status": status,
+                "twilio_message_sid": s.get("twilio_message_sid"),
+                "template_type": tmpl,
+                "retry_count": s.get("retry_count", 0),
+            }
+        })
+
+    # Transform Audit rows to timeline events
+    for a in audit_rows:
+        aid = a["id"]
+        created_str = str(a.get("created_at") or "")[:19]
+        evt_type = a.get("event_type") or "STATUS_CHANGE"
+        trig = (a.get("triggered_by") or "").lower()
+        actor = a.get("actor_name") or ("Portal Staff" if "portal" in trig or "admin" in trig else ("Voice AI Agent" if "voice" in trig or "elevenlabs" in trig else ("Technician" if "agent" in trig else ("Customer" if "customer" in trig else "System"))))
+        actor_type = "agent" if "agent" in trig else ("customer" if "customer" in trig else ("admin" if "staff" in trig or "admin" in trig or "supervisor" in trig else "system"))
+
+        to_st = (a.get("to_status") or "").lower()
+        notes = a.get("notes") or ""
+
+        # Determine category & title
+        category = "STATUS"
+        title = "Status Changed"
+        badge_color = "info"
+
+        if evt_type == "BOOKING_CREATED" or "created" in notes.lower():
+            category = "CREATION"
+            title = "Appointment Created"
+            badge_color = "info"
+        elif evt_type in ("AGENT_ASSIGNED", "AGENT_REASSIGNED") or "assigned" in notes.lower():
+            category = "REASSIGNMENT" if "reassigned" in notes.lower() or evt_type == "AGENT_REASSIGNED" else "ASSIGNMENT"
+            title = "Technician Reassigned" if category == "REASSIGNMENT" else "Technician Assigned"
+            badge_color = "info"
+        elif evt_type == "AGENT_CONFIRMED" or to_st == "confirmed" or "confirmation status changed to confirmed" in notes.lower():
+            category = "CONFIRMATION"
+            title = "Technician Confirmed Assignment"
+            badge_color = "success"
+        elif evt_type == "AGENT_DECLINED" or to_st == "declined" or "declined" in notes.lower():
+            category = "DECLINE"
+            title = "Technician Declined Assignment"
+            badge_color = "danger"
+        elif evt_type == "ESCALATION_TRIGGERED" or to_st == "escalated" or "escalated" in notes.lower():
+            category = "ESCALATION"
+            title = "Supervisor Escalation Triggered"
+            badge_color = "danger"
+        elif "rescheduled" in notes.lower() or to_st == "rescheduled":
+            category = "RESCHEDULE"
+            title = "Appointment Rescheduled"
+            badge_color = "warning"
+        elif to_st in ("cancelled", "cancelled_by_customer", "cancelled_by_admin") or "cancelled" in notes.lower():
+            category = "STATUS"
+            title = "Appointment Cancelled"
+            badge_color = "danger"
+        elif to_st in ("completed", "done"):
+            category = "STATUS"
+            title = "Service Completed"
+            badge_color = "success"
+
+        meta = a.get("metadata") or {}
+        if isinstance(meta, str):
+            try:
+                meta = json.loads(meta)
+            except Exception:
+                meta = {}
+
+        timeline.append({
+            "id": f"audit-{aid}",
+            "raw_timestamp": a.get("created_at"),
+            "timestamp": created_str,
+            "category": category,
+            "event_type": evt_type,
+            "title": title,
+            "actor": actor,
+            "actor_type": actor_type,
+            "badge_color": badge_color,
+            "description": notes or f"Transitioned from {a.get('from_status')} to {a.get('to_status')}",
+            "metadata": meta,
+        })
+
+    # Ensure baseline lifecycle events are present if not already recorded in audit logs
+    has_creation = any(ev.get("category") == "CREATION" or ev.get("event_type") == "BOOKING_CREATED" for ev in timeline)
+    if not has_creation and app.get("created_at"):
+        booking_type = (app.get("booking_type") or "appointment").lower()
+        intake_actor = "AI Voice Intake" if "voice" in booking_type or "call" in booking_type else ("Admin Web Portal" if "portal" in booking_type or "manual" in booking_type else "Customer System Intake")
+        timeline.append({
+            "id": f"synth-create-{appointment_id}",
+            "raw_timestamp": app["created_at"],
+            "timestamp": str(app["created_at"])[:19],
+            "category": "CREATION",
+            "event_type": "BOOKING_CREATED",
+            "title": f"Appointment Created ({booking_type.capitalize()})",
+            "actor": intake_actor,
+            "actor_type": "system",
+            "badge_color": "info",
+            "description": f"Appointment booked for {app.get('service_type') or 'General Service'}. Customer: {app.get('customer_name') or 'Customer'} ({app.get('customer_phone') or 'N/A'}).",
+            "metadata": {
+                "service_type": app.get("service_type"),
+                "booking_type": app.get("booking_type"),
+                "booking_time": str(app.get("booking_time") or ""),
+                "issue_description": app.get("issue_description"),
+            }
+        })
+
+    has_assignment = any(ev.get("category") in ("ASSIGNMENT", "REASSIGNMENT") or ev.get("event_type") in ("AGENT_ASSIGNED", "AGENT_REASSIGNED") for ev in timeline)
+    if app.get("staff_agent_id") and not has_assignment and app.get("created_at"):
+        assigned_name = app.get("staff_agent_name") or f"Agent #{app['staff_agent_id']}"
+        timeline.append({
+            "id": f"synth-assign-{appointment_id}",
+            "raw_timestamp": app["created_at"],
+            "timestamp": str(app["created_at"])[:19],
+            "category": "ASSIGNMENT",
+            "event_type": "AGENT_ASSIGNED",
+            "title": "Technician Assigned",
+            "actor": "Dispatch System",
+            "actor_type": "system",
+            "badge_color": "info",
+            "description": f"Assigned to technician {assigned_name}.",
+            "metadata": {
+                "staff_agent_id": app["staff_agent_id"],
+                "staff_agent_name": app.get("staff_agent_name"),
+                "staff_agent_phone": app.get("staff_agent_phone"),
+            }
+        })
+
+    has_confirmation = any(ev.get("category") == "CONFIRMATION" or ev.get("event_type") == "AGENT_CONFIRMED" for ev in timeline)
+    if app.get("staff_agent_id") and app.get("confirmation_status") == "confirmed" and not has_confirmation:
+        conf_time = app.get("confirmed_at") or app.get("updated_at") or app.get("created_at")
+        tech_name = app.get("staff_agent_name") or "Technician"
+        timeline.append({
+            "id": f"synth-confirm-{appointment_id}",
+            "raw_timestamp": conf_time,
+            "timestamp": str(conf_time)[:19],
+            "category": "CONFIRMATION",
+            "event_type": "AGENT_CONFIRMED",
+            "title": "Technician Confirmed Assignment",
+            "actor": tech_name,
+            "actor_type": "agent",
+            "badge_color": "success",
+            "description": f"{tech_name} confirmed appointment assignment.",
+            "metadata": {
+                "confirmation_status": "confirmed",
+                "staff_agent_id": app.get("staff_agent_id"),
+            }
+        })
+
+    has_escalation = any(ev.get("category") == "ESCALATION" or ev.get("event_type") == "ESCALATION_TRIGGERED" for ev in timeline)
+    if app.get("escalation_status") == "escalated" and not has_escalation:
+        timeline.append({
+            "id": f"synth-esc-{appointment_id}",
+            "raw_timestamp": app.get("updated_at") or app.get("created_at"),
+            "timestamp": str(app.get("updated_at") or app.get("created_at"))[:19],
+            "category": "ESCALATION",
+            "event_type": "ESCALATION_TRIGGERED",
+            "title": "Supervisor Escalation Triggered",
+            "actor": "SLA Monitor",
+            "actor_type": "system",
+            "badge_color": "danger",
+            "description": f"Escalated due to: {app.get('escalation_reason') or 'TIMEOUT_NO_RESPONSE'}",
+            "metadata": {"escalation_reason": app.get("escalation_reason")},
+        })
+
+    curr_st = (app.get("status") or "").lower()
+    has_terminal_st = any(ev.get("event_type") in (f"STATUS_{curr_st.upper()}", "STATUS_CHANGED") or (ev.get("category") == "STATUS" and curr_st in ev.get("description", "").lower()) for ev in timeline)
+    if curr_st in ("completed", "cancelled") and not has_terminal_st:
+        st_time = app.get("updated_at") or app.get("created_at")
+        is_done = curr_st == "completed"
+        timeline.append({
+            "id": f"synth-status-{appointment_id}",
+            "raw_timestamp": st_time,
+            "timestamp": str(st_time)[:19],
+            "category": "STATUS",
+            "event_type": f"STATUS_{curr_st.upper()}",
+            "title": "Service Completed" if is_done else "Appointment Cancelled",
+            "actor": "Portal Staff / System",
+            "actor_type": "system",
+            "badge_color": "success" if is_done else "danger",
+            "description": f"Appointment marked as {curr_st}.",
+            "metadata": {"status": curr_st}
+        })
+
+    # Sort combined timeline chronologically
+    def _sort_key(ev):
+        raw = ev.get("raw_timestamp")
+        if raw is not None:
+            if hasattr(raw, "isoformat"):
+                return raw.isoformat().replace(" ", "T")
+            return str(raw).replace(" ", "T")
+        ts = ev.get("timestamp") or ""
+        return str(ts).replace(" ", "T")
+
+    timeline.sort(key=_sort_key)
+
+    # Clean out internal raw_timestamp before returning
+    for ev in timeline:
+        ev.pop("raw_timestamp", None)
+
+    return {
+        "success": True,
+        "appointment": app,
+        "summary_metrics": {
+            "total_events": len(timeline),
+            "total_dispatches": len(raw_sms),
+            "escalated": (app.get("escalation_status") == "escalated"),
+            "confirmation_status": app.get("confirmation_status"),
+            "assigned_agent_name": app.get("staff_agent_name") or "Unassigned",
+        },
+        "trace": timeline,
+        "raw_sms_logs": raw_sms,
+    }
 
 
 def get_sms_log_by_id(log_id: int) -> dict:
@@ -3557,16 +3925,23 @@ def update_appointment_confirmation_status(
             )
             updated = dict(cursor.fetchone())
 
+            evt_type = "AGENT_CONFIRMED" if confirmation_status == "confirmed" else ("AGENT_DECLINED" if confirmation_status == "declined" else "CONFIRMATION_STATUS_CHANGED")
             cursor.execute(
                 """
-                INSERT INTO service_request_audit_log (request_id, from_status, to_status, triggered_by, notes)
-                VALUES (%s, %s, %s, 'agent', %s);
+                INSERT INTO service_request_audit_log (request_id, from_status, to_status, triggered_by, actor_name, event_type, notes, metadata)
+                VALUES (%s, %s, %s, 'agent', 'Technician', %s, %s, %s);
                 """,
                 (
                     request_id,
                     current.get("confirmation_status") or "pending_agent_confirmation",
                     confirmation_status,
-                    f"Agent confirmation status changed to {confirmation_status} (escalation: {escalation_status})"
+                    evt_type,
+                    f"Technician confirmation status changed to {confirmation_status} (escalation: {escalation_status})",
+                    json.dumps({
+                        "confirmation_status": confirmation_status,
+                        "escalation_status": escalation_status,
+                        "confirmed_at": str(confirmed_at) if confirmed_at else None
+                    })
                 )
             )
             conn.commit()
@@ -3621,16 +3996,19 @@ def escalate_service_request(
             )
             updated = dict(cursor.fetchone())
 
+            actor = "Technician" if triggered_by == "agent_sms" else ("SLA Monitor" if triggered_by in ("system", "system_poller") else triggered_by)
             cursor.execute(
                 """
-                INSERT INTO service_request_audit_log (request_id, from_status, to_status, triggered_by, notes)
-                VALUES (%s, %s, 'escalated', %s, %s);
+                INSERT INTO service_request_audit_log (request_id, from_status, to_status, triggered_by, actor_name, event_type, notes, metadata)
+                VALUES (%s, %s, 'escalated', %s, %s, 'ESCALATION_TRIGGERED', %s, %s);
                 """,
                 (
                     request_id,
                     current.get("escalation_status") or "none",
                     triggered_by,
-                    f"Escalated due to: {reason}"
+                    actor,
+                    f"Escalated due to: {reason}",
+                    json.dumps({"escalation_reason": reason, "triggered_by": triggered_by})
                 )
             )
             conn.commit()
