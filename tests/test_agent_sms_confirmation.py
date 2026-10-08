@@ -16,6 +16,11 @@ def setup_agent_and_appointment():
     """Ensure a staff agent and service request exist for tests."""
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
+            # Clean up any leftover service requests or extra agents from previous test runs
+            cursor.execute("DELETE FROM service_requests WHERE staff_agent_id IN (SELECT id FROM staff_agents WHERE phone_number = '+19195551234');")
+            cursor.execute("DELETE FROM staff_agents WHERE phone_number = '+19195551234' AND email != 'alex.rivera@example.com';")
+            conn.commit()
+
             # 1. Ensure staff agent with known phone exists
             cursor.execute("SELECT id FROM staff_agents WHERE phone_number = '+19195551234';")
             agent = cursor.fetchone()
@@ -63,6 +68,12 @@ def setup_agent_and_appointment():
         "customer_phone": "+19195557788",
         "vehicle_id": vehicle_id,
     }
+
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("DELETE FROM service_requests WHERE staff_agent_id IN (SELECT id FROM staff_agents WHERE phone_number = '+19195551234');")
+            cursor.execute("DELETE FROM staff_agents WHERE phone_number = '+19195551234' AND email != 'alex.rivera@example.com';")
+            conn.commit()
 
 
 def test_agent_lookup_by_phone(setup_agent_and_appointment):

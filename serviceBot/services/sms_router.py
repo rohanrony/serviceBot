@@ -35,6 +35,22 @@ def format_time_slot_range(raw_time_str: str, duration_minutes: int = 60) -> str
     return f"{date_part} ({start_time_part} - {end_time_part})"
 
 
+def format_vehicle_line(veh: str) -> str:
+    """Formats vehicle line, returning empty string if missing, none, or N/A."""
+    if not veh or str(veh).strip().upper() in ("NONE", "NULL", "N/A", ""):
+        return ""
+    clean = str(veh).strip()
+    return f"\nVehicle: {clean}"
+
+
+def format_issue_line(iss: str) -> str:
+    """Formats issue line, returning empty string if missing, none, or N/A."""
+    if not iss or str(iss).strip().upper() in ("NONE", "NULL", "N/A", ""):
+        return ""
+    clean = str(iss).strip()
+    return f"\nIssue: {clean}"
+
+
 class SMSNotificationRouter:
     """
     Core Event Notification Router.
@@ -79,45 +95,84 @@ class SMSNotificationRouter:
         recipient_role: str,
         rules_list: list,
         channel_overrides: dict = None,
+        recipient_phone: str = None,
     ) -> list[str]:
-        """Return the configured delivery channels, with one safe default channel."""
+        """Return the configured delivery channels, with at most one channel per recipient to prevent duplicate blasts."""
         override = (channel_overrides or {}).get(recipient_role)
         if isinstance(override, bool):
             return ["SMS"] if override else []
         if isinstance(override, dict):
-            return [
+            allowed = [
                 channel
                 for channel in ("SMS", "WHATSAPP")
                 if bool(override.get(channel.lower(), override.get(channel, False)))
             ]
+            if not allowed:
+                return []
+            if len(allowed) == 1:
+                return allowed
+            if recipient_role in ("agent", "previous_agent") and recipient_phone:
+                try:
+                    from serviceBot.db.queries import is_agent_whatsapp_connected
+                    if not is_agent_whatsapp_connected(recipient_phone):
+                        return ["SMS"]
+                except Exception:
+                    pass
+            return ["WHATSAPP"]
 
-        configured = {
+        configured = [
             (rule.get("channel") or "WHATSAPP").upper()
             for rule in rules_list
             if rule.get("event_type") == event_type
             and rule.get("recipient_role") == recipient_role
             and bool(rule.get("enabled"))
-        }
-        selected = [channel for channel in ("SMS", "WHATSAPP") if channel in configured]
-        if selected:
-            return selected
+        ]
+        if configured:
+            if "WHATSAPP" in configured and "SMS" not in configured:
+                return ["WHATSAPP"]
+            if "SMS" in configured and "WHATSAPP" not in configured:
+                return ["SMS"]
+            # Both channels enabled in rules: pick single preferred channel to prevent double messages
+            if recipient_role in ("agent", "previous_agent") and recipient_phone:
+                try:
+                    from serviceBot.db.queries import is_agent_whatsapp_connected
+                    if not is_agent_whatsapp_connected(recipient_phone):
+                        return ["SMS"]
+                except Exception:
+                    pass
+            return ["WHATSAPP"]
+
         if any(
             rule.get("event_type") == event_type and rule.get("recipient_role") == recipient_role
             for rule in rules_list
         ):
             return []
+
         fallback_channels = []
         if self._is_rule_enabled(event_type, recipient_role, rules_list, channel="WHATSAPP"):
             fallback_channels.append("WHATSAPP")
         if self._is_rule_enabled(event_type, recipient_role, rules_list, channel="SMS"):
             fallback_channels.append("SMS")
+
         if not fallback_channels:
             if recipient_role == "admin":
                 if event_type == "ESCALATION":
                     return ["SMS"]
                 return []
             return []
-        return fallback_channels
+
+        if len(fallback_channels) == 1:
+            return fallback_channels
+
+        # Both channels in fallback: pick single preferred channel
+        if recipient_role in ("agent", "previous_agent") and recipient_phone:
+            try:
+                from serviceBot.db.queries import is_agent_whatsapp_connected
+                if not is_agent_whatsapp_connected(recipient_phone):
+                    return ["SMS"]
+            except Exception:
+                pass
+        return ["WHATSAPP"]
 
     def _dispatch_to(
         self,
@@ -152,26 +207,26 @@ class SMSNotificationRouter:
             except Exception as e:
                 logger.warning(f"Failed to query existing sms_log: {e}")
 
+        # If a successful dispatch already exists for this appointment, recipient, and template,
+        # suppress duplicate sending regardless of channel.
+        if existing_deliveries:
+            first_existing = next(iter(existing_deliveries.values()))
+            logger.info(
+                f"Skipping duplicate dispatch for {recipient_type} "
+                f"(appointment_id={appointment_id}, template_type={template_type}, status={first_existing.get('status')})"
+            )
+            return [{
+                "recipient": recipient_type,
+                "channel": first_existing.get("channel") or "SMS",
+                "success": True,
+                "status": first_existing.get("status") or "DELIVERED",
+                "sid": first_existing.get("twilio_message_sid"),
+                "log_id": first_existing.get("id"),
+                "duplicate_suppressed": True,
+            }]
+
         dispatches = []
         for channel in channels:
-            ch_upper = (channel or "SMS").upper()
-            if ch_upper in existing_deliveries:
-                existing_row = existing_deliveries[ch_upper]
-                logger.info(
-                    f"Skipping duplicate dispatch for {recipient_type} on {channel} "
-                    f"(appointment_id={appointment_id}, template_type={template_type}, status={existing_row.get('status')})"
-                )
-                dispatches.append({
-                    "recipient": recipient_type,
-                    "channel": channel,
-                    "success": True,
-                    "status": existing_row.get("status") or "DELIVERED",
-                    "sid": existing_row.get("twilio_message_sid"),
-                    "log_id": existing_row.get("id"),
-                    "duplicate_suppressed": True,
-                })
-                continue
-
             if channel == "WHATSAPP":
                 result = self.twilio_client.send_whatsapp(
                     to=recipient_phone,
@@ -190,6 +245,9 @@ class SMSNotificationRouter:
                     channel="SMS",
                 )
             dispatches.append({"recipient": recipient_type, "channel": channel, **result})
+            if result.get("success"):
+                # Successfully delivered on primary channel; stop to prevent duplicate channel blast
+                break
         return dispatches
 
     def _fetch_details_if_missing(self, appointment_id: int, details: dict = None) -> dict:
@@ -216,7 +274,7 @@ class SMSNotificationRouter:
                     if not sr:
                         return {}
                     v_parts = [sr.get("vehicle_year"), sr.get("vehicle_make"), sr.get("vehicle_model")]
-                    v_str = " ".join([str(p) for p in v_parts if p]).strip() or "N/A"
+                    v_str = " ".join([str(p).strip() for p in v_parts if p and str(p).strip().upper() not in ("NONE", "NULL", "N/A")]).strip() or "N/A"
                     b_time = sr.get("booking_time") or sr.get("time_slot") or "N/A"
                     return {
                         "customer_name": sr.get("customer_name") or "Customer",
@@ -257,7 +315,7 @@ class SMSNotificationRouter:
         customer_phone = customer_phone or info.get("phone") or (details.get("phone") if details else None) or ""
         cust_ph = customer_phone
         agent_phone = agent_phone or info.get("agent_phone") or (details.get("agent_phone") if details else None) or ""
-        veh = info.get("vehicle") or "N/A"
+        veh = info.get("vehicle") or (details.get("vehicle") if details else None) or "N/A"
         srv = info.get("service_type") or "Service"
         raw_t_str = booking_time or info.get("time") or "N/A"
         
@@ -271,9 +329,12 @@ class SMSNotificationRouter:
         dur_min = dur_min or 60
 
         slot_range_str = format_time_slot_range(raw_t_str, duration_minutes=dur_min)
-        iss = info.get("issue") or "N/A"
+        iss = info.get("issue") or (details.get("issue") if details else None) or "N/A"
         new_ag = info.get("new_agent_name") or info.get("agent_name") or "Assigned Advisor"
         old_ag = info.get("previous_agent_name") or info.get("old_agent_name") or "Previous Advisor"
+
+        veh_line = format_vehicle_line(veh)
+        iss_line = format_issue_line(iss)
 
         if not bypass_quiet_hours and details:
             bypass_quiet_hours = bool(
@@ -298,7 +359,7 @@ class SMSNotificationRouter:
             update_or_cancel_appointment_reminders(appointment_id)
 
         # 1. Customer Dispatch
-        customer_channels = self._enabled_channels(event_type, "customer", rules, channel_overrides)
+        customer_channels = self._enabled_channels(event_type, "customer", rules, channel_overrides, recipient_phone=customer_phone)
         if customer_phone and customer_channels:
             shop_addr, shop_map = get_shop_address_and_map_url()
             loc_lines = []
@@ -311,8 +372,9 @@ class SMSNotificationRouter:
             if event_type in ("CANCELLED_BY_ADMIN", "CANCELLED_BY_CUSTOMER"):
                 customer_body = (
                     f"❌ [APPOINTMENT CANCELLED]\n"
-                    f"Service: {srv}\n"
-                    f"Vehicle: {veh}\n"
+                    f"Service: {srv}"
+                    f"{veh_line}"
+                    f"{iss_line}\n"
                     f"Your appointment has been cancelled. Please contact us if you need to reschedule."
                 )
             elif event_type in ("RESCHEDULED", "RESCHEDULED_REASSIGNED"):
@@ -320,8 +382,9 @@ class SMSNotificationRouter:
                     f"🗓️ [APPOINTMENT RESCHEDULED]\n"
                     f"Service: {srv}\n"
                     f"New Slot: {slot_range_str}\n"
-                    f"Assigned Advisor: {new_ag}\n"
-                    f"Vehicle: {veh}"
+                    f"Assigned Advisor: {new_ag}"
+                    f"{veh_line}"
+                    f"{iss_line}"
                     f"{loc_suffix}"
                 )
             elif event_type == "CONSOLIDATED":
@@ -329,24 +392,26 @@ class SMSNotificationRouter:
                     f"🚗 [APPOINTMENT CONSOLIDATED]\n"
                     f"Service: {srv}\n"
                     f"Slot: {slot_range_str}\n"
-                    f"Assigned Advisor: {new_ag}\n"
-                    f"Vehicle: {veh}\n"
+                    f"Assigned Advisor: {new_ag}"
+                    f"{veh_line}\n"
                     f"Combined Issues: {iss}"
                     f"{loc_suffix}"
                 )
             elif event_type == "STATUS_IN_PROGRESS":
                 customer_body = (
                     f"🔧 [SERVICE IN PROGRESS]\n"
-                    f"Service: {srv}\n"
-                    f"Vehicle: {veh}\n"
+                    f"Service: {srv}"
+                    f"{veh_line}"
+                    f"{iss_line}\n"
                     f"Your vehicle is now being serviced. We will notify you as soon as work is finished."
                     f"{loc_suffix}"
                 )
             elif event_type == "STATUS_COMPLETED":
                 customer_body = (
                     f"🎉 [VEHICLE READY FOR PICKUP]\n"
-                    f"Service: {srv}\n"
-                    f"Vehicle: {veh}\n"
+                    f"Service: {srv}"
+                    f"{veh_line}"
+                    f"{iss_line}\n"
                     f"Great news! Your service is complete and your vehicle is ready for pickup."
                     f"{loc_suffix}"
                 )
@@ -355,8 +420,9 @@ class SMSNotificationRouter:
                     f"🚗 [APPOINTMENT CONFIRMED]\n"
                     f"Service: {srv}\n"
                     f"Slot: {slot_range_str}\n"
-                    f"Assigned Advisor: {new_ag}\n"
-                    f"Vehicle: {veh}"
+                    f"Assigned Advisor: {new_ag}"
+                    f"{veh_line}"
+                    f"{iss_line}"
                     f"{loc_suffix}"
                 )
             if not get_customer_opt_in(customer_phone):
@@ -415,14 +481,15 @@ class SMSNotificationRouter:
 
 
         # 2. Agent Dispatch (Current / New Agent)
-        agent_channels = self._enabled_channels(event_type, "agent", rules, channel_overrides)
+        agent_channels = self._enabled_channels(event_type, "agent", rules, channel_overrides, recipient_phone=agent_phone)
         if agent_phone and agent_channels:
             if event_type in ("CANCELLED_BY_ADMIN", "CANCELLED_BY_CUSTOMER"):
                 agent_body = (
                     f"❌ [APPOINTMENT CANCELLED] Appt #{appointment_id}\n"
                     f"Customer: {cust_name} ({cust_ph})\n"
-                    f"Service: {srv}\n"
-                    f"Vehicle: {veh}\n"
+                    f"Service: {srv}"
+                    f"{veh_line}"
+                    f"{iss_line}\n"
                     f"Slot: {slot_range_str}\n"
                     f"Notice: This appointment has been cancelled and removed from your schedule."
                 )
@@ -430,11 +497,11 @@ class SMSNotificationRouter:
                 agent_body = (
                     f"🚨 [NEW ADVISOR ALERT] Appt #{appointment_id}\n"
                     f"Status: {event_type}\n"
-                    f"Customer: {cust_name} ({cust_ph})\n"
-                    f"Vehicle: {veh}\n"
+                    f"Customer: {cust_name} ({cust_ph})"
+                    f"{veh_line}\n"
                     f"Service: {srv}\n"
-                    f"Slot: {slot_range_str}\n"
-                    f"Issue: {iss}\n"
+                    f"Slot: {slot_range_str}"
+                    f"{iss_line}\n"
                     f"Reassigned from: {old_ag}\n"
                     f"Reply CONFIRM or C to accept, or DECLINE if unavailable."
                 )
@@ -447,11 +514,11 @@ class SMSNotificationRouter:
                 agent_body = (
                     f"🚨 [NEW ADVISOR ALERT] Appt #{appointment_id}\n"
                     f"Status: {event_type}\n"
-                    f"Customer: {cust_name} ({cust_ph})\n"
-                    f"Vehicle: {veh}\n"
+                    f"Customer: {cust_name} ({cust_ph})"
+                    f"{veh_line}\n"
                     f"Service: {srv}\n"
-                    f"Slot: {slot_range_str}\n"
-                    f"Issue: {iss}"
+                    f"Slot: {slot_range_str}"
+                    f"{iss_line}"
                     f"{confirm_prompt}"
                 )
 
@@ -469,12 +536,14 @@ class SMSNotificationRouter:
             )
 
         # 3. Previous Agent Dispatch (on Reassignment)
-        previous_agent_channels = self._enabled_channels(event_type, "previous_agent", rules, channel_overrides)
+        previous_agent_channels = self._enabled_channels(event_type, "previous_agent", rules, channel_overrides, recipient_phone=previous_agent_phone)
         if previous_agent_phone and previous_agent_channels:
             previous_agent_body = (
                 f"ℹ️ [PREVIOUS ADVISOR NOTICE]\n"
                 f"Service Request #{appointment_id} ({srv} for {cust_name}) "
-                f"has been reassigned to {new_ag}.\n"
+                f"has been reassigned to {new_ag}."
+                f"{veh_line}"
+                f"{iss_line}\n"
                 f"Slot: {slot_range_str}"
             )
             dispatches.extend(self._dispatch_to(
@@ -487,28 +556,27 @@ class SMSNotificationRouter:
             ))
 
         # 4. Admin Dispatch
-        admin_channels = self._enabled_channels(event_type, "admin", rules, channel_overrides)
-        if admin_channels:
-            target_admin_phone = admin_phone
-            if not target_admin_phone:
-                from serviceBot.db.queries import get_sms_config
-                cfg = get_sms_config()
-                target_admin_phone = cfg.get("admin_phone_number") or cfg.get("support_phone_number") or os.getenv("NOTIFICATION_PHONE_NUMBER") or os.getenv("ADMIN_PHONE_NUMBER")
-            if target_admin_phone:
-                body = (
-                    f"📋 [ADMIN ALERT] Appt #{appointment_id} {event_type}\n"
-                    f"New Advisor: {new_ag} | Prev: {old_ag}\n"
-                    f"Customer: {cust_name} ({cust_ph})\n"
-                    f"Vehicle: {veh} | Service: {srv}\n"
-                    f"Slot: {slot_range_str}"
-                )
-                dispatches.extend(self._dispatch_to(
-                    recipient_type="admin",
-                    recipient_phone=target_admin_phone,
-                    channels=admin_channels,
-                    body=body,
-                    template_type=f"admin_{event_type.lower()}",
-                    appointment_id=appointment_id,
-                ))
+        target_admin_phone = admin_phone
+        if not target_admin_phone:
+            from serviceBot.db.queries import get_sms_config
+            cfg = get_sms_config()
+            target_admin_phone = cfg.get("admin_phone_number") or cfg.get("support_phone_number") or os.getenv("NOTIFICATION_PHONE_NUMBER") or os.getenv("ADMIN_PHONE_NUMBER")
+        admin_channels = self._enabled_channels(event_type, "admin", rules, channel_overrides, recipient_phone=target_admin_phone)
+        if admin_channels and target_admin_phone:
+            body = (
+                f"📋 [ADMIN ALERT] Appt #{appointment_id} {event_type}\n"
+                f"New Advisor: {new_ag} | Prev: {old_ag}\n"
+                f"Customer: {cust_name} ({cust_ph})\n"
+                f"Vehicle: {veh} | Service: {srv}\n"
+                f"Slot: {slot_range_str}"
+            )
+            dispatches.extend(self._dispatch_to(
+                recipient_type="admin",
+                recipient_phone=target_admin_phone,
+                channels=admin_channels,
+                body=body,
+                template_type=f"admin_{event_type.lower()}",
+                appointment_id=appointment_id,
+            ))
 
         return {"event_type": event_type, "appointment_id": appointment_id, "dispatches": dispatches}

@@ -90,15 +90,17 @@ def fetch_appointment_customer_details(appointment_id: int) -> dict:
                 if not row:
                     return {}
                 v_parts = [row.get("vehicle_year"), row.get("vehicle_make"), row.get("vehicle_model")]
-                v_str = " ".join([str(p) for p in v_parts if p]).strip()
+                v_str = " ".join([str(p).strip() for p in v_parts if p and str(p).strip().upper() not in ("NONE", "NULL", "N/A")]).strip()
                 b_time = row.get("booking_time") or row.get("time_slot") or ""
                 return {
                     "customer_name": row.get("customer_name") or "there",
+                    "customer_phone": row.get("customer_phone") or "",
                     "service_type": row.get("service_type") or "Service",
                     "booking_time": str(b_time)[:19] if b_time else "",
                     "duration_minutes": row.get("duration_minutes") or 60,
                     "vehicle": v_str or "Vehicle on file",
                     "agent_name": row.get("agent_name"),
+                    "issue": row.get("issue_description") or "",
                 }
     except Exception as e:
         logger.warning(f"Failed to fetch appointment details for appointment #{appointment_id}: {e}")
@@ -472,28 +474,32 @@ def run_reminder_polling_worker_cycle() -> int:
             continue
 
         # Dynamic body generation
+        apt_details = fetch_appointment_customer_details(rem["appointment_id"])
+        cust_name = apt_details.get("customer_name") or "there"
+        srv = apt_details.get("service_type") or "Service"
+        veh = apt_details.get("vehicle") or ""
+        iss = apt_details.get("issue") or ""
+        raw_time = apt_details.get("booking_time") or ""
+        dur = apt_details.get("duration_minutes") or 60
+        slot_str = format_time_slot_range(raw_time, dur) if raw_time else ""
+        ag_name = apt_details.get("agent_name") or ""
+        shop_addr, shop_map = get_shop_address_and_map_url(cfg)
+
+        loc_lines = []
+        if shop_addr:
+            loc_lines.append(f"📍 Location: {shop_addr}")
+        if shop_map:
+            loc_lines.append(f"🗺️ Map: {shop_map}")
+        loc_block = ("\n" + "\n".join(loc_lines)) if loc_lines else ""
+
+        veh_clean = veh if veh and str(veh).lower() not in ("n/a", "none") else ""
+        veh_line = f"\n🚘 Vehicle: {veh_clean}" if veh_clean else ""
+        iss_clean = iss if iss and str(iss).lower() not in ("n/a", "none") else ""
+        iss_line = f"\n🔧 Issue: {iss_clean}" if iss_clean else ""
+        slot_line = f"\n📅 When: {slot_str}" if slot_str and slot_str != "N/A" else ""
+        ag_line = f"\n👤 Advisor: {ag_name}" if ag_name else ""
+
         if rec_type == "customer":
-            apt_details = fetch_appointment_customer_details(rem["appointment_id"])
-            cust_name = apt_details.get("customer_name") or "there"
-            srv = apt_details.get("service_type") or "Service"
-            veh = apt_details.get("vehicle") or ""
-            raw_time = apt_details.get("booking_time") or ""
-            dur = apt_details.get("duration_minutes") or 60
-            slot_str = format_time_slot_range(raw_time, dur) if raw_time else ""
-            ag_name = apt_details.get("agent_name") or ""
-            shop_addr, shop_map = get_shop_address_and_map_url(cfg)
-
-            loc_lines = []
-            if shop_addr:
-                loc_lines.append(f"📍 Location: {shop_addr}")
-            if shop_map:
-                loc_lines.append(f"🗺️ Map: {shop_map}")
-            loc_block = ("\n" + "\n".join(loc_lines)) if loc_lines else ""
-
-            veh_line = f"\n🚘 Vehicle: {veh}" if veh and veh.lower() not in ("n/a", "none") else ""
-            slot_line = f"\n📅 When: {slot_str}" if slot_str and slot_str != "N/A" else ""
-            ag_line = f"\n👤 Advisor: {ag_name}" if ag_name else ""
-
             if att_kind == "immediate_booking":
                 body = (
                     f"🚗 [APPOINTMENT CONFIRMED]\n"
@@ -501,6 +507,7 @@ def run_reminder_polling_worker_cycle() -> int:
                     f"🔧 Service: {srv}"
                     f"{slot_line}"
                     f"{veh_line}"
+                    f"{iss_line}"
                     f"{ag_line}"
                     f"{loc_block}\n\n"
                     f"Reply STOP to opt out."
@@ -512,6 +519,7 @@ def run_reminder_polling_worker_cycle() -> int:
                     f"🔧 Service: {srv}"
                     f"{slot_line}"
                     f"{veh_line}"
+                    f"{iss_line}"
                     f"{ag_line}"
                     f"{loc_block}\n\n"
                     f"Please let us know if you need to reschedule."
@@ -524,21 +532,74 @@ def run_reminder_polling_worker_cycle() -> int:
                     f"🔧 Service: {srv}"
                     f"{slot_line}"
                     f"{veh_line}"
+                    f"{iss_line}"
                     f"{ag_line}"
                     f"{loc_block}\n\n"
                     f"We look forward to seeing you!"
                 )
         elif rec_type == "agent":
+            cust_ph = apt_details.get("customer_phone") or ""
+            cust_line = f"Customer: {cust_name}" + (f" ({cust_ph})" if cust_ph else "")
+            v_line = f"\nVehicle: {veh_clean}" if veh_clean else ""
+            i_line = f"\nIssue: {iss_clean}" if iss_clean else ""
+            s_line = f"\nSlot: {slot_str}" if slot_str and slot_str != "N/A" else ""
+
             if att_kind == "immediate_booking":
-                body = f"New Assignment: Service request #{rem['appointment_id']}. Please reply CONFIRM or C to accept, or DECLINE if unavailable."
+                body = (
+                    f"🚨 [NEW ADVISOR ALERT] Service request #{rem['appointment_id']} (Appt #{rem['appointment_id']})\n"
+                    f"{cust_line}"
+                    f"{v_line}\n"
+                    f"Service: {srv}"
+                    f"{s_line}"
+                    f"{i_line}\n"
+                    f"Reply CONFIRM or C to accept, or DECLINE if unavailable."
+                )
             elif att_kind == "intermediate_followup":
-                body = f"Follow-up: Service request #{rem['appointment_id']} is awaiting your confirmation. Reply CONFIRM or DECLINE."
+                body = (
+                    f"🚨 [ADVISOR FOLLOW-UP] Appt #{rem['appointment_id']} (Service request #{rem['appointment_id']})\n"
+                    f"{cust_line}"
+                    f"{v_line}\n"
+                    f"Service: {srv}"
+                    f"{s_line}"
+                    f"{i_line}\n"
+                    f"Status: Awaiting confirmation\n"
+                    f"Reply CONFIRM or C to accept, or DECLINE if unavailable."
+                )
             elif att_kind == "final_reminder":
-                body = f"URGENT: Service request #{rem['appointment_id']} must be confirmed immediately or it will be escalated to a supervisor. Reply CONFIRM or DECLINE."
+                body = (
+                    f"🚨 [URGENT ADVISOR ALERT] Appt #{rem['appointment_id']} (Service request #{rem['appointment_id']})\n"
+                    f"{cust_line}"
+                    f"{v_line}\n"
+                    f"Service: {srv}"
+                    f"{s_line}"
+                    f"{i_line}\n"
+                    f"URGENT: Must be confirmed immediately or it will be escalated to a supervisor.\n"
+                    f"Reply CONFIRM or C to accept, or DECLINE."
+                )
             else:
-                body = f"Agent Reminder: You have an upcoming service request #{rem['appointment_id']} in {rem_type}."
+                body = (
+                    f"⏰ [UPCOMING APPOINTMENT] Appt #{rem['appointment_id']} (Service request #{rem['appointment_id']})\n"
+                    f"{cust_line}"
+                    f"{v_line}\n"
+                    f"Service: {srv}"
+                    f"{s_line}"
+                    f"{i_line}"
+                )
         elif rec_type == "supervisor":
-            body = f"ESCALATION ALERT: Service request #{rem['appointment_id']} unconfirmed. Please take action in the portal."
+            cust_ph = apt_details.get("customer_phone") or ""
+            cust_line = f"Customer: {cust_name}" + (f" ({cust_ph})" if cust_ph else "")
+            v_line = f"\nVehicle: {veh_clean}" if veh_clean else ""
+            i_line = f"\nIssue: {iss_clean}" if iss_clean else ""
+            s_line = f"\nSlot: {slot_str}" if slot_str and slot_str != "N/A" else ""
+            body = (
+                f"🚨 [ESCALATION ALERT] Appt #{rem['appointment_id']} (Service request #{rem['appointment_id']})\n"
+                f"{cust_line}"
+                f"{v_line}\n"
+                f"Service: {srv}"
+                f"{s_line}"
+                f"{i_line}\n"
+                f"Notice: Unconfirmed by assigned advisor. Please take action in the portal."
+            )
         else:
             body = f"Reminder: Appointment #{rem['appointment_id']}."
 

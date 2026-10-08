@@ -75,11 +75,55 @@ def classify_inbound_message(body: str) -> dict:
     return {"category": "free_text", "raw": body, "normalized": normalized, "is_handoff_requested": is_handoff_req}
 
 
+def parse_agent_confirmation_intent(body: str) -> dict:
+    """
+    Parses staff agent / technician confirmation replies:
+    - Batch: 'CONFIRM ALL', 'ACCEPT ALL', 'C ALL', 'YES ALL' -> CONFIRM_ALL
+             'DECLINE ALL', 'REJECT ALL', 'NO ALL' -> DECLINE_ALL
+    - Numeric selection: 'CONFIRM 1', 'C 1', 'CONFIRM #101', 'DECLINE 2', etc.
+    - Pure number: '1', '2' -> CONFIRM (index)
+    - Bare actions: 'CONFIRM', 'C', 'YES', 'ACCEPT' -> CONFIRM
+                    'DECLINE', 'UNAVAILABLE', 'NO', 'CANNOT' -> DECLINE
+    - Fallback: UNKNOWN
+    """
+    import re
+    clean = (body or "").strip()
+    upper = clean.upper()
+    tokens = upper.split()
+
+    # 1. Batch Confirmation Check
+    if any(phrase in upper for phrase in ["CONFIRM ALL", "ACCEPT ALL", "C ALL", "YES ALL"]):
+        return {"action": "CONFIRM_ALL", "selector_type": "batch", "value": None}
+    if any(phrase in upper for phrase in ["DECLINE ALL", "REJECT ALL", "NO ALL"]):
+        return {"action": "DECLINE_ALL", "selector_type": "batch", "value": None}
+
+    # 2. Action + Target (e.g. "CONFIRM 1", "C 1", "CONFIRM #101", "DECLINE 2")
+    m = re.search(r'\b(CONFIRM|C|ACCEPT|YES|DECLINE|NO)\s*#?\s*(\d+)\b', upper)
+    if m:
+        act = "CONFIRM" if m.group(1) in ("CONFIRM", "C", "ACCEPT", "YES") else "DECLINE"
+        num = int(m.group(2))
+        return {"action": act, "selector_type": "numeric", "value": num}
+
+    # 3. Pure index reply (e.g. "1" or "2" answering the prompt)
+    if upper.isdigit():
+        return {"action": "CONFIRM", "selector_type": "index", "value": int(upper)}
+
+    # 4. Bare Action
+    if any(t in tokens for t in ["CONFIRM", "C", "ACCEPT", "YES"]):
+        return {"action": "CONFIRM", "selector_type": "bare", "value": None}
+    if any(t in tokens for t in ["DECLINE", "UNAVAILABLE", "NO", "CANNOT"]):
+        return {"action": "DECLINE", "selector_type": "bare", "value": None}
+
+    return {"action": "UNKNOWN", "selector_type": "none", "value": None}
+
+
 def handle_agent_confirmation_action(staff_agent: dict, body: str, twilio_message_sid: str = None, from_phone: str = None) -> dict:
     """
     Handles inbound SMS replies from staff agents / technicians:
-    - Confirms assignment on 'CONFIRM', 'C', 'YES', 'ACCEPT'
+    - Confirms assignment on 'CONFIRM', 'C', 'YES', 'ACCEPT' (or targeted selection)
     - Declines assignment and triggers supervisor escalation on 'DECLINE', 'UNAVAILABLE', 'NO', 'CANNOT'
+    - Presents disambiguation menu when technician has >1 pending assignments and sends bare response
+    - Atomically confirms all assignments on 'CONFIRM ALL'
     - Accepts late confirmation if appointment escalated but not yet reassigned ('agent_confirm_late')
     - Rejects late confirmation if appointment already reassigned to someone else ('agent_confirm_superseded')
     """
@@ -94,13 +138,16 @@ def handle_agent_confirmation_action(staff_agent: dict, body: str, twilio_messag
             return client.send_whatsapp(to=reply_target, body=msg_body, template_type=template_type)
         return client.send_sms(to=reply_target, body=msg_body, template_type=template_type)
 
-    clean_body = (body or "").strip()
-    norm = clean_body.upper()
-    tokens = set(norm.split())
+    intent = parse_agent_confirmation_intent(body)
+    action = intent["action"]
+    selector_type = intent["selector_type"]
+    value = intent["value"]
 
-    # 1. Classification
-    is_confirm = any(kw in tokens for kw in {"CONFIRM", "C", "YES", "ACCEPT"})
-    is_decline = any(kw in tokens for kw in {"DECLINE", "UNAVAILABLE", "NO", "CANNOT"})
+    if action == "UNKNOWN":
+        # Free-text from staff agent
+        reply_text = "Message received. For urgent scheduling assistance, please contact dispatch."
+        dispatch_agent_receipt(reply_text)
+        return {"status": "processed", "category": "agent_free_text", "reply": reply_text}
 
     from serviceBot.db.connection import get_db_connection, dict_cursor
     from serviceBot.db.queries import (
@@ -131,97 +178,194 @@ def handle_agent_confirmation_action(staff_agent: dict, body: str, twilio_messag
                 if rows:
                     candidate_agent_ids = [r["id"] for r in rows]
 
-    if is_confirm:
-        with get_db_connection() as conn:
-            with dict_cursor(conn) as cursor:
-                # 1. Check for currently assigned active appointment pending confirmation or escalated
-                cursor.execute(
-                    """
-                    SELECT sr.id, sr.staff_agent_id, sr.confirmation_status, sr.escalation_status, sr.created_at,
-                           sa.name AS agent_name
-                    FROM service_requests sr
-                    LEFT JOIN staff_agents sa ON sa.id = sr.staff_agent_id
-                    WHERE sr.staff_agent_id = ANY(%s)
-                      AND sr.confirmation_status = 'pending_agent_confirmation'
-                      AND sr.status NOT IN ('completed', 'cancelled', 'cancelled_by_customer')
-                    ORDER BY sr.created_at DESC LIMIT 1;
-                    """,
-                    (candidate_agent_ids,)
-                )
-                curr_sr = cursor.fetchone()
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            # 1. Fetch all currently assigned active appointments pending confirmation, sorted deterministically
+            cursor.execute(
+                """
+                SELECT sr.id, sr.staff_agent_id, sr.confirmation_status, sr.escalation_status, sr.created_at,
+                       sr.booking_time, sr.time_slot, sr.duration_minutes, sr.service_type, sr.issue_description,
+                       v.year AS vehicle_year, v.make AS vehicle_make, v.model AS vehicle_model,
+                       c.name AS customer_name, c.phone AS customer_phone,
+                       sa.name AS agent_name
+                FROM service_requests sr
+                LEFT JOIN staff_agents sa ON sa.id = sr.staff_agent_id
+                LEFT JOIN vehicles v ON sr.vehicle_id = v.id
+                LEFT JOIN customers c ON sr.customer_id = c.id
+                WHERE sr.staff_agent_id = ANY(%s)
+                  AND sr.confirmation_status = 'pending_agent_confirmation'
+                  AND sr.status NOT IN ('completed', 'cancelled', 'cancelled_by_customer')
+                ORDER BY sr.booking_time ASC NULLS LAST, sr.created_at ASC;
+                """,
+                (candidate_agent_ids,)
+            )
+            pending_list = cursor.fetchall() or []
 
-                # 2. Check for reassigned appointment where this agent was superseded
-                cursor.execute(
-                    """
-                    SELECT sr.id, sr.staff_agent_id, sr.confirmation_status, sr.escalation_status, sr.created_at,
-                           sa.name AS new_agent_name
-                    FROM service_requests sr
-                    JOIN staff_agents sa ON sa.id = sr.staff_agent_id
-                    WHERE sr.escalation_status = 'reassigned'
-                      AND NOT (sr.staff_agent_id = ANY(%s))
-                      AND sr.status NOT IN ('completed', 'cancelled', 'cancelled_by_customer')
-                    ORDER BY sr.created_at DESC LIMIT 1;
-                    """,
-                    (candidate_agent_ids,)
-                )
-                superseded_sr = cursor.fetchone()
+            # 2. Check for reassigned appointment where this agent was superseded
+            cursor.execute(
+                """
+                SELECT sr.id, sr.staff_agent_id, sr.confirmation_status, sr.escalation_status, sr.created_at,
+                       sa.name AS new_agent_name
+                FROM service_requests sr
+                JOIN staff_agents sa ON sa.id = sr.staff_agent_id
+                WHERE sr.escalation_status = 'reassigned'
+                  AND NOT (sr.staff_agent_id = ANY(%s))
+                  AND sr.status NOT IN ('completed', 'cancelled', 'cancelled_by_customer')
+                ORDER BY sr.created_at DESC LIMIT 1;
+                """,
+                (candidate_agent_ids,)
+            )
+            superseded_sr = cursor.fetchone()
 
-        # If appointment was already reassigned to another agent
-        if superseded_sr and (
-            not curr_sr
-            or curr_sr["escalation_status"] == "reassigned"
-            or (superseded_sr.get("created_at") and curr_sr.get("created_at") and superseded_sr["created_at"] >= curr_sr["created_at"])
-        ):
-            target_sr = superseded_sr
-            new_name = target_sr.get("new_agent_name") or "another technician"
-            reply_text = f"Appointment #{target_sr['id']} was already reassigned to {new_name}. No action required."
+    # If appointment was already reassigned to another agent and no pending appointments exist
+    if superseded_sr and not pending_list:
+        target_sr = superseded_sr
+        new_name = target_sr.get("new_agent_name") or "another technician"
+        reply_text = f"Appointment #{target_sr['id']} was already reassigned to {new_name}. No action required."
+        dispatch_agent_receipt(reply_text)
+        return {
+            "status": "processed",
+            "category": "agent_confirm_superseded",
+            "appointment_id": target_sr["id"],
+            "reply": reply_text
+        }
+
+    if not pending_list:
+        reply_text = "No pending appointments found assigned to your mobile number."
+        dispatch_agent_receipt(reply_text)
+        category = "agent_confirm_noop" if "CONFIRM" in action else "agent_decline_noop"
+        return {"status": "processed", "category": category, "reply": reply_text}
+
+    agent_name = staff_agent.get("name") or "Technician"
+    now_ts = dt_mod.datetime.now()
+
+    # --- Case 1: Batch Actions ---
+    if action == "CONFIRM_ALL":
+        for sr in pending_list:
+            update_appointment_confirmation_status(sr["id"], "confirmed", confirmed_at=now_ts)
+            cancel_pending_sms_reminders(sr["id"], recipient_type="agent")
+        ids_str = ", ".join(f"#{sr['id']}" for sr in pending_list)
+        reply_text = f"✅ Confirmed all {len(pending_list)} assignments ({ids_str}). Your schedule is up to date!"
+        dispatch_agent_receipt(reply_text)
+        return {
+            "status": "processed",
+            "category": "agent_confirmed_all",
+            "confirmed_count": len(pending_list),
+            "appointment_ids": [sr["id"] for sr in pending_list],
+            "reply": reply_text,
+        }
+
+    if action == "DECLINE_ALL":
+        for sr in pending_list:
+            update_appointment_confirmation_status(sr["id"], "declined")
+            escalate_service_request(sr["id"], reason="AGENT_DECLINED", triggered_by="agent_sms")
+            cancel_pending_sms_reminders(sr["id"], recipient_type="agent")
+            try:
+                from serviceBot.services.sms_reminders import dispatch_supervisor_escalation_alert
+                dispatch_supervisor_escalation_alert(sr["id"], reason="AGENT_DECLINED")
+            except Exception:
+                pass
+        ids_str = ", ".join(f"#{sr['id']}" for sr in pending_list)
+        reply_text = f"❌ Declined all {len(pending_list)} assignments ({ids_str}). Supervisor notified."
+        dispatch_agent_receipt(reply_text)
+        return {
+            "status": "processed",
+            "category": "agent_declined_all",
+            "declined_count": len(pending_list),
+            "appointment_ids": [sr["id"] for sr in pending_list],
+            "reply": reply_text,
+        }
+
+    # --- Case 2: Multiple Jobs with Bare Action -> Disambiguation Menu ---
+    if len(pending_list) > 1 and selector_type == "bare":
+        from serviceBot.services.sms_reminders import parse_booking_datetime
+        number_emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+        item_lines = []
+        for idx, sr in enumerate(pending_list):
+            emoji = number_emojis[idx] if idx < len(number_emojis) else f"{idx + 1}."
+            v_parts = [sr.get("vehicle_year"), sr.get("vehicle_make"), sr.get("vehicle_model")]
+            v_str = " ".join([str(p).strip() for p in v_parts if p and str(p).strip().upper() not in ("NONE", "NULL", "N/A")]).strip()
+            if not v_str:
+                v_str = sr.get("vehicle") or sr.get("service_type") or "Service"
+
+            b_time_val = sr.get("booking_time") or sr.get("time_slot") or ""
+            dt = parse_booking_datetime(b_time_val) if b_time_val else None
+            t_str = dt.strftime("%b %d, %I:%M %p").replace(" 0", " ") if dt else (str(b_time_val)[:16] if b_time_val else "Scheduled")
+            item_lines.append(f"{emoji} #{sr['id']} - {v_str} ({t_str})")
+
+        items_block = "\n".join(item_lines)
+        menu_text = (
+            f"⚠️ You have {len(pending_list)} assignments awaiting confirmation:\n"
+            f"{items_block}\n\n"
+            f"Reply CONFIRM 1 (or C 1), CONFIRM 2, or CONFIRM ALL.\n"
+            f"(Or reply DECLINE 1 / DECLINE 2)."
+        )
+        dispatch_agent_receipt(menu_text)
+        return {
+            "status": "disambiguation_requested",
+            "category": "agent_disambiguation_menu",
+            "pending_count": len(pending_list),
+            "reply": menu_text,
+        }
+
+    # --- Case 3: Target Resolution (Single Job Fast Path or Index/ID Selection) ---
+    if len(pending_list) == 1:
+        target_sr = pending_list[0]
+    else:
+        # Multiple jobs, selector_type in ('numeric', 'index') with value
+        target_sr = None
+        if value is not None:
+            if 1 <= value <= len(pending_list):
+                target_sr = pending_list[value - 1]
+            else:
+                for sr in pending_list:
+                    if sr["id"] == value:
+                        target_sr = sr
+                        break
+        if not target_sr:
+            valid_ids = ", ".join(f"#{sr['id']}" for sr in pending_list)
+            reply_text = (
+                f"Invalid choice. You have {len(pending_list)} pending assignments ({valid_ids}). "
+                f"Reply CONFIRM 1, CONFIRM 2, or CONFIRM ALL."
+            )
+            dispatch_agent_receipt(reply_text)
+            return {
+                "status": "error_out_of_bounds",
+                "category": "agent_out_of_bounds",
+                "reply": reply_text,
+            }
+
+    sr_id = target_sr["id"]
+    remaining = [sr for sr in pending_list if sr["id"] != sr_id]
+    rem_suffix = ""
+    if remaining:
+        if len(remaining) == 1:
+            rem_suffix = f" (1 assignment remaining: #{remaining[0]['id']})"
+        else:
+            rem_ids = ", ".join(f"#{r['id']}" for r in remaining)
+            rem_suffix = f" ({len(remaining)} assignments remaining: {rem_ids})"
+
+    if action == "CONFIRM":
+        # Check late confirmation
+        if target_sr.get("escalation_status") == "escalated":
+            update_appointment_confirmation_status(sr_id, "confirmed", confirmed_at=now_ts)
+            with get_db_connection() as conn:
+                with dict_cursor(conn) as cursor:
+                    cursor.execute("UPDATE service_requests SET escalation_status = 'resolved' WHERE id = %s;", (sr_id,))
+                    conn.commit()
+            cancel_pending_sms_reminders(sr_id, recipient_type="agent")
+            reply_text = f"Late confirmation accepted for Appointment #{sr_id}. Thank you!{rem_suffix}"
             dispatch_agent_receipt(reply_text)
             return {
                 "status": "processed",
-                "category": "agent_confirm_superseded",
-                "appointment_id": target_sr["id"],
-                "reply": reply_text
+                "category": "agent_confirm_late",
+                "appointment_id": sr_id,
+                "reply": reply_text,
             }
 
-        if curr_sr:
-            sr_id = curr_sr["id"]
-            now_ts = dt_mod.datetime.now()
-
-            # Case: Late confirmation accepted prior to reassignment
-            if curr_sr["escalation_status"] == "escalated":
-                update_appointment_confirmation_status(sr_id, "confirmed", confirmed_at=now_ts)
-                with get_db_connection() as conn:
-                    with dict_cursor(conn) as cursor:
-                        cursor.execute(
-                            """
-                            UPDATE service_requests
-                            SET escalation_status = 'resolved'
-                            WHERE id = %s;
-                            """,
-                            (sr_id,)
-                        )
-                        cursor.execute(
-                            """
-                            INSERT INTO service_request_audit_log (request_id, triggered_by, from_status, to_status, notes)
-                            VALUES (%s, 'agent_sms', 'escalated', 'resolved', 'Late confirmation accepted prior to reassignment');
-                            """,
-                            (sr_id,)
-                        )
-                        conn.commit()
-                cancel_pending_sms_reminders(sr_id, recipient_type="agent")
-                reply_text = f"Late confirmation accepted for Appointment #{sr_id}. Thank you!"
-                dispatch_agent_receipt(reply_text)
-                return {
-                    "status": "processed",
-                    "category": "agent_confirm_late",
-                    "appointment_id": sr_id,
-                    "reply": reply_text
-                }
-
-            # Case: Normal timely confirmation
-            update_appointment_confirmation_status(sr_id, "confirmed", confirmed_at=now_ts)
-            cancel_pending_sms_reminders(sr_id, recipient_type="agent")
-            agent_name = staff_agent.get("name") or "Technician"
+        update_appointment_confirmation_status(sr_id, "confirmed", confirmed_at=now_ts)
+        cancel_pending_sms_reminders(sr_id, recipient_type="agent")
+        try:
             with get_db_connection() as conn:
                 with dict_cursor(conn) as cursor:
                     cursor.execute(
@@ -232,48 +376,29 @@ def handle_agent_confirmation_action(staff_agent: dict, body: str, twilio_messag
                         """,
                         (
                             sr_id,
-                            curr_sr.get("confirmation_status") or "pending_agent_confirmation",
+                            target_sr.get("confirmation_status") or "pending_agent_confirmation",
                             agent_name,
                             f"Technician {agent_name} replied '{body.strip()}' via SMS. Assignment confirmed.",
                             json.dumps({"agent_id": staff_agent.get("id"), "agent_name": agent_name, "reply": body.strip(), "phone": from_phone})
                         )
                     )
                     conn.commit()
-            reply_text = f"Appointment #{sr_id} confirmed. Thank you!"
-            dispatch_agent_receipt(reply_text)
-            return {
-                "status": "processed",
-                "category": "agent_confirm",
-                "appointment_id": sr_id,
-                "reply": reply_text
-            }
-
-        reply_text = "No pending appointments found assigned to your mobile number."
+        except Exception:
+            pass
+        reply_text = f"Appointment #{sr_id} confirmed. Thank you!{rem_suffix}"
         dispatch_agent_receipt(reply_text)
-        return {"status": "processed", "category": "agent_confirm_noop", "reply": reply_text}
+        return {
+            "status": "processed",
+            "category": "agent_confirm",
+            "appointment_id": sr_id,
+            "reply": reply_text,
+        }
 
-    elif is_decline:
-        with get_db_connection() as conn:
-            with dict_cursor(conn) as cursor:
-                cursor.execute(
-                    """
-                    SELECT sr.id, sr.staff_agent_id, sr.confirmation_status, sr.escalation_status
-                    FROM service_requests sr
-                    WHERE sr.staff_agent_id = ANY(%s)
-                      AND sr.status NOT IN ('completed', 'cancelled', 'cancelled_by_customer')
-                    ORDER BY sr.created_at DESC LIMIT 1;
-                    """,
-                    (candidate_agent_ids,)
-                )
-                curr_sr = cursor.fetchone()
-
-        if curr_sr:
-            sr_id = curr_sr["id"]
-            agent_name = staff_agent.get("name") or "Technician"
-            update_appointment_confirmation_status(sr_id, "declined")
-            escalate_service_request(sr_id, reason="AGENT_DECLINED", triggered_by="agent_sms")
-            cancel_pending_sms_reminders(sr_id, recipient_type="agent")
-
+    elif action == "DECLINE":
+        update_appointment_confirmation_status(sr_id, "declined")
+        escalate_service_request(sr_id, reason="AGENT_DECLINED", triggered_by="agent_sms")
+        cancel_pending_sms_reminders(sr_id, recipient_type="agent")
+        try:
             with get_db_connection() as conn:
                 with dict_cursor(conn) as cursor:
                     cursor.execute(
@@ -284,35 +409,28 @@ def handle_agent_confirmation_action(staff_agent: dict, body: str, twilio_messag
                         """,
                         (
                             sr_id,
-                            curr_sr.get("confirmation_status") or "pending_agent_confirmation",
+                            target_sr.get("confirmation_status") or "pending_agent_confirmation",
                             agent_name,
                             f"Technician {agent_name} replied '{body.strip()}' via SMS. Assignment declined.",
                             json.dumps({"agent_id": staff_agent.get("id"), "agent_name": agent_name, "reply": body.strip(), "phone": from_phone})
                         )
                     )
                     conn.commit()
-
+        except Exception:
+            pass
+        try:
             from serviceBot.services.sms_reminders import dispatch_supervisor_escalation_alert
             dispatch_supervisor_escalation_alert(sr_id, reason="AGENT_DECLINED")
-
-            reply_text = f"Appointment #{sr_id} has been marked declined. Supervisor notified."
-            dispatch_agent_receipt(reply_text)
-            return {
-                "status": "processed",
-                "category": "agent_decline",
-                "appointment_id": sr_id,
-                "reply": reply_text
-            }
-
-        reply_text = "No pending appointments found assigned to your mobile number."
+        except Exception:
+            pass
+        reply_text = f"Appointment #{sr_id} marked declined. Supervisor notified.{rem_suffix}"
         dispatch_agent_receipt(reply_text)
-        return {"status": "processed", "category": "agent_decline_noop", "reply": reply_text}
-
-    else:
-        # Free-text from staff agent
-        reply_text = "Message received. For urgent scheduling assistance, please contact dispatch."
-        dispatch_agent_receipt(reply_text)
-        return {"status": "processed", "category": "agent_free_text", "reply": reply_text}
+        return {
+            "status": "processed",
+            "category": "agent_decline",
+            "appointment_id": sr_id,
+            "reply": reply_text,
+        }
 
 
 def process_inbound_sms(from_phone: str, body: str, twilio_message_sid: str = None) -> dict:
