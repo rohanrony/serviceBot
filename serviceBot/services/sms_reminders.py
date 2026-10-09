@@ -12,12 +12,14 @@ from serviceBot.db.queries import (
 from serviceBot.services.twilio_sms import TwilioSMSClient
 from serviceBot.services.booking import BUSINESS_TZ
 
+from serviceBot.services import timezone_service
+
 logger = get_logger("sms_reminders")
 
 
 def get_current_business_time() -> dt_mod.datetime:
-    """Returns current naive datetime in the shop's operational timezone (America/New_York)."""
-    return dt_mod.datetime.now(BUSINESS_TZ).replace(tzinfo=None)
+    """Returns current naive datetime in the shop's operational timezone."""
+    return timezone_service.now_in_business_tz().replace(tzinfo=None)
 
 
 def parse_booking_datetime(dt_str: str) -> dt_mod.datetime:

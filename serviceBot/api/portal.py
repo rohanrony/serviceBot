@@ -345,7 +345,8 @@ Speak the filler naturally as part of the conversation so the caller experiences
         "carrier_retry_backoff_minutes": [1, 5, 15],
         "business_name": "Davidson Car Care",
         "business_address": "123 Main St, Springfield, NC 27513",
-        "google_maps_url": "https://maps.google.com/?q=Davidson+Car+Care+Springfield+NC"
+        "google_maps_url": "https://maps.google.com/?q=Davidson+Car+Care+Springfield+NC",
+        "business_timezone": "America/New_York"
     }
     if not os.path.exists(CONFIG_PATH):
         data = defaults.copy()
@@ -498,6 +499,7 @@ class ConfigUpdatePayload(BaseModel):
     business_name: Optional[str] = None
     business_address: Optional[str] = None
     google_maps_url: Optional[str] = None
+    business_timezone: Optional[str] = None
 
 @router.get("/config")
 async def get_config():
@@ -567,6 +569,12 @@ async def update_config(payload: ConfigUpdatePayload):
         config_data["business_address"] = str(payload.business_address).strip()
     if payload.google_maps_url is not None:
         config_data["google_maps_url"] = str(payload.google_maps_url).strip()
+    if payload.business_timezone is not None:
+        tz_str = str(payload.business_timezone).strip()
+        from serviceBot.services.timezone_service import validate_timezone
+        if not validate_timezone(tz_str):
+            raise HTTPException(status_code=400, detail=f"Invalid IANA timezone identifier: {tz_str}")
+        config_data["business_timezone"] = tz_str
 
     save_config(config_data)
     
@@ -2358,6 +2366,7 @@ class SMSConfigPayload(BaseModel):
     business_name: Optional[str] = None
     business_address: Optional[str] = None
     google_maps_url: Optional[str] = None
+    business_timezone: Optional[str] = None
 
 
 class SMSMatrixRulePayload(BaseModel):
@@ -2394,6 +2403,7 @@ async def get_sms_config_endpoint():
     res["business_name"] = cfg.get("business_name", "Davidson Car Care")
     res["business_address"] = cfg.get("business_address", "123 Main St, Springfield, NC 27513")
     res["google_maps_url"] = cfg.get("google_maps_url", "")
+    res["business_timezone"] = cfg.get("business_timezone", "America/New_York")
     return res
 
 
@@ -2404,9 +2414,15 @@ async def update_sms_config_endpoint(payload: SMSConfigPayload):
 
     # Sync address / business settings into config.json
     loc_updates = {}
-    for loc_key in ("business_name", "business_address", "google_maps_url"):
+    for loc_key in ("business_name", "business_address", "google_maps_url", "business_timezone"):
         if loc_key in data:
-            loc_updates[loc_key] = data.pop(loc_key)
+            val = data.pop(loc_key)
+            if loc_key == "business_timezone" and val:
+                from serviceBot.services.timezone_service import validate_timezone
+                if not validate_timezone(str(val).strip()):
+                    raise HTTPException(status_code=400, detail=f"Invalid IANA timezone identifier: {val}")
+                val = str(val).strip()
+            loc_updates[loc_key] = val
     if loc_updates:
         cfg = load_config()
         cfg.update(loc_updates)
@@ -2417,6 +2433,7 @@ async def update_sms_config_endpoint(payload: SMSConfigPayload):
     db_res["business_name"] = cfg_now.get("business_name", "Davidson Car Care")
     db_res["business_address"] = cfg_now.get("business_address", "123 Main St, Springfield, NC 27513")
     db_res["google_maps_url"] = cfg_now.get("google_maps_url", "")
+    db_res["business_timezone"] = cfg_now.get("business_timezone", "America/New_York")
     return db_res
 
 

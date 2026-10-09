@@ -92,7 +92,8 @@ def resolve_asap_callback_time(preferred_date: str = None) -> str:
     if not business_days or not business_hours:
         raise ValueError("No operating hours are configured for callbacks.")
 
-    now = dt_mod.datetime.now(ZoneInfo("America/New_York")).replace(tzinfo=None)
+    from serviceBot.services import timezone_service
+    now = timezone_service.now_in_business_tz().replace(tzinfo=None)
     candidate = now.replace(second=0, microsecond=0)
     minutes_to_next_quarter = 15 - (candidate.minute % 15)
     candidate += dt_mod.timedelta(minutes=minutes_to_next_quarter)
@@ -667,11 +668,8 @@ def check_availability(service_type: str = None, preferred_date: str = None, boo
             cursor.execute("SELECT id FROM staff_agents;")
             all_agent_ids = [r["id"] for r in cursor.fetchall()]
 
-    try:
-        tz = zoneinfo.ZoneInfo("America/New_York")
-    except Exception:
-        from datetime import timezone, timedelta
-        tz = timezone(timedelta(hours=-4))
+    from serviceBot.services import timezone_service
+    tz = timezone_service.get_business_zoneinfo()
         
     agent_events_map = {}
 
@@ -1465,10 +1463,8 @@ def get_available_slots_for_date(target_date_str: str, duration_minutes: int = 6
                         return False
                 return True
 
-            try:
-                tz = zoneinfo.ZoneInfo("America/New_York")
-            except Exception:
-                tz = dt_mod.timezone(dt_mod.timedelta(hours=-4))
+            from serviceBot.services import timezone_service
+            tz = timezone_service.get_business_zoneinfo()
 
             day_start_dt = dt_mod.datetime.combine(target_date, dt_mod.time(0, 0, 0)).replace(tzinfo=tz)
             day_end_dt = dt_mod.datetime.combine(target_date, dt_mod.time(23, 59, 59)).replace(tzinfo=tz)
@@ -2011,16 +2007,21 @@ def update_service_request_status(request_id: int, status: str, triggered_by: st
                         SELECT sa.id AS agent_id, sa.name AS agent_name, sa.phone_number AS agent_phone,
                                COALESCE(uga.email, sa.email) AS agent_email,
                                sr.booking_time, sr.service_type, sr.issue_description,
-                               c.name AS customer_name, c.phone AS customer_phone
+                               c.name AS customer_name, c.phone AS customer_phone,
+                               v.year AS vehicle_year, v.make AS vehicle_make, v.model AS vehicle_model
                         FROM service_requests sr
                         LEFT JOIN staff_agents sa ON sr.staff_agent_id = sa.id
                         LEFT JOIN user_google_accounts uga ON uga.agent_id = sa.id
                         LEFT JOIN customers c ON sr.customer_id = c.id
+                        LEFT JOIN vehicles v ON sr.vehicle_id = v.id
                         WHERE sr.id = %s;
                         """,
                         (request_id,)
                     )
                     details_row = cursor.fetchone() or {}
+
+                    v_parts = [details_row.get("vehicle_year"), details_row.get("vehicle_make"), details_row.get("vehicle_model")]
+                    veh_str = " ".join([str(p).strip() for p in v_parts if p and str(p).strip().upper() not in ("NONE", "NULL", "N/A")]).strip() or "N/A"
 
                     payload = {
                         "sms_event_type": notification_event,
@@ -2031,10 +2032,12 @@ def update_service_request_status(request_id: int, status: str, triggered_by: st
                         "agent_name": details_row.get("agent_name"),
                         "agent_email": details_row.get("agent_email"),
                         "booking_time_str": str(details_row.get("booking_time") or ""),
+                        "vehicle": veh_str,
                         "details": {
                             "customer_name": details_row.get("customer_name") or "Customer",
                             "phone": details_row.get("customer_phone"),
                             "service_type": details_row.get("service_type") or "Service",
+                            "vehicle": veh_str,
                             "issue": notes or details_row.get("issue_description") or "",
                             "agent_name": details_row.get("agent_name"),
                             "agent_phone": details_row.get("agent_phone"),
@@ -2542,12 +2545,8 @@ def get_available_agents_for_request(request_id: int) -> list:
                 row["staff_agent_id"] for row in cursor.fetchall()
             )
 
-    try:
-        from zoneinfo import ZoneInfo
-
-        timezone = ZoneInfo("America/New_York")
-    except Exception:
-        timezone = dt_mod.timezone(dt_mod.timedelta(hours=-4))
+    from serviceBot.services import timezone_service
+    timezone = timezone_service.get_business_zoneinfo()
     provider_start = starts_at.replace(tzinfo=timezone)
     provider_end = ends_at.replace(tzinfo=timezone)
 

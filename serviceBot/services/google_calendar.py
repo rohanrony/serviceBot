@@ -9,6 +9,7 @@ from serviceBot.db.connection import get_db_connection
 from serviceBot.services.encryption import encrypt_key, decrypt_key
 from serviceBot.api.portal import load_config
 from serviceBot.logger import get_logger
+from serviceBot.services import timezone_service
 
 logger = get_logger("services.google_calendar")
 
@@ -162,11 +163,7 @@ def is_agent_free(agent_id: int, slot_datetime_str: str, duration_minutes: int =
             print(f"Agent {agent_id} Calendar: Insufficient scopes to check availability. Granted: {scopes}")
             return False
 
-        try:
-            tz = zoneinfo.ZoneInfo("America/New_York")
-        except Exception:
-            from datetime import timezone
-            tz = timezone(timedelta(hours=-4))
+        tz = timezone_service.get_business_zoneinfo()
         start_dt = datetime.strptime(slot_datetime_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=tz)
         end_dt = start_dt + timedelta(minutes=duration_minutes)
         
@@ -243,11 +240,7 @@ def create_agent_calendar_event(
             print(f"Agent {agent_id} Google Calendar error: Insufficient scope to write calendar events.")
             return False
 
-        try:
-            tz = zoneinfo.ZoneInfo("America/New_York")
-        except Exception:
-            from datetime import timezone
-            tz = timezone(timedelta(hours=-4))
+        tz = timezone_service.get_business_zoneinfo()
 
         start_dt = datetime.strptime(slot_datetime_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=tz)
         end_dt = start_dt + timedelta(minutes=duration_minutes)
@@ -281,11 +274,11 @@ def create_agent_calendar_event(
             "description": event_desc,
             "start": {
                 "dateTime": start_iso,
-                "timeZone": "America/New_York"
+                "timeZone": timezone_service.get_business_timezone_str()
             },
             "end": {
                 "dateTime": end_iso,
-                "timeZone": "America/New_York"
+                "timeZone": timezone_service.get_business_timezone_str()
             },
             "attendees": attendees
         }
@@ -470,11 +463,7 @@ def delete_agent_calendar_event(
             print(f"Agent {agent_id} Google Calendar error: Insufficient scope to delete calendar events.")
             return False
 
-        try:
-            tz = zoneinfo.ZoneInfo("America/New_York")
-        except Exception:
-            from datetime import timezone
-            tz = timezone(timedelta(hours=-4))
+        tz = timezone_service.get_business_zoneinfo()
 
         start_dt = datetime.strptime(slot_datetime_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=tz)
         end_dt = start_dt + timedelta(minutes=duration_minutes)

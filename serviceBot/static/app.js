@@ -8,6 +8,47 @@ document.addEventListener('DOMContentLoaded', () => {
   let callsCurrentPage = 1;
   let callsPageSize = 10;
 
+  // Business Timezone State & Badges
+  let activeBusinessTimezone = 'America/New_York';
+
+  const TIMEZONE_LABELS = {
+    'America/New_York': 'Eastern Time (ET)',
+    'America/Chicago': 'Central Time (CT)',
+    'America/Denver': 'Mountain Time (MT)',
+    'America/Phoenix': 'Mountain Time - AZ (MST)',
+    'America/Los_Angeles': 'Pacific Time (PT)',
+    'America/Anchorage': 'Alaska Time (AKT)',
+    'Pacific/Honolulu': 'Hawaii Time (HST)',
+    'UTC': 'UTC (UTC)'
+  };
+
+  function updateTimezoneBadges(tz) {
+    const badgeTextEl = document.getElementById('business-tz-badge-text');
+    if (badgeTextEl) {
+      badgeTextEl.textContent = TIMEZONE_LABELS[tz] || tz;
+    }
+  }
+
+  function setAppBusinessTimezone(tz) {
+    if (!tz) return;
+    activeBusinessTimezone = tz;
+    updateTimezoneBadges(tz);
+  }
+
+  async function initBusinessTimezone() {
+    try {
+      const res = await fetch('/api/v1/portal/config');
+      if (res.ok) {
+        const cfg = await res.json();
+        if (cfg && cfg.business_timezone) {
+          setAppBusinessTimezone(cfg.business_timezone);
+        }
+      }
+    } catch (e) {
+      console.warn('Could not initialize business timezone from config:', e);
+    }
+  }
+
 
   // Elements
   const appContainer = document.querySelector('.app-container');
@@ -436,21 +477,48 @@ document.addEventListener('DOMContentLoaded', () => {
     const d = new Date(cleanStr);
     if (isNaN(d.getTime())) return dateStr;
 
+    const tz = activeBusinessTimezone || 'America/New_York';
+
     if (options && options.timeOnly) {
-      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      try {
+        return new Intl.DateTimeFormat('en-US', {
+          timeZone: tz,
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true
+        }).format(d);
+      } catch {
+        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      }
     }
 
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    const year = String(d.getFullYear()).slice(-2);
+    try {
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: tz,
+        year: '2-digit',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      }).formatToParts(d);
 
-    let hours = d.getHours();
-    const minutes = String(d.getMinutes()).padStart(2, '0');
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    hours = hours % 12 || 12;
-    const hoursStr = String(hours).padStart(2, '0');
+      const map = {};
+      parts.forEach(p => { map[p.type] = p.value; });
+      return `${map.month}/${map.day}/${map.year} ${map.hour}:${map.minute} ${map.dayPeriod || ''}`.trim();
+    } catch {
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      const year = String(d.getFullYear()).slice(-2);
 
-    return `${month}/${day}/${year} ${hoursStr}:${minutes} ${ampm}`;
+      let hours = d.getHours();
+      const minutes = String(d.getMinutes()).padStart(2, '0');
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12 || 12;
+      const hoursStr = String(hours).padStart(2, '0');
+
+      return `${month}/${day}/${year} ${hoursStr}:${minutes} ${ampm}`;
+    }
   }
 
   function formatShortDate(dateStr) {
@@ -469,20 +537,43 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function formatTime12(d) {
       if (isNaN(d.getTime())) return null;
-      let hours = d.getHours();
-      const minutes = String(d.getMinutes()).padStart(2, '0');
-      const ampm = hours >= 12 ? 'PM' : 'AM';
-      hours = hours % 12;
-      hours = hours ? hours : 12;
-      return `${hours}:${minutes} ${ampm}`;
+      const tz = activeBusinessTimezone || 'America/New_York';
+      try {
+        return new Intl.DateTimeFormat('en-US', {
+          timeZone: tz,
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true
+        }).format(d);
+      } catch {
+        let hours = d.getHours();
+        const minutes = String(d.getMinutes()).padStart(2, '0');
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        hours = hours % 12;
+        hours = hours ? hours : 12;
+        return `${hours}:${minutes} ${ampm}`;
+      }
     }
 
     function formatDateShort(d) {
       if (isNaN(d.getTime())) return null;
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      const year = String(d.getFullYear()).slice(-2);
-      return `${month}/${day}/${year}`;
+      const tz = activeBusinessTimezone || 'America/New_York';
+      try {
+        const parts = new Intl.DateTimeFormat('en-US', {
+          timeZone: tz,
+          year: '2-digit',
+          month: '2-digit',
+          day: '2-digit'
+        }).formatToParts(d);
+        const map = {};
+        parts.forEach(p => { map[p.type] = p.value; });
+        return `${map.month}/${map.day}/${map.year}`;
+      } catch {
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        const year = String(d.getFullYear()).slice(-2);
+        return `${month}/${day}/${year}`;
+      }
     }
 
     const durationMin = req.duration_minutes || 60;
@@ -2777,8 +2868,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isNaN(startDate.getTime())) return;
         const endDate = new Date(startDate.getTime() + 30 * 60 * 1000);
         
-        const dateOptions = { year: 'numeric', month: '2-digit', day: '2-digit' };
-        const timeOptions = { hour: '2-digit', minute: '2-digit', hour12: true };
+        const tz = activeBusinessTimezone || 'America/New_York';
+        const dateOptions = { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: tz };
+        const timeOptions = { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: tz };
         
         const dateString = startDate.toLocaleDateString(undefined, dateOptions);
         const startTimeString = startDate.toLocaleTimeString(undefined, timeOptions);
@@ -3176,6 +3268,13 @@ document.addEventListener('DOMContentLoaded', () => {
       if (shopAddrEl) shopAddrEl.value = config.business_address || '';
       const mapsUrlEl = document.getElementById('sms-config-maps-url');
       if (mapsUrlEl) mapsUrlEl.value = config.google_maps_url || '';
+      const timezoneEl = document.getElementById('sms-config-timezone');
+      if (timezoneEl && config.business_timezone) {
+        timezoneEl.value = config.business_timezone;
+      }
+      if (config.business_timezone) {
+        setAppBusinessTimezone(config.business_timezone);
+      }
 
       // Load Escalation & Timing SLAs from portal config
       try {
@@ -3372,13 +3471,17 @@ document.addEventListener('DOMContentLoaded', () => {
         quiet_end_time: document.getElementById('sms-config-quiet-end').value,
         auto_responder_template: document.getElementById('sms-config-auto-responder').value,
         business_address: document.getElementById('sms-config-shop-address') ? document.getElementById('sms-config-shop-address').value.trim() : '',
-        google_maps_url: document.getElementById('sms-config-maps-url') ? document.getElementById('sms-config-maps-url').value.trim() : ''
+        google_maps_url: document.getElementById('sms-config-maps-url') ? document.getElementById('sms-config-maps-url').value.trim() : '',
+        business_timezone: document.getElementById('sms-config-timezone') ? document.getElementById('sms-config-timezone').value : activeBusinessTimezone
       };
       await fetch('/api/v1/portal/sms/config', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
+      if (payload.business_timezone) {
+        setAppBusinessTimezone(payload.business_timezone);
+      }
       showToast('SMS global configuration saved successfully.');
     });
   }
@@ -5467,6 +5570,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   loadTwilioSandboxInfo();
+  initBusinessTimezone();
 
   // Initial Data & URL Hash Router Load
   handleUrlHash();

@@ -16,6 +16,9 @@ def _default_fetch_events(agent_id: int, start_iso: str, end_iso: str):
     return fetch_agent_events(agent_id, start_iso, end_iso)
 
 
+from serviceBot.services import timezone_service
+
+
 class CalendarError(ValueError):
     """Base error for calendar slot operations."""
 
@@ -25,7 +28,7 @@ class CalendarConflictError(CalendarError):
 
 
 def parse_slot_datetime(value: str | dt_mod.datetime) -> dt_mod.datetime:
-    """Parse a portal slot as a timezone-naive America/New_York wall time."""
+    """Parse a portal slot as a timezone-naive wall time in configured business timezone."""
     if isinstance(value, dt_mod.datetime):
         parsed = value
     elif isinstance(value, str):
@@ -38,7 +41,7 @@ def parse_slot_datetime(value: str | dt_mod.datetime) -> dt_mod.datetime:
         raise CalendarError("slot_datetime must be an ISO-8601 datetime.")
 
     if parsed.tzinfo is not None:
-        parsed = parsed.astimezone(dt_mod.timezone(dt_mod.timedelta(hours=-4))).replace(tzinfo=None)
+        parsed = parsed.astimezone(timezone_service.get_business_zoneinfo()).replace(tzinfo=None)
     if parsed.second or parsed.microsecond or parsed.minute not in (0, 15, 30, 45):
         raise CalendarError("slot_datetime must begin on a 15-minute boundary.")
     return parsed
@@ -61,7 +64,7 @@ def _provider_datetime(value: dict[str, Any]) -> Optional[dt_mod.datetime]:
         except ValueError:
             return None
     if parsed.tzinfo is not None:
-        parsed = parsed.astimezone(dt_mod.timezone(dt_mod.timedelta(hours=-4))).replace(tzinfo=None)
+        parsed = parsed.astimezone(timezone_service.get_business_zoneinfo()).replace(tzinfo=None)
     return parsed
 
 

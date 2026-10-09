@@ -12,6 +12,7 @@ from serviceBot.api.portal import load_config, save_config
 from serviceBot.services.encryption import encrypt_key, decrypt_key
 from serviceBot.db.connection import get_db_connection
 from serviceBot.logger import get_logger
+from serviceBot.services import timezone_service
 
 logger = get_logger("services.gmail")
 
@@ -689,12 +690,8 @@ def create_admin_calendar_event(
         if access_token.startswith("dummy_"):
             return True
 
-        import zoneinfo
-        from datetime import datetime, timedelta, timezone
-        try:
-            tz = zoneinfo.ZoneInfo("America/New_York")
-        except Exception:
-            tz = timezone(timedelta(hours=-4))
+        from datetime import datetime, timedelta
+        tz = timezone_service.get_business_zoneinfo()
         start_dt = datetime.strptime(slot_datetime_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=tz)
         end_dt = start_dt + timedelta(minutes=duration_minutes)
 
@@ -727,11 +724,11 @@ def create_admin_calendar_event(
             "description": desc_text,
             "start": {
                 "dateTime": start_iso,
-                "timeZone": "America/New_York"
+                "timeZone": timezone_service.get_business_timezone_str()
             },
             "end": {
                 "dateTime": end_iso,
-                "timeZone": "America/New_York"
+                "timeZone": timezone_service.get_business_timezone_str()
             },
             "attendees": attendees
         }
@@ -761,12 +758,8 @@ def delete_admin_calendar_event(
             print("Admin Calendar: No active Google OAuth access token available for system/admin to delete event.")
             return False
 
-        import zoneinfo
-        from datetime import datetime, timedelta, timezone
-        try:
-            tz = zoneinfo.ZoneInfo("America/New_York")
-        except Exception:
-            tz = timezone(timedelta(hours=-4))
+        from datetime import datetime, timedelta
+        tz = timezone_service.get_business_zoneinfo()
 
         start_dt = datetime.strptime(slot_datetime_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=tz)
         end_dt = start_dt + timedelta(minutes=duration_minutes)

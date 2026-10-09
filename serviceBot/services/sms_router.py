@@ -28,7 +28,11 @@ def format_time_slot_range(raw_time_str: str, duration_minutes: int = 60) -> str
     dt = parse_booking_datetime(clean_str)
     if not dt:
         return clean_str
-    end_dt = dt + dt_mod.timedelta(minutes=duration_minutes)
+    try:
+        dur = int(duration_minutes or 60)
+    except (ValueError, TypeError):
+        dur = 60
+    end_dt = dt + dt_mod.timedelta(minutes=dur)
     date_part = dt.strftime("%b %d, %Y")
     start_time_part = dt.strftime("%I:%M %p").lstrip("0")
     end_time_part = end_dt.strftime("%I:%M %p").lstrip("0")
@@ -251,10 +255,19 @@ class SMSNotificationRouter:
         return dispatches
 
     def _fetch_details_if_missing(self, appointment_id: int, details: dict = None) -> dict:
-        if details:
-            return details
-        if not appointment_id:
-            return {}
+        info = dict(details or {})
+
+        # Check if critical fields (vehicle or specific issue) are missing or generic placeholders
+        veh_val = str(info.get("vehicle") or "").strip().upper()
+        iss_val = str(info.get("issue") or "").strip().upper()
+        srv_val = str(info.get("service_type") or "").strip().upper()
+
+        needs_vehicle = (not veh_val or veh_val in ("NONE", "NULL", "N/A"))
+        needs_issue = (not iss_val or iss_val in ("NONE", "NULL", "N/A") or (srv_val and iss_val == srv_val))
+
+        if not appointment_id or (not needs_vehicle and not needs_issue and info):
+            return info
+
         try:
             from serviceBot.db.connection import get_db_connection, dict_cursor
             with get_db_connection() as conn:
@@ -271,26 +284,53 @@ class SMSNotificationRouter:
                         WHERE sr.id = %s;
                     """, (appointment_id,))
                     sr = cursor.fetchone()
-                    if not sr:
-                        return {}
+                    if not sr or not isinstance(sr, dict):
+                        return info
                     v_parts = [sr.get("vehicle_year"), sr.get("vehicle_make"), sr.get("vehicle_model")]
                     v_str = " ".join([str(p).strip() for p in v_parts if p and str(p).strip().upper() not in ("NONE", "NULL", "N/A")]).strip() or "N/A"
                     b_time = sr.get("booking_time") or sr.get("time_slot") or "N/A"
-                    return {
-                        "customer_name": sr.get("customer_name") or "Customer",
-                        "phone": sr.get("customer_phone") or "N/A",
-                        "vehicle": v_str,
-                        "service_type": sr.get("service_type") or "Service",
-                        "time": str(b_time)[:19],
-                        "duration_minutes": sr.get("duration_minutes"),
-                        "issue": sr.get("issue_description") or "N/A",
-                        "new_agent_name": sr.get("agent_name") or "Assigned Advisor",
-                        "agent_name": sr.get("agent_name") or "Assigned Advisor",
-                        "agent_id": sr.get("agent_id"),
-                        "agent_phone": sr.get("agent_phone") or ""
-                    }
+                    db_issue = sr.get("issue_description") or ""
+
+                    # Enrich fields from DB if missing or generic
+                    if needs_vehicle and v_str and v_str != "N/A":
+                        info["vehicle"] = v_str
+                    elif not info.get("vehicle"):
+                        info["vehicle"] = v_str
+
+                    if needs_issue and db_issue and str(db_issue).strip().upper() not in ("NONE", "NULL", "N/A"):
+                        info["issue"] = db_issue
+                    elif not info.get("issue"):
+                        info["issue"] = db_issue or sr.get("service_type") or "N/A"
+
+                    if not info.get("customer_name") or info.get("customer_name") in ("Customer", "Unknown Customer"):
+                        if sr.get("customer_name"):
+                            info["customer_name"] = sr["customer_name"]
+                    if not info.get("phone") or info.get("phone") == "N/A":
+                        if sr.get("customer_phone"):
+                            info["phone"] = sr["customer_phone"]
+                    if not info.get("service_type") or info.get("service_type") == "Service":
+                        if sr.get("service_type"):
+                            info["service_type"] = sr["service_type"]
+                    if not info.get("time") or info.get("time") == "N/A":
+                        if b_time and b_time != "N/A":
+                            info["time"] = str(b_time)[:19]
+                    if not info.get("duration_minutes"):
+                        if sr.get("duration_minutes"):
+                            info["duration_minutes"] = sr["duration_minutes"]
+                    if not info.get("agent_name") or info.get("agent_name") == "Assigned Advisor":
+                        if sr.get("agent_name"):
+                            info["agent_name"] = sr["agent_name"]
+                            info["new_agent_name"] = sr["agent_name"]
+                    if not info.get("agent_phone"):
+                        if sr.get("agent_phone"):
+                            info["agent_phone"] = sr["agent_phone"]
+                    if not info.get("agent_id"):
+                        if sr.get("agent_id"):
+                            info["agent_id"] = sr["agent_id"]
+
+                    return info
         except Exception:
-            return {}
+            return info
 
     def process_event(
         self,

@@ -94,15 +94,11 @@ import re
 
 def is_within_business_hours() -> bool:
     """
-    Checks if the current time in America/New_York (Eastern Time)
+    Checks if the current time in configured business timezone
     is within business hours: Monday to Friday, 7:00 AM to 6:00 PM.
     """
-    try:
-        tz = zoneinfo.ZoneInfo("America/New_York")
-    except Exception:
-        from datetime import timezone, timedelta
-        tz = timezone(timedelta(hours=-4))
-    now = datetime.now(tz)
+    from serviceBot.services import timezone_service
+    now = timezone_service.now_in_business_tz()
     # 0 = Monday, 4 = Friday
     if now.weekday() > 4:
         return False
@@ -283,12 +279,8 @@ async def inbound_call(request: Request = None):
                     appts = get_appts(phone_for_param)
                 if appts:
                     # Filter for upcoming appointments (scheduled today or in the future)
-                    try:
-                        import zoneinfo
-                        tz = zoneinfo.ZoneInfo("America/New_York")
-                    except Exception:
-                        tz = None
-                    now_dt = datetime.now(tz) if tz else datetime.now()
+                    from serviceBot.services import timezone_service
+                    now_dt = timezone_service.now_in_business_tz()
                     today_str = now_dt.strftime("%Y-%m-%d")
 
                     upcoming_list = [
@@ -1582,11 +1574,8 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                     except Exception as suffix_err:
                         logger.warning(f"7-digit suffix lookup error in get_customer_appointments: {suffix_err}")
 
-                try:
-                    tz = zoneinfo.ZoneInfo("America/New_York")
-                except Exception:
-                    tz = None
-                now_dt = datetime.now(tz) if tz else datetime.now()
+                from serviceBot.services import timezone_service
+                now_dt = timezone_service.now_in_business_tz()
                 today_str = now_dt.strftime("%Y-%m-%d")
 
                 upcoming = []

@@ -17,12 +17,39 @@ from serviceBot.db.connection import dict_cursor, get_db_connection
 
 SLOT_MINUTES = 15
 
-try:
-    from zoneinfo import ZoneInfo
+from serviceBot.services import timezone_service
 
-    BUSINESS_TZ = ZoneInfo("America/New_York")
-except Exception:  # pragma: no cover - only for restricted Python builds
-    BUSINESS_TZ = dt_mod.timezone(dt_mod.timedelta(hours=-4))
+
+class _DynamicBusinessTZ(dt_mod.tzinfo):
+    @property
+    def _tz(self):
+        return timezone_service.get_business_zoneinfo()
+
+    def utcoffset(self, dt):
+        return self._tz.utcoffset(dt)
+
+    def dst(self, dt):
+        return self._tz.dst(dt)
+
+    def tzname(self, dt):
+        return self._tz.tzname(dt)
+
+    def fromutc(self, dt):
+        wrapped = self._tz
+        if dt.tzinfo is self:
+            dt = dt.replace(tzinfo=wrapped)
+        res = wrapped.fromutc(dt)
+        return res.replace(tzinfo=self)
+
+    @property
+    def key(self):
+        return timezone_service.get_business_timezone_str()
+
+    def __repr__(self):
+        return repr(self._tz)
+
+
+BUSINESS_TZ = _DynamicBusinessTZ()
 
 
 class BookingError(ValueError):
@@ -152,7 +179,7 @@ def validate_appointment_lead_time(
     Returns (is_valid, earliest_allowed_datetime, suggested_slots).
     """
     if current_time is None:
-        current_time = dt_mod.datetime.now()
+        current_time = timezone_service.now_in_business_tz().replace(tzinfo=None)
 
     if min_buffer_hours is None:
         try:
@@ -965,9 +992,12 @@ class BookingService:
         cursor.execute(
             """
             SELECT sr.id, sr.customer_id, sr.staff_agent_id, sr.status,
-                   c.name AS customer_name, c.phone
+                   sr.service_type, sr.issue_description,
+                   c.name AS customer_name, c.phone,
+                   v.year, v.make, v.model
             FROM service_requests sr
             JOIN customers c ON c.id = sr.customer_id
+            LEFT JOIN vehicles v ON v.id = sr.vehicle_id
             WHERE sr.id = %s
             FOR UPDATE OF sr;
             """,
@@ -978,6 +1008,10 @@ class BookingService:
             raise BookingValidationError(f"Service request {request_id} was not found.")
         if not customer:
             customer = {"name": request.get("customer_name"), "phone": request.get("phone")}
+
+        veh_parts = [request.get("year"), request.get("make"), request.get("model")]
+        vehicle_str = " ".join([str(p).strip() for p in veh_parts if p and str(p).strip().upper() not in ("NONE", "NULL", "N/A")]).strip() or "N/A"
+        issue_str = request.get("issue_description") or service_type
 
         existing = self._active_reservation(cursor, request_id)
         old_segments: list[dt_mod.datetime] = []
@@ -1092,6 +1126,8 @@ class BookingService:
             duration_minutes=duration_minutes,
             customer=customer,
             service_type=service_type,
+            vehicle_str=vehicle_str,
+            issue_description=issue_str,
             triggered_by=triggered_by,
         )
         return BookingReceipt(
@@ -1284,6 +1320,8 @@ class BookingService:
         duration_minutes: int,
         customer: dict[str, Any],
         service_type: str,
+        vehicle_str: Optional[str] = None,
+        issue_description: Optional[str] = None,
         triggered_by: str = "system",
     ) -> None:
         cursor.execute(
@@ -1340,11 +1378,14 @@ class BookingService:
             "agent_phone": assigned_agent.get("phone_number"),
             "previous_agent_name": previous_agent.get("name"),
             "previous_agent_phone": previous_agent.get("phone_number"),
+            "vehicle": vehicle_str or "N/A",
+            "issue": issue_description or service_type,
             "details": {
                 "customer_name": customer.get("name") or "Customer",
                 "phone": customer.get("phone"),
                 "service_type": service_type,
-                "issue": service_type,
+                "vehicle": vehicle_str or "N/A",
+                "issue": issue_description or service_type,
                 "duration_minutes": duration_minutes,
                 "agent_name": assigned_agent.get("name"),
                 "new_agent_name": assigned_agent.get("name"),

@@ -18,11 +18,29 @@ import datetime
 import traceback
 from typing import List, Dict, Any, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
-try:
-    import zoneinfo
-    TZ = zoneinfo.ZoneInfo("America/New_York")
-except Exception:
-    TZ = datetime.timezone(datetime.timedelta(hours=-4))
+from serviceBot.services import timezone_service
+
+class _DynamicCalendarSyncTZ(datetime.tzinfo):
+    @property
+    def _tz(self):
+        return timezone_service.get_business_zoneinfo()
+
+    def utcoffset(self, dt):
+        return self._tz.utcoffset(dt)
+
+    def dst(self, dt):
+        return self._tz.dst(dt)
+
+    def tzname(self, dt):
+        return self._tz.tzname(dt)
+
+    def fromutc(self, dt):
+        wrapped = self._tz
+        if dt.tzinfo is self:
+            dt = dt.replace(tzinfo=wrapped)
+        return wrapped.fromutc(dt)
+
+TZ = _DynamicCalendarSyncTZ()
 from serviceBot.logger import get_logger
 
 logger = get_logger("services.calendar_sync")
@@ -69,7 +87,7 @@ def _generate_slot_strings(days: int = DEFAULT_DAYS, hours: List[int] = None) ->
     if hours is None:
         hours = get_configured_business_hours()
     valid_days = get_configured_business_days()
-    today = datetime.date.today()
+    today = timezone_service.now_in_business_tz().date()
     slots = []
     for offset in range(days):
         day = today + datetime.timedelta(days=offset)

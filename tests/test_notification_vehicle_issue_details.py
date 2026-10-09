@@ -419,3 +419,119 @@ def test_partial_vehicle_and_empty_issue_fallbacks_cleanly(mock_twilio):
     assert "Vehicle: Honda Civic" in msg
     assert "None" not in msg
     assert "Issue: N/A" not in msg
+
+
+def test_router_enriches_missing_vehicle_and_generic_issue_from_database(mock_twilio, mock_db_ctx):
+    """
+    Reproduction test: If details is passed with missing vehicle or generic issue ('Repair'),
+    router must enrich details from the database using appointment_id.
+    """
+    router = SMSNotificationRouter()
+    router.twilio_client = mock_twilio
+
+    rules = [
+        {"event_type": "RESCHEDULED", "recipient_role": "customer", "channel": "SMS", "enabled": True},
+        {"event_type": "RESCHEDULED", "recipient_role": "agent", "channel": "SMS", "enabled": True},
+    ]
+
+    db_row = {
+        "id": 38,
+        "service_type": "Repair",
+        "issue_description": "Brake inspection",
+        "booking_time": "2026-10-13 14:00:00",
+        "time_slot": "2026-10-13 14:00:00",
+        "duration_minutes": 60,
+        "customer_name": "Rohan Roy",
+        "customer_phone": "+14242704893",
+        "vehicle_year": 2014,
+        "vehicle_make": "Ford",
+        "vehicle_model": "Model T",
+        "agent_id": 8,
+        "agent_name": "Mathew Tan",
+        "agent_phone": "+14242704893",
+    }
+    mock_db_ctx.fetchone.return_value = db_row
+
+    # Incomplete details payload like outbox_worker provides:
+    incomplete_details = {
+        "customer_name": "Rohan Roy",
+        "phone": "+14242704893",
+        "service_type": "Repair",
+        "issue": "Repair",  # Generic / identical to service_type
+        "duration_minutes": 60,
+        "agent_name": "Mathew Tan",
+        "new_agent_name": "Mathew Tan",
+        "time": "2026-10-13 14:00:00",
+        # 'vehicle' key omitted completely!
+    }
+
+    with patch("serviceBot.services.sms_router.get_sms_matrix_rules", return_value=rules), \
+         patch("serviceBot.services.sms_router.get_customer_opt_in", return_value=True), \
+         patch("serviceBot.services.sms_router.is_in_quiet_hours", return_value=False), \
+         patch("serviceBot.services.sms_router.should_bypass_quiet_hours", return_value=False), \
+         patch("serviceBot.services.sms_router.log_sms_dispatch", return_value=1), \
+         patch("serviceBot.services.sms_router.update_or_cancel_appointment_reminders"):
+
+        router.process_event(
+            event_type="RESCHEDULED",
+            appointment_id=38,
+            customer_phone="+14242704893",
+            agent_phone="+14242704893",
+            booking_time="2026-10-13 14:00:00",
+            details=incomplete_details,
+        )
+
+    assert len(mock_twilio.sent) >= 1
+    cust_msg = next(m for m in mock_twilio.sent if m["recipient_type"] == "customer")["body"]
+    agent_msg = next(m for m in mock_twilio.sent if m["recipient_type"] == "agent")["body"]
+
+    assert "Vehicle: 2014 Ford Model T" in cust_msg
+    assert "Issue: Brake inspection" in cust_msg
+
+    assert "Vehicle: 2014 Ford Model T" in agent_msg
+    assert "Issue: Brake inspection" in agent_msg
+
+
+def test_booking_service_enqueues_vehicle_and_actual_issue_in_outbox():
+    """
+    Verify BookingService._enqueue_projection_events includes vehicle and actual
+    issue_description in outbox_notifications payload details instead of hardcoding service_type.
+    """
+    mock_cursor = MagicMock()
+    mock_cursor.fetchone.return_value = {
+        "name": "Mathew Tan",
+        "phone_number": "+14242704893",
+        "email": "mathew@example.com",
+    }
+    customer = {"name": "Rohan Roy", "phone": "+14242704893"}
+    starts_at = dt_mod.datetime(2026, 10, 13, 14, 0, 0)
+
+    import json
+    from serviceBot.services.booking import BookingService
+    BookingService._enqueue_projection_events(
+        mock_cursor,
+        request_id=38,
+        reservation_id=19,
+        staff_agent_id=8,
+        old_staff_agent_id=None,
+        old_starts_at=None,
+        booking_type="appointment",
+        starts_at=starts_at,
+        duration_minutes=60,
+        customer=customer,
+        service_type="Repair",
+        vehicle_str="2014 Ford Model T",
+        issue_description="Brake inspection",
+    )
+
+    outbox_calls = [
+        call for call in mock_cursor.execute.call_args_list
+        if "INSERT INTO outbox_notifications" in str(call[0][0])
+    ]
+    assert len(outbox_calls) == 2  # calendar_projection and booking_notification
+    for call in outbox_calls:
+        payload = json.loads(call[0][1][2])
+        assert payload["details"]["vehicle"] == "2014 Ford Model T"
+        assert payload["details"]["issue"] == "Brake inspection"
+
+

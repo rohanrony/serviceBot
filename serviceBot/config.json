@@ -22,6 +22,7 @@
   "gmail_token_expires_at": 1785533082.191057,
   "business_hours_start": 7,
   "business_hours_end": 18,
+  "business_timezone": "America/New_York",
   "business_hours": [
     7,
     8,

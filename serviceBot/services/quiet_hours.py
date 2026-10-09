@@ -5,7 +5,11 @@ import time
 from serviceBot.db.queries import get_sms_config
 from serviceBot.services.twilio_sms import TwilioSMSClient
 
-TIMEZONE_NY = zoneinfo.ZoneInfo("America/New_York")
+from serviceBot.services import timezone_service
+
+
+def _get_quiet_hours_tz() -> zoneinfo.ZoneInfo:
+    return timezone_service.get_business_zoneinfo()
 
 
 def parse_time_str(time_val) -> dt_mod.time:
@@ -19,7 +23,7 @@ def parse_time_str(time_val) -> dt_mod.time:
 
 def is_in_quiet_hours(now_dt: dt_mod.datetime = None, config: dict = None) -> bool:
     """
-    Evaluates whether a timestamp is inside quiet hours in America/New_York timezone.
+    Evaluates whether a timestamp is inside quiet hours in the business timezone.
     Boundary rule: inclusive-exclusive (21:00:00 is inside, 08:00:00 is outside).
     """
     if config is None:
@@ -31,12 +35,13 @@ def is_in_quiet_hours(now_dt: dt_mod.datetime = None, config: dict = None) -> bo
     start_t = parse_time_str(config.get("quiet_start_time", "21:00"))
     end_t = parse_time_str(config.get("quiet_end_time", "08:00"))
 
+    biz_tz = _get_quiet_hours_tz()
     if now_dt is None:
-        now_dt = dt_mod.datetime.now(TIMEZONE_NY)
+        now_dt = timezone_service.now_in_business_tz()
     elif now_dt.tzinfo is None:
-        now_dt = now_dt.replace(tzinfo=dt_mod.timezone.utc).astimezone(TIMEZONE_NY)
+        now_dt = now_dt.replace(tzinfo=dt_mod.timezone.utc).astimezone(biz_tz)
     else:
-        now_dt = now_dt.astimezone(TIMEZONE_NY)
+        now_dt = now_dt.astimezone(biz_tz)
 
     current_t = now_dt.time()
 
@@ -78,18 +83,19 @@ def calculate_quiet_hours_release_time(now_dt: dt_mod.datetime = None, config: d
 
     end_t = parse_time_str(config.get("quiet_end_time", "08:00"))
 
+    biz_tz = _get_quiet_hours_tz()
     if now_dt is None:
-        now_ny = dt_mod.datetime.now(TIMEZONE_NY)
+        now_biz = timezone_service.now_in_business_tz()
     elif now_dt.tzinfo is None:
-        now_ny = now_dt.replace(tzinfo=dt_mod.timezone.utc).astimezone(TIMEZONE_NY)
+        now_biz = now_dt.replace(tzinfo=dt_mod.timezone.utc).astimezone(biz_tz)
     else:
-        now_ny = now_dt.astimezone(TIMEZONE_NY)
+        now_biz = now_dt.astimezone(biz_tz)
 
-    release_ny = now_ny.replace(hour=end_t.hour, minute=end_t.minute, second=0, microsecond=0)
-    if release_ny <= now_ny:
-        release_ny += dt_mod.timedelta(days=1)
+    release_biz = now_biz.replace(hour=end_t.hour, minute=end_t.minute, second=0, microsecond=0)
+    if release_biz <= now_biz:
+        release_biz += dt_mod.timedelta(days=1)
 
-    return release_ny.astimezone(dt_mod.timezone.utc).replace(tzinfo=None)
+    return release_biz.astimezone(dt_mod.timezone.utc).replace(tzinfo=None)
 
 
 _worker_started = False
