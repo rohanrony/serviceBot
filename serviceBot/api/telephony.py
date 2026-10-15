@@ -95,15 +95,21 @@ import re
 def is_within_business_hours() -> bool:
     """
     Checks if the current time in configured business timezone
-    is within business hours: Monday to Friday, 7:00 AM to 6:00 PM.
+    is within configured business hours and operating days.
     """
     from serviceBot.services import timezone_service
+    from serviceBot.services.calendar_sync import get_configured_business_hours, get_configured_business_days
     now = timezone_service.now_in_business_tz()
-    # 0 = Monday, 4 = Friday
-    if now.weekday() > 4:
+    valid_days = get_configured_business_days()
+    if now.weekday() not in valid_days:
         return False
-    start_time = now.replace(hour=7, minute=0, second=0, microsecond=0).time()
-    end_time = now.replace(hour=18, minute=0, second=0, microsecond=0).time()
+    b_hours = get_configured_business_hours()
+    if not b_hours:
+        return False
+    start_hour = min(b_hours)
+    end_hour = max(b_hours) + 1
+    start_time = now.replace(hour=start_hour, minute=0, second=0, microsecond=0).time()
+    end_time = now.replace(hour=end_hour, minute=0, second=0, microsecond=0).time()
     return start_time <= now.time() < end_time
 
 def clean_and_validate_phone(phone: str) -> Optional[str]:
@@ -791,6 +797,9 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                     for s in slots
                 )
 
+            from serviceBot.services.calendar_sync import get_business_hours_display
+            b_desc, closing_str = get_business_hours_display()
+
             if slots:
                 if time_match:
                     time_display = preferred_time if preferred_time else requested_time_target.strftime("%I:%M %p").lstrip("0")
@@ -800,7 +809,7 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                         f"Clearly confirm the requested time with the caller or offer these adjacent options. "
                         f"NOTE TO AGENT: Additional slots are also available throughout the day if the caller prefers another specific time. "
                         f"Never tell or imply to the caller that these are the only available slots for the day. "
-                        f"CRITICAL: All appointments must conclude strictly by 6:00 PM. Never offer or accept an appointment that would run past 6:00 PM."
+                        f"CRITICAL: All appointments must conclude strictly by {closing_str}. Never offer or accept an appointment that would run past {closing_str}."
                     )
                 else:
                     msg = (
@@ -810,12 +819,12 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                         f"Additional slots are also available throughout the day if the caller prefers another specific time. "
                         f"Never tell or imply to the caller that these are the only available slots for the day. If the caller requests a different time, "
                         f"call check_availability with their preferred time. "
-                        f"CRITICAL: All appointments must conclude strictly by 6:00 PM. Never offer or accept an appointment that would run past 6:00 PM."
+                        f"CRITICAL: All appointments must conclude strictly by {closing_str}. Never offer or accept an appointment that would run past {closing_str}."
                     )
             else:
                 msg = (
                     "I apologize, but there are no open appointment slots available in our schedule around that time/date right now. "
-                    "Please note our business hours are Monday to Friday, 7:00 AM to 6:00 PM, and appointments must conclude by 6:00 PM. "
+                    f"Please note our business hours are {b_desc}, and appointments must conclude by {closing_str}. "
                     "Please apologize to the caller for the inconvenience and offer to check another date or arrange an advisor callback."
                 )
             result = {
@@ -826,9 +835,11 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
 
         elif tool_name in ["cba_webbook", "cba_webhook", "transfer_call", "handoff"]:
             if not is_within_business_hours():
+                from serviceBot.services.calendar_sync import get_business_hours_display
+                b_desc, closing_str = get_business_hours_display()
                 result = {
                     "success": False,
-                    "message": "Handoff to a human agent is only available during our business hours, which are Monday to Friday from 7:00 AM to 6:00 PM. Currently we are closed. Please let the caller know that we are currently closed, and offer to schedule an appointment or arrange a callback instead."
+                    "message": f"Handoff to a human agent is only available during our business hours, which are {b_desc}. Currently we are closed. Please let the caller know that we are currently closed, and offer to schedule an appointment or arrange a callback instead."
                 }
             else:
                 # Perform handoff node simulation
@@ -1326,41 +1337,107 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                         "message": win_msg,
                     }
                 else:
-                    try:
-                        appt_id = book_appointment(
-                            customer_id=customer_id,
-                            service_request_id=sr_id,
-                            appointment_datetime=appointment_datetime,
-                            service_type=service_type,
-                            vehicle_details=vehicle_details
-                        )
-                        track_session_booking(
-                            session_key=session_key,
-                            service_request_id=appt_id,
-                            booking_time=appointment_datetime,
-                            duration_minutes=duration_minutes,
-                            phone=phone,
-                            vehicle=vehicle_details,
-                        )
-                        end_dt_str, win_msg = format_appointment_window_message(
-                            booking_time=appointment_datetime,
-                            duration_minutes=duration_minutes,
-                            price_range=price_range,
-                            is_update=False,
-                        )
-                        result = {
-                            "success": True,
-                            "appointment_id": appt_id,
-                            "booking_time": appointment_datetime,
-                            "duration_minutes": duration_minutes,
-                            "expected_end_time": end_dt_str,
-                            "message": win_msg,
-                        }
-                    except ValueError as val_err:
-                        result = {
-                            "success": False,
-                            "message": f"Booking failed: {str(val_err)}"
-                        }
+                    # Check for multi-service scheduling request
+                    services_list = args.get("services") or args.get("service_types")
+                    if not services_list and isinstance(service_type, str):
+                        fields = get_service_required_fields(service_type)
+                        if fields and fields.get("description", "").startswith("Multiple services requested"):
+                            import re
+                            parts = [p.strip() for p in re.split(r'[,/+]|\band\b|&', service_type, flags=re.IGNORECASE) if p.strip()]
+                            if len(parts) > 1:
+                                services_list = parts
+
+                    if services_list and len(services_list) > 1:
+                        from serviceBot.services.booking import reserve_multi_service_appointment, BookingConflictError
+                        try:
+                            receipts = reserve_multi_service_appointment(
+                                customer_id=customer_id,
+                                services=services_list,
+                                appointment_datetime=appointment_datetime,
+                                vehicle_details=vehicle_details,
+                                booking_type="appointment",
+                            )
+                            first_appt = receipts[0]
+                            total_duration = sum(r["duration_minutes"] for r in receipts)
+                            all_agents = {r["staff_agent_id"] for r in receipts}
+                            is_single_tech = len(all_agents) == 1
+
+                            track_session_booking(
+                                session_key=session_key,
+                                service_request_id=first_appt["service_request_id"],
+                                booking_time=appointment_datetime,
+                                duration_minutes=total_duration,
+                                phone=phone,
+                                vehicle=vehicle_details,
+                            )
+                            end_dt_str, win_msg = format_appointment_window_message(
+                                booking_time=appointment_datetime,
+                                duration_minutes=total_duration,
+                                price_range=price_range,
+                                is_update=False,
+                            )
+                            services_desc = ", ".join(services_list)
+                            if is_single_tech:
+                                custom_msg = f"Your appointment for {services_desc} is confirmed starting at {first_appt['booking_time']} (total duration: {total_duration} mins). {win_msg}"
+                            else:
+                                custom_msg = f"Your back-to-back appointments for {services_desc} have been scheduled with our specialized technicians starting at {first_appt['booking_time']} (total duration: {total_duration} mins). {win_msg}"
+
+                            result = {
+                                "success": True,
+                                "appointment_id": first_appt["service_request_id"],
+                                "visit_group_id": first_appt.get("visit_group_id"),
+                                "appointments": receipts,
+                                "booking_time": appointment_datetime,
+                                "duration_minutes": total_duration,
+                                "expected_end_time": end_dt_str,
+                                "message": custom_msg,
+                            }
+                        except BookingConflictError as b_err:
+                            result = {
+                                "success": False,
+                                "message": f"Scheduling conflict: {str(b_err)}"
+                            }
+                        except ValueError as val_err:
+                            result = {
+                                "success": False,
+                                "message": f"Booking failed: {str(val_err)}"
+                            }
+                    else:
+                        try:
+                            appt_id = book_appointment(
+                                customer_id=customer_id,
+                                service_request_id=sr_id,
+                                appointment_datetime=appointment_datetime,
+                                service_type=service_type,
+                                vehicle_details=vehicle_details
+                            )
+                            track_session_booking(
+                                session_key=session_key,
+                                service_request_id=appt_id,
+                                booking_time=appointment_datetime,
+                                duration_minutes=duration_minutes,
+                                phone=phone,
+                                vehicle=vehicle_details,
+                            )
+                            end_dt_str, win_msg = format_appointment_window_message(
+                                booking_time=appointment_datetime,
+                                duration_minutes=duration_minutes,
+                                price_range=price_range,
+                                is_update=False,
+                            )
+                            result = {
+                                "success": True,
+                                "appointment_id": appt_id,
+                                "booking_time": appointment_datetime,
+                                "duration_minutes": duration_minutes,
+                                "expected_end_time": end_dt_str,
+                                "message": win_msg,
+                            }
+                        except ValueError as val_err:
+                            result = {
+                                "success": False,
+                                "message": f"Booking failed: {str(val_err)}"
+                            }
 
         elif tool_name == "request_callback":
             phone = args.get("phone") or args.get("phone_number") or args.get("phoneNumber") or args.get("caller_phone") or args.get("caller_id")

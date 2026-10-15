@@ -1280,6 +1280,67 @@ def get_service_required_fields(service_name: str) -> dict:
         "req_location": False
     }
 
+
+def get_service_agent_ids(service_id: int) -> list[int]:
+    """Returns the list of staff_agent IDs tagged to a catalog service."""
+    if not service_id:
+        return []
+    try:
+        with get_db_connection() as conn:
+            with dict_cursor(conn) as cursor:
+                cursor.execute(
+                    "SELECT staff_agent_id FROM service_staff_agents WHERE service_id = %s ORDER BY staff_agent_id ASC;",
+                    (service_id,)
+                )
+                return [row["staff_agent_id"] for row in cursor.fetchall()]
+    except Exception as e:
+        logger.warning(f"Error fetching tagged agents for service {service_id}: {e}")
+        return []
+
+
+def set_service_agents(service_id: int, agent_ids: list[int]) -> None:
+    """Sets the staff agents tagged to a service, replacing any existing tags."""
+    if not service_id:
+        return
+    unique_agent_ids = list(dict.fromkeys(agent_ids or []))
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("DELETE FROM service_staff_agents WHERE service_id = %s;", (service_id,))
+            for aid in unique_agent_ids:
+                cursor.execute(
+                    "INSERT INTO service_staff_agents (service_id, staff_agent_id) VALUES (%s, %s) ON CONFLICT DO NOTHING;",
+                    (service_id, aid)
+                )
+            conn.commit()
+
+
+def get_qualified_agent_ids(service_name_or_id) -> list[int]:
+    """
+    Returns the list of agent IDs qualified for a service.
+    If the service has no tagged agents, returns [] (meaning open to any active agent).
+    """
+    if not service_name_or_id:
+        return []
+    service_id = None
+    if isinstance(service_name_or_id, int):
+        service_id = service_name_or_id
+    else:
+        fields = get_service_required_fields(str(service_name_or_id))
+        if fields:
+            try:
+                with get_db_connection() as conn:
+                    with dict_cursor(conn) as cursor:
+                        cursor.execute("SELECT id FROM services WHERE name = %s LIMIT 1;", (fields["name"],))
+                        row = cursor.fetchone()
+                        if row:
+                            service_id = row["id"]
+            except Exception as e:
+                logger.warning(f"Error resolving service ID for {service_name_or_id}: {e}")
+    if not service_id:
+        return []
+    return get_service_agent_ids(service_id)
+
+
 def create_crm_note(call_id: str, customer_id: int, summary: str, transcript: str) -> int:
     """
     Inserts a new CRM note (call summary and transcript) for a customer call.

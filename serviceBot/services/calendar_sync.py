@@ -82,6 +82,31 @@ def get_configured_business_days() -> List[int]:
     return [0, 1, 2, 3, 4]
 
 
+def get_business_hours_display() -> tuple[str, str]:
+    """
+    Returns (schedule_description, closing_time_str) based on portal configuration.
+    Example: ("Monday to Friday, 7:00 AM to 6:00 PM", "6:00 PM")
+    """
+    b_hours = get_configured_business_hours()
+    b_days = get_configured_business_days()
+    day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    if b_days:
+        if b_days == list(range(min(b_days), max(b_days) + 1)):
+            days_str = f"{day_names[min(b_days)]} to {day_names[max(b_days)]}"
+        else:
+            days_str = ", ".join(day_names[d] for d in b_days)
+    else:
+        days_str = "Monday to Friday"
+
+    start_h = min(b_hours) if b_hours else 7
+    end_h = (max(b_hours) + 1) if b_hours else 18
+    s_dt = datetime.datetime(2000, 1, 1, start_h, 0)
+    e_dt = datetime.datetime(2000, 1, 1, end_h, 0)
+    s_str = s_dt.strftime("%I:%M %p").lstrip("0")
+    e_str = e_dt.strftime("%I:%M %p").lstrip("0")
+    return f"{days_str}, {s_str} to {e_str}", e_str
+
+
 def _generate_slot_strings(days: int = DEFAULT_DAYS, hours: List[int] = None) -> List[str]:
     """Return a list of 'YYYY-MM-DD HH:MM:SS' strings for business-hour slots."""
     if hours is None:

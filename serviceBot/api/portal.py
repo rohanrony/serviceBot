@@ -3,7 +3,7 @@ import json
 import httpx
 import datetime as dt_mod
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 from fastapi import APIRouter, HTTPException, UploadFile, File, Request
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -237,6 +237,7 @@ class ServiceCreate(BaseModel):
     req_vehicle_details: Optional[bool] = True
     req_issue_description: Optional[bool] = True
     req_location: Optional[bool] = True
+    agent_ids: Optional[List[int]] = None
 
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
 SYSTEM_PROMPT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "system_prompt.txt")
@@ -614,7 +615,31 @@ async def get_services():
             
             cursor.execute("SELECT id, name, description, price_range, duration_minutes, req_customer_name, req_phone_number, req_vehicle_details, req_issue_description, req_location FROM services ORDER BY id ASC")
             rows = cursor.fetchall()
-            return [dict(row) for row in rows]
+
+            # Fetch agent mappings
+            service_agents_map = {}
+            service_agent_names_map = {}
+            try:
+                cursor.execute("""
+                    SELECT ssa.service_id, sa.id AS agent_id, sa.name AS agent_name
+                    FROM service_staff_agents ssa
+                    JOIN staff_agents sa ON ssa.staff_agent_id = sa.id
+                    ORDER BY sa.name ASC;
+                """)
+                for m in cursor.fetchall():
+                    sid = m["service_id"]
+                    service_agents_map.setdefault(sid, []).append(m["agent_id"])
+                    service_agent_names_map.setdefault(sid, []).append(m["agent_name"])
+            except Exception as e:
+                logger.warning(f"Error fetching service agent mappings: {e}")
+
+            results = []
+            for row in rows:
+                d = dict(row)
+                d["assigned_agent_ids"] = service_agents_map.get(d["id"], [])
+                d["assigned_agent_names"] = service_agent_names_map.get(d["id"], [])
+                results.append(d)
+            return results
 
 @router.post("/services/seed-defaults")
 async def seed_default_services():
@@ -646,6 +671,7 @@ async def seed_default_services():
 @router.post("/services", status_code=201)
 async def create_service(payload: ServiceCreate):
     from serviceBot.db.connection import get_db_connection, dict_cursor
+    from serviceBot.db.queries import set_service_agents
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             # Check if service with same name already exists
@@ -662,6 +688,13 @@ async def create_service(payload: ServiceCreate):
             )
             new_id = cursor.fetchone()["id"]
             conn.commit()
+
+            if payload.agent_ids is not None:
+                try:
+                    set_service_agents(new_id, payload.agent_ids)
+                except Exception as e:
+                    logger.warning(f"Error setting service agents: {e}")
+
             try:
                 sync_services_to_kb()
             except Exception:
@@ -671,6 +704,7 @@ async def create_service(payload: ServiceCreate):
 @router.put("/services/{service_id}")
 async def update_service(service_id: int, payload: ServiceCreate):
     from serviceBot.db.connection import get_db_connection, dict_cursor
+    from serviceBot.db.queries import set_service_agents
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             cursor.execute("SELECT id FROM services WHERE id = %s", (service_id,))
@@ -685,6 +719,13 @@ async def update_service(service_id: int, payload: ServiceCreate):
                  service_id)
             )
             conn.commit()
+
+            if payload.agent_ids is not None:
+                try:
+                    set_service_agents(service_id, payload.agent_ids)
+                except Exception as e:
+                    logger.warning(f"Error updating service agents: {e}")
+
             try:
                 sync_services_to_kb()
             except Exception:

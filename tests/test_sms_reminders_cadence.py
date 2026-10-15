@@ -40,7 +40,7 @@ def sample_appointment():
 
 def test_schedule_appointment_reminders_queues_attempts_and_persists_cutoff(sample_appointment):
     appt_id, cust_phone, agent_phone = sample_appointment
-    booking_time = "2026-10-10 14:00:00"
+    booking_time = (dt_mod.datetime.now() + dt_mod.timedelta(days=3)).strftime("%Y-%m-%d 14:00:00")
 
     schedule_appointment_reminders(
         appointment_id=appt_id,

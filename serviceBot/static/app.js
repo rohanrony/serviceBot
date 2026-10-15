@@ -1397,8 +1397,54 @@ document.addEventListener('DOMContentLoaded', () => {
   if (overlay) overlay.addEventListener('click', closeDrawer);
 
   // --- VIEW 3: SERVICES RETRIEVAL & ADDITIONS ---
+  let cachedStaffAgents = [];
+
+  async function fetchStaffAgentsForCatalog() {
+    try {
+      const res = await fetch('/api/v1/portal/agents');
+      if (res.ok) {
+        cachedStaffAgents = await res.json();
+      }
+    } catch (e) {
+      console.warn('Failed to prefetch staff agents for catalog:', e);
+    }
+    return cachedStaffAgents;
+  }
+
+  function renderStaffAgentCheckboxes(containerId, selectedIds = []) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    if (!cachedStaffAgents || cachedStaffAgents.length === 0) {
+      container.innerHTML = '<span class="text-muted" style="font-size: 0.8rem;">No staff agents available.</span>';
+      return;
+    }
+    container.innerHTML = '';
+    const selectedSet = new Set((selectedIds || []).map(id => Number(id)));
+    cachedStaffAgents.forEach(agent => {
+      const label = document.createElement('label');
+      label.className = 'checkbox-item';
+      label.style.display = 'inline-flex';
+      label.style.alignItems = 'center';
+      label.style.gap = '6px';
+      label.style.fontSize = '0.825rem';
+      label.style.cursor = 'pointer';
+
+      const isChecked = selectedSet.has(Number(agent.id));
+      label.innerHTML = `
+        <input type="checkbox" value="${agent.id}" ${isChecked ? 'checked' : ''} style="cursor: pointer;">
+        <span>${agent.name} <small class="text-muted">(${agent.role || 'Advisor'})</small></span>
+      `;
+      container.appendChild(label);
+    });
+  }
+
   async function loadServicesData() {
     try {
+      if (!cachedStaffAgents || cachedStaffAgents.length === 0) {
+        await fetchStaffAgentsForCatalog();
+      }
+      renderStaffAgentCheckboxes('new-service-agents-list', []);
+
       const response = await fetch('/api/v1/portal/services');
       if (!response.ok) throw new Error('Failed to fetch services');
       const services = await response.json();
@@ -1408,12 +1454,22 @@ document.addEventListener('DOMContentLoaded', () => {
         body.innerHTML = '';
         
         services.forEach(svc => {
+          let agentBadges = '';
+          if (svc.assigned_agent_names && svc.assigned_agent_names.length > 0) {
+            agentBadges = svc.assigned_agent_names.map(name => 
+              `<span class="badge info" style="font-size: 0.72rem; padding: 2px 6px; margin: 1px 2px; display: inline-block;">${name}</span>`
+            ).join('');
+          } else {
+            agentBadges = '<span class="badge" style="background: rgba(148, 163, 184, 0.15); color: var(--text-muted); font-size: 0.72rem; padding: 2px 6px;">Any Available</span>';
+          }
+
           const tr = document.createElement('tr');
           tr.innerHTML = `
             <td><strong>${svc.name}</strong></td>
             <td><div class="desc-cell" title="${svc.description || ''}">${svc.description || '--'}</div></td>
             <td><span class="badge success">${svc.price_range || '--'}</span></td>
             <td>${svc.duration_minutes ? svc.duration_minutes + ' mins' : '--'}</td>
+            <td><div style="display: flex; flex-wrap: wrap; gap: 4px; max-width: 220px;">${agentBadges}</div></td>
             <td>
               <div class="actions-cell" style="display: flex; gap: 8px; align-items: center; white-space: nowrap;">
                 <button class="btn btn-secondary btn-sm edit-service-btn" data-id="${svc.id}">
@@ -1497,6 +1553,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('edit-service-req-issue-description').checked = svc.req_issue_description !== undefined ? !!svc.req_issue_description : true;
     document.getElementById('edit-service-req-location').checked = svc.req_location !== undefined ? !!svc.req_location : true;
     
+    renderStaffAgentCheckboxes('edit-service-agents-list', svc.assigned_agent_ids || []);
+
     if (editDrawer) editDrawer.classList.add('active');
     if (editDrawerOverlay) editDrawerOverlay.classList.add('active');
   }
@@ -1515,6 +1573,9 @@ document.addEventListener('DOMContentLoaded', () => {
       e.preventDefault();
       
       const id = document.getElementById('edit-service-id').value;
+      const selectedAgentIds = Array.from(document.querySelectorAll('#edit-service-agents-list input[type="checkbox"]:checked'))
+        .map(cb => parseInt(cb.value, 10));
+
       const payload = {
         name: document.getElementById('edit-service-name').value,
         description: document.getElementById('edit-service-desc').value,
@@ -1524,7 +1585,8 @@ document.addEventListener('DOMContentLoaded', () => {
         req_phone_number: document.getElementById('edit-service-req-phone-number').checked,
         req_vehicle_details: document.getElementById('edit-service-req-vehicle-details').checked,
         req_issue_description: document.getElementById('edit-service-req-issue-description').checked,
-        req_location: document.getElementById('edit-service-req-location').checked
+        req_location: document.getElementById('edit-service-req-location').checked,
+        agent_ids: selectedAgentIds
       };
       
       try {
@@ -1558,6 +1620,9 @@ document.addEventListener('DOMContentLoaded', () => {
         submitBtn.textContent = 'Creating...';
       }
       
+      const selectedAgentIds = Array.from(document.querySelectorAll('#new-service-agents-list input[type="checkbox"]:checked'))
+        .map(cb => parseInt(cb.value, 10));
+
       const payload = {
         name: document.getElementById('new-service-name').value,
         description: document.getElementById('new-service-desc').value,
@@ -1567,7 +1632,8 @@ document.addEventListener('DOMContentLoaded', () => {
         req_phone_number: document.getElementById('new-service-req-phone-number').checked,
         req_vehicle_details: document.getElementById('new-service-req-vehicle-details').checked,
         req_issue_description: document.getElementById('new-service-req-issue-description').checked,
-        req_location: document.getElementById('new-service-req-location').checked
+        req_location: document.getElementById('new-service-req-location').checked,
+        agent_ids: selectedAgentIds
       };
       
       try {
@@ -1581,6 +1647,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         showToast('Service created successfully!');
         addServiceForm.reset();
+        renderStaffAgentCheckboxes('new-service-agents-list', []);
         loadServicesData();
       } catch (err) {
         console.error(err);

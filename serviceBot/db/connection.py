@@ -200,6 +200,16 @@ CREATE TABLE IF NOT EXISTS services (
     req_location BOOLEAN DEFAULT TRUE
 );
 
+CREATE TABLE IF NOT EXISTS service_staff_agents (
+    service_id INTEGER NOT NULL REFERENCES services(id) ON DELETE CASCADE,
+    staff_agent_id INTEGER NOT NULL REFERENCES staff_agents(id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW(),
+    PRIMARY KEY (service_id, staff_agent_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ssa_service_id ON service_staff_agents(service_id);
+CREATE INDEX IF NOT EXISTS idx_ssa_agent_id ON service_staff_agents(staff_agent_id);
+
 CREATE TABLE IF NOT EXISTS user_google_accounts (
     agent_id INTEGER PRIMARY KEY,
     provider VARCHAR(50) NOT NULL DEFAULT 'google',
@@ -450,8 +460,21 @@ def init_db(db_url: str = None, force: bool = False):
             ("escalation_reason", "VARCHAR(50) DEFAULT NULL"),
             ("confirmation_cutoff_at", "TIMESTAMP WITHOUT TIME ZONE DEFAULT NULL"),
             ("confirmed_at", "TIMESTAMP WITHOUT TIME ZONE DEFAULT NULL"),
+            ("visit_group_id", "VARCHAR(64) DEFAULT NULL"),
         ]:
             _safe_alter(cursor, conn, f"ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS {col} {col_type}")
+
+        _safe_alter(cursor, conn, "CREATE INDEX IF NOT EXISTS idx_sr_visit_group ON service_requests(visit_group_id);")
+        _safe_alter(cursor, conn, """
+            CREATE TABLE IF NOT EXISTS service_staff_agents (
+                service_id INTEGER NOT NULL REFERENCES services(id) ON DELETE CASCADE,
+                staff_agent_id INTEGER NOT NULL REFERENCES staff_agents(id) ON DELETE CASCADE,
+                created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW(),
+                PRIMARY KEY (service_id, staff_agent_id)
+            );
+        """)
+        _safe_alter(cursor, conn, "CREATE INDEX IF NOT EXISTS idx_ssa_service_id ON service_staff_agents(service_id);")
+        _safe_alter(cursor, conn, "CREATE INDEX IF NOT EXISTS idx_ssa_agent_id ON service_staff_agents(staff_agent_id);")
 
         for col, col_type in [
             ("attempt_number", "INTEGER DEFAULT 1"),

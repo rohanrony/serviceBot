@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import datetime as dt_mod
 import json
+import uuid
+import itertools
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Optional
 
@@ -508,6 +510,204 @@ class BookingService:
             customer_consent_obtained=customer_consent_obtained,
             triggered_by=triggered_by,
         )
+
+    def reserve_multi_service_appointment(
+        self,
+        *,
+        customer_id: int,
+        services: list[str],
+        appointment_datetime: str | dt_mod.datetime,
+        vehicle_details: Optional[dict[str, Any]] = None,
+        booking_type: str = "appointment",
+        issue_descriptions: Optional[list[str]] = None,
+    ) -> list[dict[str, Any]]:
+        """Atomically schedule multiple services, preferring single agent at preferred time or contiguous back-to-back."""
+        from serviceBot.db.queries import get_service_required_fields, get_qualified_agent_ids
+        from serviceBot.services.calendar_sync import get_configured_business_hours, get_configured_business_days
+
+        if not services:
+            raise ValueError("At least one service must be specified.")
+
+        starts_at = parse_reservation_start(appointment_datetime)
+        b_hours = get_configured_business_hours()
+        b_days = get_configured_business_days()
+        closing_hour = max(b_hours) + 1
+        opening_hour = min(b_hours)
+
+        if starts_at.weekday() not in b_days:
+            raise ValueError(f"Appointments cannot be scheduled on non-operating business days (weekday {starts_at.weekday()}).")
+
+        service_items = []
+        for i, svc_name in enumerate(services):
+            fields = get_service_required_fields(svc_name)
+            matched_name = fields["name"] if fields else svc_name
+            is_cb = (booking_type == "callback") or ("callback" in str(svc_name).lower())
+            eff_btype = "callback" if is_cb else "appointment"
+            dur = 15 if is_cb else int((fields.get("duration_minutes") if fields else None) or 60)
+            dur = normalize_reservation_duration(dur)
+            issue = issue_descriptions[i] if (issue_descriptions and i < len(issue_descriptions)) else f"{matched_name} requested"
+            service_items.append({
+                "name": matched_name,
+                "duration": dur,
+                "booking_type": eff_btype,
+                "issue": issue,
+            })
+
+        # Dynamic business hours closing boundary check
+        if booking_type == "appointment":
+            total_duration = sum(item["duration"] for item in service_items)
+            ends_at = starts_at + dt_mod.timedelta(minutes=total_duration)
+            closing_time = starts_at.replace(hour=closing_hour, minute=0, second=0, microsecond=0)
+            if ends_at > closing_time:
+                raise ValueError(
+                    f"Multi-service appointment of {total_duration} minutes concluding at {ends_at.strftime('%I:%M %p')} "
+                    f"exceeds business hours (closing time is {closing_time.strftime('%I:%M %p')})."
+                )
+
+            is_valid, earliest_allowed, _ = validate_appointment_lead_time(starts_at, booking_type="appointment")
+            if not is_valid:
+                raise BookingConflictError(f"Insufficient lead time. Earliest allowed time is {earliest_allowed}.")
+
+        # Determine segment start times
+        item_times = []
+        curr = starts_at
+        for i, item in enumerate(service_items):
+            item_times.append(curr)
+            if item["booking_type"] == "callback":
+                curr = curr + dt_mod.timedelta(minutes=max(30, item["duration"]))
+            else:
+                curr = curr + dt_mod.timedelta(minutes=item["duration"])
+
+        # Fetch qualified staff agents for each service
+        with self._connection_factory() as conn:
+            with self._cursor_factory(conn) as cursor:
+                cursor.execute("SELECT id FROM staff_agents ORDER BY id ASC;")
+                all_agent_ids = [r["id"] for r in cursor.fetchall()]
+
+        qualified_per_item = []
+        for item in service_items:
+            q = get_qualified_agent_ids(item["name"])
+            valid = [aid for aid in q if aid in all_agent_ids] if q else list(all_agent_ids)
+            qualified_per_item.append(valid if valid else list(all_agent_ids))
+
+        # Candidate plans
+        # Priority 1: Single-agent plans if an agent is qualified for ALL requested services
+        common_agents = sorted(list(set.intersection(*(set(q) for q in qualified_per_item))))
+        candidate_plans = []
+        for aid in common_agents:
+            candidate_plans.append([aid] * len(service_items))
+
+        # Priority 2: Distinct multi-agent plans across qualified technicians
+        all_combos = list(itertools.product(*qualified_per_item))
+        def plan_distinctness(plan):
+            return (len(set(plan)) == len(plan), -len(set(plan)))
+        all_combos.sort(key=plan_distinctness, reverse=True)
+        for combo in all_combos:
+            combo_list = list(combo)
+            if combo_list not in candidate_plans:
+                candidate_plans.append(combo_list)
+
+        visit_group_id = str(uuid.uuid4())
+        chosen_plan = None
+        plan_reservations = []
+
+        with self._connection_factory() as conn:
+            with self._cursor_factory(conn) as cursor:
+                customer = self._load_customer(cursor, customer_id)
+                vehicle_id = self._resolve_vehicle(cursor, customer_id, vehicle_details)
+
+                created_requests = []
+                for plan in candidate_plans:
+                    sp_plan = "plan_attempt"
+                    cursor.execute(f"SAVEPOINT {sp_plan};")
+                    requests_in_plan = []
+                    success = True
+
+                    for idx, agent_id in enumerate(plan):
+                        item = service_items[idx]
+                        t_start = item_times[idx]
+                        t_dur = item["duration"]
+                        t_end = t_start + dt_mod.timedelta(minutes=t_dur)
+                        segs = reservation_segments(t_start, t_dur)
+
+                        # Create service request inside savepoint
+                        cursor.execute(
+                            """
+                            INSERT INTO service_requests (
+                                customer_id, vehicle_id, service_type, issue_description, status,
+                                time_slot, booking_type, booking_time, duration_minutes,
+                                staff_agent_id, visit_group_id
+                            ) VALUES (%s, %s, %s, %s, 'pending', %s, %s, %s, %s, %s, %s)
+                            RETURNING id;
+                            """,
+                            (
+                                customer_id,
+                                vehicle_id,
+                                item["name"],
+                                item["issue"],
+                                t_start.strftime("%Y-%m-%d %H:%M:%S"),
+                                item["booking_type"],
+                                t_start.strftime("%Y-%m-%d %H:%M:%S"),
+                                t_dur,
+                                agent_id,
+                                visit_group_id,
+                            ),
+                        )
+                        sr_id = cursor.fetchone()["id"]
+
+                        res_id = self._try_reserve_candidate(
+                            cursor,
+                            request_id=sr_id,
+                            existing_reservation_id=None,
+                            agent_id=agent_id,
+                            starts_at=t_start,
+                            ends_at=t_end,
+                            segments=segs,
+                        )
+                        if res_id is None:
+                            success = False
+                            break
+
+                        self._mark_reserved_slots(cursor, sr_id, agent_id, segs)
+
+                        requests_in_plan.append({
+                            "service_request_id": sr_id,
+                            "reservation_id": res_id,
+                            "staff_agent_id": agent_id,
+                            "booking_time": t_start.strftime("%Y-%m-%d %H:%M:%S"),
+                            "duration_minutes": t_dur,
+                            "visit_group_id": visit_group_id,
+                            "service_type": item["name"],
+                            "booking_type": item["booking_type"],
+                        })
+
+                    if success:
+                        created_requests = requests_in_plan
+                        cursor.execute(f"RELEASE SAVEPOINT {sp_plan};")
+                        break
+                    else:
+                        cursor.execute(f"ROLLBACK TO SAVEPOINT {sp_plan};")
+                        cursor.execute(f"RELEASE SAVEPOINT {sp_plan};")
+
+                if not created_requests:
+                    raise BookingConflictError("The requested time is no longer available for the requested services.")
+
+                # Cross-link linked_appointment_id
+                if len(created_requests) == 2:
+                    sr0 = created_requests[0]["service_request_id"]
+                    sr1 = created_requests[1]["service_request_id"]
+                    cursor.execute("UPDATE service_requests SET linked_appointment_id = %s WHERE id = %s;", (sr1, sr0))
+                    cursor.execute("UPDATE service_requests SET linked_appointment_id = %s WHERE id = %s;", (sr0, sr1))
+                    created_requests[0]["linked_appointment_id"] = sr1
+                    created_requests[1]["linked_appointment_id"] = sr0
+                elif len(created_requests) > 2:
+                    for i in range(len(created_requests)):
+                        companion_id = created_requests[(i + 1) % len(created_requests)]["service_request_id"]
+                        cursor.execute("UPDATE service_requests SET linked_appointment_id = %s WHERE id = %s;", (companion_id, created_requests[i]["service_request_id"]))
+                        created_requests[i]["linked_appointment_id"] = companion_id
+
+                conn.commit()
+                return created_requests
 
     def cancel(
         self,
@@ -1449,3 +1649,9 @@ def clear_session_booking(session_key: str) -> None:
     if not session_key:
         return
     _IN_FLIGHT_BOOKING_SESSIONS.pop(session_key, None)
+
+
+def reserve_multi_service_appointment(*args, **kwargs) -> list[dict[str, Any]]:
+    """Module-level wrapper for BookingService().reserve_multi_service_appointment."""
+    return BookingService().reserve_multi_service_appointment(*args, **kwargs)
+

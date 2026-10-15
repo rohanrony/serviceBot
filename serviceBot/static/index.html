@@ -355,12 +355,13 @@
                       <th>Description</th>
                       <th>Price Range</th>
                       <th>Duration</th>
+                      <th>Assigned Technicians</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody id="services-list-body">
                     <tr>
-                      <td colspan="5" class="text-center py-6 text-muted">Loading services...</td>
+                      <td colspan="6" class="text-center py-6 text-muted">Loading services...</td>
                     </tr>
                   </tbody>
                 </table>
@@ -393,6 +394,14 @@
                 <div class="form-group">
                   <label for="new-service-duration">Duration (Minutes)</label>
                   <input type="number" id="new-service-duration" class="form-input" placeholder="e.g. 60" required>
+                </div>
+                
+                <div class="form-group">
+                  <label>Assigned Technicians / Agents</label>
+                  <p class="text-muted" style="font-size: 0.78rem; margin: 2px 0 6px 0;">Leave unselected to allow any qualified/available agent.</p>
+                  <div id="new-service-agents-list" class="checkbox-group" style="display: flex; flex-direction: column; gap: 6px; max-height: 120px; overflow-y: auto; padding: 6px 8px; border: 1px solid var(--border-color, rgba(255,255,255,0.1)); border-radius: 6px; background: rgba(0,0,0,0.15);">
+                    <span class="text-muted" style="font-size: 0.8rem;">Loading staff agents...</span>
+                  </div>
                 </div>
                 
                 <div class="form-group">
@@ -1656,6 +1665,14 @@
         </div>
 
         <div class="form-group mt-4">
+          <label>Assigned Technicians / Agents</label>
+          <p class="text-muted" style="font-size: 0.78rem; margin: 2px 0 6px 0;">Leave unselected to allow any qualified/available agent.</p>
+          <div id="edit-service-agents-list" class="checkbox-group" style="display: flex; flex-direction: column; gap: 6px; max-height: 120px; overflow-y: auto; padding: 6px 8px; border: 1px solid var(--border-color, rgba(255,255,255,0.1)); border-radius: 6px; background: rgba(0,0,0,0.15);">
+            <span class="text-muted" style="font-size: 0.8rem;">Loading staff agents...</span>
+          </div>
+        </div>
+
+        <div class="form-group mt-4">
           <label>Required Intake Fields</label>
           <div class="checkbox-group" style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
             <label class="checkbox-item">
@@ -2026,6 +2043,6 @@
   <div class="toast" id="app-toast">Action completed successfully</div>
 
   <!-- Javascript Logic -->
-  <script src="app.js?v=39"></script>
+  <script src="app.js?v=40"></script>
 </body>
 </html>
