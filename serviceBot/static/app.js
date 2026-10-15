@@ -1572,15 +1572,24 @@ document.addEventListener('DOMContentLoaded', () => {
     editServiceForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       
+      const submitBtn = editServiceForm.querySelector('button[type="submit"]');
+      if (submitBtn && submitBtn.disabled) return;
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.dataset.origText = submitBtn.textContent;
+        submitBtn.textContent = 'Saving...';
+      }
+
       const id = document.getElementById('edit-service-id').value;
       const selectedAgentIds = Array.from(document.querySelectorAll('#edit-service-agents-list input[type="checkbox"]:checked'))
         .map(cb => parseInt(cb.value, 10));
 
+      const durationVal = parseInt(document.getElementById('edit-service-duration').value, 10);
       const payload = {
         name: document.getElementById('edit-service-name').value,
         description: document.getElementById('edit-service-desc').value,
         price_range: document.getElementById('edit-service-price').value,
-        duration_minutes: parseInt(document.getElementById('edit-service-duration').value, 10),
+        duration_minutes: isNaN(durationVal) ? null : durationVal,
         req_customer_name: document.getElementById('edit-service-req-customer-name').checked,
         req_phone_number: document.getElementById('edit-service-req-phone-number').checked,
         req_vehicle_details: document.getElementById('edit-service-req-vehicle-details').checked,
@@ -1596,7 +1605,10 @@ document.addEventListener('DOMContentLoaded', () => {
           body: JSON.stringify(payload)
         });
         
-        if (!response.ok) throw new Error('Failed to update service');
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData.detail || 'Failed to update service');
+        }
         
         showToast('Service updated successfully!');
         closeEditDrawer();
@@ -1604,6 +1616,11 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (err) {
         console.error(err);
         showToast('Error updating service: ' + err.message, 'error');
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = submitBtn.dataset.origText || 'Save Changes';
+        }
       }
     });
   }

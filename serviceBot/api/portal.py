@@ -4,7 +4,7 @@ import httpx
 import datetime as dt_mod
 from datetime import datetime
 from typing import Optional, List
-from fastapi import APIRouter, HTTPException, UploadFile, File, Request
+from fastapi import APIRouter, HTTPException, UploadFile, File, Request, BackgroundTasks
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -642,7 +642,7 @@ async def get_services():
             return results
 
 @router.post("/services/seed-defaults")
-async def seed_default_services():
+async def seed_default_services(background_tasks: BackgroundTasks):
     from serviceBot.db.connection import get_db_connection, dict_cursor
     from serviceBot.seed_cba_services import SERVICES_DATA
     with get_db_connection() as conn:
@@ -662,14 +662,11 @@ async def seed_default_services():
                 if cursor.rowcount > 0:
                     inserted_count += 1
             conn.commit()
-            try:
-                sync_services_to_kb()
-            except Exception:
-                pass
-            return {"success": True, "inserted_count": inserted_count, "total_defaults": len(SERVICES_DATA)}
+    background_tasks.add_task(sync_services_to_kb)
+    return {"success": True, "inserted_count": inserted_count, "total_defaults": len(SERVICES_DATA)}
 
 @router.post("/services", status_code=201)
-async def create_service(payload: ServiceCreate):
+async def create_service(payload: ServiceCreate, background_tasks: BackgroundTasks):
     from serviceBot.db.connection import get_db_connection, dict_cursor
     from serviceBot.db.queries import set_service_agents
     with get_db_connection() as conn:
@@ -689,20 +686,17 @@ async def create_service(payload: ServiceCreate):
             new_id = cursor.fetchone()["id"]
             conn.commit()
 
-            if payload.agent_ids is not None:
-                try:
-                    set_service_agents(new_id, payload.agent_ids)
-                except Exception as e:
-                    logger.warning(f"Error setting service agents: {e}")
+    if payload.agent_ids is not None:
+        try:
+            set_service_agents(new_id, payload.agent_ids)
+        except Exception as e:
+            logger.warning(f"Error setting service agents: {e}")
 
-            try:
-                sync_services_to_kb()
-            except Exception:
-                pass
-            return {"id": new_id, "name": payload.name, "success": True}
+    background_tasks.add_task(sync_services_to_kb)
+    return {"id": new_id, "name": payload.name, "success": True}
 
 @router.put("/services/{service_id}")
-async def update_service(service_id: int, payload: ServiceCreate):
+async def update_service(service_id: int, payload: ServiceCreate, background_tasks: BackgroundTasks):
     from serviceBot.db.connection import get_db_connection, dict_cursor
     from serviceBot.db.queries import set_service_agents
     with get_db_connection() as conn:
@@ -720,20 +714,17 @@ async def update_service(service_id: int, payload: ServiceCreate):
             )
             conn.commit()
 
-            if payload.agent_ids is not None:
-                try:
-                    set_service_agents(service_id, payload.agent_ids)
-                except Exception as e:
-                    logger.warning(f"Error updating service agents: {e}")
+    if payload.agent_ids is not None:
+        try:
+            set_service_agents(service_id, payload.agent_ids)
+        except Exception as e:
+            logger.warning(f"Error updating service agents: {e}")
 
-            try:
-                sync_services_to_kb()
-            except Exception:
-                pass
-            return {"id": service_id, "name": payload.name, "success": True}
+    background_tasks.add_task(sync_services_to_kb)
+    return {"id": service_id, "name": payload.name, "success": True}
 
 @router.delete("/services/{service_id}")
-async def delete_service(service_id: int):
+async def delete_service(service_id: int, background_tasks: BackgroundTasks):
     from serviceBot.db.connection import get_db_connection, dict_cursor
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
@@ -742,11 +733,8 @@ async def delete_service(service_id: int):
                 raise HTTPException(status_code=404, detail="Service not found")
             cursor.execute("DELETE FROM services WHERE id = %s", (service_id,))
             conn.commit()
-            try:
-                sync_services_to_kb()
-            except Exception:
-                pass
-            return {"id": service_id, "success": True}
+    background_tasks.add_task(sync_services_to_kb)
+    return {"id": service_id, "success": True}
 
 
 class CalendarSlotCreate(BaseModel):
