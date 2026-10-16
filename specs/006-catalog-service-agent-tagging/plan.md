@@ -25,6 +25,70 @@ Provide many-to-many tagging between catalog services and staff agents in the po
 
 ---
 
+## Constitution Check
+
+*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
+
+| Principle | Requirement | Verification / Status |
+|---|---|---|
+| **I. Simple Architecture & Ownership** | Single service owner shared across voice, portal, and background workflows | **PASS**: `BookingService` in `booking.py` and `queries.py` remain the single authority for multi-service scheduling across portal and telephony. |
+| **II. Reliable State & Provider Operations** | Atomic reservations, zero partial updates, rollback on conflict | **PASS**: Back-to-back reservations use PostgreSQL row-level locks on `mock_calendar_slots` with savepoint rollback; zero orphaned bookings. |
+| **III. Privacy & Trusted Integrations** | Admin operations authorized, credentials outside VCS/logs | **PASS**: No secrets in repo/logs. Calendar OAuth tokens stored encrypted. |
+| **IV. Strict Test-First & Contract Coverage** | TDD Red-Green-Refactor, automated offline tests, zero external network calls | **PASS**: Tests in `tests/test_catalog_agent_tagging.py` and `tests/test_multi_service_scheduling.py` run 100% offline with mocks. |
+| **V. Observable Calls & Recovery** | Clear actionable outcomes for conflicts, supervisor escalation on decline | **PASS**: Voice prompt clearly announces both technicians; decline auto-reassigns or escalates to manager with full visit context. |
+
+---
+
+## Project Structure
+
+### Documentation (this feature)
+
+```text
+specs/006-catalog-service-agent-tagging/
+├── plan.md              # Implementation Plan
+├── research.md          # Phase 0 decisions & alternatives
+├── data-model.md        # Phase 1 entities, schemas & state machine
+├── quickstart.md        # Phase 1 runnable validation scenarios
+├── contracts/           # Phase 1 external & telephony contracts
+│   ├── portal-service-tagging-contract.md
+│   └── multi-service-scheduling-contract.md
+├── checklists/          # Requirements & quality checklists
+│   └── requirements.md
+└── tasks.md             # Phase 2 implementation task breakdown
+```
+
+### Source Code Impact
+
+```text
+serviceBot/
+├── db/
+│   ├── connection.py     # [MODIFY] service_staff_agents table schema & visit_group_id migration
+│   └── queries.py        # [MODIFY] service agent tagging helpers & multi-service check_availability
+├── services/
+│   ├── booking.py        # [MODIFY] reserve_multi_service_appointment with atomic lock & rollback
+│   ├── calendar_sync.py  # [MODIFY] dynamic business hours & closing boundary helpers
+│   ├── google_calendar.py# [MODIFY] unified customer visit event & per-tech calendar sync
+│   └── sms_reminders.py  # [MODIFY] technician decline auto-reassignment logic
+├── api/
+│   ├── portal.py         # [MODIFY] GET/POST/PUT /services with agent_ids
+│   └── telephony.py      # [MODIFY] dynamic is_within_business_hours & multi-service voice tool output
+└── static/
+    ├── index.html        # [MODIFY] assigned agent column & drawer multi-select checkboxes
+    └── app.js            # [MODIFY] portal agent tagging load & save logic
+
+tests/
+├── test_catalog_agent_tagging.py    # [NEW] CRUD tests for service-to-agent tagging
+└── test_multi_service_scheduling.py # [NEW] Single agent vs back-to-back & atomic rollback tests
+```
+
+---
+
+## Complexity Tracking
+
+> **Constitution Compliance**: No violations detected. Relational join table and atomic savepoints strictly align with Principle I and Principle II.
+
+---
+
 ## Architecture & Data Flow
 
 ```mermaid
