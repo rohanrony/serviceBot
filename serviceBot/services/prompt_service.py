@@ -247,3 +247,91 @@ def update_prompt_business_hours(
     updated = handoff_pattern2.sub(rf"\g<1>{sched['days_spoken']}, {sched['start_str']} to {sched['end_str']} {sched['tz_code']}\2", updated)
 
     return updated
+
+
+def update_prompt_lead_time_buffers(
+    prompt_text: str,
+    appointment_buffer_hours: float = 4.0,
+    callback_buffer_hours: float = 2.0
+) -> str:
+    """
+    Substitutes appointment and callback advance lead time buffers into prompt_text.
+    Maintains prompt consistency when shop policies or configuration are updated.
+    """
+    if not prompt_text or not isinstance(prompt_text, str):
+        return prompt_text
+
+    appt_val = float(appointment_buffer_hours)
+    cb_val = float(callback_buffer_hours)
+    appt_disp = int(appt_val) if appt_val.is_integer() else appt_val
+    cb_disp = int(cb_val) if cb_val.is_integer() else cb_val
+
+    updated = prompt_text
+
+    # 1. Update Appointment Horizon header (e.g., 4-Hour Minimum Planning Horizon Restriction)
+    updated = re.sub(
+        r"(\d+(?:\.\d+)?)-Hour Minimum Planning Horizon Restriction",
+        f"{appt_disp}-Hour Minimum Planning Horizon Restriction",
+        updated
+    )
+
+    # 2. Update Appointment notice sentences
+    updated = re.sub(
+        r"our shop requires at least \d+(?:\.\d+)? hours advance notice for all in-shop appointments",
+        f"our shop requires at least {appt_disp} hours advance notice for all in-shop appointments",
+        updated,
+        flags=re.IGNORECASE
+    )
+
+    updated = re.sub(
+        r"earlier than \d+(?:\.\d+)? hours from the current time \(`now \+ \d+(?:\.\d+)? hours`\)",
+        f"earlier than {appt_disp} hours from the current time (`now + {appt_disp} hours`)",
+        updated
+    )
+
+    updated = re.sub(
+        r"our shop requires at least \d+(?:\.\d+)? hours advance notice\.",
+        f"our shop requires at least {appt_disp} hours advance notice.",
+        updated,
+        flags=re.IGNORECASE
+    )
+
+    updated = re.sub(
+        r"now \+ \d+(?:\.\d+)?h",
+        f"now + {appt_disp}h",
+        updated
+    )
+
+    # 3. Update callback references in appointment fallback
+    updated = re.sub(
+        r"\(callbacks have no \d+(?:\.\d+)?-hour buffer\)",
+        f"(advisor callbacks require at least {cb_disp} hours advance notice)",
+        updated,
+        flags=re.IGNORECASE
+    )
+    updated = re.sub(
+        r"\(advisor callbacks require at least \d+(?:\.\d+)? hours advance notice\)",
+        f"(advisor callbacks require at least {cb_disp} hours advance notice)",
+        updated,
+        flags=re.IGNORECASE
+    )
+
+    # 4. Update callback section with lead time requirement
+    cb_notice_pattern = re.compile(
+        r"(?<!advisor )Callbacks require at least \d+(?:\.\d+)? hours advance notice[^.]*\.",
+        re.IGNORECASE
+    )
+    cb_statement = f"Callbacks require at least {cb_disp} hours advance notice during business hours so a service advisor can review their vehicle records."
+
+    if cb_notice_pattern.search(updated):
+        updated = cb_notice_pattern.sub(cb_statement, updated)
+    else:
+        # Inject right after "Callback calls are made during business hours (...)."
+        updated = re.sub(
+            r"((?:If Callback:|\- If they prefer a callback:)\s*Callback calls are made during business hours\s*\([^)]+\)\.)",
+            rf"\g<1> {cb_statement}",
+            updated,
+            flags=re.IGNORECASE
+        )
+
+    return updated

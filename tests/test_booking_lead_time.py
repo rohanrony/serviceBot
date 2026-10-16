@@ -40,18 +40,28 @@ def test_validate_appointment_lead_time_accepts_over_4_hours():
     assert earliest == now + dt_mod.timedelta(hours=4.0)
 
 
-def test_validate_appointment_lead_time_allows_callbacks_within_buffer():
+def test_validate_appointment_lead_time_callback_buffer():
     now = dt_mod.datetime(2026, 10, 5, 9, 0, 0)
-    requested = now + dt_mod.timedelta(hours=1)
+    requested_valid = now + dt_mod.timedelta(hours=2.5)
 
     valid, earliest, suggestions = validate_appointment_lead_time(
-        requested_datetime=requested,
+        requested_datetime=requested_valid,
         current_time=now,
-        min_buffer_hours=4.0,
+        min_buffer_hours=2.0,
         booking_type="callback"
     )
-
     assert valid is True
+    assert earliest == now + dt_mod.timedelta(hours=2.0)
+
+    requested_invalid = now + dt_mod.timedelta(hours=1)
+    valid_inv, earliest_inv, suggestions_inv = validate_appointment_lead_time(
+        requested_datetime=requested_invalid,
+        current_time=now,
+        min_buffer_hours=2.0,
+        booking_type="callback"
+    )
+    assert valid_inv is False
+    assert earliest_inv == now + dt_mod.timedelta(hours=2.0)
 
 
 def test_validate_appointment_lead_time_custom_buffer():

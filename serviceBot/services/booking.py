@@ -176,25 +176,25 @@ def validate_appointment_lead_time(
     booking_type: str = "appointment",
 ) -> tuple[bool, dt_mod.datetime, list[str]]:
     """
-    Validates whether an appointment meets the required minimum planning lead time.
-    Callbacks are exempt from this restriction.
+    Validates whether an appointment or callback meets the required minimum planning lead time.
     Returns (is_valid, earliest_allowed_datetime, suggested_slots).
     """
     if current_time is None:
         current_time = timezone_service.now_in_business_tz().replace(tzinfo=None)
 
+    is_callback = (booking_type == "callback")
     if min_buffer_hours is None:
         try:
             from serviceBot.api.portal import load_config
             cfg = load_config()
-            min_buffer_hours = float(cfg.get("min_booking_buffer_hours", 4.0))
+            if is_callback:
+                min_buffer_hours = float(cfg.get("min_callback_buffer_hours", 2.0))
+            else:
+                min_buffer_hours = float(cfg.get("min_booking_buffer_hours", 4.0))
         except Exception:
-            min_buffer_hours = 4.0
+            min_buffer_hours = 2.0 if is_callback else 4.0
 
     earliest_allowed = current_time + dt_mod.timedelta(hours=float(min_buffer_hours))
-
-    if booking_type != "appointment":
-        return True, earliest_allowed, []
 
     req_dt = None
     if hasattr(requested_datetime, "strftime") and hasattr(requested_datetime, "year"):
@@ -233,7 +233,7 @@ def validate_appointment_lead_time(
         try:
             from serviceBot.db.queries import check_availability
             pref_date_str = earliest_allowed.strftime("%Y-%m-%d %H:%M:%S")
-            suggested_slots = check_availability(preferred_date=pref_date_str, booking_type="appointment")
+            suggested_slots = check_availability(preferred_date=pref_date_str, booking_type=booking_type)
         except Exception:
             suggested_slots = [
                 earliest_allowed.strftime("%Y-%m-%d %H:%M:%S"),
@@ -567,6 +567,10 @@ class BookingService:
             is_valid, earliest_allowed, _ = validate_appointment_lead_time(starts_at, booking_type="appointment")
             if not is_valid:
                 raise BookingConflictError(f"Insufficient lead time. Earliest allowed time is {earliest_allowed}.")
+        elif booking_type == "callback":
+            is_valid, earliest_allowed, _ = validate_appointment_lead_time(starts_at, booking_type="callback")
+            if not is_valid:
+                raise BookingConflictError(f"Insufficient lead time for callback. Earliest allowed time is {earliest_allowed}.")
 
         # Determine segment start times
         item_times = []
@@ -581,7 +585,7 @@ class BookingService:
         # Fetch qualified staff agents for each service
         with self._connection_factory() as conn:
             with self._cursor_factory(conn) as cursor:
-                cursor.execute("SELECT id FROM staff_agents ORDER BY id ASC;")
+                cursor.execute("SELECT id FROM staff_agents WHERE is_active IS NOT FALSE ORDER BY id ASC;")
                 all_agent_ids = [r["id"] for r in cursor.fetchall()]
 
         qualified_per_item = []
@@ -1355,10 +1359,10 @@ class BookingService:
     ) -> list[int]:
         """Keep an explicit staff selection strict, otherwise prefer then fall back."""
         if requested_agent_id is not None:
-            cursor.execute("SELECT id FROM staff_agents WHERE id = %s;", (requested_agent_id,))
+            cursor.execute("SELECT id FROM staff_agents WHERE id = %s AND is_active IS NOT FALSE;", (requested_agent_id,))
             return [row["id"] for row in cursor.fetchall()]
 
-        cursor.execute("SELECT id FROM staff_agents ORDER BY id ASC;")
+        cursor.execute("SELECT id FROM staff_agents WHERE is_active IS NOT FALSE ORDER BY id ASC;")
         agent_ids = [row["id"] for row in cursor.fetchall()]
 
         if qualified_agent_ids:

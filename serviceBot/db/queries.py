@@ -94,9 +94,19 @@ def resolve_asap_callback_time(preferred_date: str = None) -> str:
 
     from serviceBot.services import timezone_service
     now = timezone_service.now_in_business_tz().replace(tzinfo=None)
-    candidate = now.replace(second=0, microsecond=0)
-    minutes_to_next_quarter = 15 - (candidate.minute % 15)
-    candidate += dt_mod.timedelta(minutes=minutes_to_next_quarter)
+    min_buf = 2.0
+    try:
+        from serviceBot.api.portal import load_config
+        cfg = load_config()
+        min_buf = float(cfg.get("min_callback_buffer_hours", 2.0))
+    except Exception:
+        min_buf = 2.0
+
+    earliest_allowed = now + dt_mod.timedelta(hours=min_buf)
+    candidate = earliest_allowed.replace(second=0, microsecond=0)
+    minutes_rem = candidate.minute % 15
+    if minutes_rem != 0:
+        candidate += dt_mod.timedelta(minutes=(15 - minutes_rem))
 
     if preferred_date:
         try:
@@ -169,7 +179,7 @@ def _create_service_request_legacy(
             
             # If staff_agent_id is not specified, assign default staff agent if available
             if not staff_agent_id:
-                cursor.execute("SELECT id FROM staff_agents ORDER BY id ASC LIMIT 1;")
+                cursor.execute("SELECT id FROM staff_agents WHERE is_active IS NOT FALSE ORDER BY id ASC LIMIT 1;")
                 sa_row = cursor.fetchone()
                 if sa_row:
                     staff_agent_id = sa_row["id"]
@@ -579,13 +589,15 @@ def _generate_dynamic_slots(preferred_date_str: str, duration_minutes: int, inte
     day_offset = 0
 
     min_lead_hours = 0.0
-    if booking_type == "appointment":
-        try:
-            from serviceBot.api.portal import load_config
-            cfg = load_config()
+    try:
+        from serviceBot.api.portal import load_config
+        cfg = load_config()
+        if booking_type == "callback":
+            min_lead_hours = float(cfg.get("min_callback_buffer_hours", 2.0))
+        elif booking_type == "appointment":
             min_lead_hours = float(cfg.get("min_booking_buffer_hours", 4.0))
-        except Exception:
-            min_lead_hours = 4.0
+    except Exception:
+        min_lead_hours = 2.0 if booking_type == "callback" else 4.0
     min_cutoff_dt = now_dt + dt_mod.timedelta(hours=min_lead_hours)
 
     valid_hours = get_configured_business_hours()
@@ -666,7 +678,7 @@ def check_availability(service_type: str = None, preferred_date: str = None, boo
     # --- Get all agents and filter by qualified agents tagged to service ---
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
-            cursor.execute("SELECT id FROM staff_agents;")
+            cursor.execute("SELECT id FROM staff_agents WHERE is_active IS NOT FALSE;")
             all_agent_ids = [r["id"] for r in cursor.fetchall()]
 
     qualified_agent_ids = get_qualified_agent_ids(service_type) if service_type else []
@@ -1006,7 +1018,7 @@ def _book_appointment_legacy(customer_id: int, service_request_id: int, appointm
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             # --- Live/dynamic mode: no mock slot row, use Google Calendar agents ---
-            cursor.execute("SELECT id FROM staff_agents;")
+            cursor.execute("SELECT id FROM staff_agents WHERE is_active IS NOT FALSE;")
             all_agent_ids = [r["id"] for r in cursor.fetchall()]
 
             if not all_agent_ids:
@@ -1300,7 +1312,13 @@ def get_service_agent_ids(service_id: int) -> list[int]:
         with get_db_connection() as conn:
             with dict_cursor(conn) as cursor:
                 cursor.execute(
-                    "SELECT staff_agent_id FROM service_staff_agents WHERE service_id = %s ORDER BY staff_agent_id ASC;",
+                    """
+                    SELECT ssa.staff_agent_id
+                    FROM service_staff_agents ssa
+                    JOIN staff_agents sa ON sa.id = ssa.staff_agent_id
+                    WHERE ssa.service_id = %s AND sa.is_active IS NOT FALSE
+                    ORDER BY ssa.staff_agent_id ASC;
+                    """,
                     (service_id,)
                 )
                 return [row["staff_agent_id"] for row in cursor.fetchall()]
@@ -1515,9 +1533,9 @@ def get_available_slots_for_date(target_date_str: str, duration_minutes: int = 6
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             if staff_agent_id:
-                cursor.execute("SELECT id, name FROM staff_agents WHERE id = %s;", (staff_agent_id,))
+                cursor.execute("SELECT id, name FROM staff_agents WHERE id = %s AND is_active IS NOT FALSE;", (staff_agent_id,))
             else:
-                cursor.execute("SELECT id, name FROM staff_agents;")
+                cursor.execute("SELECT id, name FROM staff_agents WHERE is_active IS NOT FALSE;")
             agents = cursor.fetchall()
             
             if not agents:
@@ -1749,7 +1767,7 @@ def _reschedule_appointment_legacy(
             chosen_agent_id = None
             
             # Live/dynamic mode
-            cursor.execute("SELECT id FROM staff_agents;")
+            cursor.execute("SELECT id FROM staff_agents WHERE is_active IS NOT FALSE;")
             connected_ids = [r["id"] for r in cursor.fetchall()]
             
             if not connected_ids:
@@ -2281,7 +2299,7 @@ def _get_available_agents_for_request_legacy(request_id: int) -> list:
             if not sr:
                 raise ValueError(f"Service request with ID {request_id} not found.")
 
-            cursor.execute("SELECT id, name, role, email, phone_number FROM staff_agents ORDER BY id ASC;")
+            cursor.execute("SELECT id, name, role, email, phone_number FROM staff_agents WHERE is_active IS NOT FALSE ORDER BY id ASC;")
             agents = [dict(row) for row in cursor.fetchall()]
 
     b_time_str = sr.get("booking_time") or sr.get("time_slot")
@@ -2539,21 +2557,24 @@ def assign_staff_agent_to_service_request(request_id: int, staff_agent_id: int =
 
 
 def get_available_agents_for_request(request_id: int) -> list:
-    """Return candidates whose local reservation and provider state both permit assignment."""
-    from serviceBot.services.booking import (
-        BookingValidationError,
-        normalize_reservation_duration,
-        parse_reservation_start,
-        validate_bookable_window,
-    )
+    """
+    Return candidates whose local reservation and provider state both permit assignment.
+    Evaluates calendar availability across Google Calendar, appointment reservations,
+    and service requests. Computes current schedule load and ranks candidates.
+    """
+    from serviceBot.services.booking import normalize_reservation_duration, reservation_segments
     from serviceBot.services.google_calendar import fetch_agent_events, parse_google_datetime
+    from serviceBot.services.sms_reminders import parse_booking_datetime
+    from serviceBot.services import timezone_service
+
+    timezone = timezone_service.get_business_zoneinfo()
 
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             cursor.execute(
                 """
                 SELECT id, booking_time, time_slot, duration_minutes, booking_start_at,
-                       booking_end_at
+                       booking_end_at, service_type, staff_agent_id
                 FROM service_requests
                 WHERE id = %s;
                 """,
@@ -2563,34 +2584,86 @@ def get_available_agents_for_request(request_id: int) -> list:
             if not request:
                 raise ValueError(f"Service request with ID {request_id} was not found.")
             cursor.execute(
-                "SELECT id, name, role, email, phone_number FROM staff_agents ORDER BY id ASC;"
+                "SELECT id, name, role, email, phone_number FROM staff_agents WHERE is_active IS NOT FALSE ORDER BY id ASC;"
             )
             agents = [dict(row) for row in cursor.fetchall()]
             for a in agents:
                 a["whatsapp_connected"] = is_agent_whatsapp_connected(a.get("phone_number"))
 
-    booking_time = request.get("booking_start_at") or request.get("booking_time") or request.get("time_slot")
-    if not booking_time or str(booking_time).upper() == "ASAP":
-        for agent in agents:
-            agent["is_available"] = True
-            agent["reason"] = "Available"
+    # Robust parsing of appointment start time
+    starts_at = None
+    booking_start_at = request.get("booking_start_at")
+    if isinstance(booking_start_at, dt_mod.datetime):
+        starts_at = booking_start_at
+    elif isinstance(booking_start_at, str):
+        starts_at = parse_booking_datetime(booking_start_at)
+
+    if not starts_at:
+        raw_val = request.get("booking_time") or request.get("time_slot")
+        if isinstance(raw_val, dt_mod.datetime):
+            starts_at = raw_val
+        elif raw_val and str(raw_val).strip().upper() not in ("ASAP", "NONE", "NULL", ""):
+            raw_str = str(raw_val).strip()
+            for sep in [" to ", " - ", " – "]:
+                if sep in raw_str and not raw_str.startswith("-"):
+                    raw_str = raw_str.split(sep)[0].strip()
+                    break
+            starts_at = parse_booking_datetime(raw_str)
+            if not starts_at:
+                try:
+                    from serviceBot.services.booking import parse_reservation_start
+                    starts_at = parse_reservation_start(raw_str)
+                except Exception:
+                    pass
+
+    default_duration = 15 if (request.get("booking_type") == "callback" or str(request.get("service_type") or "").lower() == "callback") else 60
+    duration_minutes = normalize_reservation_duration(request.get("duration_minutes") or default_duration)
+
+    if starts_at and starts_at.tzinfo is not None:
+        starts_at = starts_at.astimezone(timezone).replace(tzinfo=None)
+
+    ends_at = request.get("booking_end_at")
+    if isinstance(ends_at, dt_mod.datetime):
+        if ends_at.tzinfo is not None:
+            ends_at = ends_at.astimezone(timezone).replace(tzinfo=None)
+    elif starts_at:
+        ends_at = starts_at + dt_mod.timedelta(minutes=duration_minutes)
+
+    # If booking is unscheduled or ASAP, everyone is available
+    if not starts_at or str(request.get("booking_time") or "").strip().upper() == "ASAP":
+        for a in agents:
+            a["agent_id"] = a["id"]
+            a["agent_name"] = a["name"]
+            a["is_available"] = True
+            a["available"] = True
+            a["reason"] = "Available"
+            a["current_job_count_today"] = 0
+            a["skills_match"] = True
         return agents
 
-    try:
-        starts_at = parse_reservation_start(booking_time)
-        duration_minutes = normalize_reservation_duration(
-            request.get("duration_minutes") or 60
-        )
-        segments = validate_bookable_window(starts_at, duration_minutes)
-    except BookingValidationError as exc:
-        for agent in agents:
-            agent["is_available"] = False
-            agent["reason"] = str(exc)
-        return agents
+    segments = reservation_segments(starts_at, duration_minutes)
+    target_date = starts_at.date()
 
-    ends_at = starts_at + dt_mod.timedelta(minutes=duration_minutes)
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
+            # 1. Active schedule load today per technician
+            cursor.execute(
+                """
+                SELECT staff_agent_id, COUNT(*) AS cnt
+                FROM service_requests
+                WHERE status NOT IN ('cancelled', 'cancelled_by_customer', 'cancelled_by_admin', 'completed', 'done')
+                  AND staff_agent_id IS NOT NULL
+                  AND (
+                    (booking_start_at IS NOT NULL AND DATE(booking_start_at) = %s)
+                    OR (booking_time LIKE %s)
+                  )
+                GROUP BY staff_agent_id;
+                """,
+                (target_date, f"{target_date}%"),
+            )
+            job_counts = {r["staff_agent_id"]: r["cnt"] for r in cursor.fetchall()}
+
+            # 2. Local reservations in appointment_reservations
             cursor.execute(
                 """
                 SELECT DISTINCT staff_agent_id
@@ -2603,13 +2676,15 @@ def get_available_agents_for_request(request_id: int) -> list:
                 (request_id, ends_at, starts_at),
             )
             locally_reserved = {row["staff_agent_id"] for row in cursor.fetchall()}
+
+            # 3. Blocked slots in mock_calendar_slots
             cursor.execute(
                 """
                 SELECT DISTINCT staff_agent_id
                 FROM mock_calendar_slots
                 WHERE slot_datetime = ANY(%s)
                   AND (reservation_status IN ('RESERVED', 'BLOCKED') OR is_booked = TRUE)
-                  AND service_request_id IS DISTINCT FROM %s;
+                  AND (service_request_id IS NULL OR service_request_id != %s);
                 """,
                 (segments, request_id),
             )
@@ -2617,13 +2692,50 @@ def get_available_agents_for_request(request_id: int) -> list:
                 row["staff_agent_id"] for row in cursor.fetchall()
             )
 
-    from serviceBot.services import timezone_service
-    timezone = timezone_service.get_business_zoneinfo()
+            # 4. Overlapping active appointments or callbacks in service_requests
+            cursor.execute(
+                """
+                SELECT DISTINCT staff_agent_id
+                FROM service_requests
+                WHERE id != %s
+                  AND staff_agent_id IS NOT NULL
+                  AND status NOT IN ('cancelled', 'cancelled_by_customer', 'cancelled_by_admin', 'completed', 'done')
+                  AND (
+                    (booking_start_at IS NOT NULL AND booking_end_at IS NOT NULL AND booking_start_at < %s AND booking_end_at > %s)
+                    OR (booking_time = %s)
+                  );
+                """,
+                (request_id, ends_at, starts_at, str(request.get("booking_time") or "")),
+            )
+            overlapping_sr_agent_ids = {row["staff_agent_id"] for row in cursor.fetchall()}
+
+    # Check skills qualification if service has tagged technicians
+    service_type = request.get("service_type")
+    qualified_agent_ids = get_qualified_agent_ids(service_type) if service_type else []
+
     provider_start = starts_at.replace(tzinfo=timezone)
     provider_end = ends_at.replace(tzinfo=timezone)
 
     for agent in agents:
         agent_id = agent["id"]
+        agent["agent_id"] = agent_id
+        agent["agent_name"] = agent["name"]
+        agent["current_job_count_today"] = job_counts.get(agent_id, 0)
+        agent["skills_match"] = (agent_id in qualified_agent_ids) if qualified_agent_ids else True
+
+        if agent_id in locally_reserved:
+            agent["is_available"] = False
+            agent["available"] = False
+            agent["reason"] = "Reserved locally"
+            continue
+
+        if agent_id in overlapping_sr_agent_ids:
+            agent["is_available"] = False
+            agent["available"] = False
+            agent["reason"] = "Booked for another appointment"
+            continue
+
+        calendar_error = False
         try:
             events = fetch_agent_events(
                 agent_id,
@@ -2631,26 +2743,46 @@ def get_available_agents_for_request(request_id: int) -> list:
                 provider_end.isoformat(),
             )
         except Exception:
+            calendar_error = True
             events = None
 
-        if events is None:
+        if calendar_error:
             agent["is_available"] = False
+            agent["available"] = False
             agent["reason"] = "Calendar state unavailable"
             continue
-        if agent_id in locally_reserved:
-            agent["is_available"] = False
-            agent["reason"] = "Reserved locally"
-            continue
 
-        is_busy = False
-        for event in events:
-            event_start = parse_google_datetime(event.get("start") or {}, timezone)
-            event_end = parse_google_datetime(event.get("end") or {}, timezone)
-            if event_start and event_end and provider_start < event_end and provider_end > event_start:
-                is_busy = True
-                break
-        agent["is_available"] = not is_busy
-        agent["reason"] = "Busy in Google Calendar" if is_busy else "Available"
+        if events is not None:
+            is_busy = False
+            for event in events:
+                if event.get("status") == "cancelled":
+                    continue
+                event_start = parse_google_datetime(event.get("start") or {}, timezone)
+                event_end = parse_google_datetime(event.get("end") or {}, timezone)
+                if event_start and event_end and provider_start < event_end and provider_end > event_start:
+                    is_busy = True
+                    break
+            agent["is_available"] = not is_busy
+            agent["available"] = not is_busy
+            agent["reason"] = "Busy in Google Calendar" if is_busy else "Available"
+        else:
+            # Not connected to Google Calendar -> fall back to local DB authority
+            agent["is_available"] = True
+            agent["available"] = True
+            agent["reason"] = "Available"
+
+    # Candidates are ranked by calendar availability (available first),
+    # skills match (qualified first),
+    # current schedule load (lowest job count first),
+    # and name.
+    agents.sort(
+        key=lambda a: (
+            not a["is_available"],
+            not a.get("skills_match", True),
+            a.get("current_job_count_today", 0),
+            a.get("name", "")
+        )
+    )
 
     return agents
 
@@ -4034,7 +4166,8 @@ def escalate_service_request(
         'AGENT_DECLINED',
         'DELIVERY_FAILED',
         'UNASSIGNED_ON_CREATION',
-        'MANUAL_SUPERVISOR_ACTION'
+        'MANUAL_SUPERVISOR_ACTION',
+        'AGENT_DEACTIVATED'
     )
     if reason not in valid_reasons:
         raise ValueError(f"Invalid escalation reason '{reason}'. Must be one of {valid_reasons}")

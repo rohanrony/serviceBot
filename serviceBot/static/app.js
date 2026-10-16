@@ -2857,7 +2857,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!agentId) return;
             
             const selectedText = staffAgentSelector.options[staffAgentSelector.selectedIndex].text;
-            if (!confirm(`Are you sure you want to delete the profile for "${selectedText}"?\nThis will remove all availability slots and active Google integrations.`)) {
+            if (!confirm(`Are you sure you want to deactivate the profile for "${selectedText}"?\nThis will remove their active Google integrations and automatically escalate any upcoming appointments to the supervisor for reassignment.`)) {
               return;
             }
             
@@ -2865,14 +2865,21 @@ document.addEventListener('DOMContentLoaded', () => {
               const res = await fetch(`/api/v1/portal/agents/${agentId}`, {
                 method: 'DELETE'
               });
+              const data = await res.json();
               if (!res.ok) {
-                const data = await res.json();
                 throw new Error(data.detail || 'Failed to delete profile');
               }
-              showToast('Staff member profile deleted successfully.');
+              if (data.escalated_appointments_count > 0) {
+                showToast(`Staff member profile deactivated. ${data.escalated_appointments_count} upcoming appointment(s) escalated for supervisor reassignment.`, 'warning');
+              } else {
+                showToast('Staff member profile deactivated successfully.', 'success');
+              }
               
               // Reload staff view and default to the first remaining agent
               await loadStaffView();
+              if (typeof window.loadAppointments === 'function') {
+                await window.loadAppointments();
+              }
             } catch (err) {
               console.error(err);
               showToast('Error deleting profile: ' + err.message, 'error');
@@ -3367,6 +3374,8 @@ document.addEventListener('DOMContentLoaded', () => {
           const pCfg = await portalRes.json();
           const minBufEl = document.getElementById('config-min-booking-buffer');
           if (minBufEl) minBufEl.value = pCfg.min_booking_buffer_hours ?? 4;
+          const minCbBufEl = document.getElementById('config-min-callback-buffer');
+          if (minCbBufEl) minCbBufEl.value = pCfg.min_callback_buffer_hours ?? 2;
           const supPhoneEl = document.getElementById('config-supervisor-phone');
           if (supPhoneEl) supPhoneEl.value = pCfg.supervisor_alert_phone || '';
           const slaAdvEl = document.getElementById('config-sla-advance');
@@ -3600,6 +3609,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const payload = {
         min_booking_buffer_hours: parseFloat(document.getElementById('config-min-booking-buffer').value) || 4,
+        min_callback_buffer_hours: parseFloat(document.getElementById('config-min-callback-buffer')?.value) || 2,
         supervisor_alert_phone: document.getElementById('config-supervisor-phone').value.trim(),
         sla_advance_booking_hours: parseFloat(document.getElementById('config-sla-advance').value) || 4,
         sla_medium_booking_hours: parseFloat(document.getElementById('config-sla-medium').value) || 3,
@@ -5154,39 +5164,62 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.getElementById('reassign-sr-id').value = req.id;
     document.getElementById('reassign-customer-name').textContent = req.customer_name || 'Unknown Customer';
-    document.getElementById('reassign-booking-time').textContent = formatBookingTimeRange(req) || req.booking_time || '--';
+    
+    const formattedTime = formatBookingTimeRange(req);
+    const bookingTimeEl = document.getElementById('reassign-booking-time');
+    if (formattedTime) {
+      bookingTimeEl.innerHTML = formattedTime;
+    } else {
+      bookingTimeEl.textContent = req.booking_time || '--';
+    }
+
+    const isCallback = req.booking_type === 'callback' || (req.service_type && req.service_type.toLowerCase() === 'callback');
+    const modalTitleEl = document.getElementById('reassign-modal-title');
+    if (modalTitleEl) modalTitleEl.textContent = isCallback ? 'Reassign Service Callback' : 'Reassign Service Appointment';
+    const timeLabelEl = document.getElementById('reassign-time-label');
+    if (timeLabelEl) timeLabelEl.textContent = isCallback ? 'Callback Time:' : 'Appointment Time:';
+    const submitBtnInit = document.getElementById('reassign-submit-btn');
+    if (submitBtnInit) submitBtnInit.textContent = isCallback ? 'Reassign Callback' : 'Reassign Appointment';
+
+    modal.dataset.isCallback = isCallback ? 'true' : 'false';
+
     document.getElementById('reassign-current-agent').textContent = req.staff_agent_name || 'Unassigned';
     document.getElementById('reassign-reason-display').textContent = req.escalation_reason || 'TIMEOUT_NO_RESPONSE';
     document.getElementById('reassign-reason-note').value = '';
 
     const agentSelect = document.getElementById('reassign-agent-select');
-    agentSelect.innerHTML = '<option value="">Loading available candidates...</option>';
+    agentSelect.innerHTML = '<option value="">Checking live availability...</option>';
 
     modal.style.display = 'block';
     overlay.style.display = 'block';
 
     try {
-      let candidates = req.candidate_agents;
-      if (!candidates || candidates.length === 0) {
-        const res = await fetch(`/api/v1/portal/service-requests/${req.id}/available-agents`);
-        if (res.ok) {
-          const data = await res.json();
-          candidates = data.agents || [];
-        }
+      // Query live availability endpoint for actual calendar state
+      const res = await fetch(`/api/v1/portal/service-requests/${req.id}/available-agents`);
+      let candidates = [];
+      if (res.ok) {
+        const data = await res.json();
+        candidates = data.agents || [];
+      } else if (req.candidate_agents && req.candidate_agents.length > 0) {
+        candidates = req.candidate_agents;
       }
 
       if (candidates && candidates.length > 0) {
         let opts = '<option value="">-- Choose Candidate Technician --</option>';
+        const currentId = req.assigned_staff_id || req.staff_agent_id;
         candidates.forEach(c => {
           const cId = c.agent_id || c.id;
           const cName = c.agent_name || c.name;
-          const isAvail = c.is_available !== false && c.available !== false;
-          const currentId = req.assigned_staff_id || req.staff_agent_id;
           if (Number(cId) === Number(currentId)) return;
 
-          const badge = isAvail ? '✅ Available' : '⚠️ Busy';
+          const isAvail = c.is_available !== false && c.available !== false;
+          let badge = '✅ Available';
+          if (!isAvail) {
+            badge = `⚠️ Busy${c.reason && c.reason !== 'Busy' && c.reason !== 'Available' ? ` (${c.reason})` : ''}`;
+          }
           const jobsText = c.current_job_count_today !== undefined ? ` • ${c.current_job_count_today} jobs today` : '';
-          opts += `<option value="${cId}">${cName} (${badge}${jobsText})</option>`;
+          const skillsText = c.skills_match === false ? ' • ⚠️ Skill Mismatch' : '';
+          opts += `<option value="${cId}">${cName} (${badge}${jobsText}${skillsText})</option>`;
         });
         agentSelect.innerHTML = opts;
       } else {
@@ -5216,6 +5249,8 @@ document.addEventListener('DOMContentLoaded', () => {
   if (reassignForm) {
     reassignForm.addEventListener('submit', async (e) => {
       e.preventDefault();
+      const modal = document.getElementById('reassign-modal');
+      const isCallback = modal ? modal.dataset.isCallback === 'true' : false;
       const srId = document.getElementById('reassign-sr-id').value;
       const newAgentId = parseInt(document.getElementById('reassign-agent-select').value);
       const note = document.getElementById('reassign-reason-note').value.trim();
@@ -5246,7 +5281,8 @@ document.addEventListener('DOMContentLoaded', () => {
           throw new Error(errData.detail || 'Reassignment failed');
         }
 
-        showToast('Appointment reassigned! New technician notified via SMS.', 'success');
+        const typeLabel = isCallback ? 'Callback' : 'Appointment';
+        showToast(`${typeLabel} reassigned! New technician notified via SMS.`, 'success');
         closeReassignModal();
 
         // Refresh service requests
@@ -5261,7 +5297,7 @@ document.addEventListener('DOMContentLoaded', () => {
       } finally {
         if (submitBtn) {
           submitBtn.disabled = false;
-          submitBtn.textContent = 'Reassign Appointment';
+          submitBtn.textContent = isCallback ? 'Reassign Callback' : 'Reassign Appointment';
         }
       }
     });

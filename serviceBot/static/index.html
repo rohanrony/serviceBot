@@ -1045,9 +1045,15 @@
 
             <form id="escalation-config-form" class="sms-config-form mt-4">
               <div class="form-group">
-                <label class="form-label" for="config-min-booking-buffer">Min Booking Lead Time Buffer (Hours)</label>
+                <label class="form-label" for="config-min-booking-buffer">Min Appointment Lead Time Buffer (Hours)</label>
                 <input type="number" id="config-min-booking-buffer" class="form-input" min="1" max="72" value="4">
-                <small class="text-muted">Appointments cannot be booked earlier than current time + this buffer.</small>
+                <small class="text-muted">In-shop appointments cannot be booked earlier than current time + this buffer (default 4 hours).</small>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="config-min-callback-buffer">Min Callback Lead Time Buffer (Hours)</label>
+                <input type="number" id="config-min-callback-buffer" class="form-input" min="0.5" max="72" step="0.5" value="2">
+                <small class="text-muted">Callbacks cannot be scheduled earlier than current time + this buffer (default 2 hours).</small>
               </div>
 
               <div class="form-group">
@@ -1979,7 +1985,7 @@
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
       <div style="display: flex; align-items: center; gap: 8px;">
         <span class="badge danger" style="font-size: 11px; padding: 2px 6px;">ESCALATED</span>
-        <h3 style="margin: 0; font-size: 16px; color: #fff;">Reassign Service Appointment</h3>
+        <h3 id="reassign-modal-title" style="margin: 0; font-size: 16px; color: #fff;">Reassign Service Appointment</h3>
       </div>
       <button class="btn-close" id="close-reassign-modal-btn">
         <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
@@ -1992,7 +1998,7 @@
         <strong id="reassign-customer-name" style="color: #fff;">--</strong>
       </div>
       <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
-        <span class="text-muted">Appointment Time:</span>
+        <span class="text-muted" id="reassign-time-label">Appointment Time:</span>
         <span id="reassign-booking-time" style="color: #fff;">--</span>
       </div>
       <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
@@ -2043,6 +2049,6 @@
   <div class="toast" id="app-toast">Action completed successfully</div>
 
   <!-- Javascript Logic -->
-  <script src="app.js?v=41"></script>
+  <script src="app.js?v=44"></script>
 </body>
 </html>

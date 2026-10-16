@@ -328,6 +328,7 @@ Speak the filler naturally as part of the conversation so the caller experiences
         "gmail_refresh_token": "",
         "gmail_token_expires_at": 0,
         "min_booking_buffer_hours": 4,
+        "min_callback_buffer_hours": 2.0,
         "initial_notification_enabled": True,
         "max_dispatch_retries": 3,
         "sla_advance_booking_hours": 4.0,
@@ -487,6 +488,7 @@ class ConfigUpdatePayload(BaseModel):
     business_hours: Optional[list] = None
     business_days: Optional[list] = None
     min_booking_buffer_hours: Optional[int] = None
+    min_callback_buffer_hours: Optional[float] = None
     initial_notification_enabled: Optional[bool] = None
     sla_advance_booking_hours: Optional[float] = None
     sla_medium_booking_hours: Optional[float] = None
@@ -544,6 +546,8 @@ async def update_config(payload: ConfigUpdatePayload):
 
     if payload.min_booking_buffer_hours is not None:
         config_data["min_booking_buffer_hours"] = int(payload.min_booking_buffer_hours)
+    if payload.min_callback_buffer_hours is not None:
+        config_data["min_callback_buffer_hours"] = float(payload.min_callback_buffer_hours)
     if payload.initial_notification_enabled is not None:
         config_data["initial_notification_enabled"] = bool(payload.initial_notification_enabled)
     if payload.sla_advance_booking_hours is not None:
@@ -576,6 +580,13 @@ async def update_config(payload: ConfigUpdatePayload):
         if not validate_timezone(tz_str):
             raise HTTPException(status_code=400, detail=f"Invalid IANA timezone identifier: {tz_str}")
         config_data["business_timezone"] = tz_str
+
+    # Ensure prompt has synchronized lead time buffers
+    appt_buf = float(config_data.get("min_booking_buffer_hours", 4.0))
+    cb_buf = float(config_data.get("min_callback_buffer_hours", 2.0))
+    from serviceBot.services.prompt_service import update_prompt_lead_time_buffers
+    prompt_to_sync = update_prompt_lead_time_buffers(prompt_to_sync, appt_buf, cb_buf)
+    config_data["system_prompt"] = prompt_to_sync
 
     save_config(config_data)
     
@@ -824,7 +835,7 @@ def sync_all_agent_calendars(days: int = 30):
 
 
 @router.get("/agents")
-def get_staff_agents():
+async def get_staff_agents():
     from serviceBot.db.connection import get_db_connection, dict_cursor
     from serviceBot.db.queries import is_agent_whatsapp_connected
     try:
@@ -834,6 +845,7 @@ def get_staff_agents():
                     SELECT sa.id, sa.name, sa.role, sa.email AS db_email, sa.phone_number, uga.email AS google_email
                     FROM staff_agents sa
                     LEFT JOIN user_google_accounts uga ON sa.id = uga.agent_id
+                    WHERE sa.is_active IS NOT FALSE
                     ORDER BY sa.id ASC;
                 """)
                 rows = cursor.fetchall()
@@ -950,19 +962,86 @@ async def create_staff_agent(payload: StaffAgentCreate):
 async def delete_staff_agent(agent_id: int):
     import traceback
     from serviceBot.db.connection import get_db_connection, dict_cursor
+    from serviceBot.services import timezone_service
+    from serviceBot.db.queries import escalate_service_request
+    from serviceBot.services.sms_reminders import dispatch_supervisor_escalation_alert
     try:
         with get_db_connection() as conn:
             with dict_cursor(conn) as cursor:
-                # Verify agent exists
-                cursor.execute("SELECT id FROM staff_agents WHERE id = %s;", (agent_id,))
-                if not cursor.fetchone():
+                # 1. Verify agent exists
+                cursor.execute("SELECT id, name, is_active FROM staff_agents WHERE id = %s;", (agent_id,))
+                agent = cursor.fetchone()
+                if not agent:
                     raise HTTPException(status_code=404, detail="Agent not found")
-                    
-                cursor.execute("DELETE FROM staff_agents WHERE id = %s;", (agent_id,))
+
+                agent_name = agent.get("name") or f"Agent #{agent_id}"
+
+                # 2. Soft-delete the agent (mark inactive)
+                cursor.execute("UPDATE staff_agents SET is_active = FALSE WHERE id = %s;", (agent_id,))
+
+                # 3. Clean up active Google integrations, oauth states, and unbooked slots
+                cursor.execute("DELETE FROM user_google_accounts WHERE agent_id = %s;", (agent_id,))
+                cursor.execute("DELETE FROM oauth_states WHERE agent_id = %s;", (agent_id,))
+                cursor.execute("DELETE FROM service_staff_agents WHERE staff_agent_id = %s;", (agent_id,))
+                cursor.execute(
+                    """
+                    DELETE FROM mock_calendar_slots 
+                    WHERE staff_agent_id = %s AND (is_booked = FALSE OR is_booked IS NULL);
+                    """,
+                    (agent_id,)
+                )
+
+                # 4. Find all upcoming active appointments for this agent
+                now_business = timezone_service.now_in_business_tz().replace(tzinfo=None)
+                cutoff_time = now_business - dt_mod.timedelta(minutes=15)
+
+                cursor.execute(
+                    """
+                    SELECT sr.id, sr.status, sr.escalation_status, sr.booking_time, ar.starts_at
+                    FROM service_requests sr
+                    LEFT JOIN appointment_reservations ar ON ar.service_request_id = sr.id
+                    WHERE sr.staff_agent_id = %s
+                      AND sr.status NOT IN ('completed', 'done', 'cancelled', 'cancelled_by_customer')
+                      AND (
+                        (ar.starts_at IS NOT NULL AND ar.starts_at >= %s)
+                        OR (ar.starts_at IS NULL AND (sr.status IN ('pending', 'in_progress', 'rescheduled') OR sr.booking_time >= %s::text))
+                      );
+                    """,
+                    (agent_id, cutoff_time, cutoff_time)
+                )
+                upcoming_rows = cursor.fetchall()
+                sr_ids_to_escalate = [r["id"] for r in upcoming_rows]
                 conn.commit()
-        return {"success": True}
+
+        # 5. Escalate each upcoming appointment so admin can reassign
+        escalated_count = 0
+        for sr_id in sr_ids_to_escalate:
+            try:
+                escalate_service_request(
+                    request_id=sr_id,
+                    reason="AGENT_DEACTIVATED",
+                    triggered_by="admin_agent_deactivation",
+                )
+                escalated_count += 1
+                try:
+                    dispatch_supervisor_escalation_alert(
+                        service_request_id=sr_id,
+                        reason="AGENT_DEACTIVATED",
+                    )
+                except Exception as alert_err:
+                    logger.warning(f"Failed to dispatch supervisor alert for escalated SR #{sr_id}: {alert_err}")
+            except Exception as esc_err:
+                logger.error(f"Failed to escalate SR #{sr_id} on agent deactivation: {esc_err}")
+
+        return {
+            "success": True,
+            "message": f"Staff profile '{agent_name}' deactivated.",
+            "agent_id": agent_id,
+            "escalated_appointments_count": escalated_count,
+            "escalated_service_request_ids": sr_ids_to_escalate,
+        }
     except Exception as e:
-        print(f"Error deleting staff agent {agent_id}: {e}")
+        print(f"Error deleting/deactivating staff agent {agent_id}: {e}")
         traceback.print_exc()
         if isinstance(e, HTTPException):
             raise e
@@ -1367,37 +1446,14 @@ async def get_service_requests(
                 candidates = []
                 is_closed_req = (r.get("status") or "").lower() in ("cancelled", "cancelled_by_customer", "completed", "done")
                 if not is_closed_req and (escalated is True or r.get("escalation_status") in ("escalated", "reassigned")):
-                    curr_agent_id = r.get("staff_agent_id") or -1
-                    cursor.execute(
-                        "SELECT id, name, role, phone_number, email FROM staff_agents WHERE id != %s ORDER BY name ASC;",
-                        (curr_agent_id,)
-                    )
-                    other_agents = cursor.fetchall()
-                    start_ts = r.get("booking_start_time")
-                    for oa in other_agents:
-                        c_dict = dict(oa)
-                        is_avail = True
-                        if start_ts:
-                            try:
-                                s_dt = parse_booking_datetime(start_ts)
-                                if s_dt:
-                                    cursor.execute(
-                                        """
-                                        SELECT 1 FROM mock_calendar_slots
-                                        WHERE staff_agent_id = %s
-                                          AND slot_datetime = %s
-                                          AND (reservation_status IN ('RESERVED', 'BLOCKED') OR is_booked = TRUE)
-                                        LIMIT 1;
-                                        """,
-                                        (c_dict["id"], s_dt)
-                                    )
-                                    if cursor.fetchone():
-                                        is_avail = False
-                            except Exception:
-                                pass
-                        c_dict["is_available"] = is_avail
-                        candidates.append(c_dict)
-                    candidates.sort(key=lambda x: not x["is_available"])
+                    try:
+                        from serviceBot.db.queries import get_available_agents_for_request
+                        all_agents = get_available_agents_for_request(r["id"])
+                        curr_agent_id = r.get("staff_agent_id")
+                        candidates = [a for a in all_agents if not curr_agent_id or a["id"] != curr_agent_id]
+                    except Exception as e:
+                        logger.warning(f"Error computing candidate agents for request {r.get('id')}: {e}")
+                        candidates = []
 
                 r["candidate_agents"] = candidates
                 res.append(r)
@@ -1480,6 +1536,18 @@ async def reassign_service_request(request_id: int, payload: ReassignRequestPayl
                 SET staff_agent_id = %s,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE service_request_id = %s;
+                """,
+                (payload.new_agent_id, request_id)
+            )
+
+            # Update appointment_reservation_segments
+            cursor.execute(
+                """
+                UPDATE appointment_reservation_segments
+                SET staff_agent_id = %s
+                WHERE reservation_id IN (
+                    SELECT id FROM appointment_reservations WHERE service_request_id = %s
+                );
                 """,
                 (payload.new_agent_id, request_id)
             )
@@ -1598,22 +1666,30 @@ async def create_service_request_endpoint(payload: ServiceRequestCreate):
     req_details = payload.service_request or {}
     b_type = req_details.get("booking_type") or "appointment"
     b_time = req_details.get("booking_time") or req_details.get("time_slot")
-    if b_type == "appointment" and b_time:
+    if b_type in ("appointment", "callback") and b_time:
         from serviceBot.services.booking import validate_appointment_lead_time
-        now_ts = dt_mod.datetime.now()
+        from serviceBot.services import timezone_service
+        now_ts = timezone_service.now_in_business_tz().replace(tzinfo=None)
         is_valid, earliest_allowed, _ = validate_appointment_lead_time(
             requested_datetime=b_time,
             current_time=now_ts,
-            booking_type="appointment"
+            booking_type=b_type
         )
         if not is_valid:
             cfg = load_config()
-            min_buf = int(cfg.get("min_booking_buffer_hours", 4))
+            if b_type == "callback":
+                min_buf = float(cfg.get("min_callback_buffer_hours", 2.0))
+                min_buf_display = int(min_buf) if min_buf.is_integer() else min_buf
+                msg = f"Callback slot {b_time} violates the minimum advance notice policy of {min_buf_display} hours."
+            else:
+                min_buf = float(cfg.get("min_booking_buffer_hours", 4.0))
+                min_buf_display = int(min_buf) if min_buf.is_integer() else min_buf
+                msg = f"Appointment slot {b_time} violates the minimum advance notice policy of {min_buf_display} hours."
             raise HTTPException(
                 status_code=422,
                 detail={
                     "error_code": "LEAD_TIME_VIOLATION",
-                    "message": f"Appointment slot {b_time} violates the minimum advance notice policy of {min_buf} hours.",
+                    "message": msg,
                     "current_time": now_ts.strftime("%Y-%m-%dT%H:%M:%S"),
                     "min_buffer_hours": min_buf,
                     "earliest_valid_time": earliest_allowed.strftime("%Y-%m-%dT%H:%M:%S")

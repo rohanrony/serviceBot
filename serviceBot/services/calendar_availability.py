@@ -328,7 +328,7 @@ class CalendarAvailabilityService:
                     SELECT DISTINCT sa.id, sa.name
                     FROM staff_agents sa
                     JOIN user_google_accounts uga ON uga.agent_id = sa.id
-                    WHERE uga.provider = 'google';
+                    WHERE uga.provider = 'google' AND sa.is_active IS NOT FALSE;
                     """
                 )
                 agents = [dict(agent) for agent in cursor.fetchall()]

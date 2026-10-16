@@ -198,5 +198,78 @@ def test_portal_config_get_and_update(client):
     assert updated_cfg["sla_advance_booking_hours"] == 5.0
     assert updated_cfg["supervisor_alert_phone"] == "+19195550999"
 
-    # Reset back to 4 hours
-    client.post("/api/v1/portal/config", json={"min_booking_buffer_hours": 4})
+    # Reset back to original values
+    client.post(
+        "/api/v1/portal/config",
+        json={
+            "min_booking_buffer_hours": 4,
+            "sla_advance_booking_hours": 4.0,
+            "supervisor_alert_phone": "+14242704893"
+        }
+    )
+
+
+def test_available_agents_for_escalated_request_checks_actual_availability(client, setup_escalated_request):
+    data = setup_escalated_request
+    req_id = data["request_id"]
+
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT id FROM staff_agents WHERE phone_number = '+19195554444';")
+            t3 = cursor.fetchone()
+            if not t3:
+                cursor.execute(
+                    """
+                    INSERT INTO staff_agents (name, role, email, phone_number)
+                    VALUES ('Tech Three', 'technician', 'tech.three@example.com', '+19195554444')
+                    RETURNING id;
+                    """
+                )
+                t3 = cursor.fetchone()
+            tech3_id = t3["id"]
+            conn.commit()
+
+    # 1. Fetch available agents - Tech Three has no conflicting appointments, so must be Available
+    resp = client.get(f"/api/v1/portal/service-requests/{req_id}/available-agents")
+    assert resp.status_code == 200
+    agents = resp.json()["agents"]
+    candidate = next((a for a in agents if a["id"] == tech3_id), None)
+    assert candidate is not None
+    assert candidate["is_available"] is True, f"Expected Tech Three to be available, got: {candidate}"
+    assert candidate["reason"] == "Available"
+    assert "current_job_count_today" in candidate
+
+    # 2. Add an overlapping appointment for Tech Three in service_requests at the same time
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                """
+                INSERT INTO service_requests (
+                    customer_id, vehicle_id, service_type, issue_description,
+                    status, booking_type, booking_time, duration_minutes, staff_agent_id
+                )
+                VALUES (%s, %s, 'Oil Change', 'Routine oil change',
+                        'pending', 'appointment', '2026-10-08 14:00:00', 60, %s)
+                RETURNING id;
+                """,
+                (1, 1, tech3_id)
+            )
+            overlap_req_id = cursor.fetchone()["id"]
+            conn.commit()
+
+    try:
+        # 3. Tech Three should now be detected as busy due to the conflicting appointment!
+        resp2 = client.get(f"/api/v1/portal/service-requests/{req_id}/available-agents")
+        assert resp2.status_code == 200
+        agents2 = resp2.json()["agents"]
+        candidate2 = next((a for a in agents2 if a["id"] == tech3_id), None)
+        assert candidate2 is not None
+        assert candidate2["is_available"] is False, f"Expected Tech Three to be busy with overlapping appointment, got: {candidate2}"
+        assert candidate2["reason"] == "Booked for another appointment"
+    finally:
+        with get_db_connection() as conn:
+            with dict_cursor(conn) as cursor:
+                cursor.execute("DELETE FROM service_requests WHERE id = %s;", (overlap_req_id,))
+                conn.commit()
+
+

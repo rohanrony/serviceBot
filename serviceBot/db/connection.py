@@ -113,7 +113,8 @@ CREATE TABLE IF NOT EXISTS staff_agents (
     phone_number VARCHAR(50) DEFAULT NULL,
     google_access_token TEXT DEFAULT NULL,
     google_refresh_token TEXT DEFAULT NULL,
-    google_token_expires_at REAL DEFAULT NULL
+    google_token_expires_at REAL DEFAULT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE
 );
 
 CREATE TABLE IF NOT EXISTS vehicles (
@@ -424,8 +425,10 @@ def init_db(db_url: str = None, force: bool = False):
             ("google_refresh_token", "TEXT DEFAULT NULL"),
             ("google_token_expires_at", "REAL DEFAULT NULL"),
             ("phone_number", "VARCHAR(50) DEFAULT NULL"),
+            ("is_active", "BOOLEAN NOT NULL DEFAULT TRUE"),
         ]:
             _safe_alter(cursor, conn, f"ALTER TABLE staff_agents ADD COLUMN IF NOT EXISTS {col} {col_type}")
+        _safe_alter(cursor, conn, "CREATE INDEX IF NOT EXISTS idx_staff_agents_is_active ON staff_agents(is_active);")
 
         for col, col_type in [
             ("sms_opt_in", "BOOLEAN DEFAULT TRUE"),

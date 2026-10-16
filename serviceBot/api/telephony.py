@@ -937,23 +937,34 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                     elif args.get("preferred_time") or args.get("preferredTime"):
                         booking_type = "callback"
 
-                if booking_type == "appointment" and booking_time:
+                if booking_type in ("appointment", "callback") and booking_time:
                     is_mocked = hasattr(create_service_request, "mock_calls") or hasattr(create_service_request, "_mock_return_value")
                     if not is_mocked:
                         from serviceBot.services.booking import validate_appointment_lead_time
                         is_valid, earliest_allowed, suggested_slots = validate_appointment_lead_time(
                             requested_datetime=booking_time,
-                            booking_type="appointment"
+                            booking_type=booking_type
                         )
                         if not is_valid:
                             cfg = load_config()
-                            min_buf = int(cfg.get("min_booking_buffer_hours", 4))
-                            earliest_str = earliest_allowed.strftime("%I:%M %p").lstrip("0")
-                            earliest_iso = earliest_allowed.strftime("%Y-%m-%dT%H:%M:%S")
-                            agent_inst = (
-                                f"Politely inform the caller that our shop requires at least {min_buf} hours advance notice to prepare bays and parts. "
-                                f"The earliest available time is around {earliest_str}. Offer the suggested slots at or after {earliest_str}."
-                            )
+                            if booking_type == "callback":
+                                min_buf = float(cfg.get("min_callback_buffer_hours", 2.0))
+                                min_buf_display = int(min_buf) if min_buf.is_integer() else min_buf
+                                earliest_str = earliest_allowed.strftime("%I:%M %p").lstrip("0")
+                                earliest_iso = earliest_allowed.strftime("%Y-%m-%dT%H:%M:%S")
+                                agent_inst = (
+                                    f"Politely inform the caller that callbacks require at least {min_buf_display} hours advance notice so a service advisor can review their vehicle records. "
+                                    f"The earliest available callback time is around {earliest_str}. Offer the suggested times at or after {earliest_str}."
+                                )
+                            else:
+                                min_buf = float(cfg.get("min_booking_buffer_hours", 4.0))
+                                min_buf_display = int(min_buf) if min_buf.is_integer() else min_buf
+                                earliest_str = earliest_allowed.strftime("%I:%M %p").lstrip("0")
+                                earliest_iso = earliest_allowed.strftime("%Y-%m-%dT%H:%M:%S")
+                                agent_inst = (
+                                    f"Politely inform the caller that our shop requires at least {min_buf_display} hours advance notice to prepare bays and parts. "
+                                    f"The earliest available time is around {earliest_str}. Offer the suggested slots at or after {earliest_str}."
+                                )
                             result = {
                                 "success": False,
                                 "error": "INSUFFICIENT_LEAD_TIME",
@@ -1174,11 +1185,12 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                     )
                     if not is_valid:
                         cfg = load_config()
-                        min_buf = int(cfg.get("min_booking_buffer_hours", 4))
+                        min_buf = float(cfg.get("min_booking_buffer_hours", 4.0))
+                        min_buf_display = int(min_buf) if min_buf.is_integer() else min_buf
                         earliest_str = earliest_allowed.strftime("%I:%M %p").lstrip("0")
                         earliest_iso = earliest_allowed.strftime("%Y-%m-%dT%H:%M:%S")
                         agent_inst = (
-                            f"Politely inform the caller that our shop requires at least {min_buf} hours advance notice to prepare bays and parts. "
+                            f"Politely inform the caller that our shop requires at least {min_buf_display} hours advance notice to prepare bays and parts. "
                             f"The earliest available time is around {earliest_str}. Offer the suggested slots at or after {earliest_str}."
                         )
                         result = {
@@ -1516,6 +1528,37 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                     
                     try:
                         preferred_time = args.get("preferred_time") or args.get("time_slot") or args.get("time")
+                        if preferred_time and "asap" not in str(preferred_time).lower() and "as soon as possible" not in str(preferred_time).lower():
+                            from serviceBot.services.booking import validate_appointment_lead_time
+                            is_valid, earliest_allowed, suggested_slots = validate_appointment_lead_time(
+                                requested_datetime=preferred_time,
+                                booking_type="callback"
+                            )
+                            if not is_valid:
+                                cfg = load_config()
+                                min_buf = float(cfg.get("min_callback_buffer_hours", 2.0))
+                                min_buf_display = int(min_buf) if min_buf.is_integer() else min_buf
+                                earliest_str = earliest_allowed.strftime("%I:%M %p").lstrip("0")
+                                earliest_iso = earliest_allowed.strftime("%Y-%m-%dT%H:%M:%S")
+                                agent_inst = (
+                                    f"Politely inform the caller that callbacks require at least {min_buf_display} hours advance notice so a service advisor can review their vehicle records. "
+                                    f"The earliest available callback time is around {earliest_str}. Offer the suggested times at or after {earliest_str}."
+                                )
+                                result = {
+                                    "success": False,
+                                    "error": "INSUFFICIENT_LEAD_TIME",
+                                    "min_buffer_hours": min_buf,
+                                    "earliest_allowed_time": earliest_iso,
+                                    "suggested_slots": suggested_slots,
+                                    "agent_instruction": agent_inst,
+                                    "message": agent_inst
+                                }
+                                response_data = {
+                                    "tool_call_id": tool_call_id,
+                                    "result": result
+                                }
+                                return response_data
+
                         vehicle_details = {"make": make, "model": model, "year": year}
                         cb_id = create_callback_request(
                             customer_id=customer_id,
