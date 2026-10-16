@@ -38,6 +38,15 @@ Currently in VoiceService:
 
 ---
 
+## Clarifications
+
+### Session 2026-10-15
+- Q: When a customer or staff cancels one segment of a multi-service back-to-back visit, how should the system handle the companion appointment? → A: For the customer it is a single appointment. If the customer cancels, the entire visit (all linked services) is cancelled. If the customer calls to have only one thing checked, the visit is revised (the unwanted service is cancelled/removed, duration shortened, and the remaining service kept).
+- Q: If a customer requests 3 or more services where no single technician can perform all of them, how should the scheduling engine partition the work? → A: Greedy grouping: combine as many services as possible with the first qualified technician, then schedule the companion technician back-to-back to minimize bay/technician handoffs.
+- Q: If Technician 1 confirms via SMS but Technician 2 declines (or times out) for a back-to-back appointment, how should the system handle the declined segment? → A: Automatically reassign the declined segment to another qualified technician free at that exact slot; if none free, escalate to manager.
+
+---
+
 ## 2. User Scenarios & Acceptance Criteria
 
 ### User Story 1 - Admin Tags Qualified Staff Agents to Services in Portal Catalog (Priority: P1)
@@ -100,8 +109,10 @@ As a shop manager who configures operating hours (e.g. 8:00 AM to 5:00 PM) in Po
 | **Scheduling** | Buffer between Technicians | Exactly 0 minutes (consecutive handoff). Service 2 starts at the exact minute Service 1 ends. |
 | **Scheduling** | Single Agent vs Customer Availability Trade-off | Customer availability at target slot takes precedence. If single agent is free at target slot, pick single agent; otherwise, allocate split back-to-back agents. |
 | **Scheduling** | Dual Callbacks Collision | Two callbacks are scheduled with separate qualified advisors at **non-overlapping** times (separated by at least 30 minutes) so the customer is not double-called simultaneously. |
+| **Scheduling** | 3+ Services Partitioning | When a customer requests 3 or more services and no single technician can perform all of them, the engine applies greedy grouping: it assigns as many services as possible to the first qualified technician, then schedules companion technicians back-to-back to minimize bay/technician handoffs. |
 | **Concurrency** | Partial Booking Failure (Race Condition) | When reserving Agent 1 and Agent 2, both slot sets are locked `FOR UPDATE`. If Agent 2 fails, the transaction rolls back cleanly with `BookingConflictError`, leaving zero orphan bookings. |
-| **Lifecycle** | Customer Reschedules or Cancels | Linked visits share a `visit_group_id`. Cancelling one prompts/cancels both. Rescheduling evaluates both services simultaneously to find a new joint slot. |
+| **Lifecycle** | Customer Reschedules, Cancels, or Revises | For the customer, the visit is a single appointment. If the customer cancels, all linked back-to-back services are cancelled together. If the customer requests to keep only one service, the visit is revised (the unwanted service is cancelled/unreserved, the remaining service is preserved, and total visit duration/calendar invite is shortened accordingly). Rescheduling evaluates both services together for a new joint slot. |
+| **Lifecycle** | Technician SMS Decline or SLA Timeout | If Technician 1 confirms via SMS (`C101`) but Technician 2 declines (`D102`) or times out, the system automatically attempts to reassign Technician 2's segment to another qualified technician free at that exact back-to-back slot. If no other qualified technician is available, the visit is escalated to the shop manager with linked visit context. |
 | **Calendar Sync** | Google Calendar Visibility & Fallback | Customer receives a single unified visit invite covering the full duration (both technicians in notes). If calendar sync encounters errors, falls back to two separate back-to-back invites. |
 
 ---

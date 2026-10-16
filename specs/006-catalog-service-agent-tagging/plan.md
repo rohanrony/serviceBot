@@ -88,6 +88,7 @@ CREATE INDEX IF NOT EXISTS idx_sr_visit_group ON service_requests(visit_group_id
   - Dynamically get closing hour: `closing_hour = max(get_configured_business_hours()) + 1`.
   - Validate candidate slots against `closing_hour` and total duration.
   - Evaluate single-agent candidates first; if none free at requested time, evaluate back-to-back candidates with 0-minute handoff buffer.
+  - Partition 3+ services greedily: combine as many services as possible with the first qualified technician, then schedule companion technicians back-to-back.
 
 ### 2. Booking Service (`serviceBot/services/booking.py`)
 - Enhance `BookingService`:
@@ -95,6 +96,8 @@ CREATE INDEX IF NOT EXISTS idx_sr_visit_group ON service_requests(visit_group_id
   - Use database savepoints / transactional locks on `mock_calendar_slots`. If Agent 2 fails, roll back Agent 1.
   - Set `visit_group_id` = UUID on both service requests and cross-link `linked_appointment_id`.
   - Dynamic closing boundary enforcement: `normalize_reservation_duration` and `validate_appointment_lead_time` respect `get_configured_business_hours()`.
+  - **Visit Revision / Cancellation**: If customer cancels, cancel all linked segments. If customer drops one service, revise visit: cancel unwanted segment, shorten total duration, and update calendar invite.
+  - **Technician Decline Auto-Reassignment**: If a technician declines via SMS or times out on their SLA, auto-reassign that specific segment to another qualified technician free at that exact back-to-back slot; if none free, escalate to shop manager.
 
 ### 3. Portal API (`serviceBot/api/portal.py`)
 - `GET /services`: Include `assigned_agent_ids: list[int]` and `assigned_agent_names: list[str]`.

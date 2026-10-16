@@ -787,12 +787,14 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
             booking_type = args.get("booking_type") or args.get("bookingType") or "appointment"
             slots = check_availability(service_type=service_type, preferred_date=preferred_date, booking_type=booking_type, preferred_time=preferred_time)
 
-            from serviceBot.db.queries import parse_specific_time
+            from serviceBot.db.queries import parse_specific_time, parse_preferred_date_and_time
+            iso_date_target, _, _ = parse_preferred_date_and_time(preferred_date)
             requested_time_target = parse_specific_time(f"{preferred_date or ''} {preferred_time or ''}")
             time_match = False
             if requested_time_target and slots:
                 time_match = any(
-                    datetime.strptime(s, "%Y-%m-%d %H:%M:%S").time().hour == requested_time_target.hour
+                    (not iso_date_target or s.startswith(iso_date_target))
+                    and datetime.strptime(s, "%Y-%m-%d %H:%M:%S").time().hour == requested_time_target.hour
                     and datetime.strptime(s, "%Y-%m-%d %H:%M:%S").time().minute == requested_time_target.minute
                     for s in slots
                 )
@@ -817,7 +819,7 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                         f"Clearly suggest 2 to 3 of these options to the caller. "
                         f"NOTE TO AGENT: These are recommended options around the caller's requested time/date that fit strictly within business hours. "
                         f"Additional slots are also available throughout the day if the caller prefers another specific time. "
-                        f"Never tell or imply to the caller that these are the only available slots for the day. If the caller requests a different time, "
+                        f"Never tell or imply to the caller that these are the only or earliest available slots for the day. If the caller requests a different time (such as morning instead of afternoon), "
                         f"call check_availability with their preferred time. "
                         f"CRITICAL: All appointments must conclude strictly by {closing_str}. Never offer or accept an appointment that would run past {closing_str}."
                     )

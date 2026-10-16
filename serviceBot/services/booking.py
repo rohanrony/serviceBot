@@ -1240,10 +1240,18 @@ class BookingService:
             old_segments = [segment for segment in old_segments if segment is not None]
             cursor.execute("DELETE FROM appointment_reservation_segments WHERE reservation_id = %s;", (existing["id"],))
 
+        qualified_agent_ids = None
+        if service_type:
+            from serviceBot.db.queries import get_qualified_agent_ids
+            q = get_qualified_agent_ids(service_type)
+            if q:
+                qualified_agent_ids = q
+
         candidate_ids = self._candidate_agent_ids(
             cursor,
             requested_agent_id=requested_agent_id,
             fallback_agent_id=request.get("staff_agent_id"),
+            qualified_agent_ids=qualified_agent_ids,
         )
         if not candidate_ids:
             raise BookingConflictError("No staff agents are available to accept this booking.")
@@ -1343,6 +1351,7 @@ class BookingService:
         cursor,
         requested_agent_id: Optional[int],
         fallback_agent_id: Optional[int] = None,
+        qualified_agent_ids: Optional[list[int]] = None,
     ) -> list[int]:
         """Keep an explicit staff selection strict, otherwise prefer then fall back."""
         if requested_agent_id is not None:
@@ -1351,6 +1360,12 @@ class BookingService:
 
         cursor.execute("SELECT id FROM staff_agents ORDER BY id ASC;")
         agent_ids = [row["id"] for row in cursor.fetchall()]
+
+        if qualified_agent_ids:
+            filtered = [aid for aid in agent_ids if aid in qualified_agent_ids]
+            if filtered:
+                agent_ids = filtered
+
         if fallback_agent_id is None or fallback_agent_id not in agent_ids:
             return agent_ids
         return [fallback_agent_id, *[

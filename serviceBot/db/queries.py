@@ -567,15 +567,16 @@ def _generate_dynamic_slots(preferred_date_str: str, duration_minutes: int, inte
     else:
         start_date = dt_mod.date.today()
 
-    # Ensure we don't start from a past date
-    today = dt_mod.date.today()
+    # Ensure we don't start from a past date in the business timezone
+    from serviceBot.services import timezone_service
+    now_dt = timezone_service.now_in_business_tz().replace(tzinfo=None)
+    today = now_dt.date()
     if start_date < today:
         start_date = today
 
     # Generate slots for up to 14 business days
     slots = []
     day_offset = 0
-    now_dt = dt_mod.datetime.now()
 
     min_lead_hours = 0.0
     if booking_type == "appointment":
@@ -662,11 +663,20 @@ def check_availability(service_type: str = None, preferred_date: str = None, boo
         valid_minutes = (0, 30)
     duration_minutes = normalize_reservation_duration(duration_minutes)
 
-    # --- Get all agents ---
+    # --- Get all agents and filter by qualified agents tagged to service ---
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             cursor.execute("SELECT id FROM staff_agents;")
             all_agent_ids = [r["id"] for r in cursor.fetchall()]
+
+    qualified_agent_ids = get_qualified_agent_ids(service_type) if service_type else []
+    if qualified_agent_ids:
+        active_eval_agent_ids = [aid for aid in qualified_agent_ids if aid in all_agent_ids]
+    else:
+        active_eval_agent_ids = all_agent_ids
+
+    if not active_eval_agent_ids:
+        active_eval_agent_ids = all_agent_ids
 
     from serviceBot.services import timezone_service
     tz = timezone_service.get_business_zoneinfo()
@@ -683,17 +693,17 @@ def check_availability(service_type: str = None, preferred_date: str = None, boo
     if not candidate_slots:
         return []
 
-    # Pre-fetch events for all agents across the full candidate range
+    # Pre-fetch events for eligible agents across the full candidate range
     slot_dts_parsed = [datetime.strptime(s, "%Y-%m-%d %H:%M:%S") for s in candidate_slots]
     min_dt = min(slot_dts_parsed).replace(tzinfo=tz)
     max_dt = (max(slot_dts_parsed) + timedelta(minutes=duration_minutes)).replace(tzinfo=tz)
     start_iso = min_dt.isoformat()
     end_iso = max_dt.isoformat()
 
-    with ThreadPoolExecutor(max_workers=max(1, len(all_agent_ids))) as executor:
+    with ThreadPoolExecutor(max_workers=max(1, len(active_eval_agent_ids))) as executor:
         future_to_agent = {
             executor.submit(fetch_agent_events, aid, start_iso, end_iso): aid
-            for aid in all_agent_ids
+            for aid in active_eval_agent_ids
         }
         for future in as_completed(future_to_agent):
             aid = future_to_agent[future]
@@ -713,7 +723,7 @@ def check_availability(service_type: str = None, preferred_date: str = None, boo
                     """
                     SELECT staff_agent_id, slot_datetime
                     FROM mock_calendar_slots
-                    WHERE (reservation_status IN ('RESERVED', 'BLOCKED') OR is_booked = TRUE)
+                    WHERE (reservation_status = 'RESERVED' OR (reservation_status = 'BLOCKED' AND calendar_integration_status != 'FAILED') OR (is_booked = TRUE AND calendar_integration_status != 'FAILED'))
                       AND slot_datetime >= %s AND slot_datetime <= %s;
                     """,
                     (min_dt.replace(tzinfo=None), max_dt.replace(tzinfo=None)),
@@ -750,9 +760,18 @@ def check_availability(service_type: str = None, preferred_date: str = None, boo
             if seg_time.weekday() not in valid_business_days or seg_time.hour not in valid_business_hours:
                 return False
 
-        if agent_id not in agent_events_map or agent_events_map[agent_id] is None:
-            # A provider failure is unknown capacity, never a free slot.
-            return False
+        # Check Google Calendar events if connected and available
+        if agent_id in agent_events_map and agent_events_map[agent_id] is not None:
+            slot_start = slot_dt_naive.replace(tzinfo=tz)
+            slot_end = slot_start + timedelta(minutes=duration_minutes)
+            for event in agent_events_map[agent_id]:
+                evt_start = parse_google_datetime(event.get("start"), tz)
+                evt_end = parse_google_datetime(event.get("end"), tz)
+                if evt_start and evt_end:
+                    if slot_start < evt_end and slot_end > evt_start:
+                        return False
+        elif agent_id in agent_events_map and agent_events_map[agent_id] is None:
+            logger.warning(f"Google Calendar unavailable for agent {agent_id}; falling back to local DB authority.")
 
         # Check local DB blocks & reservations across all 15-minute segments of the slot
         for seg_offset in range(0, duration_minutes, 15):
@@ -761,19 +780,11 @@ def check_availability(service_type: str = None, preferred_date: str = None, boo
             if (agent_id, seg_str) in blocked_mock_slots or (agent_id, seg_str) in reserved_segments:
                 return False
 
-        slot_start = slot_dt_naive.replace(tzinfo=tz)
-        slot_end = slot_start + timedelta(minutes=duration_minutes)
-        for event in agent_events_map[agent_id]:
-            evt_start = parse_google_datetime(event.get("start"), tz)
-            evt_end = parse_google_datetime(event.get("end"), tz)
-            if evt_start and evt_end:
-                if slot_start < evt_end and slot_end > evt_start:
-                    return False
         return True
 
     all_free_slots = []
     for slot_dt_str in candidate_slots:
-        if any(is_agent_free_live(aid, slot_dt_str) for aid in all_agent_ids):
+        if any(is_agent_free_live(aid, slot_dt_str) for aid in active_eval_agent_ids):
             all_free_slots.append(slot_dt_str)
 
     if not all_free_slots:

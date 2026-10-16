@@ -54,6 +54,7 @@ __pycache__/
 *.sqlite3
 chroma_db/
 scratch/
+scripts/*.json
 
 # Dependencies
 node_modules
