@@ -3,7 +3,7 @@ import time
 import traceback
 import zoneinfo
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Any
 
 from serviceBot.db.connection import get_db_connection
 from serviceBot.services.encryption import encrypt_key, decrypt_key
@@ -297,6 +297,143 @@ def create_agent_calendar_event(
     except Exception as e:
         print(f"Exception creating calendar event for agent {agent_id}: {str(e)}")
         return False
+
+
+def create_multi_service_calendar_events(
+    customer_name: str,
+    segments: list[dict[str, Any]],
+    issue_description: str = "",
+    booking_type: str = "appointment",
+) -> dict[str, Any]:
+    """
+    T042/T043: Synchronizes Google Calendar events for a multi-service visit.
+    - T042: Attempts to create a unified customer visit event spanning T_start -> T_end
+      with all services and technicians itemized. If unified event encounters provider errors,
+      falls back gracefully to sequential per-segment events.
+    - T043: Synchronizes individual technician calendar events for their respective segments.
+    """
+    if not segments:
+        return {"success": False, "message": "No segments provided"}
+
+    sorted_segs = sorted(segments, key=lambda s: str(s.get("booking_time", "")))
+    first_seg = sorted_segs[0]
+    last_seg = sorted_segs[-1]
+
+    t0_str = str(first_seg["booking_time"])[:19]
+    t0_dt = datetime.strptime(t0_str, "%Y-%m-%d %H:%M:%S")
+    
+    t_last_str = str(last_seg["booking_time"])[:19]
+    t_last_dt = datetime.strptime(t_last_str, "%Y-%m-%d %H:%M:%S")
+    last_dur = last_seg.get("duration_minutes") or 60
+    t_end_dt = t_last_dt + timedelta(minutes=last_dur)
+
+    start_iso = _normalize_iso_timezone(t0_dt.isoformat())
+    end_iso = _normalize_iso_timezone(t_end_dt.isoformat())
+
+    desc_lines = []
+    for s in sorted_segs:
+        svc = s.get("service_name") or s.get("service_type") or "Service"
+        tech = s.get("staff_agent_name") or f"Technician #{s.get('staff_agent_id')}"
+        b_time = str(s.get("booking_time"))[:16]
+        dur = s.get("duration_minutes") or 60
+        desc_lines.append(f"• {svc} with {tech} ({b_time}, {dur} mins)")
+
+    desc_lines.append(f"Issue: {issue_description}")
+    desc_lines.append("Automatically booked by BayFull.")
+    full_desc = "\n".join(desc_lines)
+
+    primary_agent_id = first_seg.get("staff_agent_id")
+    creds = get_user_google_credentials(primary_agent_id) if primary_agent_id else None
+
+    unified_success = False
+    if creds and "access_token" in creds:
+        try:
+            config = load_config()
+            admin_recipient = config.get("gmail_recipient", "")
+            attendees = []
+            if admin_recipient:
+                attendees.append({"email": admin_recipient})
+
+            payload = {
+                "summary": f"BayFull Appointment - {customer_name}",
+                "description": full_desc,
+                "start": {
+                    "dateTime": start_iso,
+                    "timeZone": timezone_service.get_business_timezone_str()
+                },
+                "end": {
+                    "dateTime": end_iso,
+                    "timeZone": timezone_service.get_business_timezone_str()
+                },
+                "attendees": attendees
+            }
+            url = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
+            headers = {
+                "Authorization": f"Bearer {creds['access_token']}",
+                "Content-Type": "application/json"
+            }
+            resp = httpx.post(url, headers=headers, json=payload, timeout=10.0)
+            if resp.status_code in [200, 201]:
+                unified_success = True
+        except Exception as e:
+            print(f"Unified calendar event creation error: {e}")
+
+    if unified_success:
+        for s in sorted_segs[1:]:
+            s_aid = s.get("staff_agent_id")
+            if s_aid and s_aid != primary_agent_id:
+                s_t_str = str(s.get("booking_time"))[:19]
+                s_t_dt = datetime.strptime(s_t_str, "%Y-%m-%d %H:%M:%S")
+                s_dur = s.get("duration_minutes") or 60
+                s_end_dt = s_t_dt + timedelta(minutes=s_dur)
+                try:
+                    create_agent_calendar_event(
+                        agent_id=s_aid,
+                        customer_name=customer_name,
+                        service_type=s.get("service_name") or s.get("service_type") or "Service",
+                        start_iso=_normalize_iso_timezone(s_t_dt.isoformat()),
+                        end_iso=_normalize_iso_timezone(s_end_dt.isoformat()),
+                        issue_description=issue_description,
+                        duration_minutes=s_dur,
+                        booking_type=booking_type,
+                    )
+                except Exception:
+                    pass
+
+        return {
+            "success": True,
+            "event_mode": "unified",
+            "summary": f"BayFull Appointment - {customer_name}",
+            "start": start_iso,
+            "end": end_iso,
+            "segments_count": len(sorted_segs),
+        }
+    else:
+        fallback_results = []
+        for s in sorted_segs:
+            s_aid = s.get("staff_agent_id")
+            if s_aid:
+                s_t_str = str(s.get("booking_time"))[:19]
+                s_t_dt = datetime.strptime(s_t_str, "%Y-%m-%d %H:%M:%S")
+                s_dur = s.get("duration_minutes") or 60
+                s_end_dt = s_t_dt + timedelta(minutes=s_dur)
+                ok = create_agent_calendar_event(
+                    agent_id=s_aid,
+                    customer_name=customer_name,
+                    service_type=s.get("service_name") or s.get("service_type") or "Service",
+                    start_iso=_normalize_iso_timezone(s_t_dt.isoformat()),
+                    end_iso=_normalize_iso_timezone(s_end_dt.isoformat()),
+                    issue_description=issue_description,
+                    duration_minutes=s_dur,
+                    booking_type=booking_type,
+                )
+                fallback_results.append(ok)
+
+        return {
+            "success": any(fallback_results) if fallback_results else True,
+            "event_mode": "fallback_split",
+            "segments_count": len(sorted_segs),
+        }
 
 
 def _normalize_iso_timezone(iso_str: str) -> str:

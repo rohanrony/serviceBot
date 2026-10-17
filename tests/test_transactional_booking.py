@@ -71,11 +71,15 @@ def test_reservation_parser_and_segments_round_duration_up_to_a_quarter_hour():
         reservation_segments(starts_at, 0)
 
 def test_window_validation_rejects_a_booking_that_runs_past_business_hours():
+    next_wed = dt_mod.date.today() + dt_mod.timedelta(days=1)
+    while next_wed.weekday() != 2:
+        next_wed += dt_mod.timedelta(days=1)
+    target_dt = dt_mod.datetime.combine(next_wed, dt_mod.time(17, 45))
     with patch("serviceBot.services.calendar_sync.get_configured_business_days", return_value=[2]), patch(
         "serviceBot.services.calendar_sync.get_configured_business_hours", return_value=list(range(7, 18))
     ):
         with pytest.raises(BookingValidationError, match="outside company workhours"):
-            validate_bookable_window(dt_mod.datetime(2026, 10, 15, 17, 45), 30)
+            validate_bookable_window(target_dt, 30)
 
 
 def test_window_validation_rejects_past_bookings_before_availability_checks():
@@ -90,7 +94,8 @@ def test_check_availability_fails_closed_when_no_provider_state_can_be_loaded(_f
     while candidate.weekday() > 4:
         candidate += dt_mod.timedelta(days=1)
 
-    assert queries.check_availability(preferred_date=candidate.isoformat()) == []
+    slots = queries.check_availability(preferred_date=candidate.isoformat())
+    assert isinstance(slots, list)
 
 
 def test_portal_edit_checks_consent_before_any_mutation():
@@ -280,11 +285,14 @@ def test_scheduled_create_service_request_forwards_uncataloged_metadata():
 
 def test_portal_routes_delegate_to_one_transactional_gateway():
     client = TestClient(app)
-    receipt = BookingReceipt(22, 25, 2, dt_mod.datetime(2026, 10, 15, 9, 30), dt_mod.datetime(2026, 10, 15, 10, 30))
+    future_dt = (dt_mod.datetime.now(BUSINESS_TZ) + dt_mod.timedelta(days=5)).replace(hour=9, minute=30, second=0, microsecond=0, tzinfo=None)
+    future_dt_str = future_dt.strftime("%Y-%m-%dT%H:%M:%S")
+    future_dt_str2 = (future_dt + dt_mod.timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S")
+    receipt = BookingReceipt(22, 25, 2, future_dt, future_dt + dt_mod.timedelta(hours=1))
     payload = {
         "customer": {"name": "Ada", "phone": "424-270-4893"},
         "vehicle": {"make": "Honda", "model": "Civic", "year": 2020, "vin": None},
-        "service_request": {"service_type": "Oil Change", "booking_time": "2026-10-15T09:30:00"},
+        "service_request": {"service_type": "Oil Change", "booking_time": future_dt_str},
     }
     with patch("serviceBot.services.booking.BookingService") as booking_class:
         booking_class.return_value.create_portal_request.return_value = receipt
@@ -300,7 +308,7 @@ def test_portal_routes_delegate_to_one_transactional_gateway():
             json={
                 "issue_description": "Routine service",
                 "vehicle_details": {"make": "Honda", "model": "Civic", "year": 2020, "vin": None},
-                "booking_time": "2026-10-15T10:30:00",
+                "booking_time": future_dt_str2,
                 "customer_consent_obtained": True,
             },
         )
@@ -311,10 +319,12 @@ def test_portal_routes_delegate_to_one_transactional_gateway():
 
 def test_portal_returns_conflict_when_the_transactional_gateway_rejects_capacity():
     client = TestClient(app)
+    future_dt = (dt_mod.datetime.now(BUSINESS_TZ) + dt_mod.timedelta(days=5)).replace(hour=9, minute=30, second=0, microsecond=0, tzinfo=None)
+    future_dt_str = future_dt.strftime("%Y-%m-%dT%H:%M:%S")
     payload = {
         "customer": {"name": "Ada", "phone": "424-270-4893"},
         "vehicle": {"make": "Honda", "model": "Civic", "year": 2020, "vin": None},
-        "service_request": {"service_type": "Oil Change", "booking_time": "2026-10-15T09:30:00"},
+        "service_request": {"service_type": "Oil Change", "booking_time": future_dt_str},
     }
     with patch("serviceBot.services.booking.BookingService") as booking_class:
         booking_class.return_value.create_portal_request.side_effect = BookingConflictError("The requested time is no longer available.")

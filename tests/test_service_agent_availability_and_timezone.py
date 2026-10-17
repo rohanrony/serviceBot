@@ -44,7 +44,8 @@ def test_telephony_time_match_requires_date_and_time():
     """
     preferred_date = "today"
     preferred_time = "4:00 PM"
-    slots = ["2026-10-16 16:00:00"]  # Only tomorrow at 4 PM is available
+    tomorrow_iso = (dt_mod.date.today() + dt_mod.timedelta(days=1)).isoformat()
+    slots = [f"{tomorrow_iso} 16:00:00"]  # Only tomorrow at 4 PM is available
 
     iso_date_target, _, _ = parse_preferred_date_and_time(preferred_date)
     requested_time_target = parse_specific_time(f"{preferred_date or ''} {preferred_time or ''}")

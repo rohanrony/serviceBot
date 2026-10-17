@@ -119,7 +119,7 @@ def test_get_customer_appointments_option_a_and_confirmed_status():
     mock_appts = [
         {
             "id": 32,
-            "appointment_datetime": "2026-10-15 08:00:00",
+            "appointment_datetime": "2026-10-25 08:00:00",
             "service_type": "Battery Replacement",
             "issue_description": "Battery dead",
             "duration_minutes": 60,
@@ -177,7 +177,7 @@ def test_inbound_call_prioritizes_upcoming_over_old_past_appointments():
         },
         {
             "id": 32,
-            "appointment_datetime": "2026-10-15 08:00:00",
+            "appointment_datetime": "2026-10-25 08:00:00",
             "service_type": "Battery Replacement",
             "status": "confirmed",
             "booking_type": "appointment",

@@ -426,6 +426,19 @@ def test_agent_availability_and_assignment_endpoints():
     req_id = next((r["id"] for r in reqs if r["status"] in ("pending", "in_progress")), None)
     
     if req_id:
+        import datetime as dt_mod
+        from serviceBot.db.connection import get_db_connection
+        future_dt = dt_mod.date.today() + dt_mod.timedelta(days=3)
+        while future_dt.weekday() > 4:
+            future_dt += dt_mod.timedelta(days=1)
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE service_requests SET booking_time = %s WHERE id = %s;",
+                    (f"{future_dt.isoformat()} 14:00:00", req_id)
+                )
+                conn.commit()
+
         # Test available agents endpoint
         avail_res = client.get(f"/api/v1/portal/service-requests/{req_id}/available-agents")
         assert avail_res.status_code == 200

@@ -584,8 +584,15 @@ async def update_config(payload: ConfigUpdatePayload):
     # Ensure prompt has synchronized lead time buffers
     appt_buf = float(config_data.get("min_booking_buffer_hours", 4.0))
     cb_buf = float(config_data.get("min_callback_buffer_hours", 2.0))
-    from serviceBot.services.prompt_service import update_prompt_lead_time_buffers
+    from serviceBot.services.prompt_service import update_prompt_lead_time_buffers, update_prompt_business_hours
     prompt_to_sync = update_prompt_lead_time_buffers(prompt_to_sync, appt_buf, cb_buf)
+    prompt_to_sync = update_prompt_business_hours(
+        prompt_to_sync,
+        start_hour=b_start,
+        end_hour=b_end,
+        business_days=b_days,
+        timezone_str=config_data.get("business_timezone", "America/New_York")
+    )
     config_data["system_prompt"] = prompt_to_sync
 
     save_config(config_data)
@@ -596,6 +603,11 @@ async def update_config(payload: ConfigUpdatePayload):
 
 @router.get("/services")
 async def get_services():
+    """
+    Retrieves all catalog services ordered by ID.
+    Enriched with assigned staff agent IDs and names (assigned_agent_ids, assigned_agent_names).
+    Services without tagged agents are open to any qualified staff agent.
+    """
     from serviceBot.db.connection import get_db_connection, dict_cursor
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
@@ -678,6 +690,10 @@ async def seed_default_services(background_tasks: BackgroundTasks):
 
 @router.post("/services", status_code=201)
 async def create_service(payload: ServiceCreate, background_tasks: BackgroundTasks):
+    """
+    Creates a new catalog service item and optionally associates qualified staff agents
+    via payload.agent_ids. If agent_ids is empty or null, the service remains open to all agents.
+    """
     from serviceBot.db.connection import get_db_connection, dict_cursor
     from serviceBot.db.queries import set_service_agents
     with get_db_connection() as conn:
@@ -708,6 +724,11 @@ async def create_service(payload: ServiceCreate, background_tasks: BackgroundTas
 
 @router.put("/services/{service_id}")
 async def update_service(service_id: int, payload: ServiceCreate, background_tasks: BackgroundTasks):
+    """
+    Updates an existing catalog service item and synchronizes assigned staff agents
+    via payload.agent_ids. Providing an empty list clears agent restrictions, making
+    the service open to all active staff agents.
+    """
     from serviceBot.db.connection import get_db_connection, dict_cursor
     from serviceBot.db.queries import set_service_agents
     with get_db_connection() as conn:

@@ -522,23 +522,29 @@ def parse_preferred_date_and_time(preferred_date_str: str) -> tuple:
                 iso_date_str = dt_obj.strftime("%Y-%m-%d")
             except ValueError:
                 pass
-        elif "tomorrow" in low:
-            iso_date_str = (dt_mod.date.today() + dt_mod.timedelta(days=1)).strftime("%Y-%m-%d")
-        elif "today" in low:
-            iso_date_str = dt_mod.date.today().strftime("%Y-%m-%d")
         else:
-            weekdays = {
-                "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
-                "friday": 4, "saturday": 5, "sunday": 6
-            }
-            for day_name, day_num in weekdays.items():
-                if re.search(r'\b' + day_name + r'\b', low):
-                    today = dt_mod.date.today()
-                    days_ahead = (day_num - today.weekday()) % 7
-                    if days_ahead == 0:
-                        days_ahead = 7
-                    iso_date_str = (today + dt_mod.timedelta(days=days_ahead)).strftime("%Y-%m-%d")
-                    break
+            try:
+                from serviceBot.services import timezone_service
+                today_d = timezone_service.now_in_business_tz().date()
+            except Exception:
+                today_d = dt_mod.date.today()
+
+            if "tomorrow" in low:
+                iso_date_str = (today_d + dt_mod.timedelta(days=1)).strftime("%Y-%m-%d")
+            elif "today" in low:
+                iso_date_str = today_d.strftime("%Y-%m-%d")
+            else:
+                weekdays = {
+                    "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+                    "friday": 4, "saturday": 5, "sunday": 6
+                }
+                for day_name, day_num in weekdays.items():
+                    if re.search(r'\b' + day_name + r'\b', low):
+                        days_ahead = (day_num - today_d.weekday()) % 7
+                        if days_ahead == 0:
+                            days_ahead = 7
+                        iso_date_str = (today_d + dt_mod.timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+                        break
 
     # 3. Construct start_timestamp_str (safe YYYY-MM-DD HH:MM:SS for SQL)
     if iso_date_str:

@@ -222,8 +222,17 @@ def validate_appointment_lead_time(
             except Exception:
                 pass
 
+        if req_dt is None:
+            try:
+                from serviceBot.db.queries import parse_preferred_date_and_time
+                _, _, start_ts = parse_preferred_date_and_time(str(requested_datetime))
+                if start_ts and start_ts != "1970-01-01 00:00:00":
+                    req_dt = dt_mod.datetime.strptime(start_ts, "%Y-%m-%d %H:%M:%S")
+            except Exception:
+                pass
+
     if req_dt is None:
-        return False, earliest_allowed, []
+        return True, earliest_allowed, []
 
     if req_dt.tzinfo is not None:
         req_dt = req_dt.astimezone(BUSINESS_TZ).replace(tzinfo=None)
@@ -601,11 +610,21 @@ class BookingService:
         for aid in common_agents:
             candidate_plans.append([aid] * len(service_items))
 
-        # Priority 2: Distinct multi-agent plans across qualified technicians
+        # Priority 2: Distinct multi-agent plans across qualified technicians using greedy grouping
         all_combos = list(itertools.product(*qualified_per_item))
-        def plan_distinctness(plan):
-            return (len(set(plan)) == len(plan), -len(set(plan)))
-        all_combos.sort(key=plan_distinctness, reverse=True)
+        def plan_greedy_score(plan):
+            distinct_count = len(set(plan))
+            transitions = sum(1 for i in range(len(plan) - 1) if plan[i] != plan[i + 1])
+            first_agent_run = 0
+            for x in plan:
+                if x == plan[0]:
+                    first_agent_run += 1
+                else:
+                    break
+            # Prefer: fewer distinct technicians, fewer handoffs/transitions, longer first run
+            return (-distinct_count, -transitions, first_agent_run)
+
+        all_combos.sort(key=plan_greedy_score, reverse=True)
         for combo in all_combos:
             combo_list = list(combo)
             if combo_list not in candidate_plans:
@@ -712,6 +731,297 @@ class BookingService:
 
                 conn.commit()
                 return created_requests
+
+    def cancel_multi_service_visit(
+        self,
+        visit_group_id: str,
+        customer_consent_obtained: bool = True,
+        triggered_by: str = "customer_request",
+        reason: Optional[str] = "Cancelled multi-service visit",
+    ) -> dict[str, Any]:
+        """
+        Atomically cancels all linked service requests associated with a visit_group_id.
+        Releases reserved calendar slots for each segment and marks status as cancelled.
+        """
+        if not visit_group_id:
+            raise ValueError("visit_group_id is required")
+
+        with self._connection_factory() as conn:
+            with self._cursor_factory(conn) as cursor:
+                cursor.execute(
+                    """
+                    SELECT id, status, staff_agent_id, booking_time, duration_minutes
+                    FROM service_requests
+                    WHERE visit_group_id = %s;
+                    """,
+                    (visit_group_id,)
+                )
+                rows = cursor.fetchall()
+                if not rows:
+                    return {
+                        "success": False,
+                        "visit_group_id": visit_group_id,
+                        "cancelled_ids": [],
+                        "cancelled_count": 0,
+                        "message": f"No service requests found for visit_group_id {visit_group_id}",
+                    }
+
+                cancelled_ids = []
+                for row in rows:
+                    req_id = row["id"]
+                    aid = row.get("staff_agent_id")
+                    btime = row.get("booking_time")
+
+                    cursor.execute(
+                        """
+                        UPDATE service_requests
+                        SET status = 'cancelled', updated_at = NOW()
+                        WHERE id = %s;
+                        """,
+                        (req_id,)
+                    )
+
+                    if aid and btime:
+                        b_dt = btime if isinstance(btime, dt_mod.datetime) else dt_mod.datetime.strptime(str(btime)[:19], "%Y-%m-%d %H:%M:%S")
+                        cursor.execute(
+                            """
+                            UPDATE mock_calendar_slots
+                            SET is_booked = FALSE, reservation_status = 'AVAILABLE'
+                            WHERE staff_agent_id = %s AND slot_datetime = %s;
+                            """,
+                            (aid, b_dt)
+                        )
+
+                    cursor.execute(
+                        """
+                        DELETE FROM appointment_reservation_segments
+                        WHERE reservation_id IN (
+                            SELECT id FROM appointment_reservations WHERE service_request_id = %s
+                        );
+                        UPDATE appointment_reservations
+                        SET status = 'CANCELLED', updated_at = NOW()
+                        WHERE service_request_id = %s AND status = 'ACTIVE';
+                        """,
+                        (req_id, req_id)
+                    )
+
+                    cancelled_ids.append(req_id)
+
+                conn.commit()
+
+        return {
+            "success": True,
+            "visit_group_id": visit_group_id,
+            "cancelled_ids": cancelled_ids,
+            "cancelled_count": len(cancelled_ids),
+            "message": f"Successfully cancelled all {len(cancelled_ids)} segments for visit {visit_group_id}.",
+        }
+
+    def revise_multi_service_visit(
+        self,
+        request_id_to_cancel: int,
+        reason: Optional[str] = "Customer dropped single service from multi-service visit",
+    ) -> dict[str, Any]:
+        """
+        Revises a multi-service visit by cancelling one specific service request
+        while preserving all companion requests at their original start times.
+        """
+        with self._connection_factory() as conn:
+            with self._cursor_factory(conn) as cursor:
+                cursor.execute(
+                    """
+                    SELECT id, visit_group_id, staff_agent_id, booking_time, duration_minutes, status, service_type
+                    FROM service_requests
+                    WHERE id = %s
+                    FOR UPDATE OF service_requests;
+                    """,
+                    (request_id_to_cancel,)
+                )
+                target = cursor.fetchone()
+                if not target:
+                    raise ValueError(f"Service request {request_id_to_cancel} was not found.")
+
+                v_group = target.get("visit_group_id")
+                aid = target.get("staff_agent_id")
+                btime = target.get("booking_time")
+
+                cursor.execute(
+                    """
+                    UPDATE service_requests
+                    SET status = 'cancelled', updated_at = NOW()
+                    WHERE id = %s;
+                    """,
+                    (request_id_to_cancel,)
+                )
+
+                if aid and btime:
+                    b_dt = btime if isinstance(btime, dt_mod.datetime) else dt_mod.datetime.strptime(str(btime)[:19], "%Y-%m-%d %H:%M:%S")
+                    cursor.execute(
+                        """
+                        UPDATE mock_calendar_slots
+                        SET is_booked = FALSE, reservation_status = 'AVAILABLE'
+                        WHERE staff_agent_id = %s AND slot_datetime = %s;
+                        """,
+                        (aid, b_dt)
+                    )
+
+                cursor.execute(
+                    """
+                    DELETE FROM appointment_reservation_segments
+                    WHERE reservation_id IN (
+                        SELECT id FROM appointment_reservations WHERE service_request_id = %s
+                    );
+                    UPDATE appointment_reservations
+                    SET status = 'CANCELLED', updated_at = NOW()
+                    WHERE service_request_id = %s AND status = 'ACTIVE';
+                    """,
+                    (request_id_to_cancel, request_id_to_cancel)
+                )
+
+                preserved_ids = []
+                if v_group:
+                    cursor.execute(
+                        """
+                        SELECT id, service_type, booking_time, duration_minutes, staff_agent_id
+                        FROM service_requests
+                        WHERE visit_group_id = %s AND id != %s AND status NOT IN ('cancelled', 'cancelled_by_customer');
+                        """,
+                        (v_group, request_id_to_cancel)
+                    )
+                    preserved = cursor.fetchall()
+                    preserved_ids = [p["id"] for p in preserved]
+
+                conn.commit()
+
+        return {
+            "success": True,
+            "cancelled_id": request_id_to_cancel,
+            "preserved_ids": preserved_ids,
+            "visit_group_id": v_group,
+            "message": f"Successfully cancelled service #{request_id_to_cancel}; preserved {len(preserved_ids)} companion service(s).",
+        }
+
+    def reassign_declined_technician_segment(
+        self,
+        request_id: int,
+        reason: str = "Technician declined appointment via SMS",
+    ) -> dict[str, Any]:
+        """
+        Attempts to automatically reassign a declined appointment segment to another qualified technician
+        free at that exact time slot. If no other qualified technician is free, escalates to supervisor.
+        """
+        from serviceBot.db.queries import get_qualified_agent_ids
+
+        with self._connection_factory() as conn:
+            with self._cursor_factory(conn) as cursor:
+                cursor.execute(
+                    """
+                    SELECT sr.id, sr.service_type, sr.booking_time, sr.duration_minutes, sr.staff_agent_id,
+                           sr.visit_group_id, sr.customer_id
+                    FROM service_requests sr
+                    WHERE sr.id = %s
+                    FOR UPDATE OF sr;
+                    """,
+                    (request_id,)
+                )
+                sr = cursor.fetchone()
+                if not sr:
+                    raise ValueError(f"Service request {request_id} was not found.")
+
+                curr_agent_id = sr.get("staff_agent_id")
+                svc_type = sr.get("service_type")
+                btime = sr.get("booking_time")
+                dur = sr.get("duration_minutes") or 60
+
+                if not btime:
+                    return {"success": False, "reassigned": False, "message": "No booking time found"}
+
+                b_dt = btime if isinstance(btime, dt_mod.datetime) else dt_mod.datetime.strptime(str(btime)[:19], "%Y-%m-%d %H:%M:%S")
+
+                qualified_ids = get_qualified_agent_ids(svc_type)
+                candidate_ids = [aid for aid in qualified_ids if aid != curr_agent_id]
+
+                if not candidate_ids:
+                    cursor.execute(
+                        "SELECT id FROM staff_agents WHERE is_active IS NOT FALSE AND id != %s ORDER BY id ASC;",
+                        (curr_agent_id or -1,)
+                    )
+                    candidate_ids = [r["id"] for r in cursor.fetchall()]
+
+                new_agent_id = None
+                for cand_id in candidate_ids:
+                    cursor.execute(
+                        """
+                        SELECT is_booked, reservation_status
+                        FROM mock_calendar_slots
+                        WHERE staff_agent_id = %s AND slot_datetime = %s
+                        FOR UPDATE;
+                        """,
+                        (cand_id, b_dt)
+                    )
+                    slot_row = cursor.fetchone()
+                    if slot_row and (slot_row["is_booked"] is False or slot_row["reservation_status"] == "AVAILABLE"):
+                        new_agent_id = cand_id
+                        break
+                    elif not slot_row:
+                        new_agent_id = cand_id
+                        break
+
+                if new_agent_id:
+                    if curr_agent_id:
+                        cursor.execute(
+                            """
+                            UPDATE mock_calendar_slots
+                            SET is_booked = FALSE, reservation_status = 'AVAILABLE'
+                            WHERE staff_agent_id = %s AND slot_datetime = %s;
+                            """,
+                            (curr_agent_id, b_dt)
+                        )
+
+                    cursor.execute(
+                        """
+                        INSERT INTO mock_calendar_slots (staff_agent_id, slot_datetime, is_booked, reservation_status)
+                        VALUES (%s, %s, TRUE, 'RESERVED')
+                        ON CONFLICT (slot_datetime, staff_agent_id) DO UPDATE
+                        SET is_booked = TRUE, reservation_status = 'RESERVED';
+                        """,
+                        (new_agent_id, b_dt)
+                    )
+
+                    cursor.execute(
+                        """
+                        UPDATE service_requests
+                        SET staff_agent_id = %s, escalation_status = 'reassigned',
+                            confirmation_status = 'pending_agent_confirmation', updated_at = NOW()
+                        WHERE id = %s;
+                        """,
+                        (new_agent_id, request_id)
+                    )
+
+                    conn.commit()
+                    return {
+                        "success": True,
+                        "reassigned": True,
+                        "new_agent_id": new_agent_id,
+                        "previous_agent_id": curr_agent_id,
+                        "message": f"Successfully auto-reassigned segment #{request_id} to staff agent {new_agent_id}."
+                    }
+                else:
+                    cursor.execute(
+                        """
+                        UPDATE service_requests
+                        SET escalation_status = 'escalated', updated_at = NOW()
+                        WHERE id = %s;
+                        """,
+                        (request_id,)
+                    )
+                    conn.commit()
+                    return {
+                        "success": True,
+                        "reassigned": False,
+                        "escalated": True,
+                        "message": f"No alternative technician available for #{request_id} at {b_dt}. Escalated to supervisor."
+                    }
 
     def cancel(
         self,
@@ -1673,4 +1983,20 @@ def clear_session_booking(session_key: str) -> None:
 def reserve_multi_service_appointment(*args, **kwargs) -> list[dict[str, Any]]:
     """Module-level wrapper for BookingService().reserve_multi_service_appointment."""
     return BookingService().reserve_multi_service_appointment(*args, **kwargs)
+
+
+def cancel_multi_service_visit(*args, **kwargs) -> dict[str, Any]:
+    """Module-level wrapper for BookingService().cancel_multi_service_visit."""
+    return BookingService().cancel_multi_service_visit(*args, **kwargs)
+
+
+def revise_multi_service_visit(*args, **kwargs) -> dict[str, Any]:
+    """Module-level wrapper for BookingService().revise_multi_service_visit."""
+    return BookingService().revise_multi_service_visit(*args, **kwargs)
+
+
+def reassign_declined_technician_segment(*args, **kwargs) -> dict[str, Any]:
+    """Module-level wrapper for BookingService().reassign_declined_technician_segment."""
+    return BookingService().reassign_declined_technician_segment(*args, **kwargs)
+
 

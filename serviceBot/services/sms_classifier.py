@@ -419,6 +419,11 @@ def handle_agent_confirmation_action(staff_agent: dict, body: str, twilio_messag
         except Exception:
             pass
         try:
+            from serviceBot.services.booking import reassign_declined_technician_segment
+            reassign_declined_technician_segment(sr_id, reason="Technician declined via SMS")
+        except Exception:
+            pass
+        try:
             from serviceBot.services.sms_reminders import dispatch_supervisor_escalation_alert
             dispatch_supervisor_escalation_alert(sr_id, reason="AGENT_DECLINED")
         except Exception:

@@ -279,3 +279,221 @@ def test_telephony_book_appointment_multi_service():
     assert len(res_data["appointments"]) == 2
     assert "back-to-back" in res_data["message"].lower() or "confirmed" in res_data["message"].lower()
 
+
+def test_greedy_partitioning_three_plus_services():
+    """T024: Verify greedy partitioning for 3+ services maximizes contiguous blocks with first technician."""
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT id FROM staff_agents ORDER BY id ASC LIMIT 3;")
+            agents = [r["id"] for r in cursor.fetchall()]
+            assert len(agents) >= 3, "Need at least 3 staff agents for 3+ services test"
+            a1, a2, a3 = agents[0], agents[1], agents[2]
+
+            # Create 3 test services
+            for name in ["Greedy Svc 1", "Greedy Svc 2", "Greedy Svc 3"]:
+                cursor.execute(
+                    "INSERT INTO services (name, description, duration_minutes) VALUES (%s, %s, %s) "
+                    "ON CONFLICT DO NOTHING;",
+                    (name, "Greedy test", 30)
+                )
+
+            cursor.execute("SELECT id, name FROM services WHERE name IN ('Greedy Svc 1', 'Greedy Svc 2', 'Greedy Svc 3');")
+            s_map = {r["name"]: r["id"] for r in cursor.fetchall()}
+            cursor.execute("SELECT id FROM customers LIMIT 1;")
+            c_id = cursor.fetchone()["id"]
+
+    # Tagging: a1 can do S1 and S2; a2 can do S3; a3 can do S3
+    set_service_agents(s_map["Greedy Svc 1"], [a1])
+    set_service_agents(s_map["Greedy Svc 2"], [a1])
+    set_service_agents(s_map["Greedy Svc 3"], [a2, a3])
+
+    tomorrow = timezone_service.now_in_business_tz() + timedelta(days=2)
+    while tomorrow.weekday() > 4:
+        tomorrow += timedelta(days=1)
+    target_dt_str = tomorrow.strftime("%Y-%m-%d 10:00:00")
+
+    bs = BookingService()
+    receipts = bs.reserve_multi_service_appointment(
+        customer_id=c_id,
+        services=["Greedy Svc 1", "Greedy Svc 2", "Greedy Svc 3"],
+        appointment_datetime=target_dt_str,
+    )
+
+    assert len(receipts) == 3
+    # Greedy grouping assigns first two services to a1
+    assert receipts[0]["staff_agent_id"] == a1
+    assert receipts[1]["staff_agent_id"] == a1
+    # Third service assigned to a2 or a3
+    assert receipts[2]["staff_agent_id"] in (a2, a3)
+    # Handoff times: 10:00 -> 10:30 -> 11:00
+    assert receipts[0]["booking_time"] == target_dt_str
+    assert receipts[1]["booking_time"] == (tomorrow.replace(hour=10, minute=30, second=0)).strftime("%Y-%m-%d %H:%M:%S")
+    assert receipts[2]["booking_time"] == (tomorrow.replace(hour=11, minute=0, second=0)).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def test_cancel_multi_service_visit():
+    """T034: Full visit cancellation cancels all linked segments and releases slots."""
+    data = _setup_two_services_and_agents()
+    a1, a2 = data["agent_1"], data["agent_2"]
+    set_service_agents(data["service_1_id"], [a1])
+    set_service_agents(data["service_2_id"], [a2])
+
+    tomorrow = timezone_service.now_in_business_tz() + timedelta(days=2)
+    while tomorrow.weekday() > 4:
+        tomorrow += timedelta(days=1)
+    target_dt_str = tomorrow.strftime("%Y-%m-%d 10:00:00")
+
+    bs = BookingService()
+    receipts = bs.reserve_multi_service_appointment(
+        customer_id=data["customer_id"],
+        services=["Brake Service Test", "Transmission Flush Test"],
+        appointment_datetime=target_dt_str,
+    )
+    v_group_id = receipts[0]["visit_group_id"]
+    sr_ids = [r["service_request_id"] for r in receipts]
+
+    # Cancel entire visit
+    res = bs.cancel_multi_service_visit(v_group_id)
+    assert res["success"] is True
+    assert set(res["cancelled_ids"]) == set(sr_ids)
+
+    # Verify database status
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT status FROM service_requests WHERE id = ANY(%s);", (sr_ids,))
+            statuses = [r["status"] for r in cursor.fetchall()]
+            assert all(s == "cancelled" for s in statuses)
+
+            # Slots released
+            cursor.execute(
+                "SELECT is_booked, reservation_status FROM mock_calendar_slots WHERE staff_agent_id = %s AND slot_datetime = %s;",
+                (a1, datetime.strptime(target_dt_str, "%Y-%m-%d %H:%M:%S"))
+            )
+            slot = cursor.fetchone()
+            if slot:
+                assert slot["is_booked"] is False or slot["reservation_status"] == "AVAILABLE"
+
+
+def test_revise_multi_service_visit():
+    """T035: Single-service revision preserves companion appointment at original slot."""
+    data = _setup_two_services_and_agents()
+    a1, a2 = data["agent_1"], data["agent_2"]
+    set_service_agents(data["service_1_id"], [a1])
+    set_service_agents(data["service_2_id"], [a2])
+
+    tomorrow = timezone_service.now_in_business_tz() + timedelta(days=2)
+    while tomorrow.weekday() > 4:
+        tomorrow += timedelta(days=1)
+    target_dt_str = tomorrow.strftime("%Y-%m-%d 10:00:00")
+    s2_time = (tomorrow.replace(hour=11, minute=0, second=0)).strftime("%Y-%m-%d %H:%M:%S")
+
+    bs = BookingService()
+    receipts = bs.reserve_multi_service_appointment(
+        customer_id=data["customer_id"],
+        services=["Brake Service Test", "Transmission Flush Test"],
+        appointment_datetime=target_dt_str,
+    )
+    sr1_id = receipts[0]["service_request_id"]
+    sr2_id = receipts[1]["service_request_id"]
+
+    # Customer drops Service 1
+    rev_res = bs.revise_multi_service_visit(sr1_id)
+    assert rev_res["success"] is True
+    assert rev_res["cancelled_id"] == sr1_id
+    assert sr2_id in rev_res["preserved_ids"]
+
+    # Verify Service 1 cancelled, Service 2 preserved at 11:00 AM
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT status, booking_time FROM service_requests WHERE id = %s;", (sr1_id,))
+            r1 = cursor.fetchone()
+            assert r1["status"] == "cancelled"
+
+            cursor.execute("SELECT status, booking_time FROM service_requests WHERE id = %s;", (sr2_id,))
+            r2 = cursor.fetchone()
+            assert r2["status"] != "cancelled"
+            assert str(r2["booking_time"])[:19] == s2_time
+
+
+def test_technician_sms_decline_auto_reassignment():
+    """T036: Technician decline auto-reassigns to next available qualified technician."""
+    data = _setup_two_services_and_agents()
+    a1, a2 = data["agent_1"], data["agent_2"]
+
+    # Both a1 and a2 qualified for Service 1
+    set_service_agents(data["service_1_id"], [a1, a2])
+
+    tomorrow = timezone_service.now_in_business_tz() + timedelta(days=2)
+    while tomorrow.weekday() > 4:
+        tomorrow += timedelta(days=1)
+    target_dt_str = tomorrow.strftime("%Y-%m-%d 10:00:00")
+
+    # Book with a1
+    bs = BookingService()
+    receipts = bs.reserve_multi_service_appointment(
+        customer_id=data["customer_id"],
+        services=["Brake Service Test"],
+        appointment_datetime=target_dt_str,
+    )
+    sr_id = receipts[0]["service_request_id"]
+
+    # Simulate a1 declining -> auto-reassign to a2
+    reassign_res = bs.reassign_declined_technician_segment(sr_id)
+    assert reassign_res["success"] is True
+    assert reassign_res["reassigned"] is True
+    assert reassign_res["new_agent_id"] == a2
+
+    # Verify in DB
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("SELECT staff_agent_id, escalation_status FROM service_requests WHERE id = %s;", (sr_id,))
+            row = cursor.fetchone()
+            assert row["staff_agent_id"] == a2
+            assert row["escalation_status"] == "reassigned"
+
+
+def test_multi_service_google_calendar_sync():
+    """T042/T043: Verify multi-service Google Calendar event creation and fallback."""
+    from unittest.mock import patch, MagicMock
+    from serviceBot.services.google_calendar import create_multi_service_calendar_events
+
+    segments = [
+        {
+            "staff_agent_id": 1,
+            "staff_agent_name": "John Doe",
+            "service_name": "Oil Change",
+            "booking_time": "2026-10-20 10:00:00",
+            "duration_minutes": 30,
+        },
+        {
+            "staff_agent_id": 2,
+            "staff_agent_name": "Sarah Jenkins",
+            "service_name": "Brake Replacement",
+            "booking_time": "2026-10-20 10:30:00",
+            "duration_minutes": 60,
+        }
+    ]
+
+    with patch("serviceBot.services.google_calendar.httpx.post") as mock_post, \
+         patch("serviceBot.services.google_calendar.get_user_google_credentials") as mock_creds:
+        mock_creds.return_value = {"access_token": "mock_tok_123"}
+        mock_post.return_value = MagicMock(status_code=201, text="{}")
+
+        res = create_multi_service_calendar_events(
+            customer_name="Alice Smith",
+            segments=segments,
+            issue_description="Regular maintenance",
+        )
+
+        assert res["success"] is True
+        assert res["event_mode"] == "unified"
+        # Check payload
+        _, kwargs = mock_post.call_args
+        json_data = kwargs.get("json", {})
+        assert json_data["summary"] == "BayFull Appointment - Alice Smith"
+        assert "Oil Change" in json_data["description"]
+        assert "Brake Replacement" in json_data["description"]
+        assert "John Doe" in json_data["description"]
+        assert "Sarah Jenkins" in json_data["description"]
+
+

@@ -52,7 +52,12 @@ def dummy_trace_appointment():
             )
             agent_beta_id = cursor.fetchone()["id"]
 
-            # 3. Create service request
+            # 3. Create service request on a future business day at 14:00
+            future_dt = dt.date.today() + dt.timedelta(days=3)
+            while future_dt.weekday() > 4:
+                future_dt += dt.timedelta(days=1)
+            future_btime_str = f"{future_dt.isoformat()} 14:00:00"
+
             cursor.execute(
                 """
                 INSERT INTO service_requests (
@@ -61,11 +66,11 @@ def dummy_trace_appointment():
                     staff_agent_id, confirmation_status, escalation_status
                 )
                 VALUES (%s, 'Brake Inspection', 'Front brake pads squeaking',
-                        'pending', 'appointment', '2026-10-12 14:00:00', 60,
+                        'pending', 'appointment', %s, 60,
                         %s, 'pending_agent_confirmation', 'none')
                 RETURNING id;
                 """,
-                (customer_id, agent_alpha_id)
+                (customer_id, future_btime_str, agent_alpha_id)
             )
             request_id = cursor.fetchone()["id"]
 
@@ -100,12 +105,17 @@ def dummy_trace_appointment():
 
             conn.commit()
 
-            return {
-                "request_id": request_id,
-                "customer_id": customer_id,
-                "agent_alpha_id": agent_alpha_id,
-                "agent_beta_id": agent_beta_id,
-            }
+        yield {
+            "request_id": request_id,
+            "customer_id": customer_id,
+            "agent_alpha_id": agent_alpha_id,
+            "agent_beta_id": agent_beta_id,
+        }
+
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("DELETE FROM service_requests WHERE id = %s;", (request_id,))
+                conn.commit()
 
 
 def test_schema_has_audit_enrichment_columns():

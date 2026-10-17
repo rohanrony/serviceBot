@@ -93,7 +93,7 @@
 
 - [x] T022 [P] [US2] Test single-agent priority assignment when a single technician is qualified and free at target time in `tests/test_multi_service_scheduling.py`
 - [x] T023 [P] [US3] Test back-to-back multi-agent split (0-min buffer) when no single technician can perform both at target time in `tests/test_multi_service_scheduling.py`
-- [ ] T024 [P] [US3] Test greedy partitioning for 3+ services across technicians in `tests/test_multi_service_scheduling.py`
+- [x] T024 [P] [US3] Test greedy partitioning for 3+ services across technicians in `tests/test_multi_service_scheduling.py`
 - [x] T025 [P] [US3] Test atomic rollback on concurrent slot conflict (zero orphaned bookings) in `tests/test_multi_service_scheduling.py`
 
 ### Implementation for User Story 2 & 3
@@ -140,15 +140,15 @@
 ### Tests for Lifecycle Management
 > **NOTE: Write these tests FIRST and ensure they FAIL before implementing lifecycle changes**
 
-- [ ] T034 [P] Test full visit cancellation cancels all linked segments in `tests/test_multi_service_scheduling.py`
-- [ ] T035 [P] Test single-service revision preserves companion appointment and resizes visit in `tests/test_multi_service_scheduling.py`
-- [ ] T036 [P] Test technician SMS decline auto-reassigns to next available qualified technician in `tests/test_multi_service_scheduling.py`
+- [x] T034 [P] Test full visit cancellation cancels all linked segments in `tests/test_multi_service_scheduling.py`
+- [x] T035 [P] Test single-service revision preserves companion appointment and resizes visit in `tests/test_multi_service_scheduling.py`
+- [x] T036 [P] Test technician SMS decline auto-reassigns to next available qualified technician in `tests/test_multi_service_scheduling.py`
 
 ### Implementation for Lifecycle Management
 
-- [ ] T037 Implement `cancel_multi_service_visit(visit_group_id: str)` in `serviceBot/services/booking.py`
-- [ ] T038 Implement `revise_multi_service_visit(request_id_to_cancel: int)` in `serviceBot/services/booking.py`
-- [ ] T039 Implement technician decline auto-reassignment hook in `serviceBot/services/sms_reminders.py` / `outbox_worker.py`
+- [x] T037 Implement `cancel_multi_service_visit(visit_group_id: str)` in `serviceBot/services/booking.py`
+- [x] T038 Implement `revise_multi_service_visit(request_id_to_cancel: int)` in `serviceBot/services/booking.py`
+- [x] T039 Implement technician decline auto-reassignment hook in `serviceBot/services/sms_reminders.py` / `outbox_worker.py`
 
 ---
 
@@ -158,8 +158,8 @@
 
 - [x] T040 Update `tool_name == "check_availability"` in `serviceBot/api/telephony.py` to parse multi-service queries and output natural schedule descriptions
 - [x] T041 Update `tool_name == "book_appointment"` in `serviceBot/api/telephony.py` to dispatch `reserve_multi_service_appointment` and return back-to-back voice confirmation
-- [ ] T042 [P] Implement unified customer Google Calendar event creation spanning full visit duration with fallback to separate events in `serviceBot/services/google_calendar.py`
-- [ ] T043 [P] Synchronize individual technician calendar events for their respective segments in `serviceBot/services/google_calendar.py`
+- [x] T042 [P] Implement unified customer Google Calendar event creation spanning full visit duration with fallback to separate events in `serviceBot/services/google_calendar.py`
+- [x] T043 [P] Synchronize individual technician calendar events for their respective segments in `serviceBot/services/google_calendar.py`
 
 ---
 
@@ -167,9 +167,9 @@
 
 **Purpose**: Final verification, end-to-end regression testing, and documentation alignment
 
-- [ ] T044 Execute complete automated test suite via `./run_tests.sh` to confirm zero regressions
-- [ ] T045 [P] Update API documentation and endpoint comments in `serviceBot/api/portal.py`
-- [ ] T046 Run Spec-Kit converge analysis against `spec.md`, `plan.md`, and `tasks.md`
+- [x] T044 Execute complete automated test suite via `./run_tests.sh` to confirm zero regressions
+- [x] T045 [P] Update API documentation and endpoint comments in `serviceBot/api/portal.py`
+- [x] T046 Run Spec-Kit converge analysis against `spec.md`, `plan.md`, and `tasks.md`
 
 ---
 
