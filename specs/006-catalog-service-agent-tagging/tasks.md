@@ -9,10 +9,10 @@
 
 **Purpose**: Database schema creation, join table migrations, and test harness setup
 
-- [ ] T001 Add `service_staff_agents` join table schema and `visit_group_id` column to `DDL_SCHEMA` in `serviceBot/db/connection.py`
-- [ ] T002 Add safe auto-migration execution for `service_staff_agents` and `visit_group_id` in `init_db()` in `serviceBot/db/connection.py`
-- [ ] T003 [P] Initialize unit test harness for catalog agent tagging in `tests/test_catalog_agent_tagging.py`
-- [ ] T004 [P] Initialize integration test harness for multi-service scheduling in `tests/test_multi_service_scheduling.py`
+- [x] T001 Add `service_staff_agents` join table schema and `visit_group_id` column to `DDL_SCHEMA` in `serviceBot/db/connection.py`
+- [x] T002 Add safe auto-migration execution for `service_staff_agents` and `visit_group_id` in `init_db()` in `serviceBot/db/connection.py`
+- [x] T003 [P] Initialize unit test harness for catalog agent tagging in `tests/test_catalog_agent_tagging.py`
+- [x] T004 [P] Initialize integration test harness for multi-service scheduling in `tests/test_multi_service_scheduling.py`
 
 ---
 
@@ -22,10 +22,10 @@
 
 **⚠️ CRITICAL**: No user story implementation can begin until these foundational database queries are in place.
 
-- [ ] T005 [P] Implement `get_service_agent_ids(service_id: int) -> list[int]` query helper in `serviceBot/db/queries.py`
-- [ ] T006 [P] Implement `set_service_agents(service_id: int, agent_ids: list[int])` transactional query helper in `serviceBot/db/queries.py`
-- [ ] T007 Implement `get_qualified_agent_ids(service_name: str) -> list[int]` helper supporting untagged fallback in `serviceBot/db/queries.py`
-- [ ] T008 [P] Implement `get_services_with_agents() -> list[dict]` batch query helper in `serviceBot/db/queries.py`
+- [x] T005 [P] Implement `get_service_agent_ids(service_id: int) -> list[int]` query helper in `serviceBot/db/queries.py`
+- [x] T006 [P] Implement `set_service_agents(service_id: int, agent_ids: list[int])` transactional query helper in `serviceBot/db/queries.py`
+- [x] T007 Implement `get_qualified_agent_ids(service_name: str) -> list[int]` helper supporting untagged fallback in `serviceBot/db/queries.py`
+- [x] T008 [P] Implement `get_services_with_agents() -> list[dict]` batch query helper in `serviceBot/db/queries.py`
 
 **Checkpoint**: Foundation ready — database schema, migrations, and query helpers are verified and ready for user story implementation.
 
@@ -40,17 +40,18 @@
 ### Tests for User Story 1
 > **NOTE: Write these tests FIRST and ensure they FAIL before implementing portal changes**
 
-- [ ] T009 [P] [US1] Unit test `service_staff_agents` CRUD operations and foreign key cascade on agent deletion in `tests/test_catalog_agent_tagging.py`
-- [ ] T010 [P] [US1] Integration test `GET /services`, `POST /services`, and `PUT /services/{id}` agent tagging payloads in `tests/test_catalog_agent_tagging.py`
+- [x] T009 [P] [US1] Unit test `service_staff_agents` CRUD operations and foreign key cascade on agent deletion in `tests/test_catalog_agent_tagging.py`
+- [x] T010 [P] [US1] Integration test `GET /services`, `POST /services`, and `PUT /services/{id}` agent tagging payloads in `tests/test_catalog_agent_tagging.py`
+- [ ] T010b [US1] Author Playwright browser end-to-end test in `e2e/test_portal_catalog_agent_tagging.py` verifying catalog table technician badge chips, drawer multi-select checkboxes, and save persistence
 
 ### Implementation for User Story 1
 
-- [ ] T011 [US1] Update `ServiceCreate` Pydantic model in `serviceBot/api/portal.py` to accept optional `agent_ids: list[int]`
-- [ ] T012 [US1] Update `create_service` and `update_service` endpoints in `serviceBot/api/portal.py` to persist agent tags via `set_service_agents`
-- [ ] T013 [US1] Update `GET /services` endpoint in `serviceBot/api/portal.py` to return `assigned_agent_ids` and `assigned_agent_names` for each service
-- [ ] T014 [P] [US1] Add "Assigned Technicians" column to Services Catalog table in `serviceBot/static/index.html`
-- [ ] T015 [P] [US1] Add staff agent multi-select checkbox controls to Add and Edit Service Drawers in `serviceBot/static/index.html`
-- [ ] T016 [US1] Wire technician tagging data loading, badge rendering, and form submission in `serviceBot/static/app.js`
+- [x] T011 [US1] Update `ServiceCreate` Pydantic model in `serviceBot/api/portal.py` to accept optional `agent_ids: list[int]`
+- [x] T012 [US1] Update `create_service` and `update_service` endpoints in `serviceBot/api/portal.py` to persist agent tags via `set_service_agents`
+- [x] T013 [US1] Update `GET /services` endpoint in `serviceBot/api/portal.py` to return `assigned_agent_ids` and `assigned_agent_names` for each service
+- [x] T014 [P] [US1] Add "Assigned Technicians" column to Services Catalog table in `serviceBot/static/index.html`
+- [x] T015 [P] [US1] Add staff agent multi-select checkbox controls to Add and Edit Service Drawers in `serviceBot/static/index.html`
+- [x] T016 [US1] Wire technician tagging data loading, badge rendering, and form submission in `serviceBot/static/app.js`
 
 **Checkpoint**: User Story 1 complete — Portal catalog tagging is fully functional and testable independently (MVP milestone).
 
@@ -65,14 +66,14 @@
 ### Tests for User Story 5
 > **NOTE: Write these tests FIRST and ensure they FAIL before implementing business hours refactoring**
 
-- [ ] T017 [P] [US5] Test dynamic closing boundary rejection for appointments exceeding configured `business_hours_end` in `tests/test_multi_service_scheduling.py`
-- [ ] T018 [P] [US5] Test weekend / non-operating day rejection dynamically driven by `business_days` in `tests/test_multi_service_scheduling.py`
+- [x] T017 [P] [US5] Test dynamic closing boundary rejection for appointments exceeding configured `business_hours_end` in `tests/test_multi_service_scheduling.py`
+- [x] T018 [P] [US5] Test weekend / non-operating day rejection dynamically driven by `business_days` in `tests/test_multi_service_scheduling.py`
 
 ### Implementation for User Story 5
 
-- [ ] T019 [US5] Refactor `is_within_business_hours()` in `serviceBot/api/telephony.py` to use `get_configured_business_hours()` and `get_configured_business_days()`
-- [ ] T020 [US5] Refactor `normalize_reservation_duration` and `validate_appointment_lead_time` in `serviceBot/services/booking.py` to dynamically inspect configured closing hours
-- [ ] T021 [US5] Replace hardcoded "6:00 PM" string literals with dynamically formatted closing times in prompt templates in `serviceBot/api/telephony.py`
+- [x] T019 [US5] Refactor `is_within_business_hours()` in `serviceBot/api/telephony.py` to use `get_configured_business_hours()` and `get_configured_business_days()`
+- [x] T020 [US5] Refactor `normalize_reservation_duration` and `validate_appointment_lead_time` in `serviceBot/services/booking.py` to dynamically inspect configured closing hours
+- [x] T021 [US5] Replace hardcoded "6:00 PM" string literals with dynamically formatted closing times in prompt templates in `serviceBot/api/telephony.py`
 
 **Checkpoint**: User Story 5 complete — dynamic operating hours and closing boundary logic enforced system-wide.
 
@@ -90,17 +91,17 @@
 ### Tests for User Story 2 & 3
 > **NOTE: Write these tests FIRST and ensure they FAIL before implementing scheduling engine changes**
 
-- [ ] T022 [P] [US2] Test single-agent priority assignment when a single technician is qualified and free at target time in `tests/test_multi_service_scheduling.py`
-- [ ] T023 [P] [US3] Test back-to-back multi-agent split (0-min buffer) when no single technician can perform both at target time in `tests/test_multi_service_scheduling.py`
+- [x] T022 [P] [US2] Test single-agent priority assignment when a single technician is qualified and free at target time in `tests/test_multi_service_scheduling.py`
+- [x] T023 [P] [US3] Test back-to-back multi-agent split (0-min buffer) when no single technician can perform both at target time in `tests/test_multi_service_scheduling.py`
 - [ ] T024 [P] [US3] Test greedy partitioning for 3+ services across technicians in `tests/test_multi_service_scheduling.py`
-- [ ] T025 [P] [US3] Test atomic rollback on concurrent slot conflict (zero orphaned bookings) in `tests/test_multi_service_scheduling.py`
+- [x] T025 [P] [US3] Test atomic rollback on concurrent slot conflict (zero orphaned bookings) in `tests/test_multi_service_scheduling.py`
 
 ### Implementation for User Story 2 & 3
 
-- [ ] T026 [US2/US3] Refactor `check_availability()` in `serviceBot/db/queries.py` to parse multiple services, compute qualified candidate intersections, evaluate single-agent slots, and permute back-to-back candidate slots
-- [ ] T027 [US3] Implement greedy partitioning helper for 3+ services in `serviceBot/services/booking.py` to group maximum services with first qualified technician
-- [ ] T028 [US3] Implement `reserve_multi_service_appointment()` in `serviceBot/services/booking.py` with multi-slot row locks on `mock_calendar_slots`, atomic savepoints, and full rollback on conflict
-- [ ] T029 [US3] Implement linked appointment creation: set shared `visit_group_id` UUID and cross-reference `linked_appointment_id` on `service_requests` rows in `serviceBot/services/booking.py`
+- [x] T026 [US2/US3] Refactor `check_availability()` in `serviceBot/db/queries.py` to parse multiple services, compute qualified candidate intersections, evaluate single-agent slots, and permute back-to-back candidate slots
+- [x] T027 [US3] Implement greedy partitioning helper for 3+ services in `serviceBot/services/booking.py` to group maximum services with first qualified technician
+- [x] T028 [US3] Implement `reserve_multi_service_appointment()` in `serviceBot/services/booking.py` with multi-slot row locks on `mock_calendar_slots`, atomic savepoints, and full rollback on conflict
+- [x] T029 [US3] Implement linked appointment creation: set shared `visit_group_id` UUID and cross-reference `linked_appointment_id` on `service_requests` rows in `serviceBot/services/booking.py`
 
 **Checkpoint**: User Stories 2 & 3 complete — multi-service scheduling engine handles single-agent preference, back-to-back splits, greedy 3+ partitioning, and atomic rollbacks.
 
@@ -115,13 +116,13 @@
 ### Tests for User Story 4
 > **NOTE: Write these tests FIRST and ensure they FAIL before implementing callback separation**
 
-- [ ] T030 [P] [US4] Test dual callback availability returns non-overlapping slots separated by $\ge$ 30 minutes in `tests/test_multi_service_scheduling.py`
-- [ ] T031 [P] [US4] Test booking dual callbacks logs linked service requests with distinct times in `tests/test_multi_service_scheduling.py`
+- [x] T030 [P] [US4] Test dual callback availability returns non-overlapping slots separated by $\ge$ 30 minutes in `tests/test_multi_service_scheduling.py`
+- [x] T031 [P] [US4] Test booking dual callbacks logs linked service requests with distinct times in `tests/test_multi_service_scheduling.py`
 
 ### Implementation for User Story 4
 
-- [ ] T032 [US4] Update callback slot generation in `serviceBot/db/queries.py` to enforce $\ge$ 30-minute separation between distinct callback requests
-- [ ] T033 [US4] Update callback booking flow in `serviceBot/services/booking.py` to link companion callbacks under a shared `visit_group_id`
+- [x] T032 [US4] Update callback slot generation in `serviceBot/db/queries.py` to enforce $\ge$ 30-minute separation between distinct callback requests
+- [x] T033 [US4] Update callback booking flow in `serviceBot/services/booking.py` to link companion callbacks under a shared `visit_group_id`
 
 **Checkpoint**: User Story 4 complete — dual callbacks are scheduled in distinct, non-conflicting windows.
 
@@ -155,8 +156,8 @@
 
 **Goal**: Update telephony tool handlers to speak natural back-to-back confirmations and synchronize Google Calendar invites.
 
-- [ ] T040 Update `tool_name == "check_availability"` in `serviceBot/api/telephony.py` to parse multi-service queries and output natural schedule descriptions
-- [ ] T041 Update `tool_name == "book_appointment"` in `serviceBot/api/telephony.py` to dispatch `reserve_multi_service_appointment` and return back-to-back voice confirmation
+- [x] T040 Update `tool_name == "check_availability"` in `serviceBot/api/telephony.py` to parse multi-service queries and output natural schedule descriptions
+- [x] T041 Update `tool_name == "book_appointment"` in `serviceBot/api/telephony.py` to dispatch `reserve_multi_service_appointment` and return back-to-back voice confirmation
 - [ ] T042 [P] Implement unified customer Google Calendar event creation spanning full visit duration with fallback to separate events in `serviceBot/services/google_calendar.py`
 - [ ] T043 [P] Synchronize individual technician calendar events for their respective segments in `serviceBot/services/google_calendar.py`
 

@@ -4,7 +4,7 @@
 
 ### **1.1 Executive Summary**
 
-VoiceAI is an AI-powered inbound call handling platform for small-to-medium service businesses (SMBs) designed to solve the problem of lost revenue from missed calls and high front-desk operational overhead. By replacing rigid traditional IVR menus with a sub-second latency, multi-agent conversational assistant, VoiceAI automates call triage, intake, calendar bookings, and email notifications. The platform features agent-level Google Calendar OAuth integrations for live schedule checking and Gmail integrations (OAuth/SMTP) for automatic customer and staff alerts, resulting in 100% call coverage, a 40-60% reduction in support costs, and seamless human handoff with full context.
+BayFull is an AI-powered inbound call handling platform for small-to-medium service businesses (SMBs) designed to solve the problem of lost revenue from missed calls and high front-desk operational overhead. By replacing rigid traditional IVR menus with a sub-second latency, multi-agent conversational assistant, BayFull automates call triage, intake, calendar bookings, and email notifications. The platform features agent-level Google Calendar OAuth integrations for live schedule checking and Gmail integrations (OAuth/SMTP) for automatic customer and staff alerts, resulting in 100% call coverage, a 40-60% reduction in support costs, and seamless human handoff with full context.
 
 ### **1.2 What We're Building**
 

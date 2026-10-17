@@ -2,7 +2,7 @@
 """
 test_full_workflow.py
 ==============================================================================
-End-to-End Local Workflow Test Script for serviceBot (Post-Call Lifecycle).
+End-to-End Local Workflow Test Script for BayFull (Post-Call Lifecycle).
 
 Simulates:
 1. ElevenLabs Post-Call Webhook (`POST /api/v1/telephony/webhook`) with a call transcript.
@@ -49,7 +49,7 @@ def cleanup():
 
 def run_test():
     print(f"\n{BOLD}{CYAN}========================================================================{NC}")
-    print(f"{BOLD}{CYAN}      serviceBot Post-Call Full Workflow End-to-End Test Engine        {NC}")
+    print(f"{BOLD}{CYAN}      BayFull Post-Call Full Workflow End-to-End Test Engine           {NC}")
     print(f"{BOLD}{CYAN}========================================================================{NC}\n")
 
     cleanup()

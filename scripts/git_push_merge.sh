@@ -102,7 +102,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 echo -e "${BLUE}${BOLD}======================================================${NC}"
-echo -e "${BLUE}${BOLD}     VoiceAI Git Branch Push & Fast-Merge Workflow    ${NC}"
+echo -e "${BLUE}${BOLD}     BayFull Git Branch Push & Fast-Merge Workflow    ${NC}"
 echo -e "${BLUE}${BOLD}======================================================${NC}"
 
 # Current state discovery

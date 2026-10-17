@@ -262,11 +262,11 @@ def create_agent_calendar_event(
             attendees.append({"email": admin_recipient})
 
         is_cb = booking_type == "callback" or "callback" in str(service_type).lower()
-        event_summary = f"Callback - {customer_name} ({service_type})" if is_cb else f"serviceBot Appointment - {customer_name}"
+        event_summary = f"Callback - {customer_name} ({service_type})" if is_cb else f"BayFull Appointment - {customer_name}"
         event_desc = (
-            f"Booking Type: CALLBACK ({duration_minutes} Mins)\nService Type: {service_type}\nIssue: {issue_description}\nAutomatically booked by serviceBot."
+            f"Booking Type: CALLBACK ({duration_minutes} Mins)\nService Type: {service_type}\nIssue: {issue_description}\nAutomatically booked by BayFull."
             if is_cb
-            else f"Service Type: {service_type}\nIssue: {issue_description}\nAutomatically booked by serviceBot."
+            else f"Service Type: {service_type}\nIssue: {issue_description}\nAutomatically booked by BayFull."
         )
 
         payload = {
@@ -484,7 +484,7 @@ def delete_agent_calendar_event(
 
         for ev in events:
             summary = ev.get("summary", "")
-            if "serviceBot" in summary or "Appointment" in summary:
+            if "BayFull" in summary or "serviceBot" in summary or "Appointment" in summary:
                 event_id = ev.get("id")
                 if event_id:
                     del_url = f"https://www.googleapis.com/calendar/v3/calendars/primary/events/{event_id}"

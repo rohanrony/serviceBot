@@ -108,3 +108,19 @@ def check_availability(
   "message": "Your visit to CBA Auto is confirmed for October 16 starting at 10:00 AM: John will perform your Oil Change from 10:00 to 10:30 AM, followed immediately by Brake Replacement with Sarah from 10:30 to 11:30 AM."
 }
 ```
+
+---
+
+## 3. Google Calendar Multi-Service Event Contract
+
+- **Unified Customer Event Title**: `BayFull Appointment - {customer_name}`
+- **Unified Customer Event Description**: Lists both services, technician names, and contiguous slot times:
+  ```text
+  Service 1: {service_1} ({tech_1}, {t1_start} - {t1_end})
+  Service 2: {service_2} ({tech_2}, {t2_start} - {t2_end})
+  Issue: {issue_description}
+  Automatically booked by BayFull.
+  ```
+- **Per-Technician Calendar Event Title**: `BayFull Appointment - {customer_name} ({service_name})`
+- **Fallback Behavior**: If creating a unified multi-attendee event encounters provider errors, fall back cleanly to two sequential calendar events titled `BayFull Appointment - {customer_name} ({service_name})`.
+- **Backward-Compatible Query**: Event deletion/reconciliation searches for `if "BayFull" in summary or "serviceBot" in summary or "Appointment" in summary:`.

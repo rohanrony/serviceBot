@@ -2,7 +2,7 @@
 """
 demo_conversation.py
 ==============================================================================
-Interactive and Automated Local Conversation Testing Demo for serviceBot.
+Interactive and Automated Local Conversation Testing Demo for BayFull.
 
 Usage:
   python demo_conversation.py [--scenario <booking|callback|faq|handoff|all>] [--interactive]
@@ -76,7 +76,7 @@ SCENARIOS = {
 
 def print_banner():
     print(f"\n{BOLD}{CYAN}========================================================================{NC}")
-    print(f"{BOLD}{CYAN}             serviceBot Conversation Simulator & Demo                  {NC}")
+    print(f"{BOLD}{CYAN}             BayFull Conversation Simulator & Demo                     {NC}")
     print(f"{BOLD}{CYAN}========================================================================{NC}\n")
 
 def print_turn_log(turn_info: dict):
@@ -161,7 +161,7 @@ def load_env_file():
 def main():
     load_env_file()
 
-    parser = argparse.ArgumentParser(description="serviceBot Local Conversation Simulator & Demo")
+    parser = argparse.ArgumentParser(description="BayFull Local Conversation Simulator & Demo")
     parser.add_argument("--scenario", choices=list(SCENARIOS.keys()) + ["all"], help="Run pre-scripted dialog test scenario")
     parser.add_argument("--interactive", action="store_true", help="Start interactive CLI conversation session")
     parser.add_argument("--mock", action="store_true", help="Force offline mock mode instead of calling live LLM API")

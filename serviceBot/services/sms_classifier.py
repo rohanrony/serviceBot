@@ -478,7 +478,7 @@ def process_inbound_sms(from_phone: str, body: str, twilio_message_sid: str = No
         return {"status": "processed", "category": category, "reply": reply_text}
 
     elif category == "help":
-        reply_text = f"ServiceBot Support: For help, please contact our support team at {support_number}."
+        reply_text = f"BayFull Support: For help, please contact our support team at {support_number}."
         if get_customer_opt_in(from_phone):
             client.send_sms(to=from_phone, body=reply_text, template_type="help_reply")
             add_sms_message(conv_id, "outbound", "system", "System", reply_text)

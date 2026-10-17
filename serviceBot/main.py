@@ -97,7 +97,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="serviceBot Server",
+    title="BayFull Server",
     description="Coordinator for telephony, voice agents, and business configuration portal.",
     version="1.0.0",
     lifespan=lifespan

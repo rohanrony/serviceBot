@@ -213,7 +213,7 @@ class ConversationSimulator:
         )
         self.first_message = self.config.get(
             "first_message",
-            "Hello! Thank you for calling Davidson Car Care. I am Rachel, AI voice Assistant. How can I help you today?"
+            "Hello! Thank you for calling Davidson Car Care. I am Rachel, AI voice Assistant. Please note that this conversation will be recorded. How can I help you today?"
         )
         self.reset()
 
@@ -226,7 +226,7 @@ class ConversationSimulator:
         except Exception:
             pass
         return {
-            "first_message": "Hello! Thank you for calling Davidson Car Care. I am Rachel, AI voice Assistant. How can I help you today?",
+            "first_message": "Hello! Thank you for calling Davidson Car Care. I am Rachel, AI voice Assistant. Please note that this conversation will be recorded. How can I help you today?",
             "system_prompt": "You are Rachel, an AI voice assistant for Davidson Car Care."
         }
 

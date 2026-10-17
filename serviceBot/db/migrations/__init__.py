@@ -1,4 +1,4 @@
-"""Small, dependency-free PostgreSQL migration runner for ServiceBot."""
+"""Small, dependency-free PostgreSQL migration runner for BayFull."""
 
 from __future__ import annotations
 

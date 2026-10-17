@@ -128,7 +128,7 @@ def test_create_agent_calendar_event(mock_post, mock_creds):
     # Check payload parameters
     _, kwargs = mock_post.call_args
     json_data = kwargs.get("json", {})
-    assert json_data["summary"] == "serviceBot Appointment - John Doe"
+    assert json_data["summary"] == "BayFull Appointment - John Doe"
     assert "AC Repair" in json_data["description"]
     assert "Blowing warm air" in json_data["description"]
     assert json_data["start"]["dateTime"] == "2026-06-25T10:00:00-04:00"

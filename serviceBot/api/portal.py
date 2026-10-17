@@ -313,7 +313,7 @@ Speak the filler naturally as part of the conversation so the caller experiences
             "location": True
         },
         "system_prompt": default_system_prompt,
-        "first_message": "Hello! Thank you for calling Davidson Car Care. I am Rachel, AI voice Assistant. How can I help you today?",
+        "first_message": "Hello! Thank you for calling Davidson Car Care. I am Rachel, AI voice Assistant. Please note that this conversation will be recorded. How can I help you today?",
         "gmail_enabled": False,
         "gmail_sender": "",
         "gmail_password": "",
@@ -2338,7 +2338,7 @@ async def test_gmail_config(payload: GmailConfigPayload):
     from serviceBot.services.gmail import send_smtp_email, send_gmail_api_email
     
     config = load_config()
-    subject = "[serviceBot] Gmail Integration Test Email"
+    subject = "[BayFull] Gmail Integration Test Email"
     html_body = """
     <!DOCTYPE html>
     <html>
@@ -2432,7 +2432,7 @@ async def test_admin_sms(payload: AdminSMSTestPayload):
 
     twilio_client = TwilioSMSClient()
     timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    body = f"[ServiceBot Admin Alert] Connection Test Successful! Your Admin SMS notification integration is working correctly. ({timestamp_str})"
+    body = f"[BayFull Admin Alert] Connection Test Successful! Your Admin SMS notification integration is working correctly. ({timestamp_str})"
     res = twilio_client.send_sms(
         to=admin_phone,
         body=body,
@@ -2742,7 +2742,7 @@ async def whatsapp_test_ping_endpoint(payload: WhatsAppTestPingPayload):
 
     clean_phone = payload.phone_number.strip()
     name = payload.recipient_name or "Test User"
-    body = f"serviceBot WhatsApp Verification: Success! Hello {name}, your phone number ({clean_phone}) is successfully onboarded to receive notifications."
+    body = f"BayFull WhatsApp Verification: Success! Hello {name}, your phone number ({clean_phone}) is successfully onboarded to receive notifications."
 
     client = TwilioSMSClient()
     dispatch_res = client.send_whatsapp(to=clean_phone, body=body)

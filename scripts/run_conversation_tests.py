@@ -174,7 +174,7 @@ class TestConversationSimulator(unittest.TestCase):
 
 if __name__ == "__main__":
     print("\n==================================================")
-    print(" Running serviceBot Conversation Test Suite")
+    print(" Running BayFull Conversation Test Suite")
     print("==================================================\n")
     unittest.main(verbosity=2)
 

@@ -237,11 +237,11 @@ def test_dual_callbacks_non_overlapping():
     )
 
     assert len(receipts) == 2
-    # Ensure they do NOT have the exact same start time (minimum 15-30 min window separation)
+    # Ensure they do NOT have the exact same start time (minimum 30 min window separation per spec US4)
     assert receipts[0]["booking_time"] != receipts[1]["booking_time"]
     t0 = datetime.strptime(receipts[0]["booking_time"], "%Y-%m-%d %H:%M:%S")
     t1 = datetime.strptime(receipts[1]["booking_time"], "%Y-%m-%d %H:%M:%S")
-    assert abs((t1 - t0).total_seconds()) >= 15 * 60
+    assert abs((t1 - t0).total_seconds()) >= 30 * 60
 
 
 def test_telephony_book_appointment_multi_service():

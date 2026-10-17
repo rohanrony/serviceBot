@@ -1,6 +1,6 @@
-# VoiceAI - Autonomous Inbound Call Handling Platform
+# BayFull - Autonomous Inbound Voice Platform
 
-VoiceAI is a sub-second latency, multi-agent inbound call handling platform designed specifically for small-to-medium service businesses (SMBs) like auto repair shops and clinics. VoiceAI replaces traditional IVR systems with a natural, conversational voice assistant that automates call routing, customer intake, appointments scheduling, and FAQ resolution.
+BayFull is a sub-second latency, multi-agent inbound call handling platform designed specifically for small-to-medium service businesses (SMBs) like auto repair shops and clinics. BayFull replaces traditional IVR systems with a natural, conversational voice assistant that automates call routing, customer intake, appointments scheduling, and FAQ resolution.
 
 ---
 
