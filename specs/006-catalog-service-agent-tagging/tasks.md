@@ -42,7 +42,7 @@
 
 - [x] T009 [P] [US1] Unit test `service_staff_agents` CRUD operations and foreign key cascade on agent deletion in `tests/test_catalog_agent_tagging.py`
 - [x] T010 [P] [US1] Integration test `GET /services`, `POST /services`, and `PUT /services/{id}` agent tagging payloads in `tests/test_catalog_agent_tagging.py`
-- [ ] T010b [US1] Author Playwright browser end-to-end test in `e2e/test_portal_catalog_agent_tagging.py` verifying catalog table technician badge chips, drawer multi-select checkboxes, and save persistence
+- [x] T010b [US1] Author Playwright browser end-to-end test in `e2e/test_portal_catalog_agent_tagging.py` verifying catalog table technician badge chips, drawer multi-select checkboxes, and save persistence
 
 ### Implementation for User Story 1
 
