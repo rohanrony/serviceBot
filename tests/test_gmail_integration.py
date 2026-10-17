@@ -5,10 +5,6 @@ import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock
 
-# Force CONFIG_PATH override on portal module to prevent sandbox write blocks
-import serviceBot.api.portal
-serviceBot.api.portal.CONFIG_PATH = "/Users/rohanroy/.gemini/antigravity-ide/scratch/test_config.json"
-
 from serviceBot.main import app
 from serviceBot.db.connection import dict_cursor, get_db_connection
 from serviceBot.api.portal import load_config, save_config
@@ -252,7 +248,12 @@ def test_gmail_oauth_callback_success(mock_decrypt, mock_post):
     config["gmail_client_secret"] = encrypt_key("some-client-secret")
     save_config(config)
 
-    response = client.get("/api/v1/portal/gmail/oauth/callback?code=test-code")
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("INSERT INTO oauth_states (state, agent_id, action_type) VALUES ('test-state-success', NULL, 'gmail');")
+        conn.commit()
+
+    response = client.get("/api/v1/portal/gmail/oauth/callback?code=test-code&state=test-state-success")
     assert response.status_code == 200
     assert "Google Account Connected!" in response.text
 
@@ -285,7 +286,12 @@ def test_gmail_oauth_callback_exchange_failure(mock_decrypt, mock_post):
     config["gmail_client_secret"] = encrypt_key("some-client-secret")
     save_config(config)
 
-    response = client.get("/api/v1/portal/gmail/oauth/callback?code=bad-code")
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("INSERT INTO oauth_states (state, agent_id, action_type) VALUES ('test-state-fail', NULL, 'gmail');")
+        conn.commit()
+
+    response = client.get("/api/v1/portal/gmail/oauth/callback?code=bad-code&state=test-state-fail")
     assert response.status_code == 200
     assert "Token Exchange Failed" in response.text
     assert "invalid_grant" in response.text

@@ -234,6 +234,8 @@ def test_staff_decline_records_reason_and_alerts_supervisor(
     request_id, _ = ready_booking(
         api, scenario, provider_capture, freeze_business_clock
     )
+    # Exercise escalation when no replacement exists; reassignment has a separate test.
+    db("UPDATE staff_agents SET is_active=FALSE WHERE id != 1")
     inbound(api, AGENT, keyword, f"SM-decline-{keyword}")
     row = request_by_id(api, request_id)
     assert row["confirmation_status"] == "declined"

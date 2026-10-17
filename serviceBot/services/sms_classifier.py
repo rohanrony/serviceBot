@@ -349,12 +349,29 @@ def handle_agent_confirmation_action(staff_agent: dict, body: str, twilio_messag
         # Check late confirmation
         if target_sr.get("escalation_status") == "escalated":
             update_appointment_confirmation_status(sr_id, "confirmed", confirmed_at=now_ts)
-            with get_db_connection() as conn:
-                with dict_cursor(conn) as cursor:
-                    cursor.execute("UPDATE service_requests SET escalation_status = 'resolved' WHERE id = %s;", (sr_id,))
-                    conn.commit()
-            cancel_pending_sms_reminders(sr_id, recipient_type="agent")
             reply_text = f"Late confirmation accepted for Appointment #{sr_id}. Thank you!{rem_suffix}"
+            try:
+                with get_db_connection() as conn:
+                    with dict_cursor(conn) as cursor:
+                        cursor.execute("UPDATE service_requests SET escalation_status = 'resolved' WHERE id = %s;", (sr_id,))
+                        cursor.execute(
+                            """
+                            INSERT INTO service_request_audit_log 
+                            (request_id, event_type, from_status, to_status, triggered_by, actor_name, notes, metadata)
+                            VALUES (%s, 'AGENT_CONFIRMED', %s, 'confirmed', 'agent_sms', %s, %s, %s);
+                            """,
+                            (
+                                sr_id,
+                                target_sr.get("confirmation_status") or "pending_agent_confirmation",
+                                agent_name,
+                                f"Late confirmation accepted from {agent_name}: {reply_text}",
+                                json.dumps({"agent_id": staff_agent.get("id"), "agent_name": agent_name, "reply": body.strip(), "phone": from_phone, "late": True})
+                            )
+                        )
+                        conn.commit()
+            except Exception:
+                pass
+            cancel_pending_sms_reminders(sr_id, recipient_type="agent")
             dispatch_agent_receipt(reply_text)
             return {
                 "status": "processed",

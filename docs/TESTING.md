@@ -1,127 +1,129 @@
-# voiceService Testing Guide & Specifications
+# Testing VoiceService
 
-This document outlines the testing architecture, database constraints, mocking strategies, and guidelines/templates for writing and adding new tests to the `voiceService` repository.
+Use this guide to run the checks. The complete journey checklist and feature
+matrix are in [the E2E test plan](../e2e/TEST_PLAN.md). Product fixes are separate
+from test maintenance; unmet requirements remain ordinary failures.
 
----
+## Setup and first run
 
-## 1. Testing Architecture Overview
-
-The `voiceService` testing framework is built on **pytest** and integrates with **FastAPI's TestClient**, **SQLite**, and **ChromaDB**.
-
-```mermaid
-graph TD
-    pytest[pytest Runner] --> TestFiles[test_*.py]
-    TestFiles --> conftest[conftest.py]
-    conftest --> DB[SQLite Test DB]
-    conftest --> KB[Scratch KB Documents]
-    TestFiles --> FastAPI[FastAPI TestClient]
-```
-
-### Key Components:
-- **Test Database**: Located in the sandbox-permitted scratch directory at `/Users/rohanroy/.gemini/antigravity-ide/scratch/test_voice_service.db`. It is set via the `DATABASE_URL` environment variable during test sessions.
-- **Knowledge Base (KB) Redirection**: The global `KB_DIR` is redirected to `/Users/rohanroy/.gemini/antigravity-ide/scratch/test_kb_documents` to satisfy write permissions.
-- **Sandbox Protections**: To prevent process blocks in restricted execution sandboxes, Python bytecode generation is disabled (`sys.dont_write_bytecode = True`) and pytest cache is routed to the scratch directory.
-
----
-
-## 2. Testing Guidelines & database Conventions
-
-### 2.1 Database Seeding
-The database is seeded **once per test session** using the `setup_and_cleanup_test_db` fixture in `conftest.py` (which runs `seed_db()`).
-
-> [!WARNING]
-> Because the database is shared across all tests in the session, any side-effects (such as deleting records or modifying service items) must be cleaned up at the end of each test to avoid polluting subsequent tests.
-
-### 2.2 Foreign Key Constraints
-The database enforces foreign key constraints (`ON DELETE CASCADE` or `RESTRICT`).
-- When deleting test objects, ensure you do not violate `RESTRICT` dependencies.
-- **Good Practice**: Use unique mock IDs (e.g., customer `1500`, service request `5000`) instead of low numbers to prevent collision with other fixtures.
-
----
-
-## 3. Mocking Strategies
-
-All tests must run without external network dependency. Use Python's built-in `unittest.mock` for stubbing:
-
-### 3.1 Google Calendar Mocking
-Instead of checking live calendar data, mock the Google APIs and tokens:
-```python
-from unittest.mock import patch
-
-@patch("serviceBot.services.google_calendar.fetch_agent_events")
-def test_my_calendar_check(mock_fetch):
-    # Mock return list of Google events
-    mock_fetch.return_value = [{"id": "evt1", "status": "confirmed", ...}]
-```
-
-### 3.2 Gmail/SMTP Mocking
-Avoid sending real emails. Stub email dispatch functions:
-```python
-@patch("serviceBot.services.gmail.send_gmail_api_email")
-def test_notification(mock_send):
-    mock_send.return_value = True
-```
-
----
-
-## 4. Running the Tests
-
-To launch the test suite cleanly inside or outside agent sandboxes, use the provided `run_tests.sh` script:
+Use Python 3.13 and local PostgreSQL. The database role needs `CREATEDB`; the
+connection URL must use loopback and a database name ending in `_test`. The
+named database need not exist. Both harnesses create and drop only their own
+randomly named databases; the supplied database is never reset.
 
 ```bash
-# Run all tests
-bash run_tests.sh
+python3 -m venv .venv  # only if the environment does not exist
+.venv/bin/python -m pip install -r requirements.txt -r e2e/requirements.txt
+.venv/bin/python -m playwright install chromium
+export TEST_DATABASE_URL=postgresql://127.0.0.1/voice_service_test
 
-# Run specific service tests
-bash run_tests.sh --service encryption
-bash run_tests.sh --service calendar_sync
-bash run_tests.sh --service gmail
-bash run_tests.sh --service google_calendar
-bash run_tests.sh --service rag
+./run_tests.sh --verify
+./run_tests.sh --browser --e2e-headed
 ```
 
----
+Use your local PostgreSQL username/port if needed. No production credentials or
+prestarted application server are required. Fixtures start the local HTTP server.
+The runner also works when invoked by absolute path from another directory.
 
-## 5. Guide for Adding New Tests
+## Select a run
 
-Follow these steps to add a new test file:
+| Command | What runs |
+| --- | --- |
+| `./run_tests.sh --all` | All unit/integration tests |
+| `./run_tests.sh --e2e` | All acceptance contracts, including real browser journeys |
+| `./run_tests.sh --browser` | Only cases using the real browser page fixture |
+| `./run_tests.sh --browser --e2e-headed` | Browser journeys in a visible window |
+| `./run_tests.sh --e2e-contracts` | HTTP/worker acceptance contracts without browser startup |
+| `./run_tests.sh --features` | Recent features and permanent defect regressions |
+| `./run_tests.sh --verify` | Unit/integration then complete E2E in separate processes, even if the first fails |
 
-1. **Bootstrap the File**:
-   Run the test runner with `--create <name>` to bootstrap a new test template:
-   ```bash
-   bash run_tests.sh --create my_new_feature
-   ```
-   This creates `tests/test_my_new_feature.py`.
+Additional pytest arguments are forwarded:
 
-2. **Template Structure**:
-   Use the template below for writing tests:
-
-```python
-import pytest
-from unittest.mock import patch, MagicMock
-from serviceBot.db.connection import get_db_connection
-
-def test_feature_logic():
-    """Verify that feature logic functions correctly."""
-    # 1. Setup mock database records
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute("INSERT OR IGNORE INTO customers (id, name, phone) VALUES (8888, 'John Doe', '5551231234');")
-        conn.commit()
-
-    try:
-        # 2. Run your assertion
-        assert True
-    finally:
-        # 3. Clean up database state
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM customers WHERE id = 8888;")
-            conn.commit()
+```bash
+./run_tests.sh --features -k 'tag or timezone' --tb=short
+./run_tests.sh --file e2e/test_multiservice_contracts.py -x
+./run_tests.sh --browser --e2e-headed -k recording
+./run_tests.sh --all -k cancellation
+.venv/bin/python -m pytest e2e --collect-only -q
 ```
 
-3. **Verify Execution**:
-   Run pytest against your new test using the runner:
-   ```bash
-   bash run_tests.sh --service my_new_feature
-   ```
+Run `tests/` and `e2e/` separately: mixed collection is rejected because their
+database lifecycles differ. Do not use xdist/`-n`; worker-parallel isolation is
+not established. Concurrency cases manage their own competing operations.
+
+## Results and failure debugging
+
+Failures return nonzero; requirements are not skipped or marked expected-failure.
+Read [KNOWN_FAILURES.md](../e2e/KNOWN_FAILURES.md) for the observed defect inventory.
+The runner writes JUnit reports under `scratch/`: `unit-results.xml`,
+`e2e-results.xml`, `browser-results.xml`, `contract-results.xml` and
+`feature-results.xml`. Each selection replaces its report; pass
+`--junitxml=scratch/my-run.xml` to retain a named run.
+
+Failed browser cases save `failure.png`, `trace.zip` and `console.json` under
+`scratch/e2e-artifacts/run-<time>-<id>/<case>/`. Open a trace with:
+
+```bash
+.venv/bin/python -m playwright show-trace scratch/e2e-artifacts/<run>/<case>/trace.zip
+```
+
+Traces include DOM snapshots, requests and screenshots using synthetic data.
+The old `e2e/screenshots/` files are historical. For an API failure, rerun the
+exact pytest node with `-v` and inspect its response and durable-state assertions.
+
+## Test boundaries and isolation
+
+E2E keeps routes, validation, transactions, reservations, local calendar capacity,
+reminder generation, outbox workers and persistence real. Each case gets fresh
+synthetic PostgreSQL records and temporary config/KB files. Browser writes are
+checked through fresh API reads and document reloads. Clock tests patch the
+central timezone clock as well as its consumers, rather than validators.
+
+Provider calls are mocked or captured. Notification tests can use the real
+Twilio SDK with fake credentials, captured HTTP and signed synthetic callbacks.
+Google OAuth/token requests and ElevenLabs config sync are captured. Google
+events default to a successful empty calendar, and dedicated cases substitute
+busy/unavailable calendars. Knowledge file/chunk logic uses an in-memory Chroma
+boundary. External sockets and unexpected HTTP are blocked; browser external
+assets are aborted. Production workers do not start under pytest: tests invoke
+worker cycles explicitly.
+
+Legacy unit tests retain their existing service mocks and one seeded database
+per session. They do not claim per-test database independence; new cases need
+explicit reset/setup/cleanup. Exact developer config/prompt paths are redirected
+to temporary files for old hardcoded readers. The harness does not read `.env`
+and replaces inherited provider credentials with synthetic values. No shared
+database sessions are terminated and no setup failures are swallowed.
+
+## Add or improve coverage
+
+1. Identify the requirement in [TEST_PLAN.md](../e2e/TEST_PLAN.md), the feature
+   spec or [ACCEPTANCE.md](../e2e/ACCEPTANCE.md). Define its observable outcome.
+2. Add the lowest useful unit/API test and a real browser test for changed browser
+   journeys. Reuse isolated fixtures and synthetic data.
+3. For writes, assert fresh durable state; for rejection, compare related state
+   before/after. For notifications, drive action through queue/worker to captured
+   provider request and callback; a queued row alone is partial evidence.
+4. Cover success, boundaries, failed saves/dependencies and relevant races. Advance
+   `freeze_business_clock`; do not sleep or replace domain validators.
+5. Run focused tests, relevant full suites and affected browser journeys. Retain
+   failing requirement tests when product fixes are separate, then update the
+   coverage map/failure inventory with observed results.
+
+Application behavior changes follow [SPECKIT_WORKFLOW.md](SPECKIT_WORKFLOW.md).
+Test maintenance does not authorize product changes, live messages or deployment.
+
+## Additional engines and live acceptance
+
+Chromium is default. Explicitly install and run other engines if needed:
+
+```bash
+.venv/bin/python -m playwright install firefox webkit
+./run_tests.sh --browser --e2e-browser firefox
+./run_tests.sh --browser --e2e-browser webkit
+```
+
+Installation is not evidence that an engine's tests passed. Real phone calls,
+message delivery, OAuth accounts, model conversation quality, retrieval quality,
+migration/restart/load and accessibility have separate instructions and evidence
+requirements in [TEST_PLAN.md](../e2e/TEST_PLAN.md).

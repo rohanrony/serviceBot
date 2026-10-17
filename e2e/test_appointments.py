@@ -1,3 +1,5 @@
+import re
+
 from playwright.sync_api import Page, expect
 
 
@@ -42,7 +44,7 @@ def test_details_sms_log_drawer_opens_and_closes(page: Page, live_server: str):
 
     # Drawer should activate
     drawer = page.locator("#sms-log-drawer")
-    expect(drawer).to_have_class("drawer active")
+    expect(drawer).to_have_class(re.compile(r"\bactive\b"))
     expect(page.locator("#sms-log-drawer-subtitle")).to_contain_text("Appointment #")
 
     # Close drawer
@@ -50,7 +52,7 @@ def test_details_sms_log_drawer_opens_and_closes(page: Page, live_server: str):
     expect(close_btn).to_be_visible()
     close_btn.click()
 
-    expect(drawer).not_to_have_class("drawer active")
+    expect(drawer).not_to_have_class(re.compile(r"\bactive\b"))
 
 
 def test_edit_sr_modal_opens_and_closes(page: Page, live_server: str):

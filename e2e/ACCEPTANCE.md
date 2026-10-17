@@ -1,5 +1,10 @@
 # Reimplementation acceptance contract
 
+For the current whole-product and recent-feature matrix (specifications 003–006,
+staff deactivation and recording disclosure), see [TEST_PLAN.md](TEST_PLAN.md).
+Failure-status comments in this earlier requirement mapping are historical;
+[KNOWN_FAILURES.md](KNOWN_FAILURES.md) and current JUnit reports determine status.
+
 This maps the documented requirements to observable tests, rather than equating
 test counts with completeness. Keep the behavioral assertions when replacing
 the app; adapt transport/database fixtures to the new implementation. A failing

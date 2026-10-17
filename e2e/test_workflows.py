@@ -242,7 +242,9 @@ def test_staff_create_update_delete_persists(api):
     assert row["role"] == "Technician"
     assert row["phone_number"] == "+15550100007"
     assert api.delete(f"{PORTAL}/agents/{agent_id}").status_code == 200
-    assert api.get(f"{PORTAL}/agents/{agent_id}").status_code == 404
+    assert all(row["id"] != agent_id for row in api.get(f"{PORTAL}/agents").json())
+    # Soft deletion preserves historical appointment references.
+    assert api.get(f"{PORTAL}/agents/{agent_id}").json()["name"] == "Jamie Updated"
 
 
 def test_calendar_slot_create_block_reopen_delete(api, scenario):

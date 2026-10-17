@@ -226,7 +226,7 @@ CREATE TABLE IF NOT EXISTS user_google_accounts (
 
 CREATE TABLE IF NOT EXISTS oauth_states (
     state VARCHAR(255) PRIMARY KEY,
-    agent_id INTEGER NOT NULL,
+    agent_id INTEGER DEFAULT NULL,
     action_type VARCHAR(50) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (agent_id) REFERENCES staff_agents(id) ON DELETE CASCADE
@@ -439,6 +439,7 @@ def init_db(db_url: str = None, force: bool = False):
         _safe_alter(cursor, conn, "ALTER TABLE service_requests ALTER COLUMN vehicle_id DROP NOT NULL;")
         _safe_alter(cursor, conn, "ALTER TABLE service_requests ALTER COLUMN issue_description DROP NOT NULL;")
         _safe_alter(cursor, conn, "ALTER TABLE service_requests ALTER COLUMN service_type DROP NOT NULL;")
+        _safe_alter(cursor, conn, "ALTER TABLE oauth_states ALTER COLUMN agent_id DROP NOT NULL;")
         for col, col_type in [
             ("time_slot", "VARCHAR(100) DEFAULT NULL"),
             ("booking_type", "VARCHAR(50) DEFAULT NULL"),

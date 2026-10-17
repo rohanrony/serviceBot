@@ -161,8 +161,16 @@ Open [http://localhost:8000/portal](http://localhost:8000/portal) to access the 
 
 ## 🧪 Testing
 
-We verify system workflows, database queries, and agent nodes using `pytest`. Run the tests command:
+Run the unit/integration and acceptance suites with isolated local PostgreSQL:
+
 ```bash
-pytest
+export TEST_DATABASE_URL=postgresql://127.0.0.1/voice_service_test
+./run_tests.sh --verify
+./run_tests.sh --browser --e2e-headed
 ```
-Currently, **74+ test cases** pass with a 100% success rate.
+
+See [setup and run instructions](docs/TESTING.md), the
+[comprehensive E2E plan](e2e/TEST_PLAN.md), and the
+[current failure inventory](e2e/KNOWN_FAILURES.md). The browser suite includes
+real user actions and persistence checks; provider calls are mocked or captured.
+Unmet application requirements remain ordinary failing tests for separate fixes.

@@ -641,7 +641,7 @@ def _generate_dynamic_slots(preferred_date_str: str, duration_minutes: int, inte
     return slots
 
 
-def check_availability(service_type: str = None, preferred_date: str = None, booking_type: str = "appointment", preferred_time: str = None) -> list:
+def check_availability(service_type: str = None, preferred_date: str = None, booking_type: str = "appointment", preferred_time: str = None, services_list: list[str] = None) -> list:
     """
     Checks available appointment or callback slots on or after preferred_date.
 
@@ -669,17 +669,34 @@ def check_availability(service_type: str = None, preferred_date: str = None, boo
     iso_date_str, time_window, start_time = parse_preferred_date_and_time(preferred_date)
 
     is_callback = (booking_type == "callback") or (service_type and "callback" in str(service_type).lower())
-    if is_callback:
-        duration_minutes = 15
-        valid_minutes = (0, 15, 30, 45)
+
+    parsed_services = []
+    if services_list and len(services_list) > 1:
+        accum_offset = 0
+        for s_name in services_list:
+            s_fields = get_service_required_fields(s_name)
+            s_name_clean = (s_fields.get("name") if (s_fields and isinstance(s_fields, dict)) else None) or s_name
+            s_dur = 15 if is_callback else int((s_fields.get("duration_minutes") if (s_fields and isinstance(s_fields, dict)) else None) or 60)
+            s_dur = normalize_reservation_duration(s_dur)
+            s_q = get_qualified_agent_ids(s_name_clean)
+            parsed_services.append({
+                "name": s_name_clean,
+                "duration": s_dur,
+                "offset": accum_offset,
+                "qualified_agent_ids": s_q,
+            })
+            accum_offset += (max(30, s_dur) if is_callback else s_dur)
+        duration_minutes = accum_offset
     else:
-        duration_minutes = 60
-        if service_type:
-            fields = get_service_required_fields(service_type)
-            if fields and fields.get("duration_minutes"):
-                duration_minutes = fields["duration_minutes"]
-        valid_minutes = (0, 30)
-    duration_minutes = normalize_reservation_duration(duration_minutes)
+        if is_callback:
+            duration_minutes = 15
+        else:
+            duration_minutes = 60
+            if service_type:
+                fields = get_service_required_fields(service_type)
+                if fields and fields.get("duration_minutes"):
+                    duration_minutes = fields["duration_minutes"]
+        duration_minutes = normalize_reservation_duration(duration_minutes)
 
     # --- Get all agents and filter by qualified agents tagged to service ---
     with get_db_connection() as conn:
@@ -687,11 +704,20 @@ def check_availability(service_type: str = None, preferred_date: str = None, boo
             cursor.execute("SELECT id FROM staff_agents WHERE is_active IS NOT FALSE;")
             all_agent_ids = [r["id"] for r in cursor.fetchall()]
 
-    qualified_agent_ids = get_qualified_agent_ids(service_type) if service_type else []
-    if qualified_agent_ids:
-        active_eval_agent_ids = [aid for aid in qualified_agent_ids if aid in all_agent_ids]
+    if parsed_services:
+        eval_set = set()
+        for ps in parsed_services:
+            if ps["qualified_agent_ids"]:
+                eval_set.update([aid for aid in ps["qualified_agent_ids"] if aid in all_agent_ids])
+            else:
+                eval_set.update(all_agent_ids)
+        active_eval_agent_ids = [aid for aid in eval_set if aid in all_agent_ids]
     else:
-        active_eval_agent_ids = all_agent_ids
+        qualified_agent_ids = get_qualified_agent_ids(service_type) if service_type else []
+        if qualified_agent_ids:
+            active_eval_agent_ids = [aid for aid in qualified_agent_ids if aid in all_agent_ids]
+        else:
+            active_eval_agent_ids = all_agent_ids
 
     if not active_eval_agent_ids:
         active_eval_agent_ids = all_agent_ids
@@ -727,8 +753,7 @@ def check_availability(service_type: str = None, preferred_date: str = None, boo
             aid = future_to_agent[future]
             try:
                 events = future.result()
-                if events is not None:
-                    agent_events_map[aid] = events
+                agent_events_map[aid] = events
             except Exception as exc:
                 agent_events_map[aid] = None
 
@@ -769,30 +794,33 @@ def check_availability(service_type: str = None, preferred_date: str = None, boo
     valid_business_hours = set(get_configured_business_hours())
     valid_business_days = set(get_configured_business_days())
 
-    def is_agent_free_live(agent_id: int, slot_dt_str: str) -> bool:
+    def is_agent_free_live(agent_id: int, slot_dt_str: str, check_duration: int = None) -> bool:
         """Returns True if agent has no Google Calendar or local DB conflict for the slot and slot fits business hours."""
         slot_dt_naive = datetime.strptime(slot_dt_str, "%Y-%m-%d %H:%M:%S")
-        norm_dur = max(15, ((int(duration_minutes or 60) + 14) // 15) * 15)
+        eff_dur = check_duration if check_duration is not None else duration_minutes
+        norm_dur = max(15, ((int(eff_dur or 60) + 14) // 15) * 15)
         for seg_offset in range(0, norm_dur, 15):
             seg_time = slot_dt_naive + timedelta(minutes=seg_offset)
             if seg_time.weekday() not in valid_business_days or seg_time.hour not in valid_business_hours:
                 return False
 
+        if agent_id in agent_events_map and agent_events_map[agent_id] is None:
+            # Unknown provider availability must not be offered as free capacity
+            return False
+
         # Check Google Calendar events if connected and available
         if agent_id in agent_events_map and agent_events_map[agent_id] is not None:
             slot_start = slot_dt_naive.replace(tzinfo=tz)
-            slot_end = slot_start + timedelta(minutes=duration_minutes)
+            slot_end = slot_start + timedelta(minutes=eff_dur)
             for event in agent_events_map[agent_id]:
                 evt_start = parse_google_datetime(event.get("start"), tz)
                 evt_end = parse_google_datetime(event.get("end"), tz)
                 if evt_start and evt_end:
                     if slot_start < evt_end and slot_end > evt_start:
                         return False
-        elif agent_id in agent_events_map and agent_events_map[agent_id] is None:
-            logger.warning(f"Google Calendar unavailable for agent {agent_id}; falling back to local DB authority.")
 
         # Check local DB blocks & reservations across all 15-minute segments of the slot
-        for seg_offset in range(0, duration_minutes, 15):
+        for seg_offset in range(0, eff_dur, 15):
             seg_time = slot_dt_naive + timedelta(minutes=seg_offset)
             seg_str = seg_time.strftime("%Y-%m-%d %H:%M:%S")
             if (agent_id, seg_str) in blocked_mock_slots or (agent_id, seg_str) in reserved_segments:
@@ -802,8 +830,21 @@ def check_availability(service_type: str = None, preferred_date: str = None, boo
 
     all_free_slots = []
     for slot_dt_str in candidate_slots:
-        if any(is_agent_free_live(aid, slot_dt_str) for aid in active_eval_agent_ids):
-            all_free_slots.append(slot_dt_str)
+        if parsed_services:
+            slot_dt_naive = datetime.strptime(slot_dt_str, "%Y-%m-%d %H:%M:%S")
+            all_staffable = True
+            for ps in parsed_services:
+                s_start = slot_dt_naive + timedelta(minutes=ps["offset"])
+                s_start_str = s_start.strftime("%Y-%m-%d %H:%M:%S")
+                cand_pool = ps["qualified_agent_ids"] or all_agent_ids
+                if not any(is_agent_free_live(aid, s_start_str, check_duration=ps["duration"]) for aid in cand_pool if aid in all_agent_ids):
+                    all_staffable = False
+                    break
+            if all_staffable:
+                all_free_slots.append(slot_dt_str)
+        else:
+            if any(is_agent_free_live(aid, slot_dt_str) for aid in active_eval_agent_ids):
+                all_free_slots.append(slot_dt_str)
 
     if not all_free_slots:
         return []

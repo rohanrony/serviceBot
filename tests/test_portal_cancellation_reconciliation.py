@@ -1,12 +1,7 @@
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from serviceBot.db.connection import get_db_connection, dict_cursor
 from serviceBot.db.queries import update_service_request_status
 from serviceBot.services.sms_router import SMSNotificationRouter
-from serviceBot.services.outbox_worker import _dispatch_outbox_event
-
-
-import uuid
 
 
 def create_cancellation_test_data(cust_phone=None, agent_phone="+15554443322"):
@@ -85,10 +80,10 @@ def create_cancellation_test_data(cust_phone=None, agent_phone="+15554443322"):
 
             cursor.execute(
                 """
-                INSERT INTO mock_calendar_slots (service_request_id, slot_datetime, is_booked)
-                VALUES (%s, '2026-11-15 14:00:00', TRUE);
+                INSERT INTO mock_calendar_slots (service_request_id, staff_agent_id, slot_datetime, is_booked, reservation_status)
+                VALUES (%s, %s, '2026-11-15 14:00:00', TRUE, 'RESERVED');
                 """,
-                (sr_id,)
+                (sr_id, agent_id)
             )
 
             return cust_id, veh_id, agent_id, sr_id, res_id, cust_phone, agent_phone
@@ -126,7 +121,6 @@ def test_sms_router_resolves_agent_phone_and_dispatches_cancellation():
         calls = mock_whatsapp.call_args_list
 
         to_numbers = [c.kwargs.get("to") for c in calls]
-        bodies = [c.kwargs.get("body") for c in calls]
 
         # Check customer received cancellation notification
         assert any(cust_phone in to for to in to_numbers)

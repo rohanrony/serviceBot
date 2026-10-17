@@ -197,7 +197,7 @@ class SMSNotificationRouter:
                     with dict_cursor(conn) as cursor:
                         cursor.execute(
                             """
-                            SELECT id, channel, twilio_message_sid, status
+                            SELECT id, channel, twilio_message_sid, status, body
                             FROM sms_log
                             WHERE appointment_id = %s
                               AND recipient_type = %s
@@ -211,10 +211,14 @@ class SMSNotificationRouter:
             except Exception as e:
                 logger.warning(f"Failed to query existing sms_log: {e}")
 
-        # If a successful dispatch already exists for this appointment, recipient, and template,
-        # suppress duplicate sending regardless of channel.
-        if existing_deliveries:
-            first_existing = next(iter(existing_deliveries.values()))
+        # If a successful dispatch already exists for this appointment, recipient, template, and message body,
+        # suppress duplicate sending regardless of channel. Distinct reschedules with different bodies are dispatched.
+        matching_existing = [
+            row for row in existing_deliveries.values()
+            if not body or not row.get("body") or row.get("body") == body
+        ]
+        if matching_existing:
+            first_existing = matching_existing[0]
             logger.info(
                 f"Skipping duplicate dispatch for {recipient_type} "
                 f"(appointment_id={appointment_id}, template_type={template_type}, status={first_existing.get('status')})"
@@ -346,6 +350,12 @@ class SMSNotificationRouter:
         bypass_quiet_hours: bool = False
     ) -> dict:
         import os
+        if event_type == "BOOKING":
+            from serviceBot.api.portal import load_config
+            if load_config().get("initial_notification_enabled") is False:
+                logger.info(f"Initial notification is disabled in config; suppressing BOOKING dispatch for appointment #{appointment_id}.")
+                return {"dispatches": []}
+
         rules = get_sms_matrix_rules()
         dispatches = []
 

@@ -1,5 +1,11 @@
 # Notification acceptance and completion gates
 
+The defect descriptions and run counts below are the 2026-10-07 review snapshot.
+For current evidence use [KNOWN_FAILURES.md](KNOWN_FAILURES.md) and the latest
+JUnit report. The current delivery and browser journeys are mapped in
+[TEST_PLAN.md](TEST_PLAN.md). Both-channel behavior now means one preferred
+channel per recipient; independent recipient retry coverage is retained.
+
 The default E2E suite never delivers to real recipients. The new
 `test_notification_workflows.py` closes the gap between a real user action and
 the outbound provider request; it does not certify live delivery.

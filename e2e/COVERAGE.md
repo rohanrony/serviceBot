@@ -1,4 +1,9 @@
-# Functionality review and reimplementation acceptance
+# Historical functionality review (2026-10-07)
+
+This is a historical snapshot. Its counts, failures and missing-coverage notes
+describe that checkout. Use [TEST_PLAN.md](TEST_PLAN.md) for the current coverage
+matrix, [KNOWN_FAILURES.md](KNOWN_FAILURES.md) for freshly observed failures and
+[the testing guide](../docs/TESTING.md) for executable commands.
 
 Reviewed on 2026-10-06 and expanded on 2026-10-07 against the current checkout, including its existing
 uncommitted application changes. This is local evidence, not a deployed-app

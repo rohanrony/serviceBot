@@ -563,11 +563,9 @@ def test_provider_failure_callback_updates_actual_dispatch_and_rejects_tampering
 
 
 def test_real_booking_quiet_queue_releases_original_dispatch_once(
-    api, db, scenario, provider_capture, monkeypatch
+    api, db, scenario, provider_capture, freeze_business_clock
 ):
-    from datetime import datetime
-
-    from serviceBot.services import quiet_hours, sms_router
+    from serviceBot.services import quiet_hours
 
     provider_capture.activate()
     configure_rules(api, channel="WHATSAPP", roles=("customer",))
@@ -580,15 +578,7 @@ def test_real_booking_quiet_queue_releases_original_dispatch_once(
         },
     )
     assert response.status_code == 200
-    clock = datetime.now(quiet_hours.TIMEZONE_NY).replace(hour=22, minute=0, second=0)
-    in_quiet = quiet_hours.is_in_quiet_hours
-    release_time = quiet_hours.calculate_quiet_hours_release_time
-    monkeypatch.setattr(sms_router, "is_in_quiet_hours", lambda: in_quiet(now_dt=clock))
-    monkeypatch.setattr(
-        sms_router,
-        "calculate_quiet_hours_release_time",
-        lambda: release_time(now_dt=clock),
-    )
+    freeze_business_clock((scenario["start"] - timedelta(days=7)).replace(hour=22))
     request_id = book(api, scenario)
     assert process(api) >= 1
     assert not provider_capture.calls

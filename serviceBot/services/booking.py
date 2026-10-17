@@ -455,7 +455,8 @@ class BookingService:
                 cursor.execute(
                     """
                     SELECT sr.id, sr.service_type, sr.booking_type, sr.duration_minutes,
-                           sr.staff_agent_id, sr.status, c.name AS customer_name, c.phone
+                           sr.staff_agent_id, sr.status, sr.visit_group_id, sr.booking_time,
+                           c.name AS customer_name, c.phone
                     FROM service_requests sr
                     JOIN customers c ON c.id = sr.customer_id
                     WHERE sr.id = %s
@@ -491,7 +492,15 @@ class BookingService:
                     raise BookingConflictError("This service request already has an active reservation.")
                 if allow_replace and not customer_consent_obtained:
                     raise BookingValidationError("Customer consent is required when rescheduling an appointment.")
-                return self._reserve_request(
+
+                orig_btime = row.get("booking_time")
+                time_delta = None
+                if orig_btime:
+                    orig_start = _as_datetime(orig_btime)
+                    if orig_start:
+                        time_delta = starts_at - orig_start
+
+                receipt = self._reserve_request(
                     cursor,
                     request_id=request_id,
                     starts_at=starts_at,
@@ -503,6 +512,43 @@ class BookingService:
                     triggered_by=triggered_by,
                     customer={"name": row.get("customer_name"), "phone": row.get("phone")},
                 )
+
+                if allow_replace and row.get("visit_group_id") and time_delta is not None:
+                    cursor.execute(
+                        """
+                        SELECT sr.id, sr.service_type, sr.booking_type, sr.duration_minutes,
+                               sr.staff_agent_id, sr.status, sr.booking_time,
+                               c.name AS customer_name, c.phone
+                        FROM service_requests sr
+                        JOIN customers c ON c.id = sr.customer_id
+                        WHERE sr.visit_group_id = %s AND sr.id != %s
+                          AND sr.status NOT IN ('cancelled', 'cancelled_by_customer')
+                        ORDER BY sr.id ASC
+                        FOR UPDATE OF sr;
+                        """,
+                        (row.get("visit_group_id"), request_id),
+                    )
+                    companions = cursor.fetchall()
+                    for comp in companions:
+                        comp_btime = comp.get("booking_time")
+                        if comp_btime:
+                            comp_orig = _as_datetime(comp_btime)
+                            if comp_orig:
+                                comp_new_start = comp_orig + time_delta
+                                self._reserve_request(
+                                    cursor,
+                                    request_id=comp["id"],
+                                    starts_at=comp_new_start,
+                                    duration_minutes=normalize_reservation_duration(comp.get("duration_minutes") or 60),
+                                    booking_type=comp.get("booking_type") or "appointment",
+                                    service_type=comp.get("service_type") or "Repair",
+                                    requested_agent_id=comp.get("staff_agent_id"),
+                                    allow_replace=True,
+                                    triggered_by=triggered_by,
+                                    customer={"name": comp.get("customer_name"), "phone": comp.get("phone")},
+                                )
+
+                return receipt
 
     def reschedule(
         self,
@@ -729,6 +775,29 @@ class BookingService:
                         cursor.execute("UPDATE service_requests SET linked_appointment_id = %s WHERE id = %s;", (companion_id, created_requests[i]["service_request_id"]))
                         created_requests[i]["linked_appointment_id"] = companion_id
 
+                cursor.execute("SELECT name, phone FROM customers WHERE id = %s;", (customer_id,))
+                cust_row = cursor.fetchone() or {"name": "Valued Customer", "phone": None}
+                v_parts = [vehicle_details.get("year"), vehicle_details.get("make"), vehicle_details.get("model")] if vehicle_details else []
+                v_str = " ".join([str(p).strip() for p in v_parts if p and str(p).strip().upper() not in ("NONE", "NULL", "N/A")]).strip() or "N/A"
+
+                for req in created_requests:
+                    self._enqueue_projection_events(
+                        cursor,
+                        request_id=req["service_request_id"],
+                        reservation_id=req["reservation_id"],
+                        staff_agent_id=req["staff_agent_id"],
+                        old_staff_agent_id=None,
+                        old_starts_at=None,
+                        booking_type=req["booking_type"],
+                        starts_at=parse_reservation_start(req["booking_time"]),
+                        duration_minutes=req["duration_minutes"],
+                        customer=cust_row,
+                        service_type=req["service_type"],
+                        vehicle_str=v_str,
+                        issue_description=req["service_type"],
+                        triggered_by="customer",
+                    )
+
                 conn.commit()
                 return created_requests
 
@@ -939,9 +1008,13 @@ class BookingService:
                 b_dt = btime if isinstance(btime, dt_mod.datetime) else dt_mod.datetime.strptime(str(btime)[:19], "%Y-%m-%d %H:%M:%S")
 
                 qualified_ids = get_qualified_agent_ids(svc_type)
-                candidate_ids = [aid for aid in qualified_ids if aid != curr_agent_id]
-
-                if not candidate_ids:
+                if qualified_ids:
+                    cursor.execute(
+                        "SELECT id FROM staff_agents WHERE is_active IS NOT FALSE AND id = ANY(%s) AND id != %s ORDER BY id ASC;",
+                        (qualified_ids, curr_agent_id or -1)
+                    )
+                    candidate_ids = [r["id"] for r in cursor.fetchall()]
+                else:
                     cursor.execute(
                         "SELECT id FROM staff_agents WHERE is_active IS NOT FALSE AND id != %s ORDER BY id ASC;",
                         (curr_agent_id or -1,)
@@ -949,21 +1022,24 @@ class BookingService:
                     candidate_ids = [r["id"] for r in cursor.fetchall()]
 
                 new_agent_id = None
+                segments = [b_dt + dt_mod.timedelta(minutes=30 * i) for i in range(max(1, (dur + 29) // 30))]
                 for cand_id in candidate_ids:
                     cursor.execute(
                         """
-                        SELECT is_booked, reservation_status
+                        SELECT slot_datetime, is_booked, reservation_status
                         FROM mock_calendar_slots
-                        WHERE staff_agent_id = %s AND slot_datetime = %s
+                        WHERE staff_agent_id = %s AND slot_datetime = ANY(%s)
                         FOR UPDATE;
                         """,
-                        (cand_id, b_dt)
+                        (cand_id, segments)
                     )
-                    slot_row = cursor.fetchone()
-                    if slot_row and (slot_row["is_booked"] is False or slot_row["reservation_status"] == "AVAILABLE"):
-                        new_agent_id = cand_id
-                        break
-                    elif not slot_row:
+                    slot_rows = cursor.fetchall()
+                    has_conflict = False
+                    for s_row in slot_rows:
+                        if s_row.get("is_booked") is True or s_row.get("reservation_status") in ("RESERVED", "BLOCKED", "BOOKED"):
+                            has_conflict = True
+                            break
+                    if not has_conflict:
                         new_agent_id = cand_id
                         break
 
@@ -972,20 +1048,41 @@ class BookingService:
                         cursor.execute(
                             """
                             UPDATE mock_calendar_slots
-                            SET is_booked = FALSE, reservation_status = 'AVAILABLE'
-                            WHERE staff_agent_id = %s AND slot_datetime = %s;
+                            SET is_booked = FALSE, reservation_status = 'AVAILABLE', service_request_id = NULL
+                            WHERE staff_agent_id = %s AND (service_request_id = %s OR slot_datetime = ANY(%s));
                             """,
-                            (curr_agent_id, b_dt)
+                            (curr_agent_id, request_id, segments)
+                        )
+
+                    for seg in segments:
+                        cursor.execute(
+                            """
+                            INSERT INTO mock_calendar_slots (staff_agent_id, slot_datetime, is_booked, reservation_status, service_request_id)
+                            VALUES (%s, %s, TRUE, 'RESERVED', %s)
+                            ON CONFLICT (slot_datetime, staff_agent_id) DO UPDATE
+                            SET is_booked = TRUE, reservation_status = 'RESERVED', service_request_id = EXCLUDED.service_request_id;
+                            """,
+                            (new_agent_id, seg, request_id)
                         )
 
                     cursor.execute(
                         """
-                        INSERT INTO mock_calendar_slots (staff_agent_id, slot_datetime, is_booked, reservation_status)
-                        VALUES (%s, %s, TRUE, 'RESERVED')
-                        ON CONFLICT (slot_datetime, staff_agent_id) DO UPDATE
-                        SET is_booked = TRUE, reservation_status = 'RESERVED';
+                        UPDATE appointment_reservations
+                        SET staff_agent_id = %s, updated_at = NOW()
+                        WHERE service_request_id = %s;
                         """,
-                        (new_agent_id, b_dt)
+                        (new_agent_id, request_id)
+                    )
+
+                    cursor.execute(
+                        """
+                        UPDATE appointment_reservation_segments
+                        SET staff_agent_id = %s
+                        WHERE reservation_id IN (
+                            SELECT id FROM appointment_reservations WHERE service_request_id = %s
+                        );
+                        """,
+                        (new_agent_id, request_id)
                     )
 
                     cursor.execute(
@@ -1010,7 +1107,9 @@ class BookingService:
                     cursor.execute(
                         """
                         UPDATE service_requests
-                        SET escalation_status = 'escalated', updated_at = NOW()
+                        SET escalation_status = 'escalated',
+                            escalation_reason = 'AGENT_DECLINED',
+                            updated_at = NOW()
                         WHERE id = %s;
                         """,
                         (request_id,)
@@ -1041,6 +1140,7 @@ class BookingService:
                     """
                     SELECT sr.id, sr.customer_id, sr.staff_agent_id, sr.status,
                            sr.booking_type, sr.booking_time, sr.service_type, sr.duration_minutes,
+                           sr.visit_group_id,
                            c.name AS customer_name, c.phone,
                            v.year, v.make, v.model
                     FROM service_requests sr
@@ -1062,165 +1162,156 @@ class BookingService:
                         "already_cancelled": True,
                     }
 
-                existing = self._active_reservation(cursor, request_id)
-                old_segments: list[dt_mod.datetime] = []
-                old_agent_id: Optional[int] = request.get("staff_agent_id")
-                old_starts_at: Optional[dt_mod.datetime] = None
-                reservation_id: Optional[int] = None
-
-                if existing:
-                    reservation_id = existing["id"]
-                    old_agent_id = existing["staff_agent_id"]
-                    old_starts_at = _as_datetime(existing["starts_at"])
-                    cursor.execute(
-                        "SELECT segment_start FROM appointment_reservation_segments WHERE reservation_id = %s FOR UPDATE;",
-                        (existing["id"],),
-                    )
-                    old_segments = [_as_datetime(row["segment_start"]) for row in cursor.fetchall()]
-                    old_segments = [seg for seg in old_segments if seg is not None]
-
-                    cursor.execute("DELETE FROM appointment_reservation_segments WHERE reservation_id = %s;", (existing["id"],))
-                    cursor.execute(
-                        "UPDATE appointment_reservations SET status = 'CANCELLED', updated_at = CURRENT_TIMESTAMP WHERE id = %s;",
-                        (existing["id"],),
-                    )
-
-                # Release mock_calendar_slots
-                if old_agent_id is not None and old_segments:
+                visit_group_id = request.get("visit_group_id")
+                if visit_group_id:
                     cursor.execute(
                         """
-                        UPDATE mock_calendar_slots
-                        SET is_booked = FALSE,
-                            reservation_status = 'AVAILABLE',
-                            service_request_id = NULL,
-                            calendar_integration_status = 'PENDING_CALENDAR',
-                            calendar_event_id = NULL,
-                            updated_at = CURRENT_TIMESTAMP
-                        WHERE staff_agent_id = %s
-                          AND service_request_id = %s
-                          AND slot_datetime = ANY(%s);
+                        SELECT sr.id, sr.customer_id, sr.staff_agent_id, sr.status,
+                               sr.booking_type, sr.booking_time, sr.service_type, sr.duration_minutes,
+                               sr.visit_group_id,
+                               c.name AS customer_name, c.phone,
+                               v.year, v.make, v.model
+                        FROM service_requests sr
+                        JOIN customers c ON c.id = sr.customer_id
+                        LEFT JOIN vehicles v ON v.id = sr.vehicle_id
+                        WHERE sr.visit_group_id = %s
+                        FOR UPDATE OF sr;
                         """,
-                        (old_agent_id, request_id, old_segments),
+                        (visit_group_id,),
                     )
+                    targets = cursor.fetchall()
                 else:
+                    targets = [request]
+
+                for target_req in targets:
+                    tid = target_req["id"]
+                    if target_req.get("status") in ("cancelled", "cancelled_by_customer", "cancelled_by_admin"):
+                        continue
+
+                    existing = self._active_reservation(cursor, tid)
+                    old_segments: list[dt_mod.datetime] = []
+                    old_agent_id: Optional[int] = target_req.get("staff_agent_id")
+                    old_starts_at: Optional[dt_mod.datetime] = None
+                    reservation_id: Optional[int] = None
+
+                    if existing:
+                        reservation_id = existing["id"]
+                        old_agent_id = existing["staff_agent_id"]
+                        old_starts_at = _as_datetime(existing["starts_at"])
+                        cursor.execute(
+                            "SELECT segment_start FROM appointment_reservation_segments WHERE reservation_id = %s FOR UPDATE;",
+                            (existing["id"],),
+                        )
+                        old_segments = [_as_datetime(row["segment_start"]) for row in cursor.fetchall()]
+                        old_segments = [seg for seg in old_segments if seg is not None]
+
+                        cursor.execute("DELETE FROM appointment_reservation_segments WHERE reservation_id = %s;", (existing["id"],))
+                        cursor.execute(
+                            "UPDATE appointment_reservations SET status = 'CANCELLED', updated_at = CURRENT_TIMESTAMP WHERE id = %s;",
+                            (existing["id"],),
+                        )
+
+                    # Release mock_calendar_slots
+                    if old_agent_id is not None and old_segments:
+                        cursor.execute(
+                            """
+                            UPDATE mock_calendar_slots
+                            SET is_booked = FALSE,
+                                reservation_status = 'AVAILABLE',
+                                service_request_id = NULL,
+                                calendar_integration_status = 'PENDING_CALENDAR',
+                                calendar_event_id = NULL,
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE staff_agent_id = %s
+                              AND (service_request_id = %s OR slot_datetime = ANY(%s));
+                            """,
+                            (old_agent_id, tid, old_segments),
+                        )
+                    else:
+                        cursor.execute(
+                            """
+                            UPDATE mock_calendar_slots
+                            SET is_booked = FALSE,
+                                reservation_status = 'AVAILABLE',
+                                service_request_id = NULL,
+                                calendar_integration_status = 'PENDING_CALENDAR',
+                                calendar_event_id = NULL,
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE service_request_id = %s;
+                            """,
+                            (tid,),
+                        )
+
+                    # Update service_request status
                     cursor.execute(
                         """
-                        UPDATE mock_calendar_slots
-                        SET is_booked = FALSE,
-                            reservation_status = 'AVAILABLE',
-                            service_request_id = NULL,
+                        UPDATE service_requests
+                        SET status = 'cancelled',
+                            confirmation_status = 'cancelled',
+                            escalation_status = 'none',
+                            escalation_reason = NULL,
                             calendar_integration_status = 'PENDING_CALENDAR',
-                            calendar_event_id = NULL,
                             updated_at = CURRENT_TIMESTAMP
-                        WHERE service_request_id = %s;
+                        WHERE id = %s;
                         """,
-                        (request_id,),
+                        (tid,),
                     )
 
-                # Update service_request status
-                cursor.execute(
-                    """
-                    UPDATE service_requests
-                    SET status = 'cancelled',
-                        confirmation_status = 'cancelled',
-                        escalation_status = 'none',
-                        escalation_reason = NULL,
-                        calendar_integration_status = 'PENDING_CALENDAR',
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE id = %s;
-                    """,
-                    (request_id,),
-                )
-
-                # Audit log
-                cursor.execute(
-                    """
-                    INSERT INTO service_request_audit_log
-                    (request_id, triggered_by, from_status, to_status, notes)
-                    VALUES (%s, %s, %s, 'cancelled', %s);
-                    """,
-                    (
-                        request_id,
-                        triggered_by,
-                        request.get("status") or "pending",
-                        f"Appointment cancelled: {reason or 'No reason provided'}",
-                    ),
-                )
-
-                # Fetch assigned agent details for notification
-                assigned_agent = {}
-                if old_agent_id:
+                    # Audit log
                     cursor.execute(
                         """
-                        SELECT sa.name, sa.phone_number, COALESCE(uga.email, sa.email) AS email
-                        FROM staff_agents sa
-                        LEFT JOIN user_google_accounts uga ON uga.agent_id = sa.id
-                        WHERE sa.id = %s;
+                        INSERT INTO service_request_audit_log
+                        (request_id, triggered_by, from_status, to_status, notes)
+                        VALUES (%s, %s, %s, 'cancelled', %s);
                         """,
-                        (old_agent_id,),
+                        (
+                            tid,
+                            triggered_by,
+                            target_req.get("status") or "pending",
+                            f"Appointment cancelled: {reason or 'No reason provided'}",
+                        ),
                     )
-                    assigned_agent = cursor.fetchone() or {}
 
-                # Enqueue cancellation outbox events
-                starts_at_str = str(old_starts_at or request.get("booking_time") or "")
-                calendar_event_id = f"servicebot{reservation_id or request_id}"
-                cal_payload = {
-                    "action": "delete",
-                    "reservation_id": reservation_id,
-                    "agent_id": old_agent_id,
-                    "calendar_event_id": calendar_event_id,
-                    "booking_time_str": starts_at_str,
-                    "duration_minutes": request.get("duration_minutes") or 60,
-                    "details": {
-                        "customer_name": request.get("customer_name") or "Customer",
-                        "phone": request.get("phone"),
-                        "service_type": request.get("service_type") or "Service",
-                    },
-                }
-                cursor.execute(
-                    """
-                    INSERT INTO outbox_notifications (event_type, request_id, payload, status, next_retry_at)
-                    VALUES ('calendar_projection', %s, %s, 'PENDING', CURRENT_TIMESTAMP);
-                    """,
-                    (request_id, json.dumps(cal_payload)),
-                )
-
-                veh_str = f"{request.get('year') or ''} {request.get('make') or ''} {request.get('model') or ''}".strip() or "N/A"
-                notification_event = "CANCELLED_BY_CUSTOMER" if triggered_by in ("customer", "voice_agent", "telephony_voice_assistant", "voice_tool") else "CANCELLED_BY_ADMIN"
-                bypass_qh = triggered_by in ("voice_agent", "telephony_voice_assistant", "voice_tool", "customer")
-                notif_payload = {
-                    "booking_type": request.get("booking_type") or "appointment",
-                    "notification_event": notification_event,
-                    "booking_time_str": starts_at_str,
-                    "agent_id": old_agent_id,
-                    "agent_name": assigned_agent.get("name"),
-                    "agent_email": assigned_agent.get("email"),
-                    "agent_phone": assigned_agent.get("phone_number"),
-                    "triggered_by": triggered_by,
-                    "bypass_quiet_hours": bypass_qh,
-                    "details": {
-                        "customer_name": request.get("customer_name") or "Customer",
-                        "phone": request.get("phone"),
-                        "service_type": request.get("service_type") or "Service",
-                        "vehicle": veh_str,
-                        "issue": reason or request.get("service_type") or "",
-                        "duration_minutes": request.get("duration_minutes") or 60,
-                        "agent_name": assigned_agent.get("name"),
+                    # Outbox notification
+                    v_parts = [target_req.get("year"), target_req.get("make"), target_req.get("model")]
+                    veh_str = " ".join([str(p).strip() for p in v_parts if p and str(p).strip().upper() not in ("NONE", "NULL", "N/A")]).strip() or "N/A"
+                    c_name = target_req.get("customer_name") or "Valued Customer"
+                    c_phone = target_req.get("phone")
+                    s_type = target_req.get("service_type") or "Repair"
+                    cancel_payload = {
+                        "reservation_id": reservation_id,
+                        "agent_id": old_agent_id,
+                        "booking_type": target_req.get("booking_type") or "appointment",
+                        "booking_time_str": str(target_req.get("booking_time"))[:19] if target_req.get("booking_time") else None,
+                        "notification_event": "CANCELLED_BY_CUSTOMER",
                         "triggered_by": triggered_by,
-                        "bypass_quiet_hours": bypass_qh,
-                    },
-                }
-                cursor.execute(
-                    """
-                    INSERT INTO outbox_notifications (event_type, request_id, payload, status, next_retry_at)
-                    VALUES ('booking_notification', %s, %s, 'PENDING', CURRENT_TIMESTAMP);
-                    """,
-                    (request_id, json.dumps(notif_payload)),
-                )
+                        "bypass_quiet_hours": True,
+                        "vehicle": veh_str,
+                        "issue": s_type,
+                        "details": {
+                            "customer_name": c_name,
+                            "phone": c_phone,
+                            "service_type": s_type,
+                            "vehicle": veh_str,
+                            "issue": s_type,
+                            "duration_minutes": target_req.get("duration_minutes") or 60,
+                            "triggered_by": triggered_by,
+                            "bypass_quiet_hours": True,
+                        },
+                    }
+                    for event_type in ("calendar_projection", "booking_notification"):
+                        cursor.execute(
+                            """
+                            INSERT INTO outbox_notifications (event_type, request_id, payload, status, next_retry_at)
+                            VALUES (%s, %s, %s, 'PENDING', CURRENT_TIMESTAMP);
+                            """,
+                            (event_type, tid, json.dumps(cancel_payload)),
+                        )
 
         try:
             from serviceBot.services.sms_reminders import update_or_cancel_appointment_reminders
-            update_or_cancel_appointment_reminders(request_id)
+            for target_req in targets:
+                update_or_cancel_appointment_reminders(target_req["id"])
         except Exception:
             pass
 
@@ -1228,7 +1319,7 @@ class BookingService:
             "request_id": request_id,
             "status": "cancelled",
             "cancelled": True,
-            "booking_time": starts_at_str,
+            "already_cancelled": False,
         }
 
     def apply_portal_edit(
@@ -1723,21 +1814,22 @@ class BookingService:
                 start_iso = (starts_at.replace(tzinfo=BUSINESS_TZ) - dt_mod.timedelta(minutes=5)).isoformat()
                 end_iso = (ends_at.replace(tzinfo=BUSINESS_TZ) + dt_mod.timedelta(minutes=5)).isoformat()
                 g_events = fetch_agent_events(agent_id, start_iso, end_iso)
-                if g_events:
-                    s_naive = starts_at.replace(tzinfo=None)
-                    e_naive = ends_at.replace(tzinfo=None)
-                    for ev in g_events:
-                        if ev.get("status") == "cancelled":
-                            continue
-                        ev_start = _provider_datetime(ev.get("start") or {})
-                        ev_end = _provider_datetime(ev.get("end") or {})
-                        if ev_start and ev_end:
-                            if s_naive < ev_end and e_naive > ev_start:
-                                raise BookingConflictError("The requested time overlaps an existing Google Calendar event.")
+                if g_events is None:
+                    raise BookingConflictError("Calendar provider unavailable or returned unknown state.")
+                s_naive = starts_at.replace(tzinfo=None)
+                e_naive = ends_at.replace(tzinfo=None)
+                for ev in g_events:
+                    if ev.get("status") == "cancelled":
+                        continue
+                    ev_start = _provider_datetime(ev.get("start") or {})
+                    ev_end = _provider_datetime(ev.get("end") or {})
+                    if ev_start and ev_end:
+                        if s_naive < ev_end and e_naive > ev_start:
+                            raise BookingConflictError("The requested time overlaps an existing Google Calendar event.")
             except BookingConflictError:
                 raise
-            except Exception:
-                pass
+            except Exception as exc:
+                raise BookingConflictError(f"Calendar provider error: {exc}") from exc
             if existing_reservation_id:
                 cursor.execute(
                     """

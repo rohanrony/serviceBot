@@ -1521,10 +1521,12 @@ async def reassign_service_request(request_id: int, payload: ReassignRequestPayl
                 raise HTTPException(status_code=400, detail="Cannot reassign a closed or cancelled request.")
 
             # 2. Fetch new agent
-            cursor.execute("SELECT id, name, phone_number, email FROM staff_agents WHERE id = %s;", (payload.new_agent_id,))
+            cursor.execute("SELECT id, name, phone_number, email, is_active FROM staff_agents WHERE id = %s;", (payload.new_agent_id,))
             new_agent = cursor.fetchone()
             if not new_agent:
                 raise HTTPException(status_code=404, detail=f"Staff agent {payload.new_agent_id} not found.")
+            if new_agent.get("is_active") is False:
+                raise HTTPException(status_code=400, detail=f"Cannot reassign to inactive staff agent {payload.new_agent_id}.")
 
             old_agent_id = sr["staff_agent_id"]
             old_agent_phone = sr.get("old_agent_phone")
@@ -2102,12 +2104,21 @@ async def get_gmail_oauth_url(request: Request):
     redirect_uri = _get_oauth_redirect_uri(request)
     scope = "openid email profile https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/calendar.events"
     
+    import secrets
+    from serviceBot.db.connection import get_db_connection, dict_cursor
+    state = secrets.token_urlsafe(16)
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute("INSERT INTO oauth_states (state, agent_id, action_type) VALUES (%s, NULL, 'gmail');", (state,))
+            conn.commit()
+
     auth_url = (
         "https://accounts.google.com/o/oauth2/v2/auth?"
         "response_type=code&"
         f"client_id={client_id}&"
         f"redirect_uri={redirect_uri}&"
         f"scope={scope}&"
+        f"state={state}&"
         "access_type=offline&"
         "prompt=consent"
     )
@@ -2136,40 +2147,39 @@ async def gmail_oauth_callback(request: Request, code: str = None, error: str = 
     agent_id = None
     action_type = "calendar"
     
-    if "state" in request.query_params:
-        if not state:
-            return HTMLResponse(content="""
-            <html>
-            <body style="font-family: sans-serif; background-color: #0c0d0e; color: #ef4444; padding: 50px; text-align: center;">
-                <h2>Authentication Failed</h2>
-                <p>Invalid or expired state parameter. Please request connection again.</p>
-                <button onclick="window.close()" style="padding: 10px 20px; background: #ffffff; color: #000000; border: none; border-radius: 6px; cursor: pointer; font-weight: 550; margin-top: 20px;">Close Window</button>
-            </body>
-            </html>
-            """)
-            
-        from serviceBot.db.connection import get_db_connection, dict_cursor
-        with get_db_connection() as conn:
-            with dict_cursor(conn) as cursor:
-                # Clean up states older than 15 minutes
-                cursor.execute("DELETE FROM oauth_states WHERE created_at < NOW() - INTERVAL '15 minutes';")
-                cursor.execute("SELECT agent_id, action_type FROM oauth_states WHERE state = %s;", (state,))
-                state_row = cursor.fetchone()
-                if state_row:
-                    agent_id = state_row["agent_id"]
-                    action_type = state_row["action_type"]
-                    cursor.execute("DELETE FROM oauth_states WHERE state = %s;", (state,))
-                    conn.commit()
-                else:
-                    return HTMLResponse(content="""
-                    <html>
-                    <body style="font-family: sans-serif; background-color: #0c0d0e; color: #ef4444; padding: 50px; text-align: center;">
-                        <h2>Authentication Failed</h2>
-                        <p>Invalid or expired state parameter. Please request connection again.</p>
-                        <button onclick="window.close()" style="padding: 10px 20px; background: #ffffff; color: #000000; border: none; border-radius: 6px; cursor: pointer; font-weight: 550; margin-top: 20px;">Close Window</button>
-                    </body>
-                    </html>
-                    """)
+    if not state:
+        return HTMLResponse(content="""
+        <html>
+        <body style="font-family: sans-serif; background-color: #0c0d0e; color: #ef4444; padding: 50px; text-align: center;">
+            <h2>Authentication Failed</h2>
+            <p>Invalid or expired state parameter. Please request connection again.</p>
+            <button onclick="window.close()" style="padding: 10px 20px; background: #ffffff; color: #000000; border: none; border-radius: 6px; cursor: pointer; font-weight: 550; margin-top: 20px;">Close Window</button>
+        </body>
+        </html>
+        """)
+
+    from serviceBot.db.connection import get_db_connection, dict_cursor
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            # Clean up states older than 15 minutes
+            cursor.execute("DELETE FROM oauth_states WHERE created_at < NOW() - INTERVAL '15 minutes';")
+            cursor.execute("SELECT agent_id, action_type FROM oauth_states WHERE state = %s;", (state,))
+            state_row = cursor.fetchone()
+            if state_row:
+                agent_id = state_row["agent_id"]
+                action_type = state_row["action_type"]
+                cursor.execute("DELETE FROM oauth_states WHERE state = %s;", (state,))
+                conn.commit()
+            else:
+                return HTMLResponse(content="""
+                <html>
+                <body style="font-family: sans-serif; background-color: #0c0d0e; color: #ef4444; padding: 50px; text-align: center;">
+                    <h2>Authentication Failed</h2>
+                    <p>Invalid or expired state parameter. Please request connection again.</p>
+                    <button onclick="window.close()" style="padding: 10px 20px; background: #ffffff; color: #000000; border: none; border-radius: 6px; cursor: pointer; font-weight: 550; margin-top: 20px;">Close Window</button>
+                </body>
+                </html>
+                """)
         
     from serviceBot.services.encryption import decrypt_key, encrypt_key
     config = load_config()

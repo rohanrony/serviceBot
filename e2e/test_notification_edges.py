@@ -49,7 +49,7 @@ def test_manual_retry_preserves_original_message_and_channel(
     assert entries[0]["status"] == "SENT" and entries[0]["channel"] == channel
 
 
-def test_cross_channel_partial_failure_does_not_repeat_successful_sms(
+def test_both_enabled_channels_choose_one_and_retry_without_duplicate_blast(
     api, db, scenario, provider_capture
 ):
     provider_capture.activate()
@@ -66,22 +66,25 @@ def test_cross_channel_partial_failure_does_not_repeat_successful_sms(
         ).status_code
         == 200
     )
-    provider_capture.outcomes.extend([201, 500])
+    # Current product policy is one preferred channel per recipient, even when
+    # both rules are enabled. Recipient-level partial success is covered in
+    # test_notification_workflows.py; this case tests automatic retry here.
+    provider_capture.outcomes.extend([500, 201])
     request_id = book(api, scenario)
     assert process(api) >= 1
     calls = list(provider_capture.calls)
-    assert len(calls) == 2 and {call["To"] for call in calls} == {
-        CUSTOMER,
-        "whatsapp:" + CUSTOMER,
-    }
-    successful = next(call for call in calls if call["http_status"] == 201)
-    failed = next(call for call in calls if call["http_status"] == 500)
+    assert len(calls) == 1
+    assert calls[0]["To"] in {CUSTOMER, "whatsapp:" + CUSTOMER}
     event = notification(db, request_id)
     assert event["status"] == "PENDING"
     make_retry_due(db, event["id"])
     assert process(api) == 1
-    assert sum(call["To"] == successful["To"] for call in provider_capture.calls) == 1
-    assert sum(call["To"] == failed["To"] for call in provider_capture.calls) == 2
+    assert len(provider_capture.calls) == 2
+    assert provider_capture.calls[1]["To"] == calls[0]["To"]
+    assert provider_capture.calls[1]["Body"] == calls[0]["Body"]
+    assert notification(db, request_id)["status"] == "DELIVERED"
+    assert process(api) == 0
+    assert len(provider_capture.calls) == 2
 
 
 @pytest.mark.parametrize("channel", ["SMS", "WHATSAPP"])

@@ -785,7 +785,16 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
             preferred_time = args.get("preferred_time") or args.get("preferredTime") or args.get("time") or args.get("preferred_slot")
             service_type = args.get("service_type") or args.get("serviceType") or args.get("service") or args.get("issue_description") or args.get("issue")
             booking_type = args.get("booking_type") or args.get("bookingType") or "appointment"
-            slots = check_availability(service_type=service_type, preferred_date=preferred_date, booking_type=booking_type, preferred_time=preferred_time)
+            services_list = args.get("services") or args.get("service_types")
+            check_kwargs = {
+                "service_type": service_type,
+                "preferred_date": preferred_date,
+                "booking_type": booking_type,
+                "preferred_time": preferred_time,
+            }
+            if services_list:
+                check_kwargs["services_list"] = services_list
+            slots = check_availability(**check_kwargs)
 
             from serviceBot.db.queries import parse_specific_time, parse_preferred_date_and_time
             iso_date_target, _, _ = parse_preferred_date_and_time(preferred_date)
@@ -1076,6 +1085,13 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                     except Exception:
                         pass
 
+                services_list = args.get("services") or args.get("service_types")
+                if not services_list and isinstance(service_type, str):
+                    import re
+                    parts = [p.strip() for p in re.split(r'[,/+]|\band\b|&', service_type, flags=re.IGNORECASE) if p.strip()]
+                    if len(parts) > 1:
+                        services_list = parts
+
                 if booking_type == "appointment" and existing_session and existing_session.get("service_request_id"):
                     # Existing in-flight booking in this call session -> update rather than duplicate!
                     existing_sr_id = existing_session["service_request_id"]
@@ -1116,6 +1132,39 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                         "is_uncataloged": is_uncataloged,
                         "message": win_msg,
                     }
+                elif services_list and len(services_list) > 1 and booking_time:
+                    from serviceBot.services.booking import reserve_multi_service_appointment, BookingConflictError
+                    try:
+                        receipts = reserve_multi_service_appointment(
+                            customer_id=customer_id,
+                            services=services_list,
+                            appointment_datetime=booking_time,
+                            vehicle_details=vehicle_details,
+                            booking_type=booking_type or "appointment",
+                        )
+                        first_appt = receipts[0]
+                        total_duration = sum(r["duration_minutes"] for r in receipts)
+                        result = {
+                            "success": True,
+                            "service_request_id": first_appt["service_request_id"],
+                            "visit_group_id": first_appt.get("visit_group_id"),
+                            "appointments": receipts,
+                            "booking_type": booking_type,
+                            "booking_time": booking_time,
+                            "duration_minutes": total_duration,
+                            "is_uncataloged": is_uncataloged,
+                            "message": "Service request callback recorded successfully. Calendar projection and notifications are queued." if booking_type == "callback" else "Service request created successfully.",
+                        }
+                    except BookingConflictError as b_err:
+                        result = {
+                            "success": False,
+                            "message": f"Scheduling conflict: {str(b_err)}"
+                        }
+                    except ValueError as val_err:
+                        result = {
+                            "success": False,
+                            "message": f"Booking failed: {str(val_err)}"
+                        }
                 else:
                     # Create service request
                     sr_id = create_service_request(

@@ -1,5 +1,7 @@
 """Real HTTP/browser tests with disposable PostgreSQL and provider boundaries."""
 
+import hashlib
+import json
 import os
 import socket
 import sys
@@ -49,9 +51,23 @@ def pytest_addoption(parser):
     parser.addoption(
         "--e2e-headed", action="store_true", help="Show the E2E Chromium window"
     )
+    parser.addoption(
+        "--e2e-browser",
+        choices=("chromium", "firefox", "webkit"),
+        default="chromium",
+        help="Browser engine for UI acceptance tests",
+    )
+    parser.addoption(
+        "--e2e-artifacts",
+        default="scratch/e2e-artifacts",
+        help="Directory for failed-browser screenshots, traces and console errors",
+    )
 
 
 def pytest_collection_modifyitems(items):
+    for item in items:
+        if "page" in item.fixturenames:
+            item.add_marker(pytest.mark.browser)
     roots = {
         "e2e" if PROJECT_ROOT / "e2e" in Path(item.path).parents else "other"
         for item in items
@@ -184,6 +200,11 @@ def scenario(isolated_database, tmp_path, monkeypatch):
         portal, "SYSTEM_PROMPT_PATH", str(tmp_path / "system_prompt.txt")
     )
     monkeypatch.setattr(portal, "KB_DIR", str(tmp_path / "kb"))
+    from serviceBot.services import timezone_service
+
+    monkeypatch.setattr(
+        timezone_service, "_get_config_path", lambda: portal.CONFIG_PATH
+    )
     config = portal.load_config()
     config.update(
         gmail_enabled=False, enable_agent_selection=True, business_name="E2E Garage"
@@ -239,8 +260,8 @@ def scenario(isolated_database, tmp_path, monkeypatch):
     monkeypatch.setattr(socket.socket, "connect", local_connect)
     # No booking/status/query logic is mocked.
     target = datetime.now(booking.BUSINESS_TZ).replace(tzinfo=None) + timedelta(days=7)
-    while target.weekday() > 4:
-        target += timedelta(days=1)
+    # A Wednesday appointment has a business-day booking time 48 hours earlier.
+    target += timedelta(days=(2 - target.weekday()) % 7)
     target = target.replace(hour=10, minute=0, second=0, microsecond=0)
     with connection.get_db_connection() as conn, conn.cursor() as cursor:
         cursor.execute(
@@ -350,7 +371,12 @@ def freeze_business_clock(scenario, monkeypatch):
     from types import SimpleNamespace
 
     from serviceBot.api import portal, telephony
-    from serviceBot.services import booking, quiet_hours, sms_reminders
+    from serviceBot.services import (
+        booking,
+        quiet_hours,
+        sms_reminders,
+        timezone_service,
+    )
 
     def freeze(value):
         current = (
@@ -372,7 +398,7 @@ def freeze_business_clock(scenario, monkeypatch):
 
         clock_module = SimpleNamespace(**vars(datetime_module))
         clock_module.datetime = FrozenDateTime
-        for module in (portal, booking, quiet_hours, sms_reminders):
+        for module in (portal, booking, quiet_hours, sms_reminders, timezone_service):
             monkeypatch.setattr(module, "dt_mod", clock_module)
         monkeypatch.setattr(telephony, "datetime", FrozenDateTime)
         return current
@@ -388,7 +414,8 @@ def browser_instance(request):
         or os.getenv("PLAYWRIGHT_HEADED") == "1"
     )
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=not headed)
+        engine = getattr(playwright, request.config.getoption("--e2e-browser"))
+        browser = engine.launch(headless=not headed)
         yield browser
         browser.close()
 
@@ -399,8 +426,14 @@ def pytest_runtest_makereport(item, call):
     setattr(item, "rep_" + call.when, outcome.get_result())
 
 
+@pytest.fixture(scope="session")
+def browser_artifacts(request):
+    root = Path(request.config.getoption("--e2e-artifacts"))
+    return root / f"run-{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}"
+
+
 @pytest.fixture
-def page(browser_instance, live_server, request, tmp_path):
+def page(browser_instance, live_server, request, browser_artifacts):
     context = browser_instance.new_context(
         viewport={"width": 1280, "height": 800}, base_url=live_server
     )
@@ -412,9 +445,52 @@ def page(browser_instance, live_server, request, tmp_path):
             route.abort()
 
     context.route("**/*", browser_route)
+    context.tracing.start(screenshots=True, snapshots=True, sources=True)
     page = context.new_page()
+    errors = []
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    page.on(
+        "console",
+        lambda message: (
+            errors.append(message.text) if message.type == "error" else None
+        ),
+    )
     yield page
-    report = getattr(request.node, "rep_call", None)
-    if report and report.failed:
-        page.screenshot(path=str(tmp_path / "failure.png"), full_page=True)
-    context.close()
+    failed = any(
+        getattr(getattr(request.node, "rep_" + phase, None), "failed", False)
+        for phase in ("setup", "call")
+    )
+    try:
+        if failed:
+            case = (
+                request.node.name[:70]
+                + "-"
+                + hashlib.sha256(request.node.nodeid.encode()).hexdigest()[:8]
+            )
+            destination = browser_artifacts / case
+            destination.mkdir(parents=True, exist_ok=True)
+            try:
+                if not page.is_closed():
+                    page.screenshot(path=str(destination / "failure.png"), full_page=True)
+            except Exception:
+                pass
+            try:
+                context.tracing.stop(path=str(destination / "trace.zip"))
+            except Exception:
+                pass
+            try:
+                (destination / "console.json").write_text(json.dumps(errors, indent=2))
+            except Exception:
+                pass
+            print(f"Browser failure evidence: {destination}")
+        else:
+            try:
+                context.tracing.stop()
+            except Exception:
+                pass
+    finally:
+        try:
+            context.close()
+        except Exception:
+            pass
+
