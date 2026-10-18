@@ -93,7 +93,7 @@ def test_all_embedding_owners_serialize_against_indexing(monkeypatch, operation)
     if operation == 'initialization':
         def client(**kwargs):
             second_entered.set()
-            return SimpleNamespace(get_or_create_collection=lambda *a:collection)
+            return SimpleNamespace(get_or_create_collection=lambda *a,**kwargs:collection)
         monkeypatch.setattr(rag.chromadb,'PersistentClient',client)
         second = lambda: rag.FAQService()
     elif operation == 'add':
@@ -335,3 +335,75 @@ def test_real_chroma_bounded_add_and_late_persisted_batch_rollback(monkeypatch):
         rag.FAQService(collection=collection).replace_text('bounded replacement content '*400,'catalog.txt')
     assert embedding.sizes == [1,1]
     assert set(collection.get()['ids']) == {'old','unrelated'}
+
+
+@pytest.fixture
+def captured_default_encoder(monkeypatch):
+    from chromadb.utils.embedding_functions import onnx_mini_lm_l6_v2
+    instances, calls = [], []
+    class Encoder:
+        def __init__(self): instances.append(self)
+        def __call__(self,input):
+            calls.append((self,list(input)))
+            return [[float(len(text))]+[0.0]*383 for text in input]
+    monkeypatch.setattr(onnx_mini_lm_l6_v2,'ONNXMiniLM_L6_V2',Encoder)
+    # Start with the same lazy state as a newly started process.
+    monkeypatch.setattr(rag,'_DEFAULT_ENCODER',None,raising=False)
+    return instances,calls
+
+
+def test_default_encoder_is_lazy_and_reused_across_owners_adds_and_query(monkeypatch,captured_default_encoder):
+    import uuid
+
+    import chromadb
+    client = chromadb.EphemeralClient()
+    name = 'default-owner-'+uuid.uuid4().hex
+    selected = []
+    def collection(collection_name,**kwargs):
+        selected.append(kwargs.get('embedding_function'))
+        return client.get_or_create_collection(name,**kwargs)
+    monkeypatch.setattr(rag.chromadb,'PersistentClient',lambda **kwargs:SimpleNamespace(get_or_create_collection=collection))
+    one, two = rag.FAQService(), rag.FAQService()
+    instances,calls = captured_default_encoder
+    assert instances == []
+    one.index_text('first chunk '*150,'first.txt')
+    two.index_text('second content','second.txt')
+    two.collection.query(query_texts=['first chunk'],n_results=1)
+    assert len(instances) == 1
+    assert len(calls) > 3 and all(owner is instances[0] for owner,_ in calls)
+    assert all(len(texts)==1 for _,texts in calls)
+    assert all(function is not None and function.name()=='default' and function.get_config()=={} for function in selected)
+    rebuilt = type(selected[0]).build_from_config({})
+    rebuilt(['rebuilt owner query'])
+    assert type(rebuilt) is type(selected[0])
+    assert len(instances) == 1
+
+
+def test_injected_collection_does_not_initialize_default_encoder(captured_default_encoder):
+    collection = CapturedCollection()
+    rag.FAQService(collection=collection).index_text('captured injected content','test.txt')
+    assert captured_default_encoder == ([],[])
+
+
+def test_existing_persisted_default_collection_reopens_compatible_without_download(monkeypatch,tmp_path,captured_default_encoder):
+    import chromadb
+    client = chromadb.PersistentClient(path=str(tmp_path/'default-chroma'))
+    original = client.get_or_create_collection('faq_collection')
+    original.add(ids=['existing-default-row'],documents=['prior knowledge'],embeddings=[[1.0]+[0.0]*383])
+    assert original.configuration['embedding_function'].name() == 'default'
+    assert original.configuration['embedding_function'].get_config() == {}
+    monkeypatch.setattr(rag.chromadb,'PersistentClient',lambda **kwargs:client)
+    service = rag.FAQService()
+    assert captured_default_encoder == ([],[])
+    assert service.index_text('compatible new knowledge '*100,'new.txt') > 1
+    reopened = rag.FAQService()
+    result = reopened.collection.query(query_texts=['prior knowledge'],n_results=1)
+    assert result['ids'][0]
+    snapshot = reopened.collection.get(include=['embeddings'])
+    assert 'existing-default-row' in snapshot['ids']
+    assert all(len(vector)==384 for vector in snapshot['embeddings'])
+    assert reopened.collection.configuration['embedding_function'].name() == 'default'
+    assert reopened.collection.configuration['embedding_function'].get_config() == {}
+    instances,calls = captured_default_encoder
+    assert len(instances)==1
+    assert all(instance is instances[0] for instance,_ in calls)

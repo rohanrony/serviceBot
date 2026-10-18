@@ -383,3 +383,19 @@ and upload/download browser behavior. Validate
 actual memory and settled indexing after approved deployment before continuing
 paid calls; deployment approval is currently pending after automatic review
 enforced the earlier no-push/no-deploy instruction.
+
+## Reuse the default embedding model (FR-047)
+
+The user explicitly approved publication; commit 62fc3d5 is deployed and native
+booking-list latency is 2.31 seconds. Keep that authorization for necessary
+repairs. The bounded catalog upload settled with matching bytes but took 126.3
+seconds and lost its client connection. Reconcile it without another upload.
+
+Keep a single lazy ONNX instance behind a default-compatible embedding wrapper,
+shared across FAQService owners under the existing lock. Preserve Chroma's
+`default` name and empty configuration and keep the same MiniLM encoder. Prove
+reuse across adds and queries and compatibility when reopening an existing
+default collection using a deterministic captured encoder. Retain bounded adds,
+rollback and upload responsiveness tests. Rerun the full gate and publish the
+small validated repair under the existing approval. Native serial restoration,
+memory/latency read-back and the unchanged FR-042 proof precede any paid case.

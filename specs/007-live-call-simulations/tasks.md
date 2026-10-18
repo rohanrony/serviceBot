@@ -310,3 +310,16 @@ authored document byte hashes remain intact, while the generated catalog needs
 rebuilding. No medium test submission or credit was consumed. Automatic approval
 review rejected push/deployment under the earlier no-publish instruction;
 T094/T095 and deployed memory/index/live acceptance remain pending explicit approval.
+
+The user explicitly approved publication. Commit 62fc3d5 was pushed, merged and
+deployed as dep-dbait5bm8hqs73bfifng. Native list latency is 2.31 seconds; baseline,
+clone, catalog ownership and zero-paid-continuation proofs pass. Bounded upload
+avoids the observed OOM, but the large catalog took 126.3 seconds and disconnected
+the client. Native HTTP 200 and the exact downloaded hash settle that write.
+
+- [x] T098 Analyze FR-047, regress and implement a shared lazy default-compatible ONNX encoder; prove existing collection compatibility and reuse across owners/adds/queries without real model downloads. Preserve bounded batches and rollback.
+- [ ] T099 Converge and rerun focused and complete offline/API/browser validation, publish under the user's approval and verify deployed KB restoration, memory and latency before the unpaid continuation.
+
+T098 evidence: two intended constructor-reuse failures preceded implementation; 27 focused FAQ/catalog contracts now pass. The reusable wrapper preserves default identity/configuration and384 dimensions, stays lazy for injected collections, and reopens a real persisted default collection with a deterministic captured encoder. Native Render Chroma1.5.9 matches local1.5.9; no real model download is used in offline tests. The complete gate is running for T099.
+
+T099 local gate passed **975 unit/integration +348 E2E**, zero failures/errors/skips (`deployed-default-encoder-full-offline.log` and copied XML). Source convergence found no material FR047 gap; Ruff has zero introduced findings. Publication is authorized; native memory, upload latency and restoration remain required before T095.

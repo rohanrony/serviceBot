@@ -400,3 +400,18 @@ Native evidence on 2026-10-18: two serial existing-document uploads returned
 `evt-dbagtv942hec739a9j60` records an OOM kill with a 512 MiB limit at 18:25:01Z.
 Do not repeat that native write against the unrepaired runtime or spend paid
 simulation credits until the repair and prerequisite gates are safe.
+
+- **FR-047**: Reuse one lazily initialized default ONNX embedding model per
+  process across collection owners, add batches and queries. Preserve the
+  existing Chroma `default` embedding identity/configuration, algorithm and
+  dimensions so persisted collections remain compatible. Retain one-chunk adds,
+  the shared operation lock and replacement rollback. Prove constructor reuse
+  and reopening of an existing default collection without model downloads in
+  offline tests; verify settled upload latency and memory on the deployment.
+
+After approved deployment, the catalog upload completed with HTTP 200 in
+126.3 seconds, but its client disconnected. Download hash reconciliation proved
+the intended bytes were atomically published; do not retry that ambiguous write.
+No new OOM event occurred and sampled memory peaked at 390,778,880 bytes. Installed
+Chroma's default wrapper constructs a new ONNX embedder on every call, discarding
+its instance-cached inference session between the bounded chunks.

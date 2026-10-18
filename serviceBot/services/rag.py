@@ -3,6 +3,7 @@ from threading import RLock
 os.environ["ANONYMIZED_TELEMETRY"] = "False"
 os.environ["CHROMA_TELEMETRY_IMPL"] = "None"
 import chromadb
+from chromadb.api.types import DefaultEmbeddingFunction
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from serviceBot.logger import get_logger
@@ -10,6 +11,26 @@ from serviceBot.logger import get_logger
 logger = get_logger("services.rag")
 
 EMBEDDING_ADD_BATCH_SIZE = 1
+_DEFAULT_ENCODER = None
+
+
+class _ProcessDefaultEmbeddingFunction(DefaultEmbeddingFunction):
+    """Chroma's default identity with one lazy encoder for this process."""
+
+    def __call__(self, input):
+        global _DEFAULT_ENCODER
+        with FAQService.operation_lock:
+            if _DEFAULT_ENCODER is None:
+                from chromadb.utils.embedding_functions.onnx_mini_lm_l6_v2 import (
+                    ONNXMiniLM_L6_V2,
+                )
+                _DEFAULT_ENCODER = ONNXMiniLM_L6_V2()
+            return _DEFAULT_ENCODER(input)
+
+    @staticmethod
+    def build_from_config(config):
+        DefaultEmbeddingFunction.validate_config(config)
+        return _ProcessDefaultEmbeddingFunction()
 
 class FAQService:
     operation_lock = RLock()
@@ -28,7 +49,7 @@ class FAQService:
                 is_testing = "pytest" in sys.modules or any("pytest" in arg or "unittest" in arg for arg in sys.argv)
                 path = "./scratch/chroma_db" if is_testing else "./chroma_db"
                 client = chromadb.PersistentClient(path=path)
-                self.collection = client.get_or_create_collection("faq_collection")
+                self.collection = client.get_or_create_collection("faq_collection", embedding_function=_ProcessDefaultEmbeddingFunction())
 
     def answer_question(self, question: str) -> str:
         """
