@@ -168,16 +168,20 @@
 
 - [x] T037 Analyze FR-010 and trace the observed callback 49 overview mismatch to its read/API/render source.
 - [x] T038 Add failing real-DB API and browser contracts for current start/end/duration after callback rescheduling, with another differently timed request and historical events preserved.
-- [ ] T039 Fix the existing canonical trace read/render path, run focused and complete verification, and verify the deployed overview matches native timing.
-- [ ] T040 Converge the trace repair and retain the native screenshot, query evidence and verified deployment.
+- [x] T039 Fix the existing canonical trace read/render path, run focused and complete verification, and verify the deployed overview matches native timing.
+- [x] T040 Converge the trace repair and retain the native screenshot, query evidence and verified deployment.
 
 ## Phase 9: Receipt-based notification claims
 
 - [x] T041 Analyze native C02 false sent-text claim, prompt examples and cancellation tool result against FR-011.
 - [x] T042 Add failing prompt/native mutation response contracts; remove unsupported dispatch claims and add receipt-based agent guidance, then run focused and complete verification.
-- [ ] T043 Publish the verified repair and patch only the active saved agent prompt; verify other prompt/tool/platform settings remain unchanged.
-- [ ] T044 Verify corrected wording through the outstanding live reschedule and cancellation, retaining prior failures and actual provider delivery evidence.
+- [x] T043 Publish the verified repair and patch only the active saved agent prompt; verify other prompt/tool/platform settings remain unchanged.
+- [x] T044 Verify corrected wording through the outstanding live reschedule and cancellation, retaining prior failures and actual provider delivery evidence.
 
 Trace evidence: six initial API/browser failures, including separate browser failures at UTC and New York in daylight/standard time. After fixing only `get_appointment_details_by_id`, all six new timing contracts and eight existing lifecycle-trace tests passed. Persisted duration wins; API window strings include business-zone offset, while legacy booking_time and audit/created timestamps retain their existing contracts. Logs: `scratch/deployed-completion-20261018/trace-timing-*`.
 
 Complete local repair gate: 811 unit/integration + 317 E2E passed, no failures/errors/skips. Logs/full XML: `scratch/deployed-completion-20261018/final-v5-*`. Notification focused Red 11 failures then Green 30; the 12 new prompt/tool contracts passed again after import-only cleanup. Trace publication/native verification remains open in T039/T040.
+
+Deployed acceptance: commit `80ff0a9a` is live on `dep-dba617m1egvs73dc8cl0`. Fresh native traces report callback49 14:00-14:15 /15minutes and appointment50 10:00-10:45 /45minutes, both with -04:00 offsets. Native browser callback49 overview was visually verified and captured in `deployed-callback-trace-fixed.png`. The active-agent receipt policy was read back with every other conversation/platform setting and greeting unchanged (`notification-policy-patch-v2-result.json`); the rejected full-object HTTP400 attempt remains retained and caused no prompt change. Corrected live C02 passed including notification-wording evaluation; C03 remains pending.
+
+T044 native acceptance: run `1c4f1d50a9054e958dc091198f2100f3` passed C02 (467 credits) and C03 (339), with explicit consent and no unverified notification claim. Final native booking50 audit confirms nine delivered WhatsApp messages, three cancelled Google event versions, released capacity and cancelled reminders. Prior failed wording evaluation remains unchanged. Receiving-inbox/production-provider prerequisites remain operational follow-up in feature007.

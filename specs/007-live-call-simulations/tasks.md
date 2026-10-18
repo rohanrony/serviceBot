@@ -111,11 +111,11 @@ Dependency: T044 → T045 → T046 → T047 → T048. Keep the failed wrong-refe
 - [x] T052 Reconcile FR-024 authorization, plan and analysis, then add failing captured budget/scope/reuse and complete-campaign contracts.
 - [x] T053 Implement the opt-in deployed campaign ceiling and durable one-campaign authorization using the existing Budget/ledger/lock; retain default limits and ambiguity gates per FR-024.
 - [x] T054 Validate focused and complete offline suites, document the config contract and converge FR-024.
-- [ ] T055 Refresh deployed/provider readiness and execute the authorized C01–C06 campaign once within the 8,160-credit ceiling; retain functional/evidence/cost outcomes and any unresolved acceptance or local repair work.
+- [x] T055 Refresh deployed/provider readiness and execute the authorized C01–C06 campaign once within the 8,160-credit ceiling; retain functional/evidence/cost outcomes and any unresolved acceptance or local repair work.
 
   Attempt retained: run `51ffab47f72f4cba9483a6e8ecaf11ba` stopped after failed
   C01; C02–C06 were blocked. Settled spend 634 credits, no unsettled usage.
-  This remains open for live acceptance; the consumed authorization is not replayed.
+  This remained open at that point. Later targeted recoveries below completed the functional cases; the consumed authorization was not replayed.
 
 ## Phase 23: Live failure follow-up
 
@@ -132,14 +132,14 @@ below before paid execution.
 - [x] T059 After explicit publication authorization, deploy the local application repairs with migration 0006 and verify the deployed version/readiness.
 - [x] T060 After explicit saved-agent authorization, apply only the prepared active-agent first-message patch and verify fresh provider read-back preserves prompt/tools and includes the recording disclosure.
 - [x] T061 After explicit data-restoration authorization, restore the one changed caller profile using retained pre/post identity guards; decide the disposition of retained test booking 46 separately. Resolve the designated caller's two original name groups before paid work.
-- [ ] T062 Obtain a reviewed paid execution plan after deployed corrections and caller readiness, retain the consumed authorization and failed run, and complete outstanding live cases without treating offline or conversation smoke as native delivery acceptance.
+- [x] T062 Obtain a reviewed paid execution plan after deployed corrections and caller readiness, retain the consumed authorization and failed run, and complete outstanding live cases without treating offline or conversation smoke as native delivery acceptance.
 
 ## Authorized completion implementation
 
 - [x] T063 Regress and implement a strictly nonmutating read_only option for native caller verification, including unknown profiles.
 - [x] T064 Regress and implement explicit ID/name binding verified by the fresh native read-only tool, preserving full baseline rows and default ambiguity rejection.
 - [x] T065 Regress and implement newly approved continuation provenance, settled-ancestor ledger validation and aggregate Budget.spent admission/reporting; preserve old manifests and reuse/ambiguity guards.
-- [ ] T066 Analyze, run focused and complete offline suites, publish verified changes, then execute the reviewed credit-efficient deployed campaign and browser/native-delivery checks; converge any further findings.
+- [x] T066 Analyze, run focused and complete offline suites, publish verified changes, then execute the reviewed credit-efficient deployed campaign and browser/native-delivery checks; converge any further findings.
 
 - [x] T067 Reproduce settings networkidle failure with controlled pending noncritical traffic; wait for fresh relevant responses and visible populated controls, preserve persistence assertions, then run complete browser verification per FR-029.
 
@@ -156,7 +156,7 @@ T067/T068 complete offline gate: 771 unit/integration and 311 E2E tests passed, 
 - [x] T069 Analyze FR-031/032 across spec, plan and existing authorization/ledger contracts; retain the failed eight-turn C01 evidence.
 - [x] T070 Regress deployed-only 12-turn scenarios and explicit settled failed/blocked recovery subsets, including dependency expansion, passed-case rejection, missing/inconsistent history, reserve and no-fork/reuse guards.
 - [x] T071 Implement the bounded recipe/recovery planning changes without mutating source scenarios, old manifests or normal isolated/tier semantics; run focused and complete offline validation.
-- [ ] T072 Execute only necessary authorized recovery cases after the current campaign settles, retain all prior/current charges and failures, verify native/browser effects, then converge.
+- [x] T072 Execute only necessary authorized recovery cases after the current campaign settles, retain all prior/current charges and failures, verify native/browser effects, then converge.
 
 T070 focused evidence: 11 intended failures before implementation, then 120 captured-provider contracts passed. Private logs: `scratch/live-campaign-20261018/recovery-{red,green}.log`. The first continuation retained C01 max-turn truncation and 633 credits; C04/C05/C06 then passed functional checks at 612/437/420 credits respectively. Its total 2,102 plus the ancestor 634 equals 2,736 campaign credits; all charges settled.
 
@@ -166,8 +166,32 @@ T071 complete gate: 785 unit/integration + 311 E2E passed, zero failures/errors/
 
 - [x] T073 Analyze FR-033 ownership, fresh-state and passed-dependency boundaries.
 - [x] T074 Regress and implement verified owned-state seeding for an explicitly authorized failed/blocked suffix, preserving all current negative, budget and ancestry contracts; run complete verification.
-- [ ] T075 After the notification-claim repair, run only C02/C03 on owned booking 50 with a changed target date, retain all earlier outcomes and validate native/browser effects.
+- [x] T075 After the notification-claim repair, run only C02/C03 on owned booking 50 with a changed target date, retain all earlier outcomes and validate native/browser effects.
 
 Second recovery retained: `ef0ecb10e7d84f5f81e312bc334afea8`; C01 passed (609 credits) and created owned booking 50. C02 native identity/count/time-change/baseline checks all passed, but evaluation failed an unsupported sent-text claim (376 credits); C03 blocked. Total 985, aggregate 3,721 campaign credits, no unsettled usage. The owned appointment remains active at October 27 10:00 for a guarded suffix recovery after the prompt fix. No repeated creation or API reset is planned.
 
 T074 focused evidence: 134 deployed-harness contracts passed, including deliberately redacted saved evidence and a captured C02/C03 flow that reuses the owned ID without C01 creation. Complete gate: 811 unit/integration + 317 E2E passed, zero failures/errors/skips. The suffix preview selects only C02/C03, retains 3,721 prior campaign credits and admits 1,800 estimated credits within the unchanged reserve/ceiling.
+
+## Final operational acceptance (external prerequisites)
+
+The authorized six deployed conversation/API cases now have passing functional
+outcomes across retained ancestry; no single-run full-tier/native-acceptance pass
+is claimed. C01: `ef0ecb10e7d84f5f81e312bc334afea8`; C02/C03:
+`1c4f1d50a9054e958dc091198f2100f3`; C04/C05/C06:
+`b6f5f34da20441db9a8e83bee701cf15`. Every failed attempt and charge is retained.
+Aggregate campaign credits: 4,527; all retained tests including older calibrations:
+5,520; no unsettled charges. Five owned bookings are cancelled, all reservations
+and calendar projections released/deleted, no pending reminders/outbox work,
+and original records are unchanged. Latest complete offline gate: 811 unit and
+317 E2E, no failures/errors/skips. Thirty unique WhatsApp messages for current
+owned lifecycle checks are natively delivered.
+
+- [ ] T076 Confirm receipt in the designated Gmail inbox. Native Gmail sends were accepted, but the authorized account has send-only scope and inbox reads return 403; the user confirmation question remains pending.
+- [ ] T077 Complete owner/provider prerequisites for unrestricted production messaging: the US SMS sender returns 30034 until A2P registration, and WhatsApp remains a Sandbox requiring enrollment/open reply windows or approved production templates. Current test-handset WhatsApp delivery is verified; do not equate it with unrestricted production delivery.
+- [ ] T078 Reconnect the expired system Gmail OAuth grant through the owner login flow. The connected designated technician account currently sends successfully as fallback; do not replace the system credential with a different person's token.
+
+No further paid ElevenLabs submissions are needed for these provider/account
+prerequisites. Full 50-case isolated and physical audio release gates remain
+outside the approved deployed six-case campaign; their assertions are not relabeled
+as passed. Final native/provider/browser evidence is retained under
+`scratch/deployed-completion-20261018/`.
