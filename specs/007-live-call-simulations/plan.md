@@ -165,6 +165,29 @@ reuse rejection remains. Captured tests must prove prior spend is not omitted.
 Per-case estimates retain measured C01 provenance and conservative margins.
 Validate offline before any new paid submission. Parent owns all external writes.
 
+For FR-029 replace global networkidle in the recent-feature settings helper with
+fresh relevant response waits and selected-pane observable readiness. Reproduce
+with a deliberately pending same-origin noncritical request, while preserving
+actual staff create/edit and reload assertions. This is harness synchronization,
+not an application timeout change or a provider retry. Re-run the complete browser
+suite and preserve the failed full-run trace and corrected result.
+
+For FR-030 extract the existing browser-route policy into a pure test-support
+helper, retaining loopback allow/external deny behavior. Capture the known local
+QR gateway with a small valid PNG before its redirect can escape interception.
+Regress real helper calls with mocked routes: QR fulfilled without continuation,
+ordinary loopback continued, external requests aborted. Red must not contact any
+external provider. The deployed app QR route remains unchanged and is tested
+separately as native browser evidence.
+
+T068 implementation uses `e2e/browser_network.py` as the fixture's single route
+policy. The exact loopback QR gateway returns a captured transparent PNG;
+ordinary loopback requests continue to the application and external requests
+abort. Pure mocked routes verify the PNG signature, dimensions, chunk checksums
+and compressed image data without opening provider connections. A browser
+contract verifies a local PNG response without redirects alongside native agent
+API data. These captures prove offline isolation, not live QR functionality.
+
 Derive the persona name from the read-only scoped baseline before creating any
 owned provider resource. For an opted-in nonempty baseline require exactly one
 consistent nonblank customer name; ambiguous or absent names fail closed. Supply

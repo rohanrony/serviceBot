@@ -21,6 +21,8 @@ from psycopg2.extensions import make_dsn, parse_dsn
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+from e2e.browser_network import route_offline_browser_request
+
 sys.dont_write_bytecode = True
 # App imports otherwise reload developer credentials with override=True.
 os.environ["PYTHON_DOTENV_DISABLED"] = "1"
@@ -438,13 +440,7 @@ def page(browser_instance, live_server, request, browser_artifacts):
         viewport={"width": 1280, "height": 800}, base_url=live_server
     )
 
-    def browser_route(route):
-        if urlparse(route.request.url).hostname == "127.0.0.1":
-            route.continue_()
-        else:
-            route.abort()
-
-    context.route("**/*", browser_route)
+    context.route("**/*", route_offline_browser_request)
     context.tracing.start(screenshots=True, snapshots=True, sources=True)
     page = context.new_page()
     errors = []

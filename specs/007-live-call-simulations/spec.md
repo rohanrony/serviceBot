@@ -195,6 +195,17 @@ deployment or cleanup. Retain failures and report live acceptance honestly.
   and native state with fresh read-back; maintain the aggregate ceiling including
   634 credits already settled. Failure history remains evidence, not a pass.
 
+- **FR-029**: Browser settings readiness must wait for the selected pane's fresh
+  data and visible controls. An unrelated pending request must not prevent staff
+  create/edit/reload acceptance when native staff/config reads have completed.
+  Keep the persisted API and reloaded-selector assertions; do not increase
+  timeouts or retry away a failure.
+
+- **FR-030**: Offline browser tests must capture the external QR image boundary
+  before a local redirect can reach the provider. Keep ordinary loopback traffic
+  native and block other external requests. The captured image is offline test
+  data and must not be presented as live QR-provider or handset evidence.
+
 - **FR-025**: With `preserve_existing_bookings: true`, use the existing caller's
   single consistent nonblank customer name from the scoped baseline for scenario
   rendering and dynamic context. Do not append a synthetic run suffix to that

@@ -46,6 +46,11 @@ Browser follow-up: portal navigation and settings icons must have valid SVG path
 data and render without browser parse errors. Retain a real-browser regression
 for the malformed repeated gear path observed on the deployed portal.
 
+Catalog reads must preserve catalog rows and service-to-staff assignments.
+`GET /services` must not delete duplicate names, insert defaults into an empty
+catalog or invoke knowledge indexing. An empty catalog returns an empty list;
+catalog mutations remain explicit administrative actions.
+
 When voice `create_service_request` omits `service_type` but its stripped
 `issue_description` exactly matches one catalog service name (case insensitive),
 use that canonical service name for intake metadata and persistence. Quoted

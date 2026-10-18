@@ -213,3 +213,8 @@
 - [x] T049 Run focused and complete offline verification, retain evidence and converge the intake follow-up; publication and deployed verification remain separate.
 
 - [x] T050 Reproduce deployed gear SVG parse errors in a browser regression, correct both malformed paths, and verify navigation/settings render without path parse errors.
+
+- [x] T051 Regress catalog GET preservation of duplicate rows/assignments and empty catalog/no indexing; remove destructive deduplication and implicit seeding from reads, then run focused and complete acceptance verification.
+  - Reconcile the legacy `test_catalog_deduplication` contract with read-only GET: retain both persisted service IDs, metadata and staff assignments. Keep explicit POST duplicate prevention coverage unchanged.
+
+T051 verification: 7 dynamic-config contracts and 2 real-DB catalog acceptance checks passed; complete gate 771 unit/integration + 311 E2E passed with zero failures/errors/skips. Private retained logs and full XML: `scratch/deployed-completion-20261018/final-v3-*`. POST duplicate prevention remains covered.

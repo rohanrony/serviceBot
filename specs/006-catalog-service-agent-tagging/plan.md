@@ -10,6 +10,12 @@ Correct the two malformed existing gear-icon paths in the portal HTML after a
 browser regression captures their parse errors. Preserve controls and semantics;
 no visual redesign. Validate navigation/settings rendering in the browser.
 
+Remove duplicate deletion and empty-catalog seeding/indexing from the GET route.
+Use a read transaction only; preserve every existing catalog row/tag. Add actual
+database/API contracts for duplicate rows with assignments and an empty catalog,
+including no knowledge-index side effects. Existing add/update/delete operations
+retain ownership of explicit changes. No schema migration is needed.
+
 Resolve an omitted voice service type only through a unique case-insensitive
 exact catalog name matching the stripped issue description. Feed that canonical
 name to the existing metadata and booking paths; preserve explicit type and

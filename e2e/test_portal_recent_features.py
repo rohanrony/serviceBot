@@ -2,12 +2,13 @@
 
 import json
 import re
+from contextlib import ExitStack
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
-from playwright.sync_api import expect
+from playwright.sync_api import Error as PlaywrightError, expect
 
 from e2e.test_notification_workflows import configure_rules, process, signed_callback
 from e2e.test_notification_workflows import (
@@ -21,10 +22,71 @@ provider_capture = captured_provider_fixture
 def open_settings(page, live_server, tab):
     # Deep links avoid overlapping initial dashboard/staff reloads while editing.
     # Navigation clicks are independently exercised in test_portal_workflows.py.
-    page.goto(f"{live_server}/portal/#config/{tab}")
-    # An identical hash can be same-document navigation, not persistence evidence.
-    page.reload()
-    page.wait_for_load_state("networkidle")
+    # Leave the document first: an identical hash can be same-document navigation,
+    # and a goto followed immediately by reload can capture an aborted response.
+    page.goto("about:blank")
+    config_endpoint = "/portal/sms/config" if tab == "sms-config" else "/portal/config"
+    with ExitStack() as waits:
+        loaded_config = waits.enter_context(page.expect_response(
+            lambda response: response.request.method == "GET" and response.url.endswith(config_endpoint)
+        ))
+        if tab == "staff":
+            loaded_staff = waits.enter_context(page.expect_response(
+                lambda response: response.request.method == "GET" and response.url.endswith("/portal/agents")
+            ))
+        page.goto(f"{live_server}/portal/#config/{tab}", wait_until="domcontentloaded")
+    assert loaded_config.value.status == 200
+    config = loaded_config.value.json()
+    expect(page.locator(f'.config-subtab-pane[data-subtab-pane="{tab}"]')).to_be_visible()
+    if tab == "staff":
+        assert loaded_staff.value.status == 200
+        agents = loaded_staff.value.json()
+        if agents:
+            for agent in agents:
+                expect(page.locator(f'#staff-agent-selector option[value="{agent["id"]}"]')).to_contain_text(agent["name"])
+        else:
+            expect(page.locator("#staff-agent-selector")).to_contain_text("No agents available")
+        expect(page.locator("#staff-bhours-start")).to_have_value(str(config.get("business_hours_start", 7)))
+        expect(page.locator("#staff-bhours-end")).to_have_value(str(config.get("business_hours_end", 18)))
+    elif tab == "sms-config":
+        expect(page.locator("#sms-config-timezone")).to_have_value(config["business_timezone"])
+    elif tab == "intents":
+        expect(page.locator("#prompt-first-message")).to_have_value(config.get("first_message") or "")
+
+
+def test_settings_reload_reads_updated_staff_with_pending_background_request(
+    page, live_server, api
+):
+    pending = []
+    page.route("**/__e2e_noncritical_pending", lambda route: pending.append(route))
+    page.add_init_script("""
+        document.addEventListener('DOMContentLoaded', () => {
+            window.__pendingBackground = fetch('/__e2e_noncritical_pending');
+        });
+    """)
+    page.set_default_timeout(5000)
+    try:
+        created = api.post(f"{PORTAL}/agents", json={
+            "name": "Pending Background Staff", "role": "Technician",
+            "email": "pending@example.test",
+        })
+        assert created.status_code == 201, created.text
+        agent_id = created.json()["id"]
+        open_settings(page, live_server, "staff")
+        expect(page.locator(f'#staff-agent-selector option[value="{agent_id}"]')).to_contain_text("Pending Background Staff")
+        saved = api.put(f"{PORTAL}/agents/{agent_id}", json={"name": "Persisted Despite Pending"})
+        assert saved.status_code == 200, saved.text
+        assert api.get(f"{PORTAL}/agents/{agent_id}").json()["name"] == "Persisted Despite Pending"
+        open_settings(page, live_server, "staff")
+        assert pending, "The regression must exercise a noncritical request that remains open"
+        expect(page.locator(f'#staff-agent-selector option[value="{agent_id}"]')).to_contain_text("Persisted Despite Pending")
+    finally:
+        for route in pending:
+            try:
+                route.abort()
+            except PlaywrightError:
+                # A full document reload already aborts its preceding fetch.
+                pass
 
 
 def test_browser_create_edit_staff_persists_after_reload(page, live_server, api):

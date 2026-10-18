@@ -611,31 +611,6 @@ async def get_services():
     from serviceBot.db.connection import get_db_connection, dict_cursor
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
-            # Deduplicate existing services by name, keeping the one with the lowest ID
-            cursor.execute("""
-                DELETE FROM services 
-                WHERE id NOT IN (
-                    SELECT MIN(id) 
-                    FROM services 
-                    GROUP BY name
-                )
-            """)
-            conn.commit()
-            
-            cursor.execute("SELECT COUNT(*) AS count FROM services")
-            if cursor.fetchone()["count"] == 0:
-                from serviceBot.seed_cba_services import SERVICES_DATA
-                for svc in SERVICES_DATA:
-                    cursor.execute(
-                        "INSERT INTO services (name, description, price_range, duration_minutes, req_customer_name, req_phone_number, req_vehicle_details, req_issue_description, req_location) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                        (svc[0], svc[1], svc[2], svc[3], bool(svc[4]), bool(svc[5]), bool(svc[6]), bool(svc[7]), bool(svc[8]))
-                    )
-                conn.commit()
-                try:
-                    sync_services_to_kb()
-                except Exception:
-                    pass
-            
             cursor.execute("SELECT id, name, description, price_range, duration_minutes, req_customer_name, req_phone_number, req_vehicle_details, req_issue_description, req_location FROM services ORDER BY id ASC")
             rows = cursor.fetchall()
 

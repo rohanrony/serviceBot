@@ -138,33 +138,46 @@ def test_dynamic_required_fields_intake():
         mock_create.assert_called_once()
         assert final_state["service_request_id"] == 101
 
-def test_catalog_deduplication():
-    from serviceBot.db.connection import get_db_connection
+def test_catalog_get_preserves_same_name_services_and_assignments():
+    from serviceBot.db.connection import get_db_connection, dict_cursor
     with get_db_connection() as conn:
-        cursor = conn.cursor()
-        # Clean services table first
+        cursor = dict_cursor(conn)
         cursor.execute("DELETE FROM services")
-        # Insert duplicates
         cursor.execute(
-            "INSERT INTO services (name, description, price_range, duration_minutes) VALUES (%s, %s, %s, %s)",
+            "INSERT INTO services (name, description, price_range, duration_minutes) VALUES (%s, %s, %s, %s) RETURNING id",
             ("Tire Rotation", "Rotate tires", "$20-40", 15)
         )
+        first_id = cursor.fetchone()["id"]
         cursor.execute(
-            "INSERT INTO services (name, description, price_range, duration_minutes) VALUES (%s, %s, %s, %s)",
+            "INSERT INTO services (name, description, price_range, duration_minutes) VALUES (%s, %s, %s, %s) RETURNING id",
             ("Tire Rotation", "Rotate tires duplicate", "$25-45", 20)
         )
+        second_id = cursor.fetchone()["id"]
+        cursor.execute("SELECT id FROM staff_agents ORDER BY id LIMIT 1")
+        agent_id = cursor.fetchone()["id"]
+        cursor.execute(
+            "INSERT INTO service_staff_agents (service_id, staff_agent_id) VALUES (%s, %s), (%s, %s)",
+            (first_id, agent_id, second_id, agent_id),
+        )
+        cursor.execute("SELECT * FROM services ORDER BY id")
+        before = [dict(row) for row in cursor.fetchall()]
+        cursor.execute("SELECT * FROM service_staff_agents ORDER BY service_id, staff_agent_id")
+        before_assignments = [dict(row) for row in cursor.fetchall()]
         conn.commit()
-        
-    # GET endpoint should trigger deduplication automatically
+
     response = client.get("/api/v1/portal/services")
     assert response.status_code == 200
-    services = response.json()
-    
-    # Check that only one "Tire Rotation" exists now
-    tire_rotations = [s for s in services if s["name"] == "Tire Rotation"]
-    assert len(tire_rotations) == 1
-    # Description should match the first inserted one (with lower ID)
-    assert tire_rotations[0]["description"] == "Rotate tires"
+    services = {row["id"]: row for row in response.json()}
+    assert set(services) == {first_id, second_id}
+    assert services[first_id]["description"] == "Rotate tires"
+    assert services[second_id]["description"] == "Rotate tires duplicate"
+    assert services[first_id]["assigned_agent_ids"] == [agent_id]
+    assert services[second_id]["assigned_agent_ids"] == [agent_id]
+    with get_db_connection() as conn, dict_cursor(conn) as cursor:
+        cursor.execute("SELECT * FROM services ORDER BY id")
+        assert [dict(row) for row in cursor.fetchall()] == before
+        cursor.execute("SELECT * FROM service_staff_agents ORDER BY service_id, staff_agent_id")
+        assert [dict(row) for row in cursor.fetchall()] == before_assignments
 
 def test_create_service_duplicate_prevention():
     # Add a service first

@@ -129,9 +129,9 @@ The 2026-10-18 user approval now authorizes T059–T062. Keep existing failed
 evidence and the aggregate 8,160-credit limit; resolve implementation prerequisites
 below before paid execution.
 
-- [ ] T059 After explicit publication authorization, deploy the local application repairs with migration 0006 and verify the deployed version/readiness.
+- [x] T059 After explicit publication authorization, deploy the local application repairs with migration 0006 and verify the deployed version/readiness.
 - [x] T060 After explicit saved-agent authorization, apply only the prepared active-agent first-message patch and verify fresh provider read-back preserves prompt/tools and includes the recording disclosure.
-- [ ] T061 After explicit data-restoration authorization, restore the one changed caller profile using retained pre/post identity guards; decide the disposition of retained test booking 46 separately. Resolve the designated caller's two original name groups before paid work.
+- [x] T061 After explicit data-restoration authorization, restore the one changed caller profile using retained pre/post identity guards; decide the disposition of retained test booking 46 separately. Resolve the designated caller's two original name groups before paid work.
 - [ ] T062 Obtain a reviewed paid execution plan after deployed corrections and caller readiness, retain the consumed authorization and failed run, and complete outstanding live cases without treating offline or conversation smoke as native delivery acceptance.
 
 ## Authorized completion implementation
@@ -140,3 +140,13 @@ below before paid execution.
 - [x] T064 Regress and implement explicit ID/name binding verified by the fresh native read-only tool, preserving full baseline rows and default ambiguity rejection.
 - [x] T065 Regress and implement newly approved continuation provenance, settled-ancestor ledger validation and aggregate Budget.spent admission/reporting; preserve old manifests and reuse/ambiguity guards.
 - [ ] T066 Analyze, run focused and complete offline suites, publish verified changes, then execute the reviewed credit-efficient deployed campaign and browser/native-delivery checks; converge any further findings.
+
+- [x] T067 Reproduce settings networkidle failure with controlled pending noncritical traffic; wait for fresh relevant responses and visible populated controls, preserve persistence assertions, then run complete browser verification per FR-029.
+
+- [x] T068 Regress and capture the offline QR image boundary before redirect, preserving ordinary loopback traffic and external denial; verify the complete offline suite without provider dependencies per FR-030.
+  - Focused Red: `./run_tests.sh --file tests/test_e2e_browser_network.py` failed the QR continuation contract (1 failed, 7 passed); no provider transport was invoked. Focused Green: 8 passed. Evidence: `scratch/deployed-completion-20261018/offline-qr-{red,green}.log`. Complete verification remains the parent gate.
+  - Browser Green: QR capture/no redirect with native agent API plus both staff readiness/persistence regressions passed (3 passed). Evidence: `scratch/deployed-completion-20261018/offline-qr-browser-green.log`.
+
+Operational evidence (2026-10-18): T059 deployed `cf3db1ba` on Render `dep-dba57gm7bikc73ea3bs0`; migration 0006 and native read-only identity were verified. T060 patched only the saved first message with fresh provider read-back. T061 restored customer 5, preserved all 25 original portal rows, cancelled only owned booking 46 and verified its Google cancelled tombstone. The two historical name groups remain intact; the explicit native-verified ID/name binding supplies caller identity without rewriting history. Private evidence: `scratch/deployed-completion-20261018/{approved-corrections-result,deployment-verification,google-accounts-native-audit}.json`.
+
+T067/T068 complete offline gate: 771 unit/integration and 311 E2E tests passed, zero failures/errors/skips (`scratch/deployed-completion-20261018/final-v3-offline.log` and retained full XML). After import-spacing lint cleanup, all 8 browser-network contracts passed again; new modules pass Ruff. Native API C02–C06 recovery on owned requests 47/48 passed with full original-row preservation; that evidence does not reclassify the retained failed C01 or establish LLM acceptance.
