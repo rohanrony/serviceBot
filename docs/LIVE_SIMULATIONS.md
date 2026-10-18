@@ -659,15 +659,19 @@ clone, catalog, terminal provider receipts and failures:
 - `--continue-unsubmitted --cases C10,C11,C12,C13,C14,C15,C16` requires the
   exact settled C07/C08/C09 prefix, both cleanup receipts and an observed
   `canonical-prequote-v1` prompt revision on the owned simulation clone.
+  After additional paid progress, the same switch can admit a strictly shorter
+  untouched suffix, such as `--cases C11,C12,C13,C14,C15,C16` after C10, only
+  when every intervening admission, receipt, native effect and archive is proven.
 
 Both require `--target deployed --tier medium --live`, the same config and run ID,
 and a fresh full offline gate before live use. They are bounded recovery paths
 for the recorded prefix shapes, not general retry switches. They reject historical
-test-creation intents in the suffix, changed billing or ownership, repeated
-admission, unknown charges and unresolved native effects. The second mode admits
-6,300 future estimated credits while counting the existing 2,019 credits against
-the original ceiling and reserve. It does not charge that prefix against the
-fresh provider balance a second time.
+test-creation intents in the suffix, changed billing or ownership, admission
+without new settled paid progress, unknown charges and unresolved native effects.
+For example, C11–C16 admit 5,400 future estimated credits while counting the
+existing 2,500 credits against the original ceiling and reserve. The prefix is
+not charged against the fresh provider balance a second time. Unsupported or
+incomplete provenance blocks recovery even when the numerical budget fits.
 
 The owned-agent revision preserves every setting except the prompt and retains
 its full source snapshot, hashes and exact GET read-back. The protected reference
@@ -675,3 +679,10 @@ agent must remain unchanged. An ambiguous update is reconciled by GET; it is not
 retried. Earlier paid failures remain failed in the whole-stage report even if
 the untouched suffix succeeds. Replaying a failed paid case requires separate
 authorization.
+
+New-booking quote criteria apply to C07/C08/C09/C11/C13/C14. Existing-booking
+disambiguation, rescheduling and cancellation keep their consent, identity and
+preservation assertions without requiring a new-booking quote. Native fixture
+mutations use a separately bounded read timeout (default 120 seconds, configurable
+with `native_mutation_timeout_seconds` up to 120). Their effective timeout and
+elapsed duration are journaled; an ambiguous write still stops without retry.

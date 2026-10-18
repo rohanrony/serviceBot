@@ -694,10 +694,81 @@ def _verified_archive(campaign, relative, hashes, *, allow_extra=False):
     return json.loads(_artifact(campaign, str(Path(relative) / 'manifest.json')).read_text())
 
 
+def _monotonic_progress(campaign, ledger, charges):
+    """Bind every shrinking suffix to an immutable admission and paid progress."""
+    original = [f'C{i:02}' for i in range(7, 17)]
+    paid = [entry.get('case_id') for entry in charges]
+    if not 3 <= len(paid) < len(original) or paid != original[:len(paid)]:
+        raise SimulationError('Paid cases do not form a unique contiguous prefix')
+    history = campaign.manifest.get('unsubmitted_continuations', [])
+    records = [record for record in ledger.get('unsubmitted_continuations', [])
+               if record.get('run_id') == campaign.run_id
+               or record.get('authorization_id') == campaign.manifest['stage_authorization']['authorization_id']]
+    if len(records) != len(history):
+        raise SimulationError('Monotonic admission ledger history differs')
+    prior = campaign.manifest.get('remaining_continuations', [])
+    if len(prior) != 1:
+        raise SimulationError('Monotonic admission lacks the original paid continuation')
+    previous, start, snapshots = prior[0], 3, []
+    fields = ('attempt', 'selected', 'prior_spent_credits', 'original_manifest_sha256',
+              'files_sha256', 'agent_revision_fingerprint', 'previous_admission_sha256')
+    for index, (admission, record) in enumerate(zip(history, records)):
+        selected = admission.get('selected', [])
+        if (not selected or selected[0] not in original
+                or any(record.get(field) != admission.get(field) for field in fields)):
+            raise SimulationError('Monotonic admission record differs')
+        current_start = original.index(selected[0])
+        if (admission.get('attempt') != index + 4 or selected != original[current_start:]
+                or (current_start != 3 if index == 0 else current_start <= start)
+                or len(paid) <= current_start
+                or number(admission.get('prior_spent_credits')) != sum((number(entry['credits']) for entry in charges[:current_start]), number(0))
+                or admission.get('previous_admission_sha256') != hashlib.sha256(json.dumps(previous, sort_keys=True).encode()).hexdigest()):
+            raise SimulationError('Monotonic admission has no strictly increasing settled progress')
+        snapshot = _verified_archive(campaign, admission['archive'], admission['files_sha256'], allow_extra=True)
+        if snapshot.get('unsubmitted_continuations', []) != history[:index]:
+            raise SimulationError('Monotonic admission archive chain differs')
+        snapshots.append(snapshot)
+        previous, start = admission, current_start
+    if not history and len(paid) != 3:
+        raise SimulationError('A paid case lacks its original suffix admission')
+    previous_selection = history[-1]['selected'] if history else [f'C{i:02}' for i in range(9, 17)]
+    return {'prefix': paid, 'suffix': original[len(paid):],
+            'previous_attempt': history[-1]['attempt'] if history else 3,
+            'previous_selection': previous_selection, 'snapshots': snapshots,
+            'previous_admission': previous}
+
+
+def _fixture_creation_proof(campaign, receipt, snapshot):
+    """A fixture-created request is bound to observed native operation records."""
+    indices = receipt.get('fixture_operation_indices')
+    source = snapshot.get('deployed_medium', {}).get('operations', [])
+    current = campaign.manifest['deployed_medium']['operations']
+    if (not isinstance(indices, list) or not indices or len(set(indices)) != len(indices)
+            or any(type(index) is not int or index < 0 or index >= len(source) or index >= len(current) for index in indices)):
+        raise SimulationError('Fixture creation operation indices differ')
+    operations = [source[index] for index in indices]
+    expected_name = campaign.config.get('existing_customer_identity', {}).get('name')
+    expected_phone = fixtures.variables(campaign.config)['customer_phone']
+    ids = []
+    for index, op in zip(indices, operations):
+        args = op.get('body', {}).get('arguments', {})
+        if (current[index] != op or op.get('status') != 'observed' or op.get('method') != 'POST'
+                or op.get('path') != '/api/v1/voice/tools' or op.get('body', {}).get('name') != 'create_service_request'
+                or phone(args.get('phone')) != phone(expected_phone) or args.get('customer_name') != expected_name
+                or not op.get('ids') or any(type(value) is not int for value in op['ids'])):
+            raise SimulationError('Native fixture creation identity or observed operation differs')
+        ids.extend(op['ids'])
+    digest = hashlib.sha256(json.dumps(operations, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    if (digest != receipt.get('fixture_operations_sha256') or len(set(ids)) != len(ids)
+            or sorted(ids) != sorted(receipt['owned_request_ids'])
+            or set(ids) & {row['id'] for row in campaign.manifest['baseline']}):
+        raise SimulationError('Native fixture creation hash or request identities differ')
+
+
 def _prove_remaining(campaign, ledger, auth, suffix, *, unsubmitted=False):
     manifest, fixture = campaign.manifest, campaign.manifest.get('deployed_medium', {})
     original = [f'C{i:02}' for i in range(7, 17)]
-    prefix = ['C07', 'C08', 'C09'] if unsubmitted else ['C07', 'C08']
+    prefix = ['C07', 'C08']
     kind = 'unsubmitted_continuations' if unsubmitted else 'remaining_continuations'
     previous_attempt = 3 if unsubmitted else 2
     previous_selection = [f'C{i:02}' for i in range(9, 17)] if unsubmitted else original
@@ -705,15 +776,21 @@ def _prove_remaining(campaign, ledger, auth, suffix, *, unsubmitted=False):
               if claim.get('authorization_id') == auth['authorization_id'] or claim.get('run_id') == campaign.run_id]
     charges = [entry for entry in ledger['entries']
                if entry.get('run_id') == campaign.run_id or entry.get('authorization_id') == auth['authorization_id']]
-    expected_spent = 2019 if unsubmitted else 1114
+    progress = _monotonic_progress(campaign, ledger, charges) if unsubmitted else None
+    if progress is not None:
+        prefix = progress['prefix']
+        if suffix != progress['suffix']:
+            raise SimulationError('Requested suffix is not the exact never-submitted remainder')
+        previous_attempt, previous_selection = progress['previous_attempt'], progress['previous_selection']
+    expected_spent = sum((number(entry.get('credits')) for entry in charges), number(0)) if unsubmitted else 1114
     if (manifest.get('target') != 'deployed' or manifest.get('run_id') != campaign.run_id
             or manifest.get('deployed_url') != origin(campaign.config.get('deployed_url'))
             or manifest.get('tier') != 'medium' or manifest.get('selected') != original
             or manifest.get('stage_authorization') != auth or auth.get('credit_ceiling') != 11250
             or claims != [{**auth, 'run_id': campaign.run_id}] or manifest.get('attempted') is not True
-            or manifest.get('status') != ('failed' if unsubmitted else 'blocked') or manifest.get(kind)
-            or any(record.get('run_id') == campaign.run_id or record.get('authorization_id') == auth['authorization_id']
-                   for record in ledger.get(kind, []))
+            or manifest.get('status') != ('failed' if unsubmitted else 'blocked')
+            or (not unsubmitted and (manifest.get(kind) or any(record.get('run_id') == campaign.run_id
+                   or record.get('authorization_id') == auth['authorization_id'] for record in ledger.get(kind, []))))
             or any(entry.get('unsettled') for entry in ledger['entries'])
             or len(charges) != len(prefix) or [entry.get('case_id') for entry in charges] != prefix
             or manifest.get('agent_create_pending') or manifest.get('test_create_pending')
@@ -736,7 +813,7 @@ def _prove_remaining(campaign, ledger, auth, suffix, *, unsubmitted=False):
     if unsubmitted:
         prior = manifest.get('remaining_continuations', [])
         records = [record for record in ledger.get('remaining_continuations', []) if record.get('run_id') == campaign.run_id]
-        if (len(prior) != 1 or prior[0].get('attempt') != 3 or prior[0].get('selected') != previous_selection
+        if (len(prior) != 1 or prior[0].get('attempt') != 3 or prior[0].get('selected') != [f'C{i:02}' for i in range(9, 17)]
                 or prior[0].get('prior_spent_credits') != '1114' or len(records) != 1
                 or records[0].get('original_manifest_sha256') != prior[0].get('original_manifest_sha256')):
             raise SimulationError('Unsubmitted continuation prior admission differs')
@@ -745,9 +822,11 @@ def _prove_remaining(campaign, ledger, auth, suffix, *, unsubmitted=False):
                 or prior_snapshot.get('remaining_reconciliation') != manifest.get('remaining_reconciliation')):
             raise SimulationError('Unsubmitted continuation prior admission chain changed')
         snapshots.append(prior_snapshot)
+        snapshots.extend(progress['snapshots'])
         added = manifest.get('reconciliations', [])
         bindings = [manifest.get('remaining_reconciliation', {}), *added]
-        if len(added) != 1 or added[0].get('path') == bindings[0].get('path'):
+        if (len(added) != len(prefix) - 2
+                or len({binding.get('path') for binding in bindings}) != len(bindings)):
             raise SimulationError('Unsubmitted continuation reconciliation chain differs')
     else:
         bindings = [manifest.get('remaining_reconciliation', {})]
@@ -759,18 +838,23 @@ def _prove_remaining(campaign, ledger, auth, suffix, *, unsubmitted=False):
         receipt = json.loads(receipt_path.read_text())
         if (receipt.get('run_id') != campaign.run_id or receipt.get('status') != 'settled'
                 or receipt.get('case_id') != cid or not receipt.get('pre_reconciliation_archive')
-                or not isinstance(receipt.get('provider_create_request_id'), str)
-                or not receipt['provider_create_request_id']
+                or (receipt.get('provenance') != 'native_fixture_operations' and
+                    (not isinstance(receipt.get('provider_create_request_id'), str) or not receipt['provider_create_request_id']))
                 or any(receipt.get(key) is not True for key in ('baseline_unchanged', 'google_current_event_deleted', 'native_calendar_effects_settled'))):
             raise SimulationError('Remaining continuation prior effects are not reconciled')
-        if cid == 'C09' and (receipt.get('identity_verified') is not True or receipt.get('ambiguous_cancel_reconciled') is not True):
+        if cid >= 'C09' and (receipt.get('identity_verified') is not True or receipt.get('ambiguous_cancel_reconciled') is not True):
             raise SimulationError('C09 ambiguous cancellation is not independently reconciled')
         ids = receipt.get('owned_request_ids')
-        if not isinstance(ids, list) or len(ids) != 1 or type(ids[0]) is not int or ids != receipt.get('cancelled_request_ids'):
+        if (not isinstance(ids, list) or not ids or any(type(value) is not int for value in ids)
+                or (cid in ('C08', 'C09') and (len(ids) != 1 or receipt.get('provenance') == 'native_fixture_operations'))
+                or ids != receipt.get('cancelled_request_ids')):
             raise SimulationError('Reconciled request identities differ')
         pre_archive = receipt['pre_reconciliation_archive']
         hashes = json.loads(_artifact(campaign, str(Path(pre_archive) / 'hashes.json')).read_text())
-        snapshots.append(_verified_archive(campaign, pre_archive, hashes))
+        snapshot = _verified_archive(campaign, pre_archive, hashes)
+        snapshots.append(snapshot)
+        if receipt.get('provenance') == 'native_fixture_operations':
+            _fixture_creation_proof(campaign, receipt, snapshot)
         receipts.append(receipt)
         extras.extend([binding['path'], *[str(Path(pre_archive) / name) for name in ('manifest.json', 'report.json', 'report.md', 'hashes.json')]])
     for snapshot in (*snapshots, manifest):
@@ -801,8 +885,8 @@ def _prefix_results(campaign, provider, charges, receipt):
     total = number(0)
     for entry in charges:
         cid = entry['case_id']
-        expected_status = 'passed' if cid == 'C07' else 'failed'
-        expected_credits = number({'C07': 331, 'C08': 783, 'C09': 905}[cid])
+        expected_status = 'passed' if cid == 'C07' else 'failed' if cid in ('C08', 'C09', 'C10') else None
+        expected_credits = number({'C07': 331, 'C08': 783, 'C09': 905, 'C10': 481}.get(cid, entry.get('credits')))
         path = _artifact(campaign, cid + '-1-provider.json')
         saved = json.loads(path.read_text())
         fresh = provider.get(entry['invocation_id'])
@@ -811,7 +895,8 @@ def _prefix_results(campaign, provider, charges, receipt):
             if (result.get('id') != entry['invocation_id'] or result.get('agent_id') != campaign.manifest['campaign_agent_id']
                     or len(runs) != 1 or runs[0].get('test_id') != entry['test_id']
                     or runs[0].get('test_invocation_id') != entry['invocation_id']
-                    or runs[0].get('status') != expected_status
+                    or runs[0].get('status') not in ('passed', 'failed')
+                    or (expected_status is not None and runs[0].get('status') != expected_status)
                     or number(runs[0].get('credits_used')) != expected_credits
                     or number(entry.get('credits')) != expected_credits):
                 raise SimulationError('Remaining continuation provider prefix receipt differs')
@@ -819,6 +904,9 @@ def _prefix_results(campaign, provider, charges, receipt):
             receipt = by_case[cid]
             if hashlib.sha256(path.read_bytes()).hexdigest() != receipt.get('provider_receipt_sha256'):
                 raise SimulationError('C08 reconciliation is not bound to the provider receipt')
+            if receipt.get('provenance') == 'native_fixture_operations':
+                total += expected_credits
+                continue
             created = set()
             for response in saved['test_runs'][0].get('agent_responses', []):
                 for tool in response.get('tool_results') or []:
@@ -881,13 +969,18 @@ def _verify_owned_revision(campaign, state, actual):
     source_fp, desired_fp = fingerprint(source), fingerprint(desired)
     first = manifest['unpaid_continuations'][0]
     original = json.loads(_artifact(campaign, str(Path(first['archive']) / 'manifest.json')).read_text())
+    history = manifest.get('unsubmitted_continuations', [])
+    expected_current = desired_fp if history else source_fp
+    if history and (history[-1].get('agent_revision_fingerprint') != desired_fp
+                    or history[-1].get('agent_revision_source_fingerprint') != source_fp):
+        raise SimulationError('Current owned policy is not bound to the prior admission')
     if (revision.get('protected_reference_unchanged') is not True
             or original.get('reference_fingerprint') != source_fp
             or revision.get('status') != 'observed' or revision.get('policy_version') != version
             or revision.get('agent_id') != manifest.get('campaign_agent_id')
             or revision.get('agent_id') == config.get('agent_id')
             or revision.get('source_override_sha256') != hashlib.sha256(source_path.read_bytes()).hexdigest()
-            or revision.get('source_fingerprint') != source_fp or manifest.get('reference_fingerprint') != source_fp
+            or revision.get('source_fingerprint') != source_fp or manifest.get('reference_fingerprint') != expected_current
             or revision.get('new_fingerprint') != desired_fp
             or revision.get('old_prompt_sha256') != hashlib.sha256(old_prompt.encode()).hexdigest()
             or revision.get('new_prompt_sha256') != hashlib.sha256(new_prompt.encode()).hexdigest()
@@ -904,7 +997,8 @@ def _continue_remaining(config, tier, live, check, run_id, requested, repeat, *,
     kind = 'unsubmitted_continuations' if unsubmitted else 'remaining_continuations'
     original = [f'C{i:02}' for i in range(7, 17)]
     if (not live or check or tier != 'medium' or not run_id or config.get('target') != 'deployed'
-            or repeat != 1 or requested != suffix):
+            or repeat != 1 or (not unsubmitted and requested != suffix)
+            or (unsubmitted and not isinstance(requested, list))):
         raise SimulationError('Remaining continuation requires live same-run exact C09-C16 once')
     preview(config, tier, original, repeat, target='deployed')
     root = Path(config.get('artifact_root', ROOT / 'scratch/live-simulations')).resolve()
@@ -912,6 +1006,14 @@ def _continue_remaining(config, tier, live, check, run_id, requested, repeat, *,
         campaign = _unpaid_campaign(config, run_id)
         ledger = json.loads((root / 'usage-ledger.json').read_text())
         auth = stage_authorization(config, tier, original, original, repeat, target='deployed')
+        progress = None
+        if unsubmitted:
+            existing_charges = [entry for entry in ledger['entries'] if entry.get('run_id') == campaign.run_id
+                                or entry.get('authorization_id') == auth['authorization_id']]
+            progress = _monotonic_progress(campaign, ledger, existing_charges)
+            suffix = progress['suffix']
+            if requested != suffix:
+                raise SimulationError('Requested suffix must exactly follow the settled paid prefix')
         charges, receipts, extras = _prove_remaining(campaign, ledger, auth, suffix, unsubmitted=unsubmitted)
         if config.get('budget', {}).get('verified_credit_units') is not True:
             raise SimulationError('Remaining continuation billing units are unverified')
@@ -944,7 +1046,7 @@ def _continue_remaining(config, tier, live, check, run_id, requested, repeat, *,
         if unsubmitted:
             metadata = _verify_owned_revision(campaign, state, actual)
             extras.append(campaign.manifest['agent_revisions'][0]['source_override_path'])
-            prior = campaign.manifest['remaining_continuations'][0]
+            prior = progress['previous_admission']
             metadata['previous_admission_sha256'] = hashlib.sha256(json.dumps(prior, sort_keys=True).encode()).hexdigest()
         elif (fingerprint(actual) != campaign.manifest.get('reference_fingerprint')
                 or fingerprint(state['override']) != campaign.manifest.get('reference_fingerprint')):
@@ -955,14 +1057,14 @@ def _continue_remaining(config, tier, live, check, run_id, requested, repeat, *,
         if not budget.can_start(sum(estimates(config, cases))):
             raise SimulationError('Remaining continuation aggregate ceiling, reserve or fresh quota cannot admit suffix')
         state['remaining'] = remaining
-        _archive_unpaid(campaign, ledger, previous_attempt=3 if unsubmitted else 2, kind=kind,
+        _archive_unpaid(campaign, ledger, previous_attempt=progress['previous_attempt'] if unsubmitted else 2, kind=kind,
                         extra_names=extras, selected=suffix, prior_spent=spent, metadata=metadata)
         campaign.manifest[kind][-1]['resolved_retention_reasons'] = list(campaign.manifest.get('cleanup_blockers', []))
         campaign.save()
         return _execute(config, tier, live=True, requested=original, repeat=repeat, _campaign=campaign,
             _admission={'baseline': baseline, 'state': state, 'existing_name': existing_name,
-                        'selected': suffix, 'attempt': 4 if unsubmitted else 3, 'prior_stage_spent': spent,
-                        'prefix_outcomes': {entry['case_id']: 'passed' if entry['case_id'] == 'C07' else 'failed' for entry in charges}})
+                        'selected': suffix, 'attempt': progress['previous_attempt'] + 1 if unsubmitted else 3, 'prior_stage_spent': spent,
+                        'prefix_outcomes': {entry['case_id']: json.loads(_artifact(campaign, entry['case_id'] + '-1-provider.json').read_text())['test_runs'][0]['status'] for entry in charges}})
 
 
 def execute(config, tier='minimal', *, live=False, check=False, run_id=None,

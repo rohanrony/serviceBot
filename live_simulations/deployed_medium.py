@@ -223,9 +223,18 @@ def validate_retained_catalog(config, client, services):
         raise SimulationError('Retained observer qualifications differ')
 
 
+def _native_mutation_timeout(config):
+    # Native fixture writes may outlast the provider client's independent 30s bound.
+    timeout = config.get('native_mutation_timeout_seconds', 120)
+    if type(timeout) not in (int, float) or not 0 < timeout <= 120:
+        raise SimulationError('Native mutation timeout must be a finite number above 0 and at most 120 seconds')
+    return timeout
+
+
 def readiness(config, client, cases, baseline, *, retained_catalog=None):
     """Read every selected setup before the campaign claims or spends anything."""
     try:
+        _native_mutation_timeout(config)
         binding = _definitions(config)
         if not cases or any(c['id'] not in MEDIUM_IDS for c in cases):
             raise SimulationError('Deployed medium supports C07-C16 only')
@@ -297,12 +306,15 @@ class Adapter:
 
     def _mutate(self, method, path, body):
         self._guard()
-        op = {'method': method, 'path': path, 'body': copy.deepcopy(body), 'status': 'intent'}
+        timeout = _native_mutation_timeout(self.config)
+        op = {'method': method, 'path': path, 'body': copy.deepcopy(body), 'status': 'intent',
+              'timeout_seconds': timeout}
         self.state['operations'].append(op)
         self._save()
         stage, status_code = 'request', None
+        started = _monotonic()
         try:
-            response = self.client.request(method, self.config['deployed_url'].rstrip('/') + path, json=body)
+            response = self.client.request(method, self.config['deployed_url'].rstrip('/') + path, json=body, timeout=timeout)
             status_code = response.status_code
             stage = 'http_status'
             response.raise_for_status()
@@ -315,9 +327,12 @@ class Adapter:
             op['status'] = 'observed'
             # Persist bounded IDs, not arbitrary response/customer content.
             op['ids'] = self._ids(result)
+            op['elapsed_seconds'] = max(0, _monotonic() - started)
+            stage = 'persist'
             self._save()
             return result
         except Exception as exc:  # noqa: BLE001 - any error after sending leaves fixture outcome uncertain
+            op['elapsed_seconds'] = max(0, _monotonic() - started)
             op['diagnostic'] = {
                 'error_type': type(exc).__name__, 'status_code': status_code, 'stage': stage,
                 'kind': ('transport' if isinstance(exc, httpx.TransportError) else
@@ -379,7 +394,7 @@ class Adapter:
         adapted = replace(adapted)
         # Quotes are derived from the actual deployed catalog, never fixture defaults.
         adapted['success_conditions'] = [v for v in adapted['success_conditions'] if not v.startswith('Before booking, quote catalog facts accurately:')]
-        if case['id'] != 'C12':
+        if case['id'] in {'C07', 'C08', 'C09', 'C11', 'C13', 'C14'}:
             facts = '; '.join(f"{s['name']}: {s['price_range']}, {s['duration_minutes']} minutes" for s in self.state['services'].values())
             adapted['success_conditions'].append('Before any appointment booking quote the actual requested catalog service facts and obtain consent: ' + facts)
         if case['id'] != 'C12':

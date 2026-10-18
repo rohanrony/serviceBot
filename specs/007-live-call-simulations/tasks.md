@@ -351,7 +351,7 @@ T104 released:392focusedharnesscontracts pass (29newremaining +363existing), wit
 T105 full local gate passed **1016 unit/integration +348 E2E**, zero failures/errors/skips (`deployed-remaining-full-offline.log` and copied XML). No material FR049/050 source gap. The original two charges remain settled1114; request51cleanup and all native preservation checks pass. The next standard workflow submits only C09–C16 after fresh locked admission; C08isnotreplayed. Providerwait300seconds, same scenario turn limits/cap.
 
 - [x] T106 Analyze FR051/052; reconcile request52's observed completed cancellation and preserve unknown-operation/attempt3 evidence, native positive calendar witness and original rows.
-- [ ] T107 Regress and implement a deterministic owned-clone-only canonical-service/prebooking-quote policy revision, prompt-only preservation/idempotence and safe observed update; protected agent unchanged.
+- [x] T107 Regress and implement a deterministic owned-clone-only canonical-service/prebooking-quote policy revision, prompt-only preservation/idempotence and safe observed update; protected agent unchanged.
 - [x] T108 Regress and implement untouched C10–C16 recovery after the longer settled prefix, revision/receipt/archive proofs and aggregate2019spend, preserving failures and no-replay safeguards; add sanitized mutation diagnostics.
 - [ ] T109 Converge, run full offline/API/browser validation, verify the owned policy revision and resume only untouched C10–C16 within original11250ceiling. Retain C08/C09 failures and pending native inbox verification.
 
@@ -360,3 +360,14 @@ T106 reconciliation settled with zero native mutations: exact owned request52, c
 T108 released:416 focused recovery/harness contracts passed, including24 new unsubmitted contracts; meaningful Red entrypoint/source-chain/actual-manifest-shape evidence retained. Ruff clean. Bounded source convergence found no material FR051/052 gap. Complete offline/API/browser gate is running before the owned-clone update or further paid execution.
 
 T109 complete offline gate passed1049unit/integration+348E2E, zero failures/errors/skips. Automatic approval review rejected the persistent owned-clone PATCH under the earlier saved-agent restriction; no provider write/admission/newcharge occurred. Specific owned-clone prompt approval is pending. The exact desired source/prompt hashes, policy implementation, preserved original state and 2019settledcredits remain retained. T107/T109 native steps stay unfinished.
+
+- [x] T110 Analyze FR053–055 and reconcile C10's unknown cancellation using native row/calendar proof, preserving attempt4 and original failed receipt.
+- [x] T111 Regress and scope quote criteria to new appointment conversations; add bounded native mutation timeout and elapsed diagnostics with unknown-write stops.
+- [x] T112 Regress and implement monotonic untouched-suffix continuation after the four-charge prefix and full native/admission/revision proof, without paid replay or a replacement claim.
+- [ ] T113 Converge, run full offline/API/browser gate, then execute only C11–C16 within the original11250ceiling; retain prior provider failures and inbox gap.
+
+T110 reconciliation settled: immutable attempt4 archive and canonical hashes prove both native fixture creates53/54. Native54 cancellation confirmed without retry; normalcleanupcancelled53once. Both reservations/projections settled, Googledeleted, originalAPIbaselineunchanged. ProviderC10failed481 and originalcriterion remainpreserved. T111 meaningfulRed13fail/7pass;83focusedcontractsGreen/Ruffclean. No remaining paid cases submitted.
+
+T112 released244pureofflinecontracts including17newmonotonic; Red progressiongap retained, Ruffclean. All prioradmissions/archives and strictlyincreasedpaidprefix prove only C11–C16 untouched; C10twoIDfixtureprovenance remainsboundtoexactcreates. Same2500aggregateprefix/5400futureestimate and original11250cap. Full offline gate isrunning beforemorepaid work.
+
+T113 full offline/API/browser gate passed1086unit/integration+348E2E, zero failures/errors/skips; bounded sourceconvergence foundno materialFR053-055 gaps. Same2500settledprefix and no paidreplays; next onlyC11–C16 afterfreshlockednativeadmission.

@@ -455,3 +455,11 @@ C10–C16 and the longer settled prefix, retaining every prior admission/archive
 failure and aggregate credit. Verify the prompt revision against both the
 original source and observed owned clone. Run focused/full offline/API/browser
 gates before resuming; no local app/tunnel or protected-agent edits.
+
+## Accurate existing-visit evaluation and settled suffix progress (FR-053–055)
+
+C10's native selected/unselected booking checks passed, but the provider quote criterion was wrongly appended to a reschedule-only case. Scope quote evaluation to new appointment cases C07/C08/C09/C11/C13/C14, keeping service names and every other assertion unchanged. Preserve the original paid result.
+
+The cleanup diagnostic proves a client ReadTimeout. Native logs show the same cancellation returned 200 in1.48seconds after the client wait; reconcile its exact native state before any retry. Use a bounded native mutation timeout and safe elapsed diagnostics; provider billing calls retain their own timeout. Do not infer a backend failure or redeploy from this client symptom.
+
+Validate the original immutable admission chain, four terminal charges (2500), all owned effects and the observed prompt revision before C11–C16. Require strictly shorter untouched suffix progress, durable creation intent and archive history under the same lock. Repeated admission with no newly settled prefix, paid replay, changed resources, unknown usage and unresolved cleanup must block. Run full offline/API/browser gates before any further paid work.
