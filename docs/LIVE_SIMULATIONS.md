@@ -648,3 +648,30 @@ The original blocked manifest and reports are archived read-only with hashes;
 numbered continuation rows retain their relationship to that failed attempt.
 Only one such continuation is supported. A zero credit total alone does not
 qualify a run whose test creation or paid submission was attempted.
+
+## Continue only cases that have never been submitted
+
+Two explicit deployed medium recovery modes preserve the original claim, ceiling,
+clone, catalog, terminal provider receipts and failures:
+
+- `--continue-remaining --cases C09,C10,C11,C12,C13,C14,C15,C16` requires the
+  exact settled C07/C08 prefix and its verified native cleanup.
+- `--continue-unsubmitted --cases C10,C11,C12,C13,C14,C15,C16` requires the
+  exact settled C07/C08/C09 prefix, both cleanup receipts and an observed
+  `canonical-prequote-v1` prompt revision on the owned simulation clone.
+
+Both require `--target deployed --tier medium --live`, the same config and run ID,
+and a fresh full offline gate before live use. They are bounded recovery paths
+for the recorded prefix shapes, not general retry switches. They reject historical
+test-creation intents in the suffix, changed billing or ownership, repeated
+admission, unknown charges and unresolved native effects. The second mode admits
+6,300 future estimated credits while counting the existing 2,019 credits against
+the original ceiling and reserve. It does not charge that prefix against the
+fresh provider balance a second time.
+
+The owned-agent revision preserves every setting except the prompt and retains
+its full source snapshot, hashes and exact GET read-back. The protected reference
+agent must remain unchanged. An ambiguous update is reconciled by GET; it is not
+retried. Earlier paid failures remain failed in the whole-stage report even if
+the untouched suffix succeeds. Replaying a failed paid case requires separate
+authorization.

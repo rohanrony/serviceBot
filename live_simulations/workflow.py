@@ -12,12 +12,12 @@ from .runtime import Runtime, running
 
 
 def execute(config, tier='minimal', *, live=False, run_id=None, requested=None, repeat=1,
-            config_path='scratch/live-simulations.local.json', check=False, continue_unpaid=False):
+            config_path='scratch/live-simulations.local.json', check=False, continue_unpaid=False, continue_remaining=False, continue_unsubmitted=False):
     if config.get('target') == 'deployed':
         from .deployed import execute as deployed_execute
         return deployed_execute(config, tier, live=live, check=check, run_id=run_id,
-                                requested=requested, repeat=repeat, continue_unpaid=continue_unpaid)
-    if continue_unpaid:
+                                requested=requested, repeat=repeat, continue_unpaid=continue_unpaid, continue_remaining=continue_remaining, continue_unsubmitted=continue_unsubmitted)
+    if continue_unpaid or continue_remaining or continue_unsubmitted:
         raise SimulationError('Unpaid continuation is available only for deployed medium')
     if check:
         raise SimulationError('--check is available for --target deployed')

@@ -20,7 +20,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
-from . import deployed_medium, evidence, fixtures
+from . import agent_policy, deployed_medium, evidence, fixtures
 from .core import (
     ROOT,
     Budget,
@@ -224,11 +224,16 @@ def provider_readiness(config, client):
                 raise SimulationError('Set post_call_webhook_id to the existing enabled deployed HMAC webhook')
             webhook_id = matches[0]['webhook_id']
         provider.verify_webhook(webhook_id, url, reference)
-        override = native_override(reference, url, webhook_id)
+        source_override = native_override(reference, url, webhook_id)
+        override = source_override
+        if config.get('owned_agent_policy') is not None:
+            if config['owned_agent_policy'] != agent_policy.SERVICE_POLICY_VERSION:
+                raise SimulationError('Unknown owned simulation policy version')
+            override = agent_policy.apply_service_policy(source_override)
         if config.get('calibration') is not None:
             override['conversation_config']['agent']['prompt']['max_tokens'] = 256
         return {'provider': provider, 'remaining': remaining, 'override': override,
-                'webhook_id': webhook_id}, problems
+                'webhook_id': webhook_id, 'source_override': source_override}, problems
     except (SimulationError, KeyError, httpx.HTTPError):
         problems.append('Verify standard ElevenLabs key/agent, monthly billing period/units and deployed HMAC webhook')
         return {}, problems
@@ -565,11 +570,15 @@ class Campaign:
                   if self.manifest.get('stage_authorization') else
                   'Scope: conversation/API smoke; complete acceptance requires isolated observations.'), '',
                  'Missing acceptance evidence: ' + ', '.join(self.manifest.get('missing_acceptance_evidence', MISSING_EVIDENCE)), '']
+        if self.manifest.get('remaining_continuations') or self.manifest.get('unsubmitted_continuations'):
+            admission = (self.manifest.get('unsubmitted_continuations') or self.manifest['remaining_continuations'])[-1]
+            lines += ['Latest attempt scope: ' + ','.join(admission['selected']) + '; functional: ' + self.manifest.get('latest_attempt_functional_status', 'pending'),
+                      'Whole-stage functional status: failed; prior paid provider failures are retained and were not replayed.', '']
         if self.manifest.get('continuation_ancestors'):
             lines += ['Prior verified credits: ' + self.manifest.get('prior_spent_credits', 'unknown'),
                       'Current run credits: ' + self.manifest.get('spent_credits', 'unknown'),
                       'Aggregate credits: ' + self.manifest.get('aggregate_spent_credits', 'unknown'), '']
-        lines.extend(f'- {r["case_id"]}' + (f' (attempt {r.get("attempt", 1)})' if self.manifest.get('unpaid_continuations') else '') + f': smoke **{r.get("functional_status", "not_run")}**, '
+        lines.extend(f'- {r["case_id"]}' + (f' (attempt {r.get("attempt", 1)})' if self.manifest.get('unpaid_continuations') or self.manifest.get('remaining_continuations') else '') + f': smoke **{r.get("functional_status", "not_run")}**, '
                      f'acceptance **{r["status"]}** — {r.get("reason", "")}'
                      for r in self.manifest['results'])
         lines.extend(['', ('Owned medium fixtures and catalog are cleaned only after settled effects; unresolved resources are retained.'
@@ -632,12 +641,12 @@ def _prove_unpaid(campaign, ledger, auth, selected):
         raise SimulationError('Unpaid continuation proof failed; retain the blocked execution')
 
 
-def _archive_unpaid(campaign, ledger):
-    destination = campaign.folder / 'attempts' / 'attempt-1'
+def _archive_unpaid(campaign, ledger, *, previous_attempt=1, kind='unpaid_continuations', extra_names=(), selected=None, prior_spent=None, metadata=None):
+    destination = campaign.folder / 'attempts' / f'attempt-{previous_attempt}'
     if destination.exists() or destination.is_symlink():
         raise SimulationError('Unpaid continuation archive already exists')
     originals = {}
-    for name in ('manifest.json', 'report.json', 'report.md'):
+    for name in ('manifest.json', 'report.json', 'report.md', *extra_names):
         path = campaign.folder / name
         if path.is_symlink() or not path.is_file():
             raise SimulationError('Unpaid continuation original evidence is incomplete')
@@ -646,24 +655,326 @@ def _archive_unpaid(campaign, ledger):
     hashes = {}
     for name, data in originals.items():
         path = destination / name
+        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o400)
         with os.fdopen(fd, 'wb') as stream:
             stream.write(data)
         hashes[name] = hashlib.sha256(data).hexdigest()
     destination.chmod(0o500)
-    admission = {'attempt': 2, 'archive': str(destination.relative_to(campaign.folder)),
+    admission = {'attempt': previous_attempt + 1, 'archive': str(destination.relative_to(campaign.folder)),
                  'original_manifest_sha256': hashes['manifest.json'], 'files_sha256': hashes,
                  'authorization_id': campaign.manifest['stage_authorization']['authorization_id'],
                  'credit_ceiling': campaign.manifest['stage_authorization']['credit_ceiling'],
                  'admitted_at': time.time()}
-    ledger.setdefault('unpaid_continuations', []).append({**admission, 'run_id': campaign.run_id})
+    if selected is not None:
+        admission.update(selected=selected, prior_spent_credits=str(prior_spent))
+    admission.update(metadata or {})
+    ledger.setdefault(kind, []).append({**admission, 'run_id': campaign.run_id})
     private_json(campaign.root / 'usage-ledger.json', ledger)
-    campaign.manifest.setdefault('unpaid_continuations', []).append(admission)
+    campaign.manifest.setdefault(kind, []).append(admission)
     campaign.save()
 
 
+def _artifact(campaign, relative):
+    path = campaign.folder / str(relative)
+    if (Path(str(relative)).is_absolute() or path.is_symlink()
+            or campaign.folder.resolve() not in path.resolve().parents or not path.is_file()):
+        raise SimulationError('Continuation artifact is unavailable or outside the owned run')
+    return path
+
+
+def _verified_archive(campaign, relative, hashes, *, allow_extra=False):
+    required = {'manifest.json', 'report.json', 'report.md'}
+    if (not required <= set(hashes)) or (not allow_extra and set(hashes) != required):
+        raise SimulationError('Continuation archive hashes are incomplete')
+    for name, expected in hashes.items():
+        path = _artifact(campaign, str(Path(relative) / name))
+        if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+            raise SimulationError('Immutable prior attempt archive changed')
+    return json.loads(_artifact(campaign, str(Path(relative) / 'manifest.json')).read_text())
+
+
+def _prove_remaining(campaign, ledger, auth, suffix, *, unsubmitted=False):
+    manifest, fixture = campaign.manifest, campaign.manifest.get('deployed_medium', {})
+    original = [f'C{i:02}' for i in range(7, 17)]
+    prefix = ['C07', 'C08', 'C09'] if unsubmitted else ['C07', 'C08']
+    kind = 'unsubmitted_continuations' if unsubmitted else 'remaining_continuations'
+    previous_attempt = 3 if unsubmitted else 2
+    previous_selection = [f'C{i:02}' for i in range(9, 17)] if unsubmitted else original
+    claims = [claim for claim in ledger.get('stage_authorizations', [])
+              if claim.get('authorization_id') == auth['authorization_id'] or claim.get('run_id') == campaign.run_id]
+    charges = [entry for entry in ledger['entries']
+               if entry.get('run_id') == campaign.run_id or entry.get('authorization_id') == auth['authorization_id']]
+    expected_spent = 2019 if unsubmitted else 1114
+    if (manifest.get('target') != 'deployed' or manifest.get('run_id') != campaign.run_id
+            or manifest.get('deployed_url') != origin(campaign.config.get('deployed_url'))
+            or manifest.get('tier') != 'medium' or manifest.get('selected') != original
+            or manifest.get('stage_authorization') != auth or auth.get('credit_ceiling') != 11250
+            or claims != [{**auth, 'run_id': campaign.run_id}] or manifest.get('attempted') is not True
+            or manifest.get('status') != ('failed' if unsubmitted else 'blocked') or manifest.get(kind)
+            or any(record.get('run_id') == campaign.run_id or record.get('authorization_id') == auth['authorization_id']
+                   for record in ledger.get(kind, []))
+            or any(entry.get('unsettled') for entry in ledger['entries'])
+            or len(charges) != len(prefix) or [entry.get('case_id') for entry in charges] != prefix
+            or manifest.get('agent_create_pending') or manifest.get('test_create_pending')
+            or manifest.get('unsettled_usage') or fixture.get('blocked') or fixture.get('current_request_ids')
+            or fixture.get('current_case') != prefix[-1] or fixture.get('fixture_rows')
+            or any(op.get('status') != 'observed' for op in fixture.get('operations', []))
+            or any(not block.get('restored') for block in fixture.get('blocks', []))):
+        raise SimulationError('Remaining continuation prefix or resource proof failed')
+    if (manifest.get('provider_tests') != [entry['test_id'] for entry in charges]
+            or manifest.get('invocations') != [entry['invocation_id'] for entry in charges]
+            or len(set(manifest['provider_tests'])) != len(prefix) or len(set(manifest['invocations'])) != len(prefix)
+            or any(entry.get('run_id') != campaign.run_id or entry.get('authorization_id') != auth['authorization_id']
+                   or entry.get('stage_authorization') != auth for entry in charges)
+            or number(manifest.get('spent_credits')) != expected_spent):
+        raise SimulationError('Remaining continuation prefix identities or spending differ')
+    admissions = manifest.get('unpaid_continuations', [])
+    if len(admissions) != 1 or admissions[0].get('attempt') != 2:
+        raise SimulationError('Remaining continuation lacks original attempt history')
+    snapshots = [_verified_archive(campaign, admissions[0]['archive'], admissions[0]['files_sha256'])]
+    if unsubmitted:
+        prior = manifest.get('remaining_continuations', [])
+        records = [record for record in ledger.get('remaining_continuations', []) if record.get('run_id') == campaign.run_id]
+        if (len(prior) != 1 or prior[0].get('attempt') != 3 or prior[0].get('selected') != previous_selection
+                or prior[0].get('prior_spent_credits') != '1114' or len(records) != 1
+                or records[0].get('original_manifest_sha256') != prior[0].get('original_manifest_sha256')):
+            raise SimulationError('Unsubmitted continuation prior admission differs')
+        prior_snapshot = _verified_archive(campaign, prior[0]['archive'], prior[0]['files_sha256'], allow_extra=True)
+        if (prior_snapshot.get('unpaid_continuations') != admissions
+                or prior_snapshot.get('remaining_reconciliation') != manifest.get('remaining_reconciliation')):
+            raise SimulationError('Unsubmitted continuation prior admission chain changed')
+        snapshots.append(prior_snapshot)
+        added = manifest.get('reconciliations', [])
+        bindings = [manifest.get('remaining_reconciliation', {}), *added]
+        if len(added) != 1 or added[0].get('path') == bindings[0].get('path'):
+            raise SimulationError('Unsubmitted continuation reconciliation chain differs')
+    else:
+        bindings = [manifest.get('remaining_reconciliation', {})]
+    receipts, extras = [], []
+    for binding, cid in zip(bindings, prefix[1:]):
+        receipt_path = _artifact(campaign, binding.get('path', ''))
+        if hashlib.sha256(receipt_path.read_bytes()).hexdigest() != binding.get('sha256'):
+            raise SimulationError('Remaining continuation reconciliation hash differs')
+        receipt = json.loads(receipt_path.read_text())
+        if (receipt.get('run_id') != campaign.run_id or receipt.get('status') != 'settled'
+                or receipt.get('case_id') != cid or not receipt.get('pre_reconciliation_archive')
+                or not isinstance(receipt.get('provider_create_request_id'), str)
+                or not receipt['provider_create_request_id']
+                or any(receipt.get(key) is not True for key in ('baseline_unchanged', 'google_current_event_deleted', 'native_calendar_effects_settled'))):
+            raise SimulationError('Remaining continuation prior effects are not reconciled')
+        if cid == 'C09' and (receipt.get('identity_verified') is not True or receipt.get('ambiguous_cancel_reconciled') is not True):
+            raise SimulationError('C09 ambiguous cancellation is not independently reconciled')
+        ids = receipt.get('owned_request_ids')
+        if not isinstance(ids, list) or len(ids) != 1 or type(ids[0]) is not int or ids != receipt.get('cancelled_request_ids'):
+            raise SimulationError('Reconciled request identities differ')
+        pre_archive = receipt['pre_reconciliation_archive']
+        hashes = json.loads(_artifact(campaign, str(Path(pre_archive) / 'hashes.json')).read_text())
+        snapshots.append(_verified_archive(campaign, pre_archive, hashes))
+        receipts.append(receipt)
+        extras.extend([binding['path'], *[str(Path(pre_archive) / name) for name in ('manifest.json', 'report.json', 'report.md', 'hashes.json')]])
+    for snapshot in (*snapshots, manifest):
+        if (any(intent.get('case_id') in suffix for intent in snapshot.get('test_creation_intents', []))
+                or snapshot.get('test_create_pending') in suffix):
+            raise SimulationError('A remaining case has a historical test creation intent')
+    attempt_rows = [row for row in manifest.get('results', []) if row.get('attempt', 1) == previous_attempt]
+    if [row.get('case_id') for row in attempt_rows] != previous_selection:
+        raise SimulationError('Remaining continuation prior attempt scope differs')
+    latest = {row['case_id']: row for row in attempt_rows}
+    if any(latest.get(cid, {}).get('status') != 'blocked'
+           or latest[cid].get('reason') != 'Unresolved stage resource, cleanup or charge; no further paid work' for cid in suffix):
+        raise SimulationError('A remaining case lacks the pre-creation guard outcome')
+    if any(list(campaign.folder.glob(cid + '-*.json')) for cid in suffix):
+        raise SimulationError('A remaining case already has execution artifacts')
+    all_ids = [value for receipt in receipts for value in receipt['owned_request_ids']]
+    all_blocks = [value for receipt in receipts for value in receipt.get('restored_block_ids', [])]
+    if (len(set(all_ids)) != len(all_ids) or sorted(all_ids) != sorted(fixture.get('owned_request_ids', []))
+            or all_blocks != [block['original']['id'] for block in fixture.get('blocks', [])]):
+        raise SimulationError('Reconciliation chain does not cover all prior native effects')
+    extras.extend(cid + '-1-provider.json' for cid in prefix)
+    return charges, receipts, list(dict.fromkeys(extras))
+
+
+def _prefix_results(campaign, provider, charges, receipt):
+    receipts = receipt if isinstance(receipt, list) else [receipt]
+    by_case = {item['case_id']: item for item in receipts}
+    total = number(0)
+    for entry in charges:
+        cid = entry['case_id']
+        expected_status = 'passed' if cid == 'C07' else 'failed'
+        expected_credits = number({'C07': 331, 'C08': 783, 'C09': 905}[cid])
+        path = _artifact(campaign, cid + '-1-provider.json')
+        saved = json.loads(path.read_text())
+        fresh = provider.get(entry['invocation_id'])
+        for result in (saved, fresh):
+            runs = result.get('test_runs', [])
+            if (result.get('id') != entry['invocation_id'] or result.get('agent_id') != campaign.manifest['campaign_agent_id']
+                    or len(runs) != 1 or runs[0].get('test_id') != entry['test_id']
+                    or runs[0].get('test_invocation_id') != entry['invocation_id']
+                    or runs[0].get('status') != expected_status
+                    or number(runs[0].get('credits_used')) != expected_credits
+                    or number(entry.get('credits')) != expected_credits):
+                raise SimulationError('Remaining continuation provider prefix receipt differs')
+        if cid in by_case:
+            receipt = by_case[cid]
+            if hashlib.sha256(path.read_bytes()).hexdigest() != receipt.get('provider_receipt_sha256'):
+                raise SimulationError('C08 reconciliation is not bound to the provider receipt')
+            created = set()
+            for response in saved['test_runs'][0].get('agent_responses', []):
+                for tool in response.get('tool_results') or []:
+                    if (tool.get('tool_name') != 'create_service_request' or tool.get('is_error')
+                            or tool.get('request_id') != receipt['provider_create_request_id']):
+                        continue
+                    value = tool.get('result_value')
+                    value = json.loads(value) if isinstance(value, str) else value
+                    result = value.get('result', value)
+                    if result.get('success') is True and type(result.get('service_request_id')) is int:
+                        created.add(result['service_request_id'])
+            if created != set(receipt['owned_request_ids']):
+                raise SimulationError('C08 provider creation does not prove the reconciled request')
+        total += expected_credits
+    return total
+
+
+def _remaining_effects(campaign, receipt):
+    ids = receipt['owned_request_ids']
+    rows = deployed_medium._request_rows(campaign.config, ids)
+    identity = campaign.config.get('existing_customer_identity', {}).get('id')
+    designated = fixtures.variables(campaign.config)
+    if ({row['id'] for row in rows} != set(ids) or type(identity) is not int
+            or any(row.get('customer_id') != identity or phone(row.get('customer_phone')) != phone(designated['customer_phone'])
+                   or row.get('customer_name') != campaign.config['existing_customer_identity'].get('name')
+                   or row.get('status') != 'cancelled' or row.get('reservation_id') for row in rows)):
+        raise SimulationError('Prior reconciled native request is active or has a different owner')
+    effects = deployed_medium._effect_rows(campaign.config, ids)
+    if ({row['id'] for row in effects} != set(ids) or any(
+            row.get('active_count') or row.get('segment_count') or not row.get('projection_statuses')
+            or any(status != 'DELIVERED' for status in row['projection_statuses'])
+            or (row.get('has_event') and (not row.get('reservation_calendar_statuses') or row.get('request_calendar_status') != 'DELETED'
+                or any(status != 'DELETED' for status in row.get('reservation_calendar_statuses', [])))) for row in effects)):
+        raise SimulationError('Prior native calendar effects are not settled')
+    for block in campaign.manifest['deployed_medium']['blocks']:
+        original = block['original']
+        start = deployed_medium._dt(original['slot_datetime'], campaign.config)
+        from datetime import timedelta
+        slots = deployed_medium._slots(campaign.config, original['staff_agent_id'], start, start + timedelta(minutes=15))
+        if len(slots) != 1 or any(deployed_medium._serial(slots[0]).get(key) != original.get(key) for key in
+                ('id', 'staff_agent_id', 'slot_datetime', 'is_booked', 'reservation_status', 'service_request_id', 'active_reservation')):
+            raise SimulationError('Prior occupied slot restoration changed')
+
+
+def _verify_owned_revision(campaign, state, actual):
+    config, manifest = campaign.config, campaign.manifest
+    version = agent_policy.SERVICE_POLICY_VERSION
+    revisions = manifest.get('agent_revisions', [])
+    if config.get('owned_agent_policy') != version or len(revisions) != 1:
+        raise SimulationError('Unsubmitted continuation requires the explicit owned policy revision')
+    revision = revisions[0]
+    source_path = _artifact(campaign, revision.get('source_override_path', ''))
+    source = json.loads(source_path.read_text())
+    desired = agent_policy.apply_service_policy(source)
+    try:
+        old_prompt = source['conversation_config']['agent']['prompt']['prompt']
+        new_prompt = desired['conversation_config']['agent']['prompt']['prompt']
+    except (KeyError, TypeError):
+        raise SimulationError('Owned policy source snapshot is invalid') from None
+    source_fp, desired_fp = fingerprint(source), fingerprint(desired)
+    first = manifest['unpaid_continuations'][0]
+    original = json.loads(_artifact(campaign, str(Path(first['archive']) / 'manifest.json')).read_text())
+    if (revision.get('protected_reference_unchanged') is not True
+            or original.get('reference_fingerprint') != source_fp
+            or revision.get('status') != 'observed' or revision.get('policy_version') != version
+            or revision.get('agent_id') != manifest.get('campaign_agent_id')
+            or revision.get('agent_id') == config.get('agent_id')
+            or revision.get('source_override_sha256') != hashlib.sha256(source_path.read_bytes()).hexdigest()
+            or revision.get('source_fingerprint') != source_fp or manifest.get('reference_fingerprint') != source_fp
+            or revision.get('new_fingerprint') != desired_fp
+            or revision.get('old_prompt_sha256') != hashlib.sha256(old_prompt.encode()).hexdigest()
+            or revision.get('new_prompt_sha256') != hashlib.sha256(new_prompt.encode()).hexdigest()
+            or fingerprint(state.get('source_override')) != source_fp
+            or fingerprint(state['override']) != desired_fp or fingerprint(actual) != desired_fp):
+        raise SimulationError('Owned prompt revision chain, protected source or observed clone differs')
+    return {'agent_revision_fingerprint': desired_fp,
+            'agent_revision_source_fingerprint': source_fp,
+            'agent_revision_source_sha256': revision['source_override_sha256']}
+
+
+def _continue_remaining(config, tier, live, check, run_id, requested, repeat, *, unsubmitted=False):
+    suffix = [f'C{i:02}' for i in range(10 if unsubmitted else 9, 17)]
+    kind = 'unsubmitted_continuations' if unsubmitted else 'remaining_continuations'
+    original = [f'C{i:02}' for i in range(7, 17)]
+    if (not live or check or tier != 'medium' or not run_id or config.get('target') != 'deployed'
+            or repeat != 1 or requested != suffix):
+        raise SimulationError('Remaining continuation requires live same-run exact C09-C16 once')
+    preview(config, tier, original, repeat, target='deployed')
+    root = Path(config.get('artifact_root', ROOT / 'scratch/live-simulations')).resolve()
+    with campaign_lock(root), httpx.Client(timeout=30, trust_env=False, follow_redirects=False) as client:
+        campaign = _unpaid_campaign(config, run_id)
+        ledger = json.loads((root / 'usage-ledger.json').read_text())
+        auth = stage_authorization(config, tier, original, original, repeat, target='deployed')
+        charges, receipts, extras = _prove_remaining(campaign, ledger, auth, suffix, unsubmitted=unsubmitted)
+        if config.get('budget', {}).get('verified_credit_units') is not True:
+            raise SimulationError('Remaining continuation billing units are unverified')
+        cases = select_cases(load_catalog(), tier, suffix)
+        designated = fixtures.variables(config)
+        for case in cases:
+            bound = case_variables(config, designated, case)
+            if any(bound[key] != designated[key] for key in ('customer_phone', 'customer_name', 'customer_email')):
+                raise SimulationError('Remaining continuation recipient identity differs')
+        problems, observed = deployment_readiness(config, client)
+        baseline = campaign.manifest['baseline']
+        originals = {row['id']: row for row in baseline}
+        if not unchanged(originals, observed) or not ({row['id'] for row in observed} - set(originals)) <= {value for receipt in receipts for value in receipt['owned_request_ids']}:
+            raise SimulationError('Remaining continuation original native baseline changed')
+        existing_name = preserved_customer_name(config, baseline, client)
+        services = campaign.manifest['deployed_medium']['services']
+        deployed_medium.validate_retained_catalog(config, client, services)
+        problems.extend(deployed_medium.readiness(config, client, cases, baseline, retained_catalog=services))
+        state, provider_problems = provider_readiness(config, client)
+        problems.extend(provider_problems)
+        if problems:
+            raise SimulationError('Remaining continuation readiness failed: ' + '; '.join(problems))
+        provider = state['provider']
+        spent = _prefix_results(campaign, provider, charges, receipts)
+        for receipt in receipts:
+            _remaining_effects(campaign, receipt)
+        actual = native_override(provider.resolve_reference(provider.agent(campaign.manifest['campaign_agent_id'])),
+                                 origin(config.get('deployed_url')), state['webhook_id'])
+        metadata = {}
+        if unsubmitted:
+            metadata = _verify_owned_revision(campaign, state, actual)
+            extras.append(campaign.manifest['agent_revisions'][0]['source_override_path'])
+            prior = campaign.manifest['remaining_continuations'][0]
+            metadata['previous_admission_sha256'] = hashlib.sha256(json.dumps(prior, sort_keys=True).encode()).hexdigest()
+        elif (fingerprint(actual) != campaign.manifest.get('reference_fingerprint')
+                or fingerprint(state['override']) != campaign.manifest.get('reference_fingerprint')):
+            raise SimulationError('Remaining continuation retained clone changed')
+        remaining = current_remaining(config, provider)
+        budget = campaign_budget(config, tier, remaining)
+        budget.spent = spent
+        if not budget.can_start(sum(estimates(config, cases))):
+            raise SimulationError('Remaining continuation aggregate ceiling, reserve or fresh quota cannot admit suffix')
+        state['remaining'] = remaining
+        _archive_unpaid(campaign, ledger, previous_attempt=3 if unsubmitted else 2, kind=kind,
+                        extra_names=extras, selected=suffix, prior_spent=spent, metadata=metadata)
+        campaign.manifest[kind][-1]['resolved_retention_reasons'] = list(campaign.manifest.get('cleanup_blockers', []))
+        campaign.save()
+        return _execute(config, tier, live=True, requested=original, repeat=repeat, _campaign=campaign,
+            _admission={'baseline': baseline, 'state': state, 'existing_name': existing_name,
+                        'selected': suffix, 'attempt': 4 if unsubmitted else 3, 'prior_stage_spent': spent,
+                        'prefix_outcomes': {entry['case_id']: 'passed' if entry['case_id'] == 'C07' else 'failed' for entry in charges}})
+
+
 def execute(config, tier='minimal', *, live=False, check=False, run_id=None,
-            requested=None, repeat=1, continue_unpaid=False, **kwargs):
+            requested=None, repeat=1, continue_unpaid=False, continue_remaining=False, continue_unsubmitted=False, **kwargs):
+    if continue_unsubmitted:
+        if continue_unpaid or continue_remaining:
+            raise SimulationError('Choose one explicit continuation mode')
+        return _continue_remaining(config, tier, live, check, run_id, requested, repeat, unsubmitted=True)
+    if continue_remaining:
+        if continue_unpaid:
+            raise SimulationError('Choose one explicit continuation mode')
+        return _continue_remaining(config, tier, live, check, run_id, requested, repeat)
     if not continue_unpaid:
         return _execute(config, tier, live=live, check=check, run_id=run_id,
                         requested=requested, repeat=repeat, **kwargs)
@@ -728,6 +1039,12 @@ def _execute(config, tier='minimal', *, live=False, check=False, run_id=None,
                else preview(config, tier, requested, repeat))
     cases = ([case for case in load_catalog() if case['id'] in planned['selected']]
              if planned.get('resume_request_id') is not None else select_cases(load_catalog(), tier, planned['selected']))
+    if _admission is not None and _admission.get('selected'):
+        cases = select_cases(load_catalog(), tier, _admission['selected'])
+        # The original claim remains the full ten-case scope; prior paid cases
+        # consume ceiling capacity, but only the suffix needs fresh allowance.
+        planned.update(status='planned', estimated_credits=str(sum(estimates(config, cases))))
+    attempt_number = _admission.get('attempt', 2) if _admission is not None else 1
     if stage is not None:
         designated = fixtures.variables(config)
         for case in cases:
@@ -816,6 +1133,8 @@ def _execute(config, tier='minimal', *, live=False, check=False, run_id=None,
             campaign.save()
             provider, override = state['provider'], state['override']
             budget = campaign_budget(config, tier, state['remaining'])
+            if _admission is not None:
+                budget.spent = _admission.get('prior_stage_spent', number(0))
             case_estimates = ([number(calibration['case_upper_estimate'], positive=True)]
                               if calibration is not None else estimates(config, cases))
             if not budget.can_start(sum(case_estimates) * repeat):
@@ -862,7 +1181,7 @@ def _execute(config, tier='minimal', *, live=False, check=False, run_id=None,
                             values['customer_name'] = base_values['customer_name']
                             values['run_id'] = base_values['run_id']
                         entry = {'case_id': case['id'], 'repeat': iteration + 1, 'status': 'blocked',
-                                 'attempt': 2 if _campaign is not None else 1}
+                                 'attempt': attempt_number}
                         manifest['results'].append(entry)
                         if adapter is not None and (stage_blocked or budget.unknown):
                             entry['reason'] = 'Unresolved stage resource, cleanup or charge; no further paid work'
@@ -914,6 +1233,8 @@ def _execute(config, tier='minimal', *, live=False, check=False, run_id=None,
                                            system__call_sid=campaign.run_id + case['id'] + str(iteration),
                                            system__conversation_id=campaign.run_id + case['id'] + str(iteration))
                             manifest['test_create_pending'] = case['id']
+                            manifest.setdefault('test_creation_intents', []).append({'case_id': case['id'],
+                                'attempt': attempt_number, 'status': 'intent'})
                             campaign.save()
                             try:
                                 rendered = deployed_scenario(adapted_case, values)
@@ -924,6 +1245,7 @@ def _execute(config, tier='minimal', *, live=False, check=False, run_id=None,
                                 if 'ambiguous' not in str(exc):
                                     manifest['test_create_pending'] = None
                                 raise
+                            manifest['test_creation_intents'][-1].update(status='observed', test_id=test_id)
                             manifest['provider_tests'].append(test_id)
                             manifest['test_create_pending'] = None
                             campaign.save()
@@ -1020,8 +1342,15 @@ def _execute(config, tier='minimal', *, live=False, check=False, run_id=None,
                             manifest['unsettled_usage'] = any(e.get('unsettled') and e['run_id'] == campaign.run_id for e in ledger['entries'])
                             campaign.save()
                 statuses = {r['status'] for r in manifest['results']
-                            if r.get('attempt', 1) == (2 if _campaign is not None else 1)}
+                            if r.get('attempt', 1) == attempt_number}
                 manifest['status'] = 'failed' if 'failed' in statuses else ('blocked' if 'blocked' in statuses else 'incomplete')
+                manifest['latest_attempt_status'] = manifest['status']
+                latest = [row for row in manifest['results'] if row.get('attempt', 1) == attempt_number]
+                manifest['latest_attempt_functional_status'] = ('passed' if latest and all(row.get('functional_status') == 'passed' for row in latest) else 'failed')
+                if _admission is not None and _admission.get('prior_stage_spent') is not None:
+                    outcomes = dict(_admission.get('prefix_outcomes', {'C07': 'passed', 'C08': 'failed'}))
+                    outcomes.update({row['case_id']: row.get('functional_status', row['status']) for row in latest})
+                    manifest.update(stage_case_outcomes=outcomes, stage_functional_status='failed', status='failed')
             except BaseException:
                 manifest['status'] = 'incomplete'
                 raise
@@ -1030,7 +1359,7 @@ def _execute(config, tier='minimal', *, live=False, check=False, run_id=None,
                         and not manifest.get('agent_create_pending')
                         and not manifest.get('test_create_pending')
                         and not [reason for reason in manifest.get('cleanup_blockers', [])
-                                 if _campaign is None or reason not in manifest['unpaid_continuations'][-1].get('resolved_retention_reasons', [])]
+                                 if _campaign is None or reason not in (manifest.get('unsubmitted_continuations') or manifest.get('remaining_continuations') or manifest['unpaid_continuations'])[-1].get('resolved_retention_reasons', [])]
                         and not any(e.get('unsettled') for e in ledger['entries'])):
                     try:
                         adapter.cleanup_catalog()

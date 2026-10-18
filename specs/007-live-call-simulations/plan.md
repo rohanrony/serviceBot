@@ -415,3 +415,43 @@ This is a testable performance hypothesis; actual upload completion and latency,
 not the option values alone, admit paid simulation. Settle the prior disconnected
 upload before another deployment/restoration. Repeat the full offline gate and
 publish under the existing explicit approval.
+
+## Exact simulator service binding and unused remainder (FR-049–050)
+
+Put literal owned-service instructions at the start of deployed medium scenarios;
+explicitly add the missing appointment service to C08 and reinforce C11 while retaining each
+case's conversation order and selected visit. Keep callback C12 service-free.
+Use captured provider-create payload regressions and preserve strict quote and
+native ownership checks. Do not change the saved production agent or catalog.
+
+Add an explicit remaining-cases workflow path for the existing run. Under the
+campaign lock prove the exact settled paid prefix and never-submitted suffix,
+archive the prior attempt/reconciliation, validate all retained resources and
+native preservation, and admit only C09–C16 with aggregate spending1114already
+counted. No new claim, authorization, clone or catalog; no paid prefix replay.
+Keep FR042's zero-submission recovery restrictions intact. Number attempts and
+reports without dropping historical C08 failure. Regression-test every unsafe
+prefix/suffix, pending creation/unknown charge, changed resource, unsettled
+business effect and repeated admission. Full offline/API/browser validation
+precedes the remaining paid work. This harness change needs no app deployment.
+
+## Owned prompt repair and untouched C10–C16 (FR-051–052)
+
+Create a deterministic prompt-only policy transformation in an ordinary helper
+module, with literal canonical-name propagation, pre-mutation quote/consent and
+legacy single/multi tool guidance. Tests prove idempotence and that every
+non-prompt field is identical. Snapshot the original prompt and fingerprints;
+revise only the manifest-owned clone after all billing/business effects settle.
+Use an intent journal and native GET verification, preserving unknown-write
+stops and the protected original agent. Production promotion requires separate
+review/authorization; no production agent mutation is part of this repair.
+
+Reconcile request52's already-completed cancellation with exact native identity,
+reservation/projection/outbox and Google deletion proof; preserve the original
+unknown operation immutably before marking its outcome observed. Add sanitized
+operation diagnostics without logging credentials or response/customer bodies.
+Generalize the existing recovery checks for the exact next unused suffix
+C10–C16 and the longer settled prefix, retaining every prior admission/archive,
+failure and aggregate credit. Verify the prompt revision against both the
+original source and observed owned clone. Run focused/full offline/API/browser
+gates before resuming; no local app/tunnel or protected-agent edits.

@@ -278,7 +278,7 @@ overwritten. Final evidence: `deployed-full-v2-offline.log`, copied XML and
 
 - [x] T092 Analyze FR-042 same-run unpaid continuation, then regress and implement explicit admission, immutable prior-attempt evidence, resource reuse and all unsafe-state rejections. No replacement authorization or additional capacity is permitted.
 - [x] T093 Regress and implement FR-043/044: serialize shared embedding/catalog publication, retain the prior index on replacement failure, offload blocking list work and omit past-start candidate provider lookups. Preserve future behavior, row/filter contracts and messaging settings; include native API/browser responsiveness tests.
-- [ ] T094 Converge and run focused plus complete offline/browser validation for recovery and app fixes; after explicit publication approval, publish only the necessary validated repair and read back native behavior. Earlier no-push/no-deploy instructions remain in force while approval is pending.
+- [x] T094 Converge and run focused plus complete offline/browser validation for recovery and app fixes; after explicit publication approval, publish only the necessary validated repair and read back native behavior. Earlier no-push/no-deploy instructions remain in force while approval is pending.
 - [ ] T095 Continue the original C07–C16 execution only after every FR-042 proof and fresh readiness/budget gate passes; preserve the blocked zero-credit original attempt and settle/clean all owned effects.
 
 T092/T093 red/green evidence: the initial unpaid-continuation contracts failed
@@ -318,7 +318,7 @@ avoids the observed OOM, but the large catalog took 126.3 seconds and disconnect
 the client. Native HTTP 200 and the exact downloaded hash settle that write.
 
 - [x] T098 Analyze FR-047, regress and implement a shared lazy default-compatible ONNX encoder; prove existing collection compatibility and reuse across owners/adds/queries without real model downloads. Preserve bounded batches and rollback.
-- [ ] T099 Converge and rerun focused and complete offline/API/browser validation, publish under the user's approval and verify deployed KB restoration, memory and latency before the unpaid continuation.
+- [x] T099 Converge and rerun focused and complete offline/API/browser validation, publish under the user's approval and verify deployed KB restoration, memory and latency before the unpaid continuation.
 
 T098 evidence: two intended constructor-reuse failures preceded implementation; 27 focused FAQ/catalog contracts now pass. The reusable wrapper preserves default identity/configuration and384 dimensions, stays lazy for injected collections, and reopens a real persisted default collection with a deterministic captured encoder. Native Render Chroma1.5.9 matches local1.5.9; no real model download is used in offline tests. The complete gate is running for T099.
 
@@ -331,8 +331,32 @@ minute, with no OOM event and sampled memory375MB. The source repair is valid
 but does not yet satisfy the native latency gate. No write retry or paid case.
 
 - [x] T100 Analyze FR048, regress and implement encoder-local single-thread ONNX session options with unchanged upstream behavior and no global mutation; retain FR047 compatibility/reuse tests.
-- [ ] T101 Converge, rerun focused/full offline/API/browser gates, publish under existing approval, settle prior upload and verify actual native document restoration, memory and latency before T095.
+- [x] T101 Converge, rerun focused/full offline/API/browser gates, publish under existing approval, settle prior upload and verify actual native document restoration, memory and latency before T095.
 
 T100 red/green: actual upstream cached model property first failed on thread counts0/0. The repaired encoder supplies1/1 only to its own session;28 focused tests pass, including unchanged path/provider filtering/optimization/logging, lazy shared default-compatible384-dimension encoder, existing collection reopen and rollback. Global runtime options remain untouched. Ruff has zero introduced findings; source is frozen for the complete gate.
 
 T101 local gate passed **976 unit/integration +348 E2E**, zero failures/errors/skips (`deployed-single-thread-full-offline.log` and copied XML). No material FR048 source gap or introduced Ruff finding. The prior81.278second catalog upload is settled by native200/request0b096f86 and exactGEThash, with no retry. Publication is authorized; native performance remains the final prerequisite.
+
+- [x] T102 Analyze FR049/050 and retain C08 paid failure; reconcile only request51 with exact provider/native identity proof and restore journaled calendar blocks, verifying preservation and settled effects.
+- [x] T103 Regress and implement exact opening service binding for deployed medium C08/C11 and consistent literal vocabulary without changing lifecycle/ownership predicates.
+- [x] T104 Regress and implement an explicit same-run never-submitted C09–C16 continuation after the settled prefix, aggregate spending/reserve and immutable numbered attempt evidence; no paid replay or replacement claim/resources.
+- [ ] T105 Converge, run focused/full offline/API/browser gates and continue only the original eight unused cases after all native prerequisites revalidate. Retain C08 failure and operator inbox gap.
+
+T094/T099/T101 native gate is complete: c4b8ad9 deployed live as dep-dbaj8np42hec73dml1b0; all six preserved documents indexed with exact byte hashes. Catalog upload15.23seconds, current-instance sampled peak250,621,950bytes under512MiB, no new server_failed event. Health/list1.37/1.71seconds; effective config hash and every original business-row hash match. Exact retained clone/catalog, zero-submission proof, quota28325/reserve and designated WhatsApp window all pass. T095 begins only the original ten-case continuation under the same11250ceiling.
+
+T102 cleanup is settled: providerresponsepair/hash and nativecustomer5/allowlistedphone prove newrequest51, originalIDs excluded. A nativeGoogleGET witnessed its actual event/start/end before cancellation. NormalcancelAPI51, reservation/projection/outbox settlement, exactslot849/850/851 restoration, nativeGoogledeletion and originalAPIbaselineallverified. Immutablepre-reconciliationarchiveandhashedreceipt remaininrun/reconciliation. C08failureisretained. T103 meaningfulRed10failed/1passed;54focusedcontractsnowGreen withcapturedprovider-createpayloads; Ruffclean. T104 recoveryremainsinprogress; nopaidreplay.
+
+T104 released:392focusedharnesscontracts pass (29newremaining +363existing), with initial entrypoint/quota failures and four additional intended converge failures retained. Exact331/783providerbilling/provenance, native51settledcleanup, restoredslots, originalclaim/resources, untouchedsuffix and aggregatebudget/reportfailure are guarded. Ruffclean; sourceconvergencefoundnomaterialFR049/050gap. Completeoffline/API/browsergate isrunning beforepaidremainingcases.
+
+T105 full local gate passed **1016 unit/integration +348 E2E**, zero failures/errors/skips (`deployed-remaining-full-offline.log` and copied XML). No material FR049/050 source gap. The original two charges remain settled1114; request51cleanup and all native preservation checks pass. The next standard workflow submits only C09–C16 after fresh locked admission; C08isnotreplayed. Providerwait300seconds, same scenario turn limits/cap.
+
+- [x] T106 Analyze FR051/052; reconcile request52's observed completed cancellation and preserve unknown-operation/attempt3 evidence, native positive calendar witness and original rows.
+- [ ] T107 Regress and implement a deterministic owned-clone-only canonical-service/prebooking-quote policy revision, prompt-only preservation/idempotence and safe observed update; protected agent unchanged.
+- [x] T108 Regress and implement untouched C10–C16 recovery after the longer settled prefix, revision/receipt/archive proofs and aggregate2019spend, preserving failures and no-replay safeguards; add sanitized mutation diagnostics.
+- [ ] T109 Converge, run full offline/API/browser validation, verify the owned policy revision and resume only untouched C10–C16 within original11250ceiling. Retain C08/C09 failures and pending native inbox verification.
+
+T106 reconciliation settled with zero native mutations: exact owned request52, cancelled native state, released reservations, delivered projections, Google event deleted, hashed attempt3 archive and receipt. Original rows unchanged; native delivery audit verifies 14 signed WhatsApp receipts. C09 paid quote failure retained. T107 pure policy/diagnostics focused gate passed63; owned update awaits fresh complete gate.
+
+T108 released:416 focused recovery/harness contracts passed, including24 new unsubmitted contracts; meaningful Red entrypoint/source-chain/actual-manifest-shape evidence retained. Ruff clean. Bounded source convergence found no material FR051/052 gap. Complete offline/API/browser gate is running before the owned-clone update or further paid execution.
+
+T109 complete offline gate passed1049unit/integration+348E2E, zero failures/errors/skips. Automatic approval review rejected the persistent owned-clone PATCH under the earlier saved-agent restriction; no provider write/admission/newcharge occurred. Specific owned-clone prompt approval is pending. The exact desired source/prompt hashes, policy implementation, preserved original state and 2019settledcredits remain retained. T107/T109 native steps stay unfinished.

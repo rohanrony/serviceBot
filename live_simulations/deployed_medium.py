@@ -300,10 +300,15 @@ class Adapter:
         op = {'method': method, 'path': path, 'body': copy.deepcopy(body), 'status': 'intent'}
         self.state['operations'].append(op)
         self._save()
+        stage, status_code = 'request', None
         try:
             response = self.client.request(method, self.config['deployed_url'].rstrip('/') + path, json=body)
+            status_code = response.status_code
+            stage = 'http_status'
             response.raise_for_status()
+            stage = 'decode'
             data = response.json()
+            stage = 'result'
             result = data.get('result', data)
             if not isinstance(result, dict) or result.get('success') is False:
                 raise SimulationError('Native fixture operation was rejected')
@@ -312,7 +317,13 @@ class Adapter:
             op['ids'] = self._ids(result)
             self._save()
             return result
-        except Exception:  # noqa: BLE001 - any error after sending leaves fixture outcome uncertain
+        except Exception as exc:  # noqa: BLE001 - any error after sending leaves fixture outcome uncertain
+            op['diagnostic'] = {
+                'error_type': type(exc).__name__, 'status_code': status_code, 'stage': stage,
+                'kind': ('transport' if isinstance(exc, httpx.TransportError) else
+                         'rejected' if isinstance(exc, httpx.HTTPStatusError) or
+                         (stage == 'result' and isinstance(exc, SimulationError)) else 'unknown'),
+            }
             op['status'] = 'unknown'
             self.state['blocked'] = True
             self._save()
@@ -373,7 +384,13 @@ class Adapter:
             adapted['success_conditions'].append('Before any appointment booking quote the actual requested catalog service facts and obtain consent: ' + facts)
         if case['id'] != 'C12':
             keys = ['oil', 'second'] if case['id'] in ('C10', 'C13') else ['oil', 'split'] if case['id'] in ('C14', 'C15', 'C16') else ['oil']
-            adapted['scenario'] += ' The requested test services are: ' + ', '.join(self.state['services'][key]['name'] for key in keys) + '.'
+            names = [self.state['services'][key]['name'] for key in keys]
+            if case['id'] == 'C08':
+                adapted['scenario'] = adapted['scenario'].replace(
+                    'Ask for the occupied', 'Ask for ' + names[0] + ' at the occupied', 1)
+            adapted['scenario'] = (
+                'Use these exact service names from the start of the conversation: '
+                + '; '.join(names) + '. ' + adapted['scenario'])
         adapted['scenario'] += ' Identify test services by their exact full names. Do not change any pre-existing booking for another service.'
         return adapted
 

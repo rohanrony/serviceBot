@@ -431,3 +431,55 @@ ONNX sessions default to intra/inter thread counts zero; official ONNX threading
 documentation states the intra default creates threads for host physical cores.
 Single-thread session configuration is a bounded repair hypothesis; improvement
 must be demonstrated on the deployed CPU quota.
+
+- **FR-049**: Native deployed medium simulator instructions must identify the
+  exact owned service at the start of the scenario, including C08 whose
+  generic recipe omits a service, and C11 intake corrections. Preserve each case's intended lifecycle,
+  selected/unselected visit identity and quote requirements. Do not weaken
+  service ownership checks or reinterpret an off-scenario booking as a pass.
+- **FR-050**: An explicit same-run continuation may submit only the never-created,
+  never-invoked remainder C09–C16 after the settled C07/C08 prefix. Keep the
+  original single authorization, total11250ceiling, global unknown-charge stop
+  and reserve; include1114settled credits in admission. Require exact original
+  claim/selection/target/clone/catalog and immutable prior attempt artifacts,
+  terminal verified provider results for the prefix, no test-creation intent or
+  ledger/invocation history for any remaining case, and every prior business
+  effect settled. C08 remains failed and paid prefix cases are ineligible for
+  automatic replay. Archive reconciliation evidence and append a numbered
+  remainder admission before any further test creation. Native baseline,
+  identity/recipients, readiness and current quota must revalidate under lock.
+
+C07 passed for331credits. C08 cost783credits and genuinely failed: its simulator
+asked generic oil change instead of owned catalog47, bypassed the occupied-slot
+fixture, created request51 as Repair, then rescheduled it. Guarded ownership
+stopped C09–C16 before test creation. Native read-only proof identifies request51
+as customer5/the designated phone and independently confirms provenance from the
+provider's create result. Reconciliation may cancel only that causally proven
+new request and restore exact journaled blocks, retaining all failure evidence.
+
+- **FR-051**: Repair only the owned simulation clone's service-selection policy:
+  preserve full canonical catalog names in every service lookup/availability/
+  booking call, quote the returned price/duration before mutation and obtain
+  consent. Respect the actual legacy tool schemas; use the booking tool's
+  service_type for multiple canonical services. Keep the protected production
+  agent unchanged. Prepare and verify a minimal prompt-only revision, preserving
+  all other fields and tool URLs. Journal old/new fingerprints and prompt hashes
+  before the owned-agent update; reconcile any ambiguous update by GET, without
+  automatic write retry. A failed paid case remains failed; policy repair does
+  not authorize its replay.
+- **FR-052**: Extend safe recovery to the never-submitted contiguous C10–C16
+  suffix after C07/C08/C09 terminal results (2019settled credits), preserving
+  prior admissions and failures. Require all provider/test/invocation/credit
+  receipts and immutable attempt/reconciliation history, no suffix creation
+  history, exact original claim/cap, settled prior native effects, preserved
+  baseline and the explicitly journaled owned prompt revision. No new claim,
+  budget, replacement clone/catalog or paid prefix replay. Count aggregate
+  spending and reserve; reject repeated suffix admission. Retain sanitized
+  fixture failure diagnostics so ambiguous writes can be reconciled safely.
+
+C09 cost905credits. Its native booking/correction succeeded for the exact owned
+45minute service, but the voice agent looked up generic60minute facts and quoted
+the correct price/duration only after booking; provider evaluation failed. The
+cleanup response was ambiguous, but native request52 is cancelled with calendar
+DELETED. Reconcile that completed outcome without another cancellation. C10–C16
+were stopped before any test creation, keeping total settled spend2019.
