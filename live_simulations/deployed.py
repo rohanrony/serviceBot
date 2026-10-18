@@ -992,6 +992,320 @@ def _verify_owned_revision(campaign, state, actual):
             'agent_revision_source_sha256': revision['source_override_sha256']}
 
 
+def _linked_repair_authorization(config, run_id):
+    authorization = config.get('linked_repair_authorization')
+    if (not isinstance(authorization, dict)
+            or not isinstance(authorization.get('authorization_id'), str)
+            or not authorization['authorization_id'].strip()
+            or authorization.get('source_run_id') != run_id
+            or authorization.get('approved') is not True
+            or authorization.get('retry_cases') != ['C15']
+            or authorization.get('new_cases') != ['C16']
+            or type(authorization.get('credit_ceiling')) is not int
+            or authorization['credit_ceiling'] != 11250):
+        raise SimulationError('Linked repair requires explicit exact same-run supplemental approval')
+    return copy.deepcopy(authorization)
+
+
+def _repair_binding(campaign, binding):
+    if not isinstance(binding, dict):
+        raise SimulationError('Linked repair reconciliation binding missing')
+    path = _artifact(campaign, binding.get('path', ''))
+    if hashlib.sha256(path.read_bytes()).hexdigest() != binding.get('sha256'):
+        raise SimulationError('Linked repair reconciliation hash differs')
+    return json.loads(path.read_text())
+
+
+def _repair_revision(campaign, state, actual):
+    revisions = campaign.manifest.get('agent_revisions', [])
+    if (len(revisions) != 2 or campaign.config.get('owned_agent_linked_policy') != agent_policy.LINKED_VISIT_POLICY_VERSION):
+        raise SimulationError('Linked repair requires the exact two-step owned prompt chain')
+    previous = state['source_override']
+    extras = []
+    for revision, version, apply in zip(revisions,
+            (agent_policy.SERVICE_POLICY_VERSION, agent_policy.LINKED_VISIT_POLICY_VERSION),
+            (agent_policy.apply_service_policy, agent_policy.apply_linked_visit_policy)):
+        path = _artifact(campaign, revision.get('source_override_path', ''))
+        source = json.loads(path.read_text())
+        desired = apply(source)
+        old_prompt = source['conversation_config']['agent']['prompt']['prompt']
+        new_prompt = desired['conversation_config']['agent']['prompt']['prompt']
+        if (fingerprint(source) != fingerprint(previous) or revision.get('status') != 'observed'
+                or revision.get('policy_version') != version or revision.get('protected_reference_unchanged') is not True
+                or revision.get('agent_id') != campaign.manifest.get('campaign_agent_id')
+                or revision.get('agent_id') == campaign.config.get('agent_id')
+                or revision.get('source_override_sha256') != hashlib.sha256(path.read_bytes()).hexdigest()
+                or revision.get('source_fingerprint') != fingerprint(source)
+                or revision.get('new_fingerprint') != fingerprint(desired)
+                or revision.get('old_prompt_sha256') != hashlib.sha256(old_prompt.encode()).hexdigest()
+                or revision.get('new_prompt_sha256') != hashlib.sha256(new_prompt.encode()).hexdigest()):
+            raise SimulationError('Linked repair owned revision chain differs')
+        previous = desired
+        extras.append(revision['source_override_path'])
+    if (campaign.manifest.get('reference_fingerprint') != revisions[0]['new_fingerprint']
+            or fingerprint(state['override']) != revisions[0]['new_fingerprint']
+            or fingerprint(actual) != fingerprint(previous)):
+        raise SimulationError('Linked repair current clone or protected source differs')
+    return previous, extras
+
+
+def _repair_lookup(config, client):
+    response = client.post(origin(config.get('deployed_url')) + '/api/v1/voice/tools', json={
+        'name': 'get_customer_appointments', 'arguments': {'phone': fixtures.variables(config)['customer_phone']},
+        'tool_call_id': 'linked-repair-read-' + uuid.uuid4().hex})
+    if response.status_code != 200:
+        raise SimulationError('Linked repair lookup capability read failed')
+    result = response.json().get('result', {})
+    rows = result.get('appointments')
+    required = {'visit_group_id', 'visit_start', 'visit_anchor_id', 'visit_member_ids'}
+    # The preserved baseline provides a nonempty, real native capability witness.
+    if (result.get('success') is not True or not isinstance(rows, list) or not rows
+            or any(not isinstance(row, dict) or not required <= row.keys()
+                   or not isinstance(row['visit_member_ids'], list) for row in rows)):
+        raise SimulationError('Deployed lookup lacks authoritative linked visit metadata')
+
+
+def _repair_prefix(campaign, ledger, auth, supplemental):
+    manifest, fixture = campaign.manifest, campaign.manifest.get('deployed_medium', {})
+    prefix = [f'C{i:02}' for i in range(7, 16)]
+    charges = [e for e in ledger['entries'] if e.get('run_id') == campaign.run_id
+               or e.get('authorization_id') == auth['authorization_id']]
+    claims = [e for e in ledger.get('stage_authorizations', []) if e.get('run_id') == campaign.run_id
+              or e.get('authorization_id') == auth['authorization_id']]
+    if (manifest.get('target') != 'deployed' or manifest.get('run_id') != campaign.run_id
+            or manifest.get('deployed_url') != origin(campaign.config.get('deployed_url'))
+            or manifest.get('tier') != 'medium' or manifest.get('selected') != prefix + ['C16']
+            or auth.get('credit_ceiling') != 11250
+            or manifest.get('stage_authorization') != auth or claims != [{**auth, 'run_id': campaign.run_id}]
+            or manifest.get('attempted') is not True or manifest.get('status') not in ('failed', 'blocked')
+            or manifest.get('repair_admissions') or any(e.get('run_id') == campaign.run_id
+                or e.get('repair_authorization_id') == supplemental['authorization_id'] for e in ledger.get('repair_admissions', []))
+            or any(e.get('unsettled') for e in ledger['entries'])
+            or [e.get('case_id') for e in charges] != prefix
+            or any(e.get('run_id') != campaign.run_id or e.get('authorization_id') != auth['authorization_id']
+                   or e.get('stage_authorization') != auth for e in charges)
+            or manifest.get('provider_tests') != [e.get('test_id') for e in charges]
+            or manifest.get('invocations') != [e.get('invocation_id') for e in charges]
+            or len({e.get('test_id') for e in charges}) != 9 or len({e.get('invocation_id') for e in charges}) != 9
+            or number(manifest.get('spent_credits')) != 5397
+            or [number(e.get('credits')) for e in charges] != list(map(number, [331,783,905,481,722,619,649,498,409]))
+            or manifest.get('agent_create_pending') or manifest.get('test_create_pending') or manifest.get('unsettled_usage')
+            or fixture.get('blocked') or fixture.get('current_request_ids') or fixture.get('fixture_rows')
+            or fixture.get('current_case') != 'C16' or any(o.get('status') != 'observed' for o in fixture.get('operations', []))
+            or any(not b.get('restored') for b in fixture.get('blocks', []))):
+        raise SimulationError('Linked repair prefix, authorization or resource proof failed')
+    progress = _monotonic_progress(campaign, ledger, charges)
+    if progress['previous_attempt'] != 5:
+        raise SimulationError('Linked repair requires original attempt five')
+    snapshots = list(progress['snapshots'])
+    for kind in ('unpaid_continuations', 'remaining_continuations'):
+        history = manifest.get(kind, [])
+        records = [e for e in ledger.get(kind, []) if e.get('run_id') == campaign.run_id]
+        if len(history) != 1 or len(records) != 1 or any(records[0].get(k) != v for k,v in history[0].items() if k != 'resolved_retention_reasons'):
+            raise SimulationError('Linked repair original admission history differs')
+        snapshots.append(_verified_archive(campaign, history[0]['archive'], history[0]['files_sha256'], allow_extra=True))
+    extras = []
+    # Retain every earlier reconciliation and its immutable pre-reconciliation archive.
+    for binding in [manifest.get('remaining_reconciliation'), *manifest.get('reconciliations', [])]:
+        receipt = _repair_binding(campaign, binding)
+        pre = receipt.get('pre_reconciliation_archive', '')
+        hashes = json.loads(_artifact(campaign, str(Path(pre) / 'hashes.json')).read_text())
+        snapshots.append(_verified_archive(campaign, pre, hashes))
+        extras.append(binding['path'])
+    for snapshot in [*snapshots, manifest]:
+        if (any(i.get('case_id') == 'C16' for i in snapshot.get('test_creation_intents', []))
+                or snapshot.get('test_create_pending') == 'C16'):
+            raise SimulationError('C16 has a historical provider creation intent')
+    if list(campaign.folder.glob('C16-*.json')) or list(campaign.folder.glob('C15-2-*')):
+        raise SimulationError('Linked repair sample already has execution artifacts')
+    outcomes = [r for r in manifest.get('results', []) if r.get('attempt',1) == 5 and r.get('case_id') == 'C15']
+    proof = json.loads(_artifact(campaign, 'C15-1-evidence.json').read_text())
+    if (len(outcomes) != 1 or outcomes[0].get('functional_status') != 'failed'
+            or not any(c.get('name') == 'exact requested visit start' and c.get('passed') is False
+                       for c in proof.get('checks', []))):
+        raise SimulationError('C15 lacks original native exact-start failure')
+    extras.extend(p.name for p in campaign.folder.iterdir() if p.is_file()
+                  and any(p.name.startswith(cid + '-') for cid in prefix))
+    return charges, extras
+
+def _repair_settlement(campaign, charges):
+    manifest = campaign.manifest
+    binding = manifest.get('linked_repair_reconciliation')
+    bundle = _repair_binding(campaign, binding)
+    required = ('identity_verified', 'original_ids_excluded', 'baseline_unchanged',
+                'native_calendar_effects_settled', 'google_all_recorded_owned_events_deleted')
+    ids = list(range(51,63))
+    if (bundle.get('run_id') != campaign.run_id or bundle.get('status') != 'settled'
+            or bundle.get('paid_prefix') != [e['case_id'] for e in charges]
+            or number(bundle.get('spent_credits')) != 5397 or bundle.get('owned_request_ids') != ids
+            or bundle.get('cancelled_request_ids') != ids
+            or any(bundle.get(k) is not True for k in required)
+            or sorted(manifest['deployed_medium'].get('owned_request_ids', [])) != ids):
+        raise SimulationError('Linked repair native settlement bundle differs')
+    pre = bundle.get('pre_reconciliation_archive', '')
+    hashes = json.loads(_artifact(campaign, str(Path(pre) / 'hashes.json')).read_text())
+    snapshot = _verified_archive(campaign, pre, hashes)
+    effects = bundle.get('case_effects', {})
+    expected = {'C07': [], 'C08': [51], 'C09': [52], 'C10':[53,54], 'C11':[55],
+                'C12':[56], 'C13':[57,58], 'C14':[59,60], 'C15':[61,62]}
+    if set(effects) != set(expected):
+        raise SimulationError('Linked repair per-case effect scope differs')
+    for cid, owned in expected.items():
+        effect = effects[cid]
+        if effect.get('owned_request_ids') != owned:
+            raise SimulationError('Linked repair per-case native identities differ')
+        if cid in ('C10','C15'):
+            if effect.get('provenance') != 'native_fixture_operations':
+                raise SimulationError('Linked repair fixture provenance missing')
+            _fixture_creation_proof(campaign, effect, snapshot)
+        elif owned:
+            if effect.get('provenance') != 'provider_tool_result':
+                raise SimulationError('Linked repair provider provenance missing')
+            path = _artifact(campaign, cid + '-1-provider.json')
+            if hashlib.sha256(path.read_bytes()).hexdigest() != effect.get('provider_receipt_sha256'):
+                raise SimulationError('Linked repair provider effect hash differs')
+            saved = json.loads(path.read_text())
+            _repair_provider_effect(saved, effect, cid)
+        _remaining_effects(campaign, {'owned_request_ids': owned}) if owned else None
+    setup_binding = bundle.get('setup_reconciliation')
+    if setup_binding not in manifest.get('setup_reconciliations', []):
+        raise SimulationError('Linked repair setup receipt is not bound to manifest')
+    setup = _repair_binding(campaign, setup_binding)
+    if (setup.get('status') != 'settled' or setup.get('run_id') != campaign.run_id
+            or setup.get('native_setup_rejected_no_effect') is not True or setup.get('new_request_ids') != []
+            or setup.get('google_orphan_deleted') is not True or setup.get('native_fixture_retry') is not False
+            or setup.get('owned_request_id') != 62):
+        raise SimulationError('C16 rejected setup or owned orphan is unresolved')
+    pre_setup = setup.get('pre_reconciliation_archive','')
+    setup_hashes = json.loads(_artifact(campaign, str(Path(pre_setup)/'hashes.json')).read_text())
+    setup_snapshot = _verified_archive(campaign, pre_setup, setup_hashes)
+    index = setup.get('operation_index')
+    operations = setup_snapshot.get('deployed_medium',{}).get('operations',[])
+    current_ops = manifest['deployed_medium']['operations']
+    if type(index) is not int or not 0 <= index < len(operations) or index >= len(current_ops):
+        raise SimulationError('C16 rejected setup operation is missing')
+    old, current = operations[index], current_ops[index]
+    digest = hashlib.sha256(json.dumps(old,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+    if (digest != setup.get('operation_sha256') or old.get('status') != 'unknown'
+            or old.get('method') != 'POST' or old.get('path') != '/api/v1/voice/tools'
+            or old.get('body',{}).get('name') != 'create_service_request'
+            or current.get('body') != old.get('body') or current.get('status') != 'observed'
+            or current.get('ids') != [] or current.get('outcome') != 'rejected_no_effect'):
+        raise SimulationError('C16 original rejected setup proof differs')
+    audit = _repair_binding(campaign, bundle.get('google_audit'))
+    if (audit.get('run_id') != campaign.run_id or audit.get('owned_request_ids') != ids
+            or any(audit.get(k) is not True for k in ('all_owned_requests_cancelled', 'no_owned_active_reservations',
+                'all_recorded_google_events_deleted_or_absent', 'all_recorded_twilio_delivered'))
+            or type(audit.get('signed_delivery_callbacks_completed')) is not int
+            or audit['signed_delivery_callbacks_completed'] != 74
+            or {r.get('id') for r in audit.get('requests', [])} != set(ids)
+            or any(r.get('status') != 'cancelled' or r.get('calendar_integration_status') != 'DELETED'
+                   for r in audit['requests'])
+            or not audit.get('reservations') or any(r.get('service_request_id') not in ids
+                or r.get('status') != 'CANCELLED' or r.get('calendar_integration_status') != 'DELETED'
+                for r in audit['reservations'])
+            or not audit.get('google') or any(r.get('deleted_or_absent') is not True for r in audit['google'])
+            or not audit.get('outbox') or any(r.get('request_id') not in ids or r.get('status') != 'DELIVERED'
+                                              for r in audit['outbox'])
+            or not audit.get('twilio') or any(r.get('status') != 'delivered'
+                or r.get('recipient_allowlisted') is not True or r.get('native_signed_delivered_callback_completed') is not True
+                for r in audit['twilio'])):
+        raise SimulationError('Linked repair native Google audit is unresolved')
+    return bundle, [binding['path'], setup_binding['path'], bundle['google_audit']['path']]
+
+
+def _repair_provider_effect(saved, effect, cid):
+    expected_tool = 'book_appointment' if cid in ('C13','C14') else 'create_service_request'
+    if effect.get('provider_tool_name') != expected_tool or not effect.get('provider_request_id'):
+        raise SimulationError('Linked repair provider effect tool differs')
+    matches, calls = [], []
+    for response in saved.get('test_runs',[{}])[0].get('agent_responses',[]):
+        for call in response.get('tool_calls') or []:
+            if call.get('tool_name') == expected_tool and call.get('request_id') == effect['provider_request_id']:
+                params = call.get('params_as_json')
+                params = json.loads(params) if isinstance(params, str) else params
+                if not isinstance(params, dict):
+                    raise SimulationError('Linked repair provider call arguments are missing')
+                calls.append(call)
+        for tool in response.get('tool_results') or []:
+            if (tool.get('tool_name') == expected_tool and tool.get('request_id') == effect['provider_request_id']
+                    and tool.get('is_error') is False):
+                value = tool.get('result_value')
+                value = json.loads(value) if isinstance(value,str) else value
+                if isinstance(value,dict):
+                    result = value.get('result',value)
+                    if result.get('success') is True:
+                        matches.append(deployed_medium.Adapter._ids(result))
+    if len(calls) != 1 or matches != [effect['owned_request_ids']]:
+        raise SimulationError('Linked repair provider result does not prove exact owned effects')
+
+
+def _repair_linked_visit(config, tier, live, check, run_id, requested, repeat):
+    supplemental = _linked_repair_authorization(config,run_id)
+    if (not live or check or tier != 'medium' or not run_id or config.get('target') != 'deployed'
+            or requested != ['C15','C16'] or repeat != 1):
+        raise SimulationError('Linked repair requires live same-run exact C15,C16 once')
+    original = [f'C{i:02}' for i in range(7,17)]
+    preview(config,tier,original,repeat,target='deployed')
+    root = Path(config.get('artifact_root', ROOT/'scratch/live-simulations')).resolve()
+    with campaign_lock(root), httpx.Client(timeout=30,trust_env=False,follow_redirects=False) as client:
+        campaign = _unpaid_campaign(config,run_id)
+        ledger = json.loads((root/'usage-ledger.json').read_text())
+        auth = stage_authorization(config,tier,original,original,repeat,target='deployed')
+        if supplemental['authorization_id'] == auth['authorization_id']:
+            raise SimulationError('Repair approval must be distinct from the original stage claim')
+        charges,extras = _repair_prefix(campaign,ledger,auth,supplemental)
+        bundle,settlement_extras = _repair_settlement(campaign,charges)
+        extras.extend(settlement_extras)
+        problems,observed = deployment_readiness(config,client)
+        baseline = campaign.manifest['baseline']
+        originals = {r['id']:r for r in baseline}
+        if not unchanged(originals,observed) or not ({r['id'] for r in observed}-set(originals)) <= set(bundle['owned_request_ids']):
+            raise SimulationError('Linked repair protected native baseline changed')
+        name = preserved_customer_name(config,baseline,client)
+        cases = select_cases(load_catalog(),tier,requested)
+        designated = fixtures.variables(config)
+        for case in cases:
+            bound = case_variables(config,designated,case)
+            if any(bound[k] != designated[k] for k in ('customer_phone','customer_name','customer_email')):
+                raise SimulationError('Linked repair recipient identity differs')
+        services = campaign.manifest['deployed_medium']['services']
+        deployed_medium.validate_retained_catalog(config,client,services)
+        problems.extend(deployed_medium.readiness(config,client,cases,baseline,retained_catalog=services))
+        _repair_lookup(config,client)
+        state,provider_problems = provider_readiness(config,client)
+        problems.extend(provider_problems)
+        if problems or config.get('budget',{}).get('verified_credit_units') is not True:
+            raise SimulationError('Linked repair native/provider readiness failed')
+        provider = state['provider']
+        # Existing strict terminal identity/actual-credit proofs apply to all nine saved and fresh results.
+        spent = _prefix_results(campaign,provider,charges,[])
+        c15 = json.loads(_artifact(campaign,'C15-1-provider.json').read_text())
+        if c15['test_runs'][0].get('status') != 'passed' or spent != 5397:
+            raise SimulationError('Linked repair original C15 provider evaluation differs')
+        actual = native_override(provider.resolve_reference(provider.agent(campaign.manifest['campaign_agent_id'])),
+                                origin(config.get('deployed_url')),state['webhook_id'])
+        desired,revision_extras = _repair_revision(campaign,state,actual)
+        state['override'] = desired
+        remaining = current_remaining(config,provider)
+        budget = campaign_budget(config,tier,remaining); budget.spent = spent
+        if not budget.can_start(sum(estimates(config,cases))):
+            raise SimulationError('Linked repair aggregate reserve or fresh quota cannot admit two cases')
+        state['remaining'] = remaining
+        extras.extend(revision_extras)
+        extras.extend(p.name for p in campaign.folder.iterdir() if p.is_file() and (p.name.startswith('C15-') or p.name.startswith('C16-')))
+        _archive_unpaid(campaign,ledger,previous_attempt=5,kind='repair_admissions',extra_names=list(dict.fromkeys(extras)),
+            selected=requested,prior_spent=spent,metadata={'repair_authorization_id':supplemental['authorization_id'],
+                'linked_repair_authorization':supplemental,'sample_offsets':{'C15':1,'C16':0},
+                'agent_revision_fingerprint':fingerprint(desired)})
+        campaign.manifest['repair_admissions'][-1]['resolved_retention_reasons'] = list(campaign.manifest.get('cleanup_blockers',[]))
+        campaign.save()
+        outcomes = dict(campaign.manifest.get('stage_case_outcomes',{})); outcomes['C15']='failed'
+        return _execute(config,tier,live=True,requested=original,repeat=1,_campaign=campaign,
+            _admission={'baseline':baseline,'state':state,'existing_name':name,'selected':requested,
+                'attempt':6,'prior_stage_spent':spent,'prefix_outcomes':outcomes,'sample_offsets':{'C15':1,'C16':0}})
+
+
 def _continue_remaining(config, tier, live, check, run_id, requested, repeat, *, unsubmitted=False):
     suffix = [f'C{i:02}' for i in range(10 if unsubmitted else 9, 17)]
     kind = 'unsubmitted_continuations' if unsubmitted else 'remaining_continuations'
@@ -1068,7 +1382,12 @@ def _continue_remaining(config, tier, live, check, run_id, requested, repeat, *,
 
 
 def execute(config, tier='minimal', *, live=False, check=False, run_id=None,
-            requested=None, repeat=1, continue_unpaid=False, continue_remaining=False, continue_unsubmitted=False, **kwargs):
+            requested=None, repeat=1, continue_unpaid=False, continue_remaining=False, continue_unsubmitted=False,
+            repair_linked_visit=False, **kwargs):
+    if repair_linked_visit:
+        if continue_unpaid or continue_remaining or continue_unsubmitted:
+            raise SimulationError('Choose one explicit continuation mode')
+        return _repair_linked_visit(config, tier, live, check, run_id, requested, repeat)
     if continue_unsubmitted:
         if continue_unpaid or continue_remaining:
             raise SimulationError('Choose one explicit continuation mode')
@@ -1282,7 +1601,10 @@ def _execute(config, tier='minimal', *, live=False, check=False, run_id=None,
                             # synthetic suffixing belongs to isolated fixture ownership.
                             values['customer_name'] = base_values['customer_name']
                             values['run_id'] = base_values['run_id']
-                        entry = {'case_id': case['id'], 'repeat': iteration + 1, 'status': 'blocked',
+                        sample = iteration + 1 + ((_admission or {}).get('sample_offsets', {}).get(case['id'], 0))
+                        if adapter is not None:
+                            adapter.artifact_sample = sample
+                        entry = {'case_id': case['id'], 'repeat': sample, 'status': 'blocked',
                                  'attempt': attempt_number}
                         manifest['results'].append(entry)
                         if adapter is not None and (stage_blocked or budget.unknown):
@@ -1332,11 +1654,11 @@ def _execute(config, tier='minimal', *, live=False, check=False, run_id=None,
                             dynamic.update(caller_phone=values['customer_phone'], system__caller_id=phone(values['customer_phone']),
                                            customer_name=values['customer_name'], recent_booking_context=context,
                                            upcoming_appointments_summary=context, recent_history_summary='',
-                                           system__call_sid=campaign.run_id + case['id'] + str(iteration),
-                                           system__conversation_id=campaign.run_id + case['id'] + str(iteration))
+                                           system__call_sid=campaign.run_id + case['id'] + str(sample - 1),
+                                           system__conversation_id=campaign.run_id + case['id'] + str(sample - 1))
                             manifest['test_create_pending'] = case['id']
                             manifest.setdefault('test_creation_intents', []).append({'case_id': case['id'],
-                                'attempt': attempt_number, 'status': 'intent'})
+                                'attempt': attempt_number, 'repeat': sample, 'status': 'intent'})
                             campaign.save()
                             try:
                                 rendered = deployed_scenario(adapted_case, values)
@@ -1355,7 +1677,7 @@ def _execute(config, tier='minimal', *, live=False, check=False, run_id=None,
                             if not budget.can_start(estimate):
                                 raise SimulationError('Current allowance cannot admit this paid conversation')
                             charge = {'run_id': campaign.run_id, 'case_id': case['id'], 'test_id': test_id,
-                                      'period_reset': config['budget']['reset_unix'], 'unsettled': True}
+                                      'period_reset': config['budget']['reset_unix'], 'repeat': sample, 'unsettled': True}
                             if stage is not None:
                                 charge.update(authorization_id=stage['authorization_id'], stage_authorization=copy.deepcopy(stage))
                             if authorization is not None:
@@ -1379,7 +1701,7 @@ def _execute(config, tier='minimal', *, live=False, check=False, run_id=None,
                             budget.settle(invocation_id, credits)
                             charge.update(unsettled=credits is None, credits=None if credits is None else str(credits))
                             private_json(ledger_path, ledger)
-                            private_json(campaign.folder / f'{case["id"]}-{iteration + 1}-provider.json', redact(result))
+                            private_json(campaign.folder / f'{case["id"]}-{sample}-provider.json', redact(result))
                             deadline = time.monotonic() + config.get('evidence_timeout_seconds', 90)
                             while True:
                                 observed = scoped(get(client, url, '/api/v1/portal/service-requests'), values['customer_phone'])
@@ -1415,7 +1737,7 @@ def _execute(config, tier='minimal', *, live=False, check=False, run_id=None,
                             if not functional_passed:
                                 failed.add(case['id'])
                             previous = after
-                            private_json(campaign.folder / f'{case["id"]}-{iteration + 1}-evidence.json',
+                            private_json(campaign.folder / f'{case["id"]}-{sample}-evidence.json',
                                          redact({'checks': checks, 'before': current, 'after': after}))
                         except (SimulationError, httpx.HTTPError) as exc:
                             entry['reason'] = str(exc) if isinstance(exc, SimulationError) else 'Provider/deployment HTTP request failed; inspect retained evidence'
@@ -1451,7 +1773,8 @@ def _execute(config, tier='minimal', *, live=False, check=False, run_id=None,
                 manifest['latest_attempt_functional_status'] = ('passed' if latest and all(row.get('functional_status') == 'passed' for row in latest) else 'failed')
                 if _admission is not None and _admission.get('prior_stage_spent') is not None:
                     outcomes = dict(_admission.get('prefix_outcomes', {'C07': 'passed', 'C08': 'failed'}))
-                    outcomes.update({row['case_id']: row.get('functional_status', row['status']) for row in latest})
+                    outcomes.update({row['case_id']: row.get('functional_status', row['status']) for row in latest
+                                     if outcomes.get(row['case_id']) != 'failed'})
                     manifest.update(stage_case_outcomes=outcomes, stage_functional_status='failed', status='failed')
             except BaseException:
                 manifest['status'] = 'incomplete'
@@ -1461,7 +1784,7 @@ def _execute(config, tier='minimal', *, live=False, check=False, run_id=None,
                         and not manifest.get('agent_create_pending')
                         and not manifest.get('test_create_pending')
                         and not [reason for reason in manifest.get('cleanup_blockers', [])
-                                 if _campaign is None or reason not in (manifest.get('unsubmitted_continuations') or manifest.get('remaining_continuations') or manifest['unpaid_continuations'])[-1].get('resolved_retention_reasons', [])]
+                                 if _campaign is None or reason not in (manifest.get('repair_admissions') or manifest.get('unsubmitted_continuations') or manifest.get('remaining_continuations') or manifest['unpaid_continuations'])[-1].get('resolved_retention_reasons', [])]
                         and not any(e.get('unsettled') for e in ledger['entries'])):
                     try:
                         adapter.cleanup_catalog()

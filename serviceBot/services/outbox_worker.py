@@ -108,7 +108,7 @@ def _set_calendar_projection_status(
 
 
 @contextmanager
-def _locked_calendar_projection(request_id, payload):
+def _locked_calendar_projection(request_id, payload, *, retire_previous=False):
     """Keep reservation ownership stable through native effects and status writes."""
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
@@ -142,6 +142,8 @@ def _locked_calendar_projection(request_id, payload):
                         and payload.get('booking_type', 'appointment') == request['booking_type'])
                 except (TypeError, ValueError, OverflowError):
                     current = False
+            if retire_previous and request and reservation and payload.get('action') != 'delete':
+                _retire_previous_calendar_projection(payload, cursor)
             yield cursor if current else None
 
 
@@ -299,7 +301,7 @@ def _dispatch_outbox_event(event_type: str, request_id: Optional[int], payload: 
     Raises an exception if any operation fails so the worker can retry or revert.
     """
     if event_type == "calendar_projection":
-        with _locked_calendar_projection(request_id, payload) as cursor:
+        with _locked_calendar_projection(request_id, payload, retire_previous=True) as cursor:
             if cursor is not None:
                 _apply_calendar_projection(request_id, payload, cursor)
 
@@ -561,12 +563,44 @@ def start_outbox_worker():
         logger.info("Outbox worker thread launched.")
 
 
+def _retire_previous_calendar_projection(payload, cursor):
+    """Retire historical effects even when their replacement upsert is obsolete."""
+    reservation_id = payload.get("reservation_id")
+    agent_id = payload.get("agent_id")
+    calendar_event_id = payload.get("calendar_event_id")
+    old_agent_id = payload.get("old_agent_id")
+    old_booking_time = payload.get("old_booking_time_str")
+    if not (reservation_id and agent_id and calendar_event_id
+            and payload.get("booking_time_str") and old_agent_id and old_booking_time):
+        return
+    old_event_id = payload.get("old_calendar_event_id") or (
+        f"servicebot{reservation_id}"
+        f"{datetime.fromisoformat(str(old_booking_time)).strftime('%Y%m%d%H%M')}"
+    )
+    if old_agent_id == agent_id and old_event_id == calendar_event_id:
+        return
+    # A later move may return to this identity, before or after its upsert runs.
+    # Preserve both the recorded and deterministic identities of every active owner.
+    cursor.execute(
+        """
+        SELECT 1 FROM appointment_reservations
+        WHERE status = 'ACTIVE' AND staff_agent_id = %s
+          AND (calendar_event_id = %s
+               OR 'servicebot' || id::text || to_char(starts_at, 'YYYYMMDDHH24MI') = %s)
+        LIMIT 1;
+        """,
+        (old_agent_id, old_event_id, old_event_id),
+    )
+    if cursor.fetchone():
+        return
+    if not delete_agent_calendar_event_by_id(agent_id=old_agent_id, event_id=old_event_id):
+        raise RuntimeError("Google Calendar did not confirm deletion of the previous projection")
+
+
 def _apply_calendar_projection(request_id, payload, cursor):
     action = payload.get("action", "upsert")
     reservation_id = payload.get("reservation_id")
     agent_id = payload.get("agent_id")
-    old_agent_id = payload.get("old_agent_id")
-    old_booking_time = payload.get("old_booking_time_str")
     booking_time = payload.get("booking_time_str")
     calendar_event_id = payload.get("calendar_event_id")
     details = payload.get("details", {})
@@ -582,15 +616,6 @@ def _apply_calendar_projection(request_id, payload, cursor):
 
     if not request_id or not reservation_id or not agent_id or not booking_time or not calendar_event_id:
         raise ValueError("calendar_projection payload is missing a required reservation field")
-
-    if old_agent_id and old_booking_time:
-        old_event_id = payload.get("old_calendar_event_id") or (
-            f"servicebot{reservation_id}"
-            f"{datetime.fromisoformat(str(old_booking_time)).strftime('%Y%m%d%H%M')}"
-        )
-        if old_agent_id != agent_id or old_event_id != calendar_event_id:
-            if not delete_agent_calendar_event_by_id(agent_id=old_agent_id, event_id=old_event_id):
-                raise RuntimeError("Google Calendar did not confirm deletion of the previous projection")
 
     created = create_agent_calendar_event(
         agent_id=agent_id,

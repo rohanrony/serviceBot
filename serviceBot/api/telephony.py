@@ -94,7 +94,7 @@ def format_appointment_window_message(
     return end_dt_str, msg
 
 
-from serviceBot.db.queries import lookup_customer_by_phone, create_service_request, check_availability, book_appointment, get_service_required_fields, create_crm_note, create_callback_request, get_customer_appointments, reschedule_appointment, cancel_appointment, update_customer_name, get_customer_service_history, consolidate_appointment_service
+from serviceBot.db.queries import CUSTOMER_APPOINTMENTS_SELECT, lookup_customer_by_phone, create_service_request, check_availability, book_appointment, get_service_required_fields, create_crm_note, create_callback_request, get_customer_appointments, reschedule_appointment, cancel_appointment, update_customer_name, get_customer_service_history, consolidate_appointment_service
 from serviceBot.db.connection import get_db_connection, dict_cursor
 from serviceBot.services.calendar_availability import verify_contiguous_slot_capacity
 from serviceBot.services.booking import normalize_reservation_duration
@@ -1773,17 +1773,11 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                         with get_db_connection() as conn:
                             with dict_cursor(conn) as cursor:
                                 cursor.execute(
-                                    """
-                                    SELECT sr.id, sr.booking_time AS appointment_datetime, sr.booking_type, sr.service_type,
-                                           sr.issue_description, COALESCE(sr.duration_minutes, 60) AS duration_minutes,
-                                           sr.status, v.year, v.make, v.model
-                                    FROM service_requests sr
-                                    JOIN customers c ON sr.customer_id = c.id
-                                    LEFT JOIN vehicles v ON sr.vehicle_id = v.id
+                                    CUSTOMER_APPOINTMENTS_SELECT + """
                                     WHERE RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(c.phone, '-', ''), ' ', ''), '(', ''), ')', ''), '+1', ''), 7) = %s
                                       AND sr.status IN ('pending', 'in_progress', 'confirmed')
                                       AND (sr.booking_type IN ('appointment', 'callback', 'appointment_and_callback') OR sr.booking_time IS NOT NULL)
-                                    ORDER BY sr.booking_time ASC NULLS LAST;
+                                    ORDER BY sr.booking_time ASC NULLS LAST, sr.id;
                                     """,
                                     (suffix,)
                                 )

@@ -371,3 +371,36 @@ T110 reconciliation settled: immutable attempt4 archive and canonical hashes pro
 T112 released244pureofflinecontracts including17newmonotonic; Red progressiongap retained, Ruffclean. All prioradmissions/archives and strictlyincreasedpaidprefix prove only C11–C16 untouched; C10twoIDfixtureprovenance remainsboundtoexactcreates. Same2500aggregateprefix/5400futureestimate and original11250cap. Full offline gate isrunning beforemorepaid work.
 
 T113 full offline/API/browser gate passed1086unit/integration+348E2E, zero failures/errors/skips; bounded sourceconvergence foundno materialFR053-055 gaps. Same2500settledprefix and no paidreplays; next onlyC11–C16 afterfreshlockednativeadmission.
+
+- [x] T114 Regress and repair C12 callback browser oracle to match the actual portal fields; preserve original evidence and validate separately without paid replay.
+
+- [x] T115 Regress and expose authoritative linked-visit metadata from existing lookup without changing selected-component reschedule semantics.
+- [x] T116 Regress and prepare separately versioned single-anchor linked-visit prompt correction, retaining old policy/failure provenance and awaiting external action approval.
+- [x] T117 Diagnose and reconcile C16's rejected native setup without paid submission or blind retry; preserve exact operation and attempt5.
+
+- [x] T118 Regress and repair superseded calendar historical-event retirement without stale upserts or active-event deletion; reconcile the exact owned orphan with conditional Google deletion and preserve all evidence.
+
+- [x] T119 Regress and prepare the explicit linked repair admission contract for C15 sample2+C16 sample1, with no external action until scoped user approval.
+
+T115–119 local evidence: 11 linked metadata DB/API contracts, 37 policy contracts,
+17 calendar ordering/retirement E2E contracts and 187 repair/continuation contracts
+pass. The original canonical policy bytes remain unchanged. Native C16 setup is
+settled rejected_no_effect; the exact orphan is conditionally deleted once, with
+all owned requests51–62 cancelled, Google effects absent/deleted, 74 signed
+delivery callbacks and original business hashes unchanged. The supplemental
+repair approval remains false; neither linked policy revision, app deployment,
+C15 sample2 nor C16 sample1 has been executed. The combined final gate and
+separate read-only C12 browser receipt were required before the final gate below.
+
+Final FR056–060 gate passed **1207 unit/integration +353 E2E**, zero failures,
+errors or skips (`linked-repair-full-offline-v2.log`, copied XML and immutable
+`linked-repair-full-offline-gate.json`). The first combined gate's8 stale
+calendar-lock test-double failures and353 passing E2E results remain archived.
+The repaired doubles execute the real projection lock and retirement logic
+through captured SQL rows; original deletion/status/failure assertions remain.
+Bounded source convergence has no material finding and lint has zero introduced
+findings. C12's separate deployed read-only browser check passed on retained
+cancelled request56, with the original paid evidence/PNG hashes unchanged and
+no replay (`c12-repaired-native-browser-receipt.json`).
+
+- [ ] T120 Obtain scoped approval, publish/deploy the frozen reviewed backend/harness repair, verify preserved KB/configuration and deployed linked metadata, apply/read back the second owned-clone policy revision, then execute only C15 sample2 and C16 sample1 under the original11250 aggregate ceiling. Preserve all historical failures and verify native settlement/cleanup; no uncertain write or charge retry.

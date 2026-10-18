@@ -1,7 +1,7 @@
 """Tests for the asynchronous, idempotent Google Calendar projection."""
 
 import importlib
-from contextlib import contextmanager
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -11,13 +11,29 @@ from serviceBot.services.outbox_worker import _dispatch_outbox_event
 
 @pytest.fixture(autouse=True)
 def captured_projection_lock(monkeypatch):
-    # Provider-boundary unit tests; real row locks/state validation live in E2E.
+    # Capture only SQL reads; exercise the real ordering/retirement lock body.
     cursor = MagicMock()
-    @contextmanager
-    def locked(*args):
-        yield cursor
-    monkeypatch.setattr('serviceBot.services.outbox_worker._locked_calendar_projection', locked, raising=False)
+    _projection_rows(cursor, _payload())
+    connection = MagicMock()
+    connection.__enter__.return_value = connection
+    cursor.__enter__.return_value = cursor
+    monkeypatch.setattr('serviceBot.services.outbox_worker.get_db_connection', lambda: connection)
+    monkeypatch.setattr('serviceBot.services.outbox_worker.dict_cursor', lambda _conn: cursor)
     return cursor
+
+
+def _projection_rows(cursor, payload):
+    start = datetime.fromisoformat(payload['booking_time_str'])
+    deleting = payload.get('action') == 'delete'
+    cursor.fetchone.side_effect = [
+        {'status': 'cancelled' if deleting else 'pending',
+         'booking_type': payload['booking_type'], 'duration_minutes': payload['duration_minutes']},
+        {'id': payload['reservation_id'], 'status': 'CANCELLED' if deleting else 'ACTIVE',
+         'staff_agent_id': payload['agent_id'], 'starts_at': start,
+         'ends_at': start + timedelta(minutes=payload['duration_minutes']),
+         'calendar_event_id': payload['calendar_event_id']},
+        None,  # No active reservation claims the historical event being retired.
+    ]
 
 
 def _payload():
@@ -103,13 +119,14 @@ def test_google_event_creation_uses_the_requested_id_and_treats_retry_conflict_a
 
 @pytest.mark.parametrize("action", ["delete", "upsert"])
 @pytest.mark.parametrize("outcome", [False, RuntimeError("provider unavailable")])
-def test_calendar_delete_failure_cannot_mark_success_or_create_replacement(action, outcome):
+def test_calendar_delete_failure_cannot_mark_success_or_create_replacement(action, outcome, captured_projection_lock):
     payload = {**_payload(), "action": action}
     if action == "delete":
         expected_agent, expected_id = 7, payload["calendar_event_id"]
     else:
         payload["old_calendar_event_id"] = "owned-old-event"
         expected_agent, expected_id = 3, "owned-old-event"
+    _projection_rows(captured_projection_lock, payload)
     with patch("serviceBot.services.outbox_worker.delete_agent_calendar_event_by_id", create=True) as delete, \
          patch("serviceBot.services.outbox_worker.create_agent_calendar_event") as create, \
          patch("serviceBot.services.outbox_worker._set_calendar_projection_status") as status:
@@ -126,6 +143,7 @@ def test_calendar_delete_failure_cannot_mark_success_or_create_replacement(actio
 
 def test_calendar_delete_uses_only_recorded_event_identity(captured_projection_lock):
     payload = {**_payload(), "action": "delete", "calendar_event_id": "owned-source-event"}
+    _projection_rows(captured_projection_lock, payload)
     with patch("serviceBot.services.outbox_worker.delete_agent_calendar_event_by_id", return_value=True, create=True) as delete, \
          patch("serviceBot.services.outbox_worker.delete_agent_calendar_event") as range_delete, \
          patch("serviceBot.services.outbox_worker._set_calendar_projection_status") as status:

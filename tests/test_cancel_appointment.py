@@ -117,11 +117,19 @@ def test_sms_router_bypass_quiet_hours_interactive_call(dummy_appointment_id):
 
 
 def test_outbox_worker_cancel_calendar_projection_and_notification():
-    from contextlib import contextmanager
-    @contextmanager
-    def captured_lock(*args):
-        yield MagicMock()
-    with patch("serviceBot.services.outbox_worker._locked_calendar_projection", captured_lock, create=True), \
+    connection, cursor = MagicMock(), MagicMock()
+    connection.__enter__.return_value = connection
+    cursor.__enter__.return_value = cursor
+    cursor.fetchone.side_effect = [
+        {'status': 'cancelled', 'booking_type': 'appointment', 'duration_minutes': 60},
+        {'id': 1, 'status': 'CANCELLED', 'staff_agent_id': 1,
+         'starts_at': dt_mod.datetime.fromisoformat('2026-10-05 13:00:00'),
+         'ends_at': dt_mod.datetime.fromisoformat('2026-10-05 14:00:00'), 'calendar_event_id': 'servicebot1'},
+    ]
+    with patch("serviceBot.services.outbox_worker.get_db_connection", return_value=connection), \
+         patch("serviceBot.services.outbox_worker.dict_cursor", return_value=cursor), \
+         patch("serviceBot.db.connection.get_db_connection", return_value=connection), \
+         patch("serviceBot.db.connection.dict_cursor", return_value=cursor), \
          patch("serviceBot.services.outbox_worker._set_calendar_projection_status"), \
          patch("serviceBot.services.outbox_worker.delete_agent_calendar_event_by_id", return_value=True) as mock_del_agent, \
          patch("serviceBot.services.outbox_worker.delete_admin_calendar_event") as mock_del_admin, \

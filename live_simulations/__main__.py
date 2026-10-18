@@ -32,6 +32,7 @@ def main(argv=None):
             p.add_argument('--continue-unpaid', action='store_true', help='Explicit same-run zero-submit deployed medium continuation')
             p.add_argument('--continue-remaining', action='store_true', help='Same-run never-submitted C09-C16 after settled prefix')
             p.add_argument('--continue-unsubmitted', action='store_true', help='Same-run never-submitted C10-C16 after verified owned policy revision')
+            p.add_argument('--repair-linked-visit', action='store_true', help='Separately approved same-run C15 sample2 and C16 sample1 repair')
         if command in ('plan', 'run', 'workflow'):
             p.add_argument('--tier', choices=('minimal', 'medium', 'full'), default='minimal')
             p.add_argument('--cases', help='Comma-separated subset; includes lifecycle prerequisites')
@@ -58,7 +59,8 @@ def main(argv=None):
         if args.command == 'workflow':
             from .workflow import execute
             value = execute(config, args.tier, live=args.live, run_id=args.run_id,
-                            requested=requested, repeat=args.repeat, config_path=args.config, check=args.check, continue_unpaid=args.continue_unpaid, continue_remaining=args.continue_remaining, continue_unsubmitted=args.continue_unsubmitted)
+                            requested=requested, repeat=args.repeat, config_path=args.config, check=args.check, continue_unpaid=args.continue_unpaid,
+                            continue_remaining=args.continue_remaining, continue_unsubmitted=args.continue_unsubmitted, repair_linked_visit=args.repair_linked_visit)
             print(json.dumps(redact(value if not args.live else {
                 'status': value['status'], 'run_id': value['run_id']}), indent=2))
             return {'passed': 0, 'planned': 0, 'failed': 1, 'blocked': 2, 'incomplete': 3}.get(value['status'], 2)

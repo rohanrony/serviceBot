@@ -1480,28 +1480,49 @@ def create_callback_request(customer_id: int, service_request_id: int = None, pr
     return receipt.request_id
 
 
+CUSTOMER_APPOINTMENTS_SELECT = """
+    SELECT sr.id, sr.booking_time AS appointment_datetime, sr.booking_type, sr.service_type,
+           sr.issue_description, COALESCE(sr.duration_minutes, 60) AS duration_minutes,
+           sr.status, v.year, v.make, v.model,
+           CASE WHEN sr.booking_type = 'appointment' THEN sr.visit_group_id END AS visit_group_id,
+           linked.visit_start, linked.visit_anchor_id,
+           COALESCE(linked.visit_member_ids, ARRAY[]::integer[]) AS visit_member_ids
+    FROM service_requests sr
+    JOIN customers c ON sr.customer_id = c.id
+    LEFT JOIN vehicles v ON sr.vehicle_id = v.id
+    LEFT JOIN LATERAL (
+        SELECT CASE WHEN bool_and(member.booking_time IS NOT NULL)
+                    THEN min(member.booking_time) END AS visit_start,
+               CASE WHEN bool_and(member.booking_time IS NOT NULL)
+                    THEN (array_agg(member.id ORDER BY member.booking_time ASC NULLS LAST, member.id))[1]
+                    END AS visit_anchor_id,
+               array_agg(member.id ORDER BY member.booking_time ASC NULLS LAST, member.id) AS visit_member_ids
+        FROM service_requests member
+        WHERE member.visit_group_id = sr.visit_group_id
+          AND member.customer_id = sr.customer_id
+          AND member.booking_type = 'appointment'
+          AND member.status IN ('pending', 'in_progress', 'confirmed')
+    ) linked ON sr.booking_type = 'appointment' AND sr.visit_group_id IS NOT NULL
+"""
+
+
 def get_customer_appointments(phone: str) -> list:
     """
     Looks up all scheduled/rescheduled appointments and service requests (including advisor callbacks)
     for a customer by phone number, including vehicle make, model, year, issue description, duration,
-    and booking type.
+    and booking type. Authoritative linked-visit metadata is customer-scoped and
+    includes only active appointment components; callbacks are never grouped.
     """
     import re
     cleaned_phone = re.sub(r"\D", "", phone) if phone else ""
     if len(cleaned_phone) == 11 and cleaned_phone.startswith("1"):
         cleaned_phone = cleaned_phone[1:]
 
-    query = """
-    SELECT sr.id, sr.booking_time AS appointment_datetime, sr.booking_type, sr.service_type,
-           sr.issue_description, COALESCE(sr.duration_minutes, 60) AS duration_minutes,
-           sr.status, v.year, v.make, v.model
-    FROM service_requests sr
-    JOIN customers c ON sr.customer_id = c.id
-    LEFT JOIN vehicles v ON sr.vehicle_id = v.id
+    query = CUSTOMER_APPOINTMENTS_SELECT + """
     WHERE (c.phone = %s OR REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(c.phone, '-', ''), ' ', ''), '(', ''), ')', ''), '+1', '') = %s)
       AND (sr.booking_type IN ('appointment', 'callback', 'appointment_and_callback') OR sr.booking_time IS NOT NULL)
       AND sr.status IN ('pending', 'in_progress', 'confirmed')
-    ORDER BY sr.booking_time ASC NULLS LAST;
+    ORDER BY sr.booking_time ASC NULLS LAST, sr.id;
     """
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:

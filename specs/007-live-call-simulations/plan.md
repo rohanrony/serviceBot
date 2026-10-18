@@ -463,3 +463,15 @@ C10's native selected/unselected booking checks passed, but the provider quote c
 The cleanup diagnostic proves a client ReadTimeout. Native logs show the same cancellation returned 200 in1.48seconds after the client wait; reconcile its exact native state before any retry. Use a bounded native mutation timeout and safe elapsed diagnostics; provider billing calls retain their own timeout. Do not infer a backend failure or redeploy from this client symptom.
 
 Validate the original immutable admission chain, four terminal charges (2500), all owned effects and the observed prompt revision before C11–C16. Require strictly shorter untouched suffix progress, durable creation intent and archive history under the same lock. Repeated admission with no newly settled prefix, paid replay, changed resources, unknown usage and unresolved cleanup must block. Run full offline/API/browser gates before any further paid work.
+
+## Callback browser observation (FR-056)
+
+C12 provider and persisted callback checks passed, but its browser oracle compared service_type Repair to the portal's displayed issue description and Callback badge (app.js824). Add issue_description to the fixed read-only native row query and use exact rendered callback identity while retaining owned selector/status checks and appointment assertions. Test malformed/missing/mismatched issue/type data. Do not change the portal or paid result. Current running attempt retains its loaded observer; apply and validate the repair separately after its evidence is retained.
+
+## Authoritative linked-visit metadata and single-anchor policy (FR-057–058)
+
+C15's two concurrent component reschedules correctly applied selected-component domain anchoring, producing an incorrect caller visit start. Do not change that domain contract. Expose linked-visit metadata in existing appointment lookup and preserve separate/unlinked appointments. Add a separate prompt policy version, retaining v1 for historical fingerprint proof. Use authoritative group metadata to choose the earliest component, mutate once and verify all returned member times before claiming success. Regress linked/unlinked/callback/cancelled-companion and duplicate-group paths. Prepare a reviewable tested app/prompt correction before requesting native deployment/persistent-agent/failed-retest approval.
+
+## Historical calendar-event retirement (FR-059)
+
+C15 generated two successive moves; the stale intermediate A-to-B projection skipped both B upsert and A deletion. Later B-to-C and cancellation only retired B/C, leaving owned reservation43 eventA busy and blocking C16 despite clean native slots. Separate recorded old-event retirement from obsolete upsert admission, retaining ordering locks and protection for every current active identity. Verify with captured calendar state and real PostgreSQL ordering regressions. Journal and reconcile the exact existing owned orphan independently; do not retry C16 setup before proof.

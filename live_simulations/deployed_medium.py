@@ -48,7 +48,7 @@ def _read(config, statement, params=()):
 
 
 def _request_rows(config, ids):
-    return _read(config, """SELECT s.id,s.service_type,s.status,s.booking_type,s.booking_time,
+    return _read(config, """SELECT s.id,s.service_type,s.issue_description,s.status,s.booking_type,s.booking_time,
         s.duration_minutes,s.staff_agent_id,s.visit_group_id,c.id AS customer_id,c.phone AS customer_phone,
         c.name AS customer_name,v.make,v.model,v.year,r.id AS reservation_id,r.status AS reservation_status,
         r.starts_at,r.ends_at,r.calendar_event_id,r.calendar_integration_status,
@@ -63,6 +63,27 @@ def _request_rows(config, ids):
         LEFT JOIN vehicles v ON v.id=s.vehicle_id
         LEFT JOIN appointment_reservations r ON r.service_request_id=s.id AND r.status='ACTIVE'
         WHERE s.id=ANY(%s) ORDER BY r.starts_at NULLS LAST,s.id""", (list(ids),)) if ids else []
+
+
+def _callback_browser_matches(row, rendered_text, badge_text):
+    """Match callback identity as app.js formatIssueDescription renders it."""
+    raw = row.get('issue_description')
+    if (row.get('booking_type') != 'callback' or not isinstance(raw, str) or not raw.strip()
+            or not isinstance(badge_text, str) or badge_text.casefold() != 'callback'
+            or not isinstance(rendered_text, str)):
+        return False
+    # Keep this bounded display normalization aligned with app.js:780-789.
+    issue = re.sub(r'^(Appointment booked|Callback requested):\s*', '', raw, flags=re.IGNORECASE)
+    issue = re.sub(r'\.?\s*Preferred time:.*$', '', issue, flags=re.IGNORECASE)
+    issue = re.sub(r'\s*scheduled for.*$', '', issue, flags=re.IGNORECASE)
+    issue = re.sub(r'\s*\(\d{4}\s+[a-zA-Z0-9\s-]+\)', '', issue)
+    issue = re.sub(r'\s+for\s+\d{4}\s+[a-zA-Z0-9\s-]+$', '', issue, flags=re.IGNORECASE)
+    issue = ' '.join(issue.split())
+    if not issue or issue.lower() in ('repair', 'callback', 'callback requested', 'appointment booked', 'n/a', 'unknown'):
+        return False
+    text = rendered_text.strip()
+    # innerText applies the portal badge's CSS uppercase transform.
+    return text[:len('Callback')].casefold() == 'callback' and ' '.join(text[len('Callback'):].split()) == issue
 
 
 def _effect_rows(config, ids):
@@ -591,7 +612,13 @@ class Adapter:
                         page.wait_for_selector(f'.edit-sr-btn[data-id="{int(row["id"])}"]', state='attached', timeout=15000)
                         locator = page.locator(f'.edit-sr-btn[data-id="{int(row["id"])}"]').locator('xpath=ancestor::tr')
                         exists = locator.count() == 1
-                        matches = exists and row['service_type'] in locator.inner_text()
+                        if exists and (case['id'] == 'C12' or row.get('booking_type') == 'callback'):
+                            issue = locator.locator('.issue-desc-text')
+                            badge = issue.locator('.booking-type-tag.callback')
+                            matches = (issue.count() == 1 and badge.count() == 1
+                                       and _callback_browser_matches(row, issue.inner_text(), badge.inner_text().strip()))
+                        else:
+                            matches = exists and row['service_type'] in locator.inner_text()
                         checks.append(check('reloaded browser owned row ' + str(row['id']), matches))
                         if exists:
                             status = page.locator(f'.status-select-badge[data-id="{int(row["id"])}"]').input_value()
@@ -599,7 +626,11 @@ class Adapter:
                             checks.append(check('browser owned row persisted status ' + str(row['id']), status == expected))
                     if not rows: checks.append(check('reloaded browser portal', True))
                     stage = 'screenshot'
-                    page.screenshot(path=str(self.campaign.folder / (case['id'] + '-portal.png')), full_page=True)
+                    sample = getattr(self, 'artifact_sample', 1)
+                    if type(sample) is not int or sample < 1:
+                        raise SimulationError('Browser artifact sample must be a positive integer')
+                    suffix = '' if sample == 1 else '-' + str(sample)
+                    page.screenshot(path=str(self.campaign.folder / (case['id'] + suffix + '-portal.png')), full_page=True)
                 finally:
                     browser.close()
         except Exception as exc:  # noqa: BLE001 - browser errors are sanitized failing evidence
