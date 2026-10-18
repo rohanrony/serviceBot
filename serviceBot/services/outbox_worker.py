@@ -3,6 +3,7 @@ import json
 import traceback
 import threading
 from datetime import datetime, timedelta
+from contextlib import contextmanager
 from typing import Optional
 
 from serviceBot.logger import get_logger
@@ -15,7 +16,8 @@ from serviceBot.services.gmail import (
 )
 from serviceBot.services.google_calendar import (
     create_agent_calendar_event,
-    delete_agent_calendar_event
+    delete_agent_calendar_event,
+    delete_agent_calendar_event_by_id,
 )
 
 logger = get_logger("outbox_worker")
@@ -62,43 +64,92 @@ def _set_calendar_projection_status(
     reservation_id: Optional[int],
     status: str,
     calendar_event_id: Optional[str],
+    *, cursor=None,
 ) -> None:
     """Persist asynchronous provider state without changing the local reservation."""
     if not request_id:
         return
+    if cursor is None:
+        with get_db_connection() as conn:
+            with dict_cursor(conn) as owned_cursor:
+                _set_calendar_projection_status(request_id, reservation_id, status, calendar_event_id, cursor=owned_cursor)
+        return
+    cursor.execute(
+        """
+        UPDATE service_requests
+        SET calendar_integration_status = %s,
+            calendar_event_id = COALESCE(%s, calendar_event_id),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = %s;
+        """,
+        (status, calendar_event_id, request_id),
+    )
+    if reservation_id:
+        cursor.execute(
+            """
+            UPDATE appointment_reservations
+            SET calendar_integration_status = %s,
+                calendar_event_id = COALESCE(%s, calendar_event_id),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s;
+            """,
+            (status, calendar_event_id, reservation_id),
+        )
+    cursor.execute(
+        """
+        UPDATE mock_calendar_slots
+        SET calendar_integration_status = %s,
+            calendar_event_id = COALESCE(%s, calendar_event_id),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE service_request_id = %s;
+        """,
+        (status, calendar_event_id, request_id),
+    )
+
+
+@contextmanager
+def _locked_calendar_projection(request_id, payload):
+    """Keep reservation ownership stable through native effects and status writes."""
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             cursor.execute(
-                """
-                UPDATE service_requests
-                SET calendar_integration_status = %s,
-                    calendar_event_id = COALESCE(%s, calendar_event_id),
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = %s;
-                """,
-                (status, calendar_event_id, request_id),
+                "SELECT status, booking_type, duration_minutes FROM service_requests WHERE id=%s FOR UPDATE;",
+                (request_id,),
             )
-            if reservation_id:
-                cursor.execute(
-                    """
-                    UPDATE appointment_reservations
-                    SET calendar_integration_status = %s,
-                        calendar_event_id = COALESCE(%s, calendar_event_id),
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE id = %s;
-                    """,
-                    (status, calendar_event_id, reservation_id),
-                )
+            request = cursor.fetchone()
             cursor.execute(
-                """
-                UPDATE mock_calendar_slots
-                SET calendar_integration_status = %s,
-                    calendar_event_id = COALESCE(%s, calendar_event_id),
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE service_request_id = %s;
-                """,
-                (status, calendar_event_id, request_id),
+                "SELECT id, status, staff_agent_id, starts_at, ends_at, calendar_event_id FROM appointment_reservations WHERE id=%s AND service_request_id=%s FOR UPDATE;",
+                (payload.get('reservation_id'), request_id),
             )
+            reservation = cursor.fetchone()
+            current = bool(request and reservation)
+            if current and payload.get('action') == 'delete':
+                event_id = reservation.get('calendar_event_id') or f"servicebot{reservation['id']}{reservation['starts_at']:%Y%m%d%H%M}"
+                current = (reservation['status'] == 'CANCELLED'
+                    and request['status'] in ('cancelled', 'cancelled_by_customer', 'cancelled_by_admin')
+                    and payload.get('agent_id') == reservation['staff_agent_id']
+                    and payload.get('calendar_event_id') == event_id)
+            elif current:
+                try:
+                    start = datetime.fromisoformat(str(payload.get('booking_time_str')))
+                    duration = int(payload.get('duration_minutes') or 60)
+                    current = (reservation['status'] == 'ACTIVE'
+                        and request['status'] not in ('cancelled', 'cancelled_by_customer', 'cancelled_by_admin')
+                        and payload.get('agent_id') == reservation['staff_agent_id']
+                        and start == reservation['starts_at']
+                        and start + timedelta(minutes=duration) == reservation['ends_at']
+                        and duration == request['duration_minutes']
+                        and payload.get('booking_type', 'appointment') == request['booking_type'])
+                except (TypeError, ValueError, OverflowError):
+                    current = False
+            yield cursor if current else None
+
+
+def _mark_calendar_projection_failed(request_id, payload):
+    with _locked_calendar_projection(request_id, payload) as cursor:
+        if cursor is not None:
+            _set_calendar_projection_status(request_id, payload.get('reservation_id'),
+                'FAILED', payload.get('calendar_event_id'), cursor=cursor)
 
 
 def process_outbox_batch(batch_size: int = 10) -> int:
@@ -170,9 +221,7 @@ def process_outbox_batch(batch_size: int = 10) -> int:
                     err_msg = f"{type(err).__name__}: {str(err)}\n{traceback.format_exc()}"
                     if event_type == "calendar_projection":
                         try:
-                            _set_calendar_projection_status(
-                                request_id, payload.get("reservation_id"), "FAILED", payload.get("calendar_event_id")
-                            )
+                            _mark_calendar_projection_failed(request_id, payload)
                         except Exception as status_err:
                             logger.warning(f"Could not record calendar projection failure: {status_err}")
                     new_attempts = attempts + 1
@@ -250,55 +299,9 @@ def _dispatch_outbox_event(event_type: str, request_id: Optional[int], payload: 
     Raises an exception if any operation fails so the worker can retry or revert.
     """
     if event_type == "calendar_projection":
-        action = payload.get("action", "upsert")
-        reservation_id = payload.get("reservation_id")
-        agent_id = payload.get("agent_id")
-        old_agent_id = payload.get("old_agent_id")
-        old_booking_time = payload.get("old_booking_time_str")
-        booking_time = payload.get("booking_time_str")
-        calendar_event_id = payload.get("calendar_event_id")
-        details = payload.get("details", {})
-
-        if action == "delete":
-            if agent_id and booking_time:
-                try:
-                    delete_agent_calendar_event(
-                        agent_id,
-                        str(booking_time)[:19],
-                        duration_minutes=payload.get("duration_minutes") or 60,
-                    )
-                except Exception as exc:
-                    logger.warning(f"Could not remove agent calendar projection on cancel: {exc}")
-            if request_id and reservation_id:
-                _set_calendar_projection_status(request_id, reservation_id, "DELETED", calendar_event_id)
-            return
-
-        if not request_id or not reservation_id or not agent_id or not booking_time or not calendar_event_id:
-            raise ValueError("calendar_projection payload is missing a required reservation field")
-
-        if old_agent_id and old_booking_time:
-            try:
-                delete_agent_calendar_event(
-                    old_agent_id,
-                    str(old_booking_time)[:19],
-                    duration_minutes=payload.get("duration_minutes") or 60,
-                )
-            except Exception as exc:
-                logger.warning(f"Could not remove the previous calendar projection: {exc}")
-
-        created = create_agent_calendar_event(
-            agent_id=agent_id,
-            customer_name=details.get("customer_name") or "Customer",
-            service_type=details.get("service_type") or "Service Request",
-            issue_description=details.get("issue") or "",
-            slot_datetime_str=str(booking_time)[:19],
-            duration_minutes=payload.get("duration_minutes") or 60,
-            booking_type=payload.get("booking_type") or "appointment",
-            external_event_id=calendar_event_id,
-        )
-        if not created:
-            raise RuntimeError("Google Calendar did not confirm the booking projection")
-        _set_calendar_projection_status(request_id, reservation_id, "CREATED", calendar_event_id)
+        with _locked_calendar_projection(request_id, payload) as cursor:
+            if cursor is not None:
+                _apply_calendar_projection(request_id, payload, cursor)
 
     elif event_type == "agent_reassignment":
         old_agent_id = payload.get("old_agent_id")
@@ -474,6 +477,10 @@ def _dispatch_outbox_event(event_type: str, request_id: Optional[int], payload: 
             )
             _require_notification_delivery(sms_result)
 
+    elif event_type == "sms_delivery_fallback":
+        from serviceBot.services.sms_delivery import dispatch_sms_fallback
+        dispatch_sms_fallback(payload)
+
     elif event_type.startswith("sms_"):
         from serviceBot.services.sms_router import SMSNotificationRouter
         router_svc = SMSNotificationRouter()
@@ -552,3 +559,49 @@ def start_outbox_worker():
         _worker_thread = threading.Thread(target=_worker_loop, daemon=True, name="OutboxWorkerThread")
         _worker_thread.start()
         logger.info("Outbox worker thread launched.")
+
+
+def _apply_calendar_projection(request_id, payload, cursor):
+    action = payload.get("action", "upsert")
+    reservation_id = payload.get("reservation_id")
+    agent_id = payload.get("agent_id")
+    old_agent_id = payload.get("old_agent_id")
+    old_booking_time = payload.get("old_booking_time_str")
+    booking_time = payload.get("booking_time_str")
+    calendar_event_id = payload.get("calendar_event_id")
+    details = payload.get("details", {})
+
+    if action == "delete":
+        if not agent_id or not calendar_event_id:
+            raise ValueError("calendar_projection deletion requires an agent and exact event ID")
+        if not delete_agent_calendar_event_by_id(agent_id=agent_id, event_id=calendar_event_id):
+            raise RuntimeError("Google Calendar did not confirm deletion of the booking projection")
+        if request_id and reservation_id:
+            _set_calendar_projection_status(request_id, reservation_id, "DELETED", calendar_event_id, cursor=cursor)
+        return
+
+    if not request_id or not reservation_id or not agent_id or not booking_time or not calendar_event_id:
+        raise ValueError("calendar_projection payload is missing a required reservation field")
+
+    if old_agent_id and old_booking_time:
+        old_event_id = payload.get("old_calendar_event_id") or (
+            f"servicebot{reservation_id}"
+            f"{datetime.fromisoformat(str(old_booking_time)).strftime('%Y%m%d%H%M')}"
+        )
+        if old_agent_id != agent_id or old_event_id != calendar_event_id:
+            if not delete_agent_calendar_event_by_id(agent_id=old_agent_id, event_id=old_event_id):
+                raise RuntimeError("Google Calendar did not confirm deletion of the previous projection")
+
+    created = create_agent_calendar_event(
+        agent_id=agent_id,
+        customer_name=details.get("customer_name") or "Customer",
+        service_type=details.get("service_type") or "Service Request",
+        issue_description=details.get("issue") or "",
+        slot_datetime_str=str(booking_time)[:19],
+        duration_minutes=payload.get("duration_minutes") or 60,
+        booking_type=payload.get("booking_type") or "appointment",
+        external_event_id=calendar_event_id,
+    )
+    if not created:
+        raise RuntimeError("Google Calendar did not confirm the booking projection")
+    _set_calendar_projection_status(request_id, reservation_id, "CREATED", calendar_event_id, cursor=cursor)

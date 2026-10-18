@@ -353,7 +353,8 @@ def verify_contiguous_slot_capacity(
 ) -> bool:
     """
     Checks if there is contiguous capacity for a booking starting at start_time
-    and lasting duration_minutes. Returns True if available, False if conflicting.
+    and lasting duration_minutes. Returns True only if availability is verified;
+    conflicts, invalid start times, and unavailable reservation evidence return False.
     Also ensures the slot does not conclude after business hours (6:00 PM / 18:00).
     """
     if isinstance(start_time, str):
@@ -366,9 +367,11 @@ def verify_contiguous_slot_capacity(
             try:
                 start_dt = dt_mod.datetime.strptime(clean_str[:16], "%Y-%m-%d %H:%M")
             except ValueError:
-                return True
-    else:
+                return False
+    elif isinstance(start_time, dt_mod.datetime):
         start_dt = start_time
+    else:
+        return False
 
     end_dt = start_dt + dt_mod.timedelta(minutes=duration_minutes)
 
@@ -400,8 +403,8 @@ def verify_contiguous_slot_capacity(
                 if cursor.fetchone():
                     return False
     except Exception:
-        # Fallback to true if table doesn't exist in lightweight test environments
-        return True
+        # Unknown reservation state cannot authorize an appointment extension.
+        return False
     return True
 
 

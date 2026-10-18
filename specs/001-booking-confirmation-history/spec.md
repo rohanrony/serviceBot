@@ -102,6 +102,26 @@ As a returning customer who already has an upcoming appointment for my vehicle, 
 
 ## Assumptions
 
+### Verification clarifications (2026-10-17)
+
+- FR-007/008 use the existing reservation duration policy: coerce a positive additional
+  duration, then round the combined duration up to the 15-minute reservation grid.
+  Capacity checks, persisted duration/end time and reserved segments must agree.
+- Consolidating an explicitly selected same-customer source cancels that source and
+  releases its local reservation segments and source-owned calendar slots atomically.
+  The retained appointment's capacity and unrelated bookings remain intact.
+- Unparseable booking times and failed capacity database reads cannot establish
+  availability. Consolidation must reject these checks before mutation or notification.
+- Consolidation durably queues the retained calendar update and source-calendar
+  deletion with local changes. Cancelled sources cannot retain pending reminders.
+  Calendar effects use exact event identity; provider failure must remain retryable.
+- Delayed retries cannot replace a newer reservation's calendar duration/time or
+  recreate cancelled capacity. Projection validates current reservation ownership
+  while serializing its native effect and durable status with reservation changes.
+- Portal and voice cancellation persist pending-reminder cancellation in the same
+  transaction as releasing capacity and queueing effects; a reminder write failure
+  rolls back the cancellation rather than leaving stale reminders active.
+
 - Returning callers typically call from the same mobile phone number previously registered; if calling from a different number, identity verification by phone number lookup remains available via tool call.
 - Existing Google Calendar integration supports modifying event duration and descriptions for existing events.
 - Single appointments can accommodate multiple service issues when the shop's technician schedule has adequate continuous capacity.

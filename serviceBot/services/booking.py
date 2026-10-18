@@ -1257,6 +1257,12 @@ class BookingService:
                         (tid,),
                     )
 
+                    # Reminder invalidation must commit with the cancellation.
+                    cursor.execute(
+                        "UPDATE sms_reminders SET status = 'CANCELLED' WHERE appointment_id = %s AND status = 'PENDING';",
+                        (tid,),
+                    )
+
                     # Audit log
                     cursor.execute(
                         """
@@ -1279,8 +1285,16 @@ class BookingService:
                     c_phone = target_req.get("phone")
                     s_type = target_req.get("service_type") or "Repair"
                     cancel_payload = {
+                        "action": "delete",
                         "reservation_id": reservation_id,
                         "agent_id": old_agent_id,
+                        "calendar_event_id": (
+                            existing.get("calendar_event_id") if existing else None
+                        ) or (
+                            f"servicebot{reservation_id}{old_starts_at:%Y%m%d%H%M}"
+                            if reservation_id and old_starts_at else None
+                        ),
+                        "duration_minutes": target_req.get("duration_minutes") or 60,
                         "booking_type": target_req.get("booking_type") or "appointment",
                         "booking_time_str": str(target_req.get("booking_time"))[:19] if target_req.get("booking_time") else None,
                         "notification_event": "CANCELLED_BY_CUSTOMER",
@@ -1307,13 +1321,6 @@ class BookingService:
                             """,
                             (event_type, tid, json.dumps(cancel_payload)),
                         )
-
-        try:
-            from serviceBot.services.sms_reminders import update_or_cancel_appointment_reminders
-            for target_req in targets:
-                update_or_cancel_appointment_reminders(target_req["id"])
-        except Exception:
-            pass
 
         return {
             "request_id": request_id,
@@ -1568,7 +1575,7 @@ class BookingService:
     def _active_reservation(cursor, request_id: int):
         cursor.execute(
             """
-            SELECT id, staff_agent_id, starts_at, ends_at
+            SELECT id, staff_agent_id, starts_at, ends_at, calendar_event_id
             FROM appointment_reservations
             WHERE service_request_id = %s AND status = 'ACTIVE'
             FOR UPDATE;
@@ -1742,6 +1749,7 @@ class BookingService:
             vehicle_str=vehicle_str,
             issue_description=issue_str,
             triggered_by=triggered_by,
+            old_calendar_event_id=existing.get("calendar_event_id") if existing else None,
         )
         return BookingReceipt(
             request_id=request_id,
@@ -1944,6 +1952,7 @@ class BookingService:
         vehicle_str: Optional[str] = None,
         issue_description: Optional[str] = None,
         triggered_by: str = "system",
+        old_calendar_event_id: Optional[str] = None,
     ) -> None:
         cursor.execute(
             """
@@ -1987,6 +1996,7 @@ class BookingService:
             "agent_id": staff_agent_id,
             "old_agent_id": old_staff_agent_id,
             "old_booking_time_str": old_starts_at.strftime("%Y-%m-%d %H:%M:%S") if old_starts_at else None,
+            "old_calendar_event_id": old_calendar_event_id,
             "calendar_event_id": calendar_event_id,
             "booking_type": booking_type,
             "booking_time_str": starts_at.strftime("%Y-%m-%d %H:%M:%S"),

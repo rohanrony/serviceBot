@@ -56,6 +56,7 @@ def test_booking_integrity_migrations_have_explicit_rollbacks():
         "0003_reminders_escalation",
         "0004_audit_trace_enrichment",
         "0005_staff_agent_soft_delete_and_escalation",
+        "0006_calendar_deletion_state",
     ]
 
     for forward in migrations:

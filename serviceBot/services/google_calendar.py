@@ -1,7 +1,6 @@
 import httpx
 import time
 import traceback
-import zoneinfo
 from datetime import datetime, timedelta
 from typing import Optional, Any
 
@@ -286,9 +285,15 @@ def create_agent_calendar_event(
             payload["id"] = external_event_id
         
         response = httpx.post(url, headers=headers, params=params, json=payload, timeout=10.0)
-        if response.status_code in [200, 201] or (
-            external_event_id and response.status_code == 409
-        ):
+        if external_event_id and response.status_code == 409:
+            # The durable identity may already exist with an older duration or issue.
+            # A duplicate insert is not proof that the current projection was applied.
+            update_payload = {key: value for key, value in payload.items() if key != "id"}
+            response = httpx.patch(
+                f"{url}/{external_event_id}", headers=headers, params=params,
+                json=update_payload, timeout=10.0,
+            )
+        if response.status_code in [200, 201]:
             print(f"Google Calendar event created successfully for agent {agent_id}!")
             return True
             
@@ -579,6 +584,31 @@ def parse_google_datetime(dt_dict: dict, tz) -> Optional[datetime]:
         val = dt_dict["date"]
         return datetime.strptime(val, "%Y-%m-%d").replace(tzinfo=tz)
     return None
+
+
+def delete_agent_calendar_event_by_id(agent_id: int, event_id: str) -> bool:
+    """Delete only the durable projection event; already absent is success."""
+    if not event_id:
+        return False
+    try:
+        creds = get_user_google_credentials(agent_id)
+        write_scopes = {
+            "https://www.googleapis.com/auth/calendar",
+            "https://www.googleapis.com/auth/calendar.events",
+        }
+        if not (creds["granted_scopes"] & write_scopes):
+            return False
+        response = httpx.delete(
+            f"https://www.googleapis.com/calendar/v3/calendars/primary/events/{event_id}",
+            headers={
+                "Authorization": f"Bearer {creds['access_token']}",
+                "Content-Type": "application/json",
+            },
+            timeout=10.0,
+        )
+        return response.status_code in (200, 204, 404, 410)
+    except Exception:
+        return False
 
 
 def delete_agent_calendar_event(

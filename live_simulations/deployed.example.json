@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "environment": "simulation",
+  "target": "deployed",
+  "deployed_url": "https://servicebot-w6hm.onrender.com",
+  "agent_id": "",
+  "protected_agent_ids": [],
+  "artifact_root": "scratch/live-simulations",
+  "app_port": 8011,
+  "gateway_port": 8010,
+  "budget": {
+    "monthly_credits": null,
+    "remaining_credits": null,
+    "reset_unix": null,
+    "verified_credit_units": false,
+    "case_upper_estimate": null,
+    "case_estimates": {}
+  },
+  "secrets": {
+    "elevenlabs_key": "ELEVENLABS_API_KEY"
+  },
+  "variables": {
+    "customer_name": "Synthetic Simulation Customer",
+    "customer_phone": "5550100001",
+    "customer_email": "simulation.customer@example.test"
+  },
+  "app_config": {
+    "business_timezone": "America/New_York"
+  },
+  "allowlisted_phone_numbers": [
+    "+15550100001"
+  ],
+  "allowlisted_emails": [
+    "replace-with-test-inbox@example.test"
+  ],
+  "email_receiver": "replace-with-test-inbox@example.test",
+  "whatsapp_ready": false,
+  "post_call_webhook_id": "",
+  "timeout_seconds": 120,
+  "evidence_timeout_seconds": 90,
+  "case_bindings": {}
+}

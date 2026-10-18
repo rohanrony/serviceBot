@@ -117,7 +117,13 @@ def test_sms_router_bypass_quiet_hours_interactive_call(dummy_appointment_id):
 
 
 def test_outbox_worker_cancel_calendar_projection_and_notification():
-    with patch("serviceBot.services.outbox_worker.delete_agent_calendar_event") as mock_del_agent, \
+    from contextlib import contextmanager
+    @contextmanager
+    def captured_lock(*args):
+        yield MagicMock()
+    with patch("serviceBot.services.outbox_worker._locked_calendar_projection", captured_lock, create=True), \
+         patch("serviceBot.services.outbox_worker._set_calendar_projection_status"), \
+         patch("serviceBot.services.outbox_worker.delete_agent_calendar_event_by_id", return_value=True) as mock_del_agent, \
          patch("serviceBot.services.outbox_worker.delete_admin_calendar_event") as mock_del_admin, \
          patch("serviceBot.services.outbox_worker.send_booking_notification") as mock_send_agent_notif, \
          patch("serviceBot.services.outbox_worker.send_admin_notification") as mock_send_admin_notif, \
@@ -137,7 +143,7 @@ def test_outbox_worker_cancel_calendar_projection_and_notification():
                 "details": {"customer_name": "Test User", "phone": "+15550192831"}
             }
         )
-        mock_del_agent.assert_called_once()
+        mock_del_agent.assert_called_once_with(agent_id=1, event_id='servicebot1')
 
         # 2. Booking notification cancellation
         _dispatch_outbox_event(

@@ -63,3 +63,11 @@
 ## Phase 5: Regression & Full Verification
 
 - [x] T016 Run `./run_tests.sh` across the complete test suite to verify 0 regressions.
+
+## Native delivery recovery follow-up
+
+- [x] T017 Reproduce missing callback registration and failed WhatsApp 63016 recovery with failing captured client and real signed-callback/outbox tests; cover disabled SMS, opt-out, unrelated errors and replay/order.
+- [x] T018 Implement callback registration and one durable permitted SMS fallback per failed WhatsApp log using the existing outbox and Twilio client, preserving the original failure and message content.
+- [ ] T019 Run focused and complete offline verification, then prove native SMS delivery with fresh provider and visible portal read-back; converge remaining notification findings.
+
+- [x] T020 Regress native agent-prefixed template-to-event mapping and country-prefix variants of opted-out customer phones, then retain explicit SMS permission and opt-out checks for both admission and dispatch.

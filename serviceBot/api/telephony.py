@@ -79,6 +79,7 @@ def format_appointment_window_message(
 from serviceBot.db.queries import lookup_customer_by_phone, create_service_request, check_availability, book_appointment, get_service_required_fields, create_crm_note, create_callback_request, get_customer_appointments, reschedule_appointment, cancel_appointment, update_customer_name, get_customer_service_history, consolidate_appointment_service
 from serviceBot.db.connection import get_db_connection, dict_cursor
 from serviceBot.services.calendar_availability import verify_contiguous_slot_capacity
+from serviceBot.services.booking import normalize_reservation_duration
 from serviceBot.services.rag import FAQService
 from serviceBot.graph.nodes import handoff_node
 from serviceBot.logger import get_logger
@@ -935,7 +936,19 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                 has_explicit_model = bool(model and model not in ("Unknown", ""))
 
                 issue_description = args.get("issue_description") or args.get("issue") or "Not specified"
-                service_type = args.get("service_type") or args.get("serviceType") or "Repair"
+                explicit_service_type = args.get("service_type") or args.get("serviceType")
+                service_type = explicit_service_type or "Repair"
+                if not explicit_service_type and not (args.get("is_uncataloged") or args.get("isUncataloged")) and isinstance(issue_description, str):
+                    # Recover only an unambiguous catalog label, without interpreting free text.
+                    with get_db_connection() as conn:
+                        with dict_cursor(conn) as cursor:
+                            cursor.execute(
+                                "SELECT name FROM services WHERE LOWER(BTRIM(name)) = LOWER(%s) LIMIT 2;",
+                                (issue_description.strip(),),
+                            )
+                            exact_services = cursor.fetchall()
+                    if len(exact_services) == 1:
+                        service_type = exact_services[0]["name"]
                 time_slot = args.get("time_slot") or args.get("timeSlot")
                 booking_type = args.get("booking_type") or args.get("bookingType")
                 booking_time = args.get("booking_time") or args.get("bookingTime") or args.get("appointment_datetime") or args.get("preferred_time") or time_slot
@@ -1628,6 +1641,7 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
 
         elif tool_name == "verify_caller_identity":
             phone = args.get("phone")
+            read_only = args.get("read_only") is True
             claimed_name = args.get("claimed_name") or args.get("name") or args.get("customer_name")
             validated_phone = clean_and_validate_phone(phone)
             if not validated_phone:
@@ -1642,14 +1656,33 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                         "success": True,
                         "is_existing_customer": False,
                         "is_verified_existing_customer": False,
-                        "message": f"No existing customer profile found for phone number {validated_phone}. A new profile will be created."
+                        "message": f"No existing customer profile found for phone number {validated_phone}." + ("" if read_only else " A new profile will be created.")
                     }
+                    if read_only:
+                        result["read_only"] = True
                 else:
                     existing_name = c_data.get("name", "")
                     clean_existing = existing_name.lower().strip()
                     clean_claimed = claimed_name.lower().strip() if claimed_name else ""
 
-                    if clean_existing == "unknown customer" and clean_claimed:
+                    if read_only:
+                        verified = bool(
+                            clean_existing and clean_existing != "unknown customer"
+                            and clean_claimed
+                            and (clean_claimed in clean_existing or clean_existing in clean_claimed)
+                        )
+                        result = {
+                            "success": True,
+                            "read_only": True,
+                            "is_existing_customer": True,
+                            "is_verified_existing_customer": verified,
+                            "customer_id": c_data.get("customer_id") or c_data.get("id"),
+                            "customer_name": existing_name,
+                            "open_sr_id": c_data.get("open_sr_id"),
+                            "open_sr_type": c_data.get("open_sr_type"),
+                            "message": "Existing customer profile retrieved without changes.",
+                        }
+                    elif clean_existing == "unknown customer" and clean_claimed:
                         update_customer_name(c_data.get("customer_id") or c_data.get("id"), claimed_name)
                         result = {
                             "success": True,
@@ -1883,14 +1916,14 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                 booking_time = (appt_details.get("booking_time") or appt_details.get("appointment_datetime")) if appt_details else None
                 curr_duration = (appt_details.get("duration_minutes") if appt_details else None) or 60
                 staff_agent_id = appt_details.get("staff_agent_id") if appt_details else None
-                new_total_duration = curr_duration + additional_duration
+                new_total_duration = normalize_reservation_duration(curr_duration + additional_duration)
 
                 has_capacity = verify_contiguous_slot_capacity(
                     start_time=booking_time,
                     duration_minutes=new_total_duration,
                     exclude_service_request_id=appt_id,
                     staff_agent_id=staff_agent_id,
-                ) if booking_time else True
+                ) if booking_time else False
 
                 if not has_capacity:
                     result = {
@@ -1920,66 +1953,66 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                             b_time = cons_res.get("booking_time") or booking_time or ""
                             cancelled_sources = cons_res.get("cancelled_source_ids") or []
 
-                        start_str = str(b_time)
-                        end_str = ""
-                        st_fmt = "start time"
-                        end_fmt = "completion"
-                        try:
-                            clean_b = str(b_time).replace("T", " ")[:19]
-                            st_dt = datetime.strptime(clean_b, "%Y-%m-%d %H:%M:%S")
-                            end_dt = st_dt + timedelta(minutes=new_dur)
-                            start_str = st_dt.strftime("%Y-%m-%d %H:%M:%S")
-                            end_str = end_dt.strftime("%Y-%m-%d %H:%M:%S")
-                            st_fmt = st_dt.strftime("%I:%M %p").lstrip("0")
-                            end_fmt = end_dt.strftime("%I:%M %p").lstrip("0")
-                        except Exception:
-                            pass
-
-                        cancel_msg = ""
-                        if cancelled_sources:
-                            cancel_msg = f" Other requests merged and cancelled: {', '.join(str(x) for x in cancelled_sources)}."
-
-                        msg = (
-                            f"Appointment {appt_id} successfully consolidated. "
-                            f"Total scheduled duration is now {new_dur} minutes ({st_fmt} to {end_fmt}).{cancel_msg} "
-                            f"Calendar reservation extended. Please advise the customer that the visit is booked for this window but is likely to extend."
-                        )
-
-                        # Trigger immediate SMS/WhatsApp notification
-                        if phone:
+                            start_str = str(b_time)
+                            end_str = ""
+                            st_fmt = "start time"
+                            end_fmt = "completion"
                             try:
-                                from serviceBot.services.sms_router import SMSNotificationRouter
-                                v_info = cons_res.get("vehicle") or (appt_details.get("vehicle") if appt_details else {}) or {}
-                                v_str = f"{v_info.get('year') or ''} {v_info.get('make') or ''} {v_info.get('model') or ''}".strip() or "Vehicle"
-                                SMSNotificationRouter().process_event(
-                                    event_type="CONSOLIDATED",
-                                    appointment_id=appt_id,
-                                    customer_phone=clean_and_validate_phone(phone),
-                                    booking_time=str(b_time),
-                                    details={
-                                        "customer_name": (appt_details.get("customer_name") if appt_details else None) or "Valued Customer",
-                                        "phone": clean_and_validate_phone(phone),
-                                        "service_type": cons_res.get("service_type") or (appt_details.get("service_type") if appt_details else None) or "Service",
-                                        "issue": combined_issues,
-                                        "duration_minutes": new_dur,
-                                        "time": str(b_time),
-                                        "vehicle": v_str,
-                                        "cancelled_source_ids": cancelled_sources
-                                    }
-                                )
-                            except Exception as sms_err:
-                                logger.warning(f"SMS notification failed for consolidation #{appt_id}: {sms_err}")
+                                clean_b = str(b_time).replace("T", " ")[:19]
+                                st_dt = datetime.strptime(clean_b, "%Y-%m-%d %H:%M:%S")
+                                end_dt = st_dt + timedelta(minutes=new_dur)
+                                start_str = st_dt.strftime("%Y-%m-%d %H:%M:%S")
+                                end_str = end_dt.strftime("%Y-%m-%d %H:%M:%S")
+                                st_fmt = st_dt.strftime("%I:%M %p").lstrip("0")
+                                end_fmt = end_dt.strftime("%I:%M %p").lstrip("0")
+                            except Exception:
+                                pass
 
-                        result = {
-                            "success": True,
-                            "appointment_id": appt_id,
-                            "combined_issues": combined_issues,
-                            "new_duration_minutes": new_dur,
-                            "start_time": start_str,
-                            "expected_end_time": end_str,
-                            "cancelled_source_ids": cancelled_sources,
-                            "message": msg
-                        }
+                            cancel_msg = ""
+                            if cancelled_sources:
+                                cancel_msg = f" Other requests merged and cancelled: {', '.join(str(x) for x in cancelled_sources)}."
+
+                            msg = (
+                                f"Appointment {appt_id} successfully consolidated. "
+                                f"Total scheduled duration is now {new_dur} minutes ({st_fmt} to {end_fmt}).{cancel_msg} "
+                                f"Calendar reservation extended. Please advise the customer that the visit is booked for this window but is likely to extend."
+                            )
+
+                            # Trigger immediate SMS/WhatsApp notification
+                            if phone:
+                                try:
+                                    from serviceBot.services.sms_router import SMSNotificationRouter
+                                    v_info = cons_res.get("vehicle") or (appt_details.get("vehicle") if appt_details else {}) or {}
+                                    v_str = f"{v_info.get('year') or ''} {v_info.get('make') or ''} {v_info.get('model') or ''}".strip() or "Vehicle"
+                                    SMSNotificationRouter().process_event(
+                                        event_type="CONSOLIDATED",
+                                        appointment_id=appt_id,
+                                        customer_phone=clean_and_validate_phone(phone),
+                                        booking_time=str(b_time),
+                                        details={
+                                            "customer_name": (appt_details.get("customer_name") if appt_details else None) or "Valued Customer",
+                                            "phone": clean_and_validate_phone(phone),
+                                            "service_type": cons_res.get("service_type") or (appt_details.get("service_type") if appt_details else None) or "Service",
+                                            "issue": combined_issues,
+                                            "duration_minutes": new_dur,
+                                            "time": str(b_time),
+                                            "vehicle": v_str,
+                                            "cancelled_source_ids": cancelled_sources
+                                        }
+                                    )
+                                except Exception as sms_err:
+                                    logger.warning(f"SMS notification failed for consolidation #{appt_id}: {sms_err}")
+
+                            result = {
+                                "success": True,
+                                "appointment_id": appt_id,
+                                "combined_issues": combined_issues,
+                                "new_duration_minutes": new_dur,
+                                "start_time": start_str,
+                                "expected_end_time": end_str,
+                                "cancelled_source_ids": cancelled_sources,
+                                "message": msg
+                            }
                     except Exception as err:
                         result = {
                             "success": False,
@@ -2293,7 +2326,7 @@ async def sms_status_callback_webhook(request: Request):
 
     try:
         from serviceBot.db.connection import get_db_connection, dict_cursor
-        from serviceBot.db.queries import update_sms_log_status
+        from serviceBot.services.sms_delivery import record_delivery_status
 
         status_mapping = {
             "ACCEPTED": "SENT",
@@ -2309,7 +2342,7 @@ async def sms_status_callback_webhook(request: Request):
         if mapped_status:
             with get_db_connection() as conn:
                 with dict_cursor(conn) as cursor:
-                    cursor.execute("SELECT id, status FROM sms_log WHERE twilio_message_sid = %s;", (message_sid,))
+                    cursor.execute("SELECT * FROM sms_log WHERE twilio_message_sid = %s FOR UPDATE;", (message_sid,))
                     row = cursor.fetchone()
                     if row:
                         curr_status = row.get("status")
@@ -2318,8 +2351,8 @@ async def sms_status_callback_webhook(request: Request):
                                 f"Ignoring regressive status {mapped_status} for {message_sid} (currently {curr_status})"
                             )
                         else:
-                            update_sms_log_status(
-                                log_id=row["id"],
+                            record_delivery_status(
+                                cursor, row,
                                 status=mapped_status,
                                 error_code=error_code,
                                 error_message=error_message,

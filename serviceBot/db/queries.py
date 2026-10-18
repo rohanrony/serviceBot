@@ -2144,11 +2144,14 @@ def update_service_request_status(request_id: int, status: str, triggered_by: st
                         SELECT sa.id AS agent_id, sa.name AS agent_name, sa.phone_number AS agent_phone,
                                COALESCE(uga.email, sa.email) AS agent_email,
                                sr.booking_time, sr.service_type, sr.issue_description,
+                               ar.id AS reservation_id, ar.starts_at AS reservation_starts_at,
+                               COALESCE(ar.calendar_event_id, sr.calendar_event_id) AS calendar_event_id,
                                c.name AS customer_name, c.phone AS customer_phone,
                                v.year AS vehicle_year, v.make AS vehicle_make, v.model AS vehicle_model
                         FROM service_requests sr
                         LEFT JOIN staff_agents sa ON sr.staff_agent_id = sa.id
                         LEFT JOIN user_google_accounts uga ON uga.agent_id = sa.id
+                        LEFT JOIN appointment_reservations ar ON ar.service_request_id = sr.id
                         LEFT JOIN customers c ON sr.customer_id = c.id
                         LEFT JOIN vehicles v ON sr.vehicle_id = v.id
                         WHERE sr.id = %s;
@@ -2194,11 +2197,19 @@ def update_service_request_status(request_id: int, status: str, triggered_by: st
                         ),
                     )
 
-                    if details_row.get("agent_id") and details_row.get("booking_time"):
+                    if normalized_status == 'cancelled' and details_row.get("agent_id") and details_row.get("booking_time"):
+                        reservation_id = details_row.get("reservation_id")
+                        calendar_event_id = details_row.get("calendar_event_id")
+                        if not calendar_event_id and reservation_id:
+                            starts_at = dt_mod.datetime.fromisoformat(str(
+                                details_row.get("reservation_starts_at") or details_row["booking_time"]
+                            ))
+                            calendar_event_id = f"servicebot{reservation_id}{starts_at:%Y%m%d%H%M}"
                         cal_payload = {
                             "action": "delete",
+                            "reservation_id": reservation_id,
                             "agent_id": details_row.get("agent_id"),
-                            "calendar_event_id": f"servicebot{request_id}",
+                            "calendar_event_id": calendar_event_id,
                             "booking_time_str": str(details_row.get("booking_time"))[:19],
                             "details": {
                                 "customer_name": details_row.get("customer_name") or "Customer",
@@ -2215,11 +2226,10 @@ def update_service_request_status(request_id: int, status: str, triggered_by: st
                         )
 
             if normalized_status == 'cancelled':
-                try:
-                    from serviceBot.services.sms_reminders import update_or_cancel_appointment_reminders
-                    update_or_cancel_appointment_reminders(request_id)
-                except Exception:
-                    pass
+                cursor.execute(
+                    "UPDATE sms_reminders SET status = 'CANCELLED' WHERE appointment_id = %s AND status = 'PENDING';",
+                    (request_id,),
+                )
 
             return dict(row)
 
@@ -3801,6 +3811,8 @@ def consolidate_appointment_service(
     Updates linked appointment_reservations, reservation segments, and enqueues outbox SMS notification.
     """
     import datetime as dt_mod
+    from serviceBot.services.booking import normalize_reservation_duration
+    from serviceBot.services.outbox_worker import enqueue_outbox_event
 
     try:
         additional_duration_minutes = int(additional_duration_minutes)
@@ -3824,7 +3836,7 @@ def consolidate_appointment_service(
         with dict_cursor(conn) as cursor:
             cursor.execute(
                 """
-                SELECT sr.id, sr.customer_id, sr.booking_time, sr.issue_description, sr.service_type,
+                SELECT sr.id, sr.customer_id, sr.booking_time, sr.booking_type, sr.issue_description, sr.service_type,
                        COALESCE(sr.duration_minutes, 60) AS duration_minutes, sr.vehicle_id, sr.staff_agent_id,
                        v.year, v.make, v.model,
                        c.phone, c.name AS customer_name
@@ -3872,7 +3884,7 @@ def consolidate_appointment_service(
             else:
                 combined_issues = existing_desc
 
-            new_duration = existing_duration + additional_duration_minutes
+            new_duration = normalize_reservation_duration(existing_duration + additional_duration_minutes)
             new_service_type = sr.get("service_type")
             if additional_service_type and additional_service_type not in (new_service_type or ""):
                 new_service_type = f"{new_service_type}, {additional_service_type}"
@@ -3892,7 +3904,7 @@ def consolidate_appointment_service(
 
             cursor.execute(
                 """
-                SELECT id, staff_agent_id, starts_at, ends_at
+                SELECT id, staff_agent_id, starts_at, ends_at, calendar_event_id
                 FROM appointment_reservations
                 WHERE service_request_id = %s;
                 """,
@@ -3958,6 +3970,7 @@ def consolidate_appointment_service(
                     duration_minutes = %s,
                     service_type = %s,
                     booking_end_at = %s,
+                    calendar_integration_status = 'PENDING_CALENDAR',
                     updated_at = NOW()
                 WHERE id = %s;
                 """,
@@ -3970,6 +3983,7 @@ def consolidate_appointment_service(
                     """
                     UPDATE appointment_reservations
                     SET ends_at = %s,
+                        calendar_integration_status = 'PENDING_CALENDAR',
                         updated_at = NOW()
                     WHERE id = %s;
                     """,
@@ -4022,6 +4036,11 @@ def consolidate_appointment_service(
             for src_id in set(parsed_source_ids):
                 if src_id != appointment_id:
                     cursor.execute(
+                        "SELECT id, staff_agent_id, starts_at, calendar_event_id FROM appointment_reservations WHERE service_request_id = %s FOR UPDATE;",
+                        (src_id,),
+                    )
+                    source_reservations = cursor.fetchall()
+                    cursor.execute(
                         """
                         UPDATE service_requests
                         SET status = 'cancelled_by_customer',
@@ -4029,52 +4048,107 @@ def consolidate_appointment_service(
                             escalation_status = 'none',
                             escalation_reason = NULL,
                             linked_appointment_id = %s,
+                            calendar_integration_status = 'PENDING_CALENDAR',
                             updated_at = NOW()
                         WHERE id = %s;
                         """,
                         (appointment_id, src_id)
                     )
-                    try:
-                        cursor.execute(
-                            """
-                            UPDATE appointment_reservations
-                            SET status = 'CANCELLED',
-                                updated_at = NOW()
-                            WHERE service_request_id = %s;
-                            """,
-                            (src_id,)
+                    cursor.execute(
+                        """
+                        DELETE FROM appointment_reservation_segments
+                        WHERE reservation_id IN (
+                            SELECT id FROM appointment_reservations WHERE service_request_id = %s
+                        );
+                        """,
+                        (src_id,),
+                    )
+                    cursor.execute(
+                        """
+                        UPDATE appointment_reservations
+                        SET status = 'CANCELLED', calendar_integration_status = 'PENDING_CALENDAR', updated_at = NOW()
+                        WHERE service_request_id = %s;
+                        """,
+                        (src_id,),
+                    )
+                    cursor.execute(
+                        """
+                        UPDATE mock_calendar_slots
+                        SET is_booked = FALSE,
+                            reservation_status = 'AVAILABLE',
+                            service_request_id = NULL,
+                            calendar_integration_status = 'PENDING_CALENDAR',
+                            calendar_event_id = NULL,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE service_request_id = %s;
+                        """,
+                        (src_id,),
+                    )
+                    cursor.execute(
+                        "UPDATE sms_reminders SET status = 'CANCELLED' WHERE appointment_id = %s AND status = 'PENDING';",
+                        (src_id,),
+                    )
+                    for source_reservation in source_reservations:
+                        source_start = source_reservation["starts_at"]
+                        source_event_id = source_reservation.get("calendar_event_id") or (
+                            f"servicebot{source_reservation['id']}{source_start:%Y%m%d%H%M}"
                         )
-                    except Exception:
-                        pass
+                        enqueue_outbox_event(
+                            cursor=cursor,
+                            event_type="calendar_projection",
+                            request_id=src_id,
+                            payload={
+                                "action": "delete",
+                                "reservation_id": source_reservation["id"],
+                                "agent_id": source_reservation["staff_agent_id"],
+                                "calendar_event_id": source_event_id,
+                            },
+                        )
                     cancelled_ids.append(src_id)
 
-            # Enqueue outbox notification
-            try:
-                from serviceBot.services.outbox_worker import enqueue_outbox_event
-                veh_str = f"{sr.get('year') or ''} {sr.get('make') or ''} {sr.get('model') or ''}".strip()
+            if start_dt and res_row and agent_id:
                 enqueue_outbox_event(
                     cursor=cursor,
-                    event_type="sms_consolidated",
+                    event_type="calendar_projection",
                     request_id=appointment_id,
                     payload={
-                        "sms_event_type": "CONSOLIDATED",
-                        "appointment_id": appointment_id,
-                        "customer_phone": sr.get("phone"),
-                        "booking_time": str(booking_time),
+                        "reservation_id": res_row["id"],
+                        "agent_id": agent_id,
+                        "calendar_event_id": res_row.get("calendar_event_id") or f"servicebot{res_row['id']}{start_dt:%Y%m%d%H%M}",
+                        "booking_type": sr.get("booking_type") or "appointment",
+                        "booking_time_str": start_dt.strftime("%Y-%m-%d %H:%M:%S"),
+                        "duration_minutes": new_duration,
                         "details": {
-                            "customer_name": sr.get("customer_name") or "Valued Customer",
-                            "phone": sr.get("phone"),
+                            "customer_name": sr.get("customer_name"),
                             "service_type": new_service_type,
                             "issue": combined_issues,
-                            "duration_minutes": new_duration,
-                            "time": str(booking_time),
-                            "vehicle": veh_str,
-                            "cancelled_source_ids": cancelled_ids
-                        }
-                    }
+                        },
+                    },
                 )
-            except Exception as outbox_err:
-                logger.warning(f"Failed to enqueue outbox event for appointment #{appointment_id}: {outbox_err}")
+
+            # Enqueue outbox notification
+            veh_str = f"{sr.get('year') or ''} {sr.get('make') or ''} {sr.get('model') or ''}".strip()
+            enqueue_outbox_event(
+                cursor=cursor,
+                event_type="sms_consolidated",
+                request_id=appointment_id,
+                payload={
+                    "sms_event_type": "CONSOLIDATED",
+                    "appointment_id": appointment_id,
+                    "customer_phone": sr.get("phone"),
+                    "booking_time": str(booking_time),
+                    "details": {
+                        "customer_name": sr.get("customer_name") or "Valued Customer",
+                        "phone": sr.get("phone"),
+                        "service_type": new_service_type,
+                        "issue": combined_issues,
+                        "duration_minutes": new_duration,
+                        "time": str(booking_time),
+                        "vehicle": veh_str,
+                        "cancelled_source_ids": cancelled_ids
+                    }
+                }
+            )
 
             conn.commit()
 

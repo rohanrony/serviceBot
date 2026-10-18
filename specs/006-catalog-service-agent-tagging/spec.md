@@ -40,6 +40,19 @@ Currently in VoiceService:
 
 ## Clarifications
 
+### Live intake follow-up (2026-10-18)
+
+Browser follow-up: portal navigation and settings icons must have valid SVG path
+data and render without browser parse errors. Retain a real-browser regression
+for the malformed repeated gear path observed on the deployed portal.
+
+When voice `create_service_request` omits `service_type` but its stripped
+`issue_description` exactly matches one catalog service name (case insensitive),
+use that canonical service name for intake metadata and persistence. Quoted
+catalog duration, price and qualification must reach the created booking and
+reservation. Explicit service types and explicit uncataloged requests retain
+precedence. Free text must not be guessed or fuzzily mapped to a service.
+
 ### Session 2026-10-15
 - Q: When a customer or staff cancels one segment of a multi-service back-to-back visit, how should the system handle the companion appointment? → A: For the customer it is a single appointment. If the customer cancels, the entire visit (all linked services) is cancelled. If the customer calls to have only one thing checked, the visit is revised (the unwanted service is cancelled/removed, duration shortened, and the remaining service kept at its originally confirmed start time without shifting, avoiding technician schedule disruption).
 - Q: If a customer requests 3 or more services where no single technician can perform all of them, how should the scheduling engine partition the work? → A: Greedy grouping: combine as many services as possible with the first qualified technician, then schedule the companion technician back-to-back to minimize bay/technician handoffs.

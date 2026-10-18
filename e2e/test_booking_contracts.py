@@ -272,6 +272,156 @@ def test_consolidation_cannot_merge_another_customers_request(api, db, scenario)
     assert request_by_id(api, request_id)["duration_minutes"] == 60
 
 
+@pytest.mark.parametrize("increment,normalized", [(1, 75), (16, 90), (30.5, 90)])
+def test_consolidation_normalizes_combined_duration_and_capacity(
+    api, db, scenario, increment, normalized
+):
+    request_id = book(api, scenario)
+    result = consolidate(api, request_id, additional_duration_minutes=increment)
+    assert result["success"] is True, result
+    assert result["new_duration_minutes"] == normalized
+    row = request_by_id(api, request_id)
+    assert row["duration_minutes"] == normalized
+    assert row["booking_end_time"] == (
+        scenario["start"] + timedelta(minutes=normalized)
+    ).strftime("%Y-%m-%d %H:%M:%S")
+    segments = db(
+        "SELECT s.segment_start FROM appointment_reservation_segments s JOIN appointment_reservations r ON r.id=s.reservation_id WHERE r.service_request_id=%s ORDER BY s.segment_start",
+        (request_id,),
+    )
+    assert [row["segment_start"] for row in segments] == [
+        scenario["start"] + timedelta(minutes=offset)
+        for offset in range(0, normalized, 15)
+    ]
+    reservation = db(
+        "SELECT starts_at, ends_at FROM appointment_reservations WHERE service_request_id=%s AND status='ACTIVE'",
+        (request_id,),
+    )[0]
+    assert reservation["ends_at"] - reservation["starts_at"] == timedelta(minutes=normalized)
+
+
+def test_consolidation_releases_cancelled_source_capacity(api, db, scenario):
+    target = book(api, scenario)
+    source_start = scenario["start"] + timedelta(hours=3)
+    source = book(api, scenario, start=source_start)
+    result = consolidate(api, target, source_appointment_ids=[source])
+    assert result["success"] is True, result
+    assert result["cancelled_source_ids"] == [source]
+    assert request_by_id(api, source)["status"] == "cancelled_by_customer"
+    assert not db(
+        "SELECT s.* FROM appointment_reservation_segments s JOIN appointment_reservations r ON r.id=s.reservation_id WHERE r.service_request_id=%s",
+        (source,),
+    )
+    assert not db(
+        "SELECT id FROM mock_calendar_slots WHERE service_request_id=%s AND (is_booked OR reservation_status='RESERVED')",
+        (source,),
+    )
+    retained = db(
+        "SELECT s.segment_start FROM appointment_reservation_segments s JOIN appointment_reservations r ON r.id=s.reservation_id WHERE r.service_request_id=%s ORDER BY s.segment_start",
+        (target,),
+    )
+    assert [row["segment_start"] for row in retained] == [
+        scenario["start"] + timedelta(minutes=offset) for offset in range(0, 90, 15)
+    ]
+    assert len(db(
+        "SELECT id FROM mock_calendar_slots WHERE service_request_id=%s AND is_booked AND reservation_status='RESERVED'",
+        (target,),
+    )) == 6
+    replacement = api.post(
+        f"{PORTAL}/service-requests",
+        json=booking_payload(scenario, phone="+15550100002", start=source_start),
+    )
+    assert replacement.status_code == 201, replacement.text
+
+
+@pytest.mark.parametrize("stored_ids", [False, True])
+def test_consolidation_projects_updated_target_and_deleted_source(
+    api, db, scenario, monkeypatch, stored_ids
+):
+    from serviceBot.services import outbox_worker
+
+    target = book(api, scenario)
+    source = book(api, scenario, start=scenario["start"] + timedelta(hours=3))
+    reservations = {
+        row["service_request_id"]: row for row in db(
+            "SELECT * FROM appointment_reservations WHERE service_request_id = ANY(%s)",
+            ([target, source],),
+        )
+    }
+    event_ids = {
+        request_id: f"servicebot{row['id']}{row['starts_at']:%Y%m%d%H%M}"
+        for request_id, row in reservations.items()
+    }
+    if stored_ids:
+        event_ids = {target: "abc123target", source: "abc123source"}
+        for request_id, event_id in event_ids.items():
+            db(
+                "UPDATE appointment_reservations SET calendar_event_id=%s WHERE service_request_id=%s",
+                (event_id, request_id),
+            )
+    db(
+        "INSERT INTO sms_reminders (appointment_id, recipient_type, recipient_phone, reminder_type, scheduled_at) VALUES (%s, 'customer', '+15550100001', '2h', NOW())",
+        (source,),
+    )
+    before = db("SELECT COALESCE(MAX(id),0) AS last_id FROM outbox_notifications")[0]["last_id"]
+    result = consolidate(api, target, source_appointment_ids=[source])
+    assert result["success"] is True, result
+    projections = db(
+        "SELECT * FROM outbox_notifications WHERE event_type='calendar_projection' AND id>%s ORDER BY id",
+        (before,),
+    )
+    assert {row["request_id"] for row in projections} == {target, source}
+    created, deleted = [], []
+    monkeypatch.setattr(outbox_worker, "create_agent_calendar_event", lambda **kwargs: created.append(kwargs) or True)
+    monkeypatch.setattr(outbox_worker, "delete_agent_calendar_event_by_id", lambda **kwargs: deleted.append(kwargs) or True, raising=False)
+    for row in projections:
+        outbox_worker._dispatch_outbox_event(row["event_type"], row["request_id"], row["payload"])
+    assert len(created) == 1
+    assert created[0]["duration_minutes"] == 90
+    assert created[0]["external_event_id"] == event_ids[target]
+    assert "Brake squeak" in created[0]["issue_description"]
+    assert deleted == [{"agent_id": reservations[source]["staff_agent_id"], "event_id": event_ids[source]}]
+    assert db("SELECT status FROM sms_reminders WHERE appointment_id=%s", (source,)) == [{"status": "CANCELLED"}]
+    states = {row["service_request_id"]: row["calendar_integration_status"] for row in db(
+        "SELECT service_request_id, calendar_integration_status FROM appointment_reservations WHERE service_request_id=ANY(%s)",
+        ([target, source],),
+    )}
+    assert states == {target: "CREATED", source: "DELETED"}
+
+
+def test_consolidation_projection_enqueue_failure_rolls_back_every_change(
+    api, db, scenario, monkeypatch
+):
+    from serviceBot.services import outbox_worker
+
+    target = book(api, scenario)
+    source = book(api, scenario, start=scenario["start"] + timedelta(hours=3))
+    db(
+        "INSERT INTO sms_reminders (appointment_id, recipient_type, recipient_phone, reminder_type, scheduled_at) VALUES (%s, 'customer', '+15550100001', '2h', NOW())",
+        (source,),
+    )
+    queries = [
+        "SELECT * FROM service_requests ORDER BY id",
+        "SELECT * FROM appointment_reservations ORDER BY id",
+        "SELECT * FROM appointment_reservation_segments ORDER BY reservation_id, segment_start",
+        "SELECT * FROM mock_calendar_slots ORDER BY id",
+        "SELECT * FROM sms_reminders ORDER BY id",
+        "SELECT * FROM outbox_notifications ORDER BY id",
+    ]
+    before = [db(query) for query in queries]
+    enqueue = outbox_worker.enqueue_outbox_event
+
+    def fail_projection(cursor, event_type, request_id, payload):
+        if event_type == "calendar_projection":
+            raise RuntimeError("Synthetic projection enqueue failure")
+        return enqueue(cursor, event_type, request_id, payload)
+
+    monkeypatch.setattr(outbox_worker, "enqueue_outbox_event", fail_projection)
+    result = consolidate(api, target, source_appointment_ids=[source])
+    assert result["success"] is False, result
+    assert [db(query) for query in queries] == before
+
+
 def test_same_call_concurrent_intake_cannot_create_two_requests(api, db, scenario):
     args = intake(scenario)
     with ThreadPoolExecutor(max_workers=2) as executor:

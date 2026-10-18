@@ -205,3 +205,11 @@
 5. **Step 5: Callbacks & Lifecycle (Phases 6 & 7)**: Dual callbacks, visit cancellation, single-service revision, and decline auto-reassignment.
 6. **Step 6: Telephony & Calendar Sync (Phase 8)**: ElevenLabs voice announcements and Google Calendar invites.
 7. **Step 7: Full Verification (Phase 9)**: `./run_tests.sh` full regression suite pass.
+
+## Live intake repair (2026-10-18)
+
+- [x] T047 Reproduce omitted-type exact catalog intake with a failing real-database contract covering canonical identity, 45-minute response/reservation, three segments and catalog pricing; cover explicit-type precedence, uncataloged and free-text fallback.
+- [x] T048 Resolve only unique case-insensitive exact issue labels when type is omitted, using existing catalog and persistence paths; retain all explicit inputs and fallback behavior.
+- [x] T049 Run focused and complete offline verification, retain evidence and converge the intake follow-up; publication and deployed verification remain separate.
+
+- [x] T050 Reproduce deployed gear SVG parse errors in a browser regression, correct both malformed paths, and verify navigation/settings render without path parse errors.

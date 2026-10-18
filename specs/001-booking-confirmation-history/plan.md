@@ -92,3 +92,44 @@ tests/
 ## Complexity Tracking
 
 *No architectural violations or unnecessary complexity identified. Reuses existing PostgreSQL database schema and FastAPI endpoints.*
+
+## Verification repair plan (2026-10-17)
+
+Continue FR-007/008 with the current booking duration normalizer and existing
+consolidation transaction. Delete cancelled source reservation segments and release
+only source-owned slots in that same transaction; a cleanup error rolls back the
+whole consolidation. Keep the capacity verifier's boolean interface and return
+unavailable on parse or database failures. External API contracts remain unchanged;
+the calendar projection state migration is described below.
+
+Add failing focused capacity-error tests and API acceptance contracts for successful
+source consolidation, released-slot reuse, duration normalization and unchanged
+state on rejection. Validate focused modules, then complete offline unit/integration
+and browser/API suites. Source fallback is required because graph tools are absent.
+
+Convergence extends the same transaction with retained calendar upsert, exact-ID
+source deletion and source reminder cancellation. Preserve recorded provider event
+IDs; derive the existing deterministic reservation/time ID only when absent.
+Google POST conflicts must update the exact event instead of reporting stale
+content as success. Exact deletes treat already-absent events as success and retain
+retryable failures. Correct the canonical cancellation payload to enqueue deletion.
+Captured provider tests and real outbox-dispatch acceptance checks cover these
+effects, failure states, unrelated-event preservation and transaction rollback.
+
+Real database verification found the existing DELETED projection outcome is
+missing from reservation/slot check constraints. Add migration 0006 and an explicit
+rollback: allow DELETED on forward migration, translate deleted outcomes to FAILED
+before restoring prior constraints on rollback. Verify rollback/reapplication in
+the disposable database. Do not apply migrations to the deployed application.
+
+The 409 update path requires stale-event protection. Calendar projection locks the
+service request then reservation in the existing database transaction, checks its
+queued snapshot against current desired reservation state, and persists provider
+status through that cursor. Obsolete retries perform no provider write or status
+overwrite. Verify older-failure/newer-success/older-retry and cancellation ordering
+with the real dispatcher and captured provider boundaries.
+
+Cancel-only reminder updates use the existing transaction cursor in both canonical
+booking cancellation and portal status cancellation. Remove their separate,
+best-effort helper connection. Verify reminder state and rollback under injected
+write failure for both entry points; preserve ordinary rescheduling helper behavior.

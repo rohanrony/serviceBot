@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "environment": "simulation",
+  "agent_id": "",
+  "protected_agent_ids": [],
+  "tunnel_url": "https://replace-with-your-tunnel.example",
+  "app_port": 8011,
+  "gateway_port": 8010,
+  "artifact_root": "scratch/live-simulations",
+  "database_admin_env": "LIVE_SIMULATION_POSTGRES",
+  "budget": {
+    "monthly_credits": null,
+    "remaining_credits": null,
+    "reset_unix": null,
+    "verified_credit_units": false,
+    "case_upper_estimate": null,
+    "case_estimates": {}
+  },
+  "secrets": {
+    "elevenlabs_key": "SIM_ELEVENLABS_API_KEY",
+    "twilio_sid": "SIM_TWILIO_ACCOUNT_SID",
+    "twilio_token": "SIM_TWILIO_AUTH_TOKEN",
+    "gmail_receiver_token": "SIM_GMAIL_RECEIVER_TOKEN"
+  },
+  "app_environment": {
+    "ENCRYPTION_KEY": "SIM_ENCRYPTION_KEY",
+    "CRON_SECRET": "SIM_CRON_SECRET",
+    "ELEVENLABS_API_KEY": "SIM_ELEVENLABS_API_KEY",
+    "ELEVENLABS_WEBHOOK_SECRET": "SIM_ELEVENLABS_WEBHOOK_SECRET",
+    "TWILIO_ACCOUNT_SID": "SIM_TWILIO_ACCOUNT_SID",
+    "TWILIO_AUTH_TOKEN": "SIM_TWILIO_AUTH_TOKEN",
+    "TWILIO_FROM_NUMBER": "SIM_TWILIO_FROM_NUMBER",
+    "TWILIO_WHATSAPP_FROM_NUMBER": "SIM_TWILIO_WHATSAPP_FROM_NUMBER",
+    "GOOGLE_CLIENT_ID": "SIM_GOOGLE_CLIENT_ID",
+    "GOOGLE_CLIENT_SECRET": "SIM_GOOGLE_CLIENT_SECRET"
+  },
+  "app_config": {
+    "business_name": "Simulation Garage",
+    "business_timezone": "America/New_York",
+    "business_hours_start": 7,
+    "business_hours_end": 18,
+    "business_days": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "gmail_enabled": false,
+    "enable_agent_selection": true
+  },
+  "variables": {
+    "customer_name": "Synthetic Customer",
+    "customer_phone": "5550100001",
+    "customer_email": "replace-with-test-inbox@example.test"
+  },
+  "staff": [
+    {
+      "name": "Synthetic Technician One",
+      "phone": "+15550100003",
+      "email": "replace-with-test-staff@example.test"
+    },
+    {
+      "name": "Synthetic Technician Two",
+      "phone": "+15550100004",
+      "email": "replace-with-test-staff-two@example.test"
+    }
+  ],
+  "allowlisted_phone_numbers": [
+    "+15550100001",
+    "+15550100003",
+    "+15550100004"
+  ],
+  "allowlisted_emails": [
+    "replace-with-test-inbox@example.test",
+    "replace-with-test-staff@example.test",
+    "replace-with-test-staff-two@example.test",
+    "replace-with-admin-test-inbox@example.test"
+  ],
+  "calendar_ids": {
+    "1": "primary",
+    "2": "primary"
+  },
+  "whatsapp_ready": false,
+  "timeout_seconds": 120,
+  "evidence_timeout_seconds": 90,
+  "case_bindings": {},
+  "email_receiver": "replace-with-admin-test-inbox@example.test",
+  "post_call_webhook_id": ""
+}

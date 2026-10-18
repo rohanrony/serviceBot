@@ -106,6 +106,9 @@ def provider_capture(scenario, db, monkeypatch):
         outbox_worker, "delete_agent_calendar_event", lambda *args, **kwargs: True
     )
     monkeypatch.setattr(
+        outbox_worker, "delete_agent_calendar_event_by_id", lambda **kwargs: True
+    )
+    monkeypatch.setattr(
         outbox_worker, "create_admin_calendar_event", lambda **kwargs: True
     )
     monkeypatch.setattr(

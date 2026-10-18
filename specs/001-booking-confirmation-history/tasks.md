@@ -149,3 +149,17 @@
 2. US2: Returning customer context & warm greeting.
 3. US3: Issue consolidation into existing appointment & slot expansion.
 4. Polish: Full regression test execution and documentation updates.
+
+## Phase 7: Verification repairs
+
+- [x] T026 Reproduce source-consolidation capacity leakage with an API regression, then atomically release cancelled source segments/slots while retaining target ownership per FR-007/008 and Constitution II.
+- [x] T027 Reproduce off-grid consolidation duration/capacity disagreement, then reuse canonical combined-duration normalization at checks and persistence per FR-007/008.
+- [x] T028 Reproduce capacity database/parse fail-open behavior, then reject without consolidation or notification per FR-008 and Constitution II.
+- [x] T029 Run focused and complete offline suites, assess acceptance coverage and converge these repairs; retain exact red/green commands and evidence.
+- [x] T030 Reproduce lost consolidation domain rejection, then preserve the domain failure and prevent success formatting/notifications per FR-008 and Constitution V.
+- [x] T031 Reproduce missing consolidation calendar effects and stale source reminders, then enqueue exact-ID target/source projections and cancel source pending reminders atomically; verify rollback and captured dispatcher effects per FR-007/008 and Constitution II (partial).
+- [x] T032 Reproduce stale Google event content after an idempotent creation conflict and unsafe deletion, then update/delete exact event IDs with verified provider outcomes per Constitution II (contradicts).
+- [x] T033 Reproduce calendar projection false deletion success and incomplete cancellation payloads, then retain retryable failures and exact event identities per Constitution II (contradicts).
+- [x] T034 Reproduce the DELETED projection state constraint failure, then add forward/rollback migration 0006 and verify deletion, rollback and reapplication in the disposable database per Constitution II and schema-change requirements (contradicts).
+- [x] T035 Reproduce stale projection retries overwriting a newer consolidation or cancelled state, then serialize current-reservation validation, provider effect and durable status in the existing transaction per FR-007/008 and Constitution II (contradicts).
+- [x] T036 Reproduce cancellation leaving stale pending reminders when its separate helper fails, then include reminder cancellation in both existing cancellation transactions and verify complete rollback on write failure per Constitution II (partial).

@@ -1,5 +1,17 @@
 # Feature Specification: Vehicle Details and Issue Description in Customer and Agent Notifications
 
+## Native delivery recovery follow-up (2026-10-18)
+
+When a signed Twilio status callback reports WhatsApp failure 63016 (closed
+messaging window), preserve the original failed attempt and queue at most one
+SMS fallback for that original log only if the matching event/recipient SMS rule
+is explicitly enabled and the recipient has not opted out. Never fall back when
+SMS is disabled or for unrelated errors. Repeated/reordered callbacks must not
+duplicate fallback messages. Use the original body, recipient and appointment.
+The dispatch must request a status callback on the configured trusted public
+base URL. A queued/accepted dispatch is not handset delivery; native Twilio
+DELIVERED status is the acceptance evidence. Existing whitelist checks remain.
+
 **Feature Branch**: `003-notification-vehicle-issue-details`
 
 **Created**: 2026-10-08

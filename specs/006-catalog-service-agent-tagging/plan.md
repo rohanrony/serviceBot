@@ -3,6 +3,21 @@
 **Branch**: `006-catalog-service-agent-tagging` | **Date**: 2026-10-14 | **Spec**: [spec.md](file:///Users/rohanroy/Coding/voiceService/specs/006-catalog-service-agent-tagging/spec.md)
 
 ## Summary
+
+### Live intake follow-up (2026-10-18)
+
+Correct the two malformed existing gear-icon paths in the portal HTML after a
+browser regression captures their parse errors. Preserve controls and semantics;
+no visual redesign. Validate navigation/settings rendering in the browser.
+
+Resolve an omitted voice service type only through a unique case-insensitive
+exact catalog name matching the stripped issue description. Feed that canonical
+name to the existing metadata and booking paths; preserve explicit type and
+uncataloged precedence and generic free-text fallback. No fuzzy inference or
+schema change. Regress durable duration, segments, service identity and returned
+price using an isolated catalog entry before implementation, then run both
+offline suites. This local repair is not deployed by the test campaign.
+
 Provide many-to-many tagging between catalog services and staff agents in the portal, and augment the scheduling engine in `booking.py`, `queries.py`, and `telephony.py` to:
 1. Allow tagging multiple agents per service; untagged services remain open to any available staff agent.
 2. Prioritize customer availability: at the requested time, book a single qualified agent if available; if not, coordinate contiguous back-to-back appointments (0-minute buffer) across qualified technicians.

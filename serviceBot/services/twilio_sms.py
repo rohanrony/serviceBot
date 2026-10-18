@@ -206,6 +206,15 @@ class TwilioSMSClient:
                 from_num = (self.from_number or "").replace("whatsapp:", "").strip()
 
             kwargs = {"to": target_to, "body": body}
+            from types import SimpleNamespace
+            from serviceBot.services.webhook_security import canonical_twilio_url, WebhookVerificationError
+            try:
+                kwargs["status_callback"] = canonical_twilio_url(SimpleNamespace(
+                    url=SimpleNamespace(path="/api/v1/telephony/sms/status", query=""), headers={},
+                ))
+            except WebhookVerificationError:
+                # Older local configurations may have no public ingress.
+                pass
             if self.messaging_service_sid and normalized_channel != "WHATSAPP":
                 kwargs["messaging_service_sid"] = self.messaging_service_sid
             elif from_num:

@@ -42,6 +42,9 @@ print_usage() {
     echo "Options:"
     echo "  --all              Run the entire unit/integration test suite (Default)"
     echo "  --verify           Run unit/integration AND all E2E suites, even if one fails"
+    echo "    --live-tier TIER Run minimal|medium|full live simulations after both suites pass"
+    echo "    --live-config PATH  Private simulation config (optional)"
+    echo "    --live-run-id ID    Prepared runtime; skip guided account setup (optional)"
     echo "  --e2e              Run Playwright headless browser E2E tests (e2e/)"
     echo "  --e2e-headed       Run Playwright E2E tests in a visible Chromium browser"
     echo "  --browser          Run only actual browser journeys (add --e2e-headed to watch)"
@@ -129,13 +132,70 @@ case "$1" in
         ;;
     --verify)
         shift
+        LIVE_TIER=""
+        LIVE_CONFIG=""
+        LIVE_RUN_ID=""
+        VERIFY_PYTEST_ARGS=()
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                --live-tier|--live-config|--live-run-id)
+                    if [ "$#" -lt 2 ] || [[ "$2" == --* ]] || [ -z "$2" ]; then
+                        echo "Error: $1 requires a value." >&2
+                        exit 2
+                    fi
+                    case "$1" in
+                        --live-tier)
+                            if [ -n "$LIVE_TIER" ]; then echo "Error: duplicate --live-tier." >&2; exit 2; fi
+                            LIVE_TIER="$2" ;;
+                        --live-config)
+                            if [ -n "$LIVE_CONFIG" ]; then echo "Error: duplicate --live-config." >&2; exit 2; fi
+                            LIVE_CONFIG="$2" ;;
+                        --live-run-id)
+                            if [ -n "$LIVE_RUN_ID" ]; then echo "Error: duplicate --live-run-id." >&2; exit 2; fi
+                            LIVE_RUN_ID="$2" ;;
+                    esac
+                    shift 2
+                    ;;
+                --live-*) echo "Error: unknown live workflow option: $1" >&2; exit 2 ;;
+                *) VERIFY_PYTEST_ARGS+=("$1"); shift ;;
+            esac
+        done
+        if [ -n "$LIVE_TIER" ]; then
+            case "$LIVE_TIER" in
+                minimal|medium|full) ;;
+                *) echo "Error: --live-tier must be minimal, medium or full." >&2; exit 2 ;;
+            esac
+        elif [ -n "$LIVE_CONFIG" ] || [ -n "$LIVE_RUN_ID" ]; then
+            echo "Error: --live-config and --live-run-id require --live-tier." >&2
+            exit 2
+        fi
+        if [ -n "$LIVE_TIER" ]; then
+            for VERIFY_ARG in "${VERIFY_PYTEST_ARGS[@]}"; do
+                case "$VERIFY_ARG" in
+                    -h|--help|-V|--version|--collect-only*|--co|--fixtures*|--funcargs|--markers|--setup-plan|--setup-only)
+                        echo "Error: $VERIFY_ARG does not execute tests; omit --live-tier for informational runs." >&2
+                        exit 2 ;;
+                esac
+            done
+        fi
         UNIT_STATUS=0
         E2E_STATUS=0
-        "$WORKSPACE_DIR/run_tests.sh" --all "$@" || UNIT_STATUS=$?
-        "$WORKSPACE_DIR/run_tests.sh" --e2e "$@" || E2E_STATUS=$?
+        "$WORKSPACE_DIR/run_tests.sh" --all "${VERIFY_PYTEST_ARGS[@]}" || UNIT_STATUS=$?
+        "$WORKSPACE_DIR/run_tests.sh" --e2e "${VERIFY_PYTEST_ARGS[@]}" || E2E_STATUS=$?
         echo "Unit/integration exit: $UNIT_STATUS; E2E exit: $E2E_STATUS"
         if [ "$UNIT_STATUS" -ne 0 ] || [ "$E2E_STATUS" -ne 0 ]; then
+            if [ -n "$LIVE_TIER" ]; then echo "Live simulations skipped: offline verification failed."; fi
             exit 1
+        fi
+        if [ -n "$LIVE_TIER" ]; then
+            LIVE_ARGS=(--tier "$LIVE_TIER" --live)
+            if [ -n "$LIVE_CONFIG" ]; then LIVE_ARGS+=(--config "$LIVE_CONFIG"); fi
+            if [ -n "$LIVE_RUN_ID" ]; then LIVE_ARGS+=(--run-id "$LIVE_RUN_ID"); fi
+            echo "Offline verification passed. Starting live simulations: $LIVE_TIER"
+            LIVE_STATUS=0
+            "$WORKSPACE_DIR/run_live_simulations.sh" "${LIVE_ARGS[@]}" || LIVE_STATUS=$?
+            echo "Live simulation exit: $LIVE_STATUS"
+            exit "$LIVE_STATUS"
         fi
         ;;
     --browser|--e2e-contracts|--features)

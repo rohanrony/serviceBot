@@ -5,6 +5,73 @@ from serviceBot.main import app
 
 client = TestClient(app)
 
+
+@pytest.mark.parametrize("increment,normalized", [(1, 75), (16, 90), (30.5, 90)])
+def test_consolidation_checks_normalized_combined_capacity(increment, normalized):
+    cursor = MagicMock()
+    cursor.fetchone.return_value = {
+        "id": 1042,
+        "booking_time": "2026-10-19 10:00:00",
+        "duration_minutes": 60,
+        "staff_agent_id": 1,
+    }
+    with patch("serviceBot.api.telephony.get_db_connection"), \
+         patch("serviceBot.api.telephony.dict_cursor") as cursor_factory, \
+         patch("serviceBot.api.telephony.verify_contiguous_slot_capacity", return_value=False) as capacity, \
+         patch("serviceBot.api.telephony.consolidate_appointment_service") as mutate:
+        cursor_factory.return_value.__enter__.return_value = cursor
+        response = client.post("/api/v1/voice/tools", json={
+            "name": "consolidate_appointment_service",
+            "arguments": {
+                "appointment_id": 1042,
+                "additional_issue": "Brake squeak",
+                "additional_duration_minutes": increment,
+            },
+        })
+        assert response.status_code == 200
+        result = response.json().get("result", response.json())
+        assert result["success"] is False and result["capacity_blocked"] is True
+        assert capacity.call_args.kwargs["duration_minutes"] == normalized
+        mutate.assert_not_called()
+
+
+def test_consolidation_without_known_start_cannot_mutate():
+    cursor = MagicMock()
+    cursor.fetchone.return_value = {"id": 1042, "booking_time": None, "duration_minutes": 60}
+    with patch("serviceBot.api.telephony.get_db_connection"), \
+         patch("serviceBot.api.telephony.dict_cursor") as cursor_factory, \
+         patch("serviceBot.api.telephony.consolidate_appointment_service") as mutate:
+        cursor_factory.return_value.__enter__.return_value = cursor
+        response = client.post("/api/v1/voice/tools", json={
+            "name": "consolidate_appointment_service",
+            "arguments": {"appointment_id": 1042, "additional_issue": "Brake squeak"},
+        })
+        assert response.status_code == 200
+        result = response.json().get("result", response.json())
+        assert result["success"] is False
+        mutate.assert_not_called()
+
+
+def test_consolidation_preserves_domain_rejection_without_notification():
+    cursor = MagicMock()
+    cursor.fetchone.return_value = {
+        "id": 1042, "booking_time": "2026-10-19 10:00:00", "duration_minutes": 60,
+    }
+    rejection = {"success": False, "capacity_blocked": True, "message": "Capacity changed during consolidation."}
+    with patch("serviceBot.api.telephony.get_db_connection"), \
+         patch("serviceBot.api.telephony.dict_cursor") as cursor_factory, \
+         patch("serviceBot.api.telephony.verify_contiguous_slot_capacity", return_value=True), \
+         patch("serviceBot.api.telephony.consolidate_appointment_service", return_value=rejection), \
+         patch("serviceBot.services.sms_router.SMSNotificationRouter.process_event") as notify:
+        cursor_factory.return_value.__enter__.return_value = cursor
+        response = client.post("/api/v1/voice/tools", json={
+            "name": "consolidate_appointment_service",
+            "arguments": {"appointment_id": 1042, "phone": "5550100001", "additional_issue": "Brake squeak"},
+        })
+        assert response.status_code == 200
+        assert response.json().get("result", response.json()) == rejection
+        notify.assert_not_called()
+
 def test_consolidate_appointment_success():
     """Verify consolidating an additional issue into an existing appointment when capacity is available."""
     mock_consolidate_res = {

@@ -1,5 +1,17 @@
 # Implementation Plan: Vehicle Details and Issue Description in Customer and Agent Notifications
 
+## Native delivery recovery follow-up (2026-10-18)
+
+Reuse the signed callback, PostgreSQL outbox and Twilio client. Put status update
+and fallback admission under an original sms_log row lock with an exact
+source-log marker in outbox payload, so callback replay cannot create another
+fallback. Send the explicit SMS through the existing Twilio wrapper and preserve
+the original failed WhatsApp log. Check explicit matrix permission and opt-out
+at admission/dispatch. Request callbacks using the existing trusted public base
+resolver. No new queue or independent retry owner. Add captured transport tests
+and real-database signed-callback/worker tests before implementation, then full
+offline suites. Parent verifies actual Twilio delivery to designated recipients.
+
 **Branch**: `003-notification-vehicle-issue-details` | **Date**: 2026-10-08 | **Spec**: [spec.md](spec.md)
 
 **Input**: Feature specification from `specs/003-notification-vehicle-issue-details/spec.md`

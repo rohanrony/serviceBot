@@ -1,12 +1,78 @@
 import pytest
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
-import datetime as dt_mod
+from psycopg2 import OperationalError
 
 from serviceBot.main import app
 from serviceBot.services.calendar_availability import verify_contiguous_slot_capacity
 
 client = TestClient(app)
+
+
+@pytest.mark.parametrize("failure_stage", ["connection", "execute", "fetch"])
+def test_capacity_database_failure_cannot_authorize_extension(failure_stage):
+    """Unavailable reservation evidence must never authorize extra capacity."""
+    connection = MagicMock()
+    connection.__enter__.return_value = connection
+    cursor = MagicMock()
+    cursor.__enter__.return_value = cursor
+    cursor.fetchone.return_value = None
+    error = OperationalError("reservation database unavailable")
+    with patch("serviceBot.services.calendar_availability.get_db_connection", return_value=connection) as connect, \
+         patch("serviceBot.services.calendar_availability.dict_cursor", return_value=cursor):
+        if failure_stage == "connection":
+            connect.side_effect = error
+        elif failure_stage == "execute":
+            cursor.execute.side_effect = error
+        else:
+            cursor.fetchone.side_effect = error
+
+        assert verify_contiguous_slot_capacity("2026-10-05 11:00:00", 90) is False
+
+
+@pytest.mark.parametrize("start_time", ["invalid start time", None, 42])
+def test_capacity_unparseable_start_cannot_authorize_extension(start_time):
+    with patch("serviceBot.services.calendar_availability.get_db_connection") as connect:
+        assert verify_contiguous_slot_capacity(start_time, 90) is False
+        connect.assert_not_called()
+
+
+def test_consolidation_database_failure_prevents_mutation_and_notification():
+    """Exercise the real capacity gate through the voice tool boundary."""
+    appointment_connection = MagicMock()
+    appointment_connection.__enter__.return_value = appointment_connection
+    appointment_cursor = MagicMock()
+    appointment_cursor.__enter__.return_value = appointment_cursor
+    appointment_cursor.fetchone.return_value = {
+        "id": 27, "booking_time": "2026-10-05 11:00:00",
+        "duration_minutes": 60, "staff_agent_id": 10,
+    }
+    capacity_connection = MagicMock()
+    capacity_connection.__enter__.return_value = capacity_connection
+    capacity_cursor = MagicMock()
+    capacity_cursor.__enter__.return_value = capacity_cursor
+    capacity_cursor.execute.side_effect = OperationalError("reservation database unavailable")
+    with patch("serviceBot.api.telephony.get_db_connection", return_value=appointment_connection), \
+         patch("serviceBot.api.telephony.dict_cursor", return_value=appointment_cursor), \
+         patch("serviceBot.services.calendar_availability.get_db_connection", return_value=capacity_connection), \
+         patch("serviceBot.services.calendar_availability.dict_cursor", return_value=capacity_cursor), \
+         patch("serviceBot.api.telephony.consolidate_appointment_service", return_value={
+             "appointment_id": 27, "combined_issues": "Brake inspection",
+             "new_duration_minutes": 90, "booking_time": "2026-10-05 11:00:00",
+         }) as consolidate, \
+         patch("serviceBot.services.sms_router.SMSNotificationRouter.process_event") as notify:
+        response = client.post("/api/v1/voice/tools", json={
+            "name": "consolidate_appointment_service",
+            "arguments": {"appointment_id": 27, "phone": "5550100001",
+                          "additional_issue": "Brake inspection", "additional_duration_minutes": 30},
+        })
+
+    assert response.status_code == 200
+    result = response.json()["result"]
+    assert result["success"] is False
+    assert result["capacity_blocked"] is True
+    consolidate.assert_not_called()
+    notify.assert_not_called()
 
 def test_verify_contiguous_slot_capacity_excludes_own_service_request():
     """Verify that verify_contiguous_slot_capacity does not collide with the appointment's own reservation."""
