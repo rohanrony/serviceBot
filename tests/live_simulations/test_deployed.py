@@ -291,6 +291,7 @@ def test_live_workflow_dispatches_deployed_without_isolated_setup(monkeypatch):
 
 def test_ambiguous_paid_submission_is_retained_and_never_retried(monkeypatch, tmp_path):
     from decimal import Decimal
+
     from live_simulations import deployed
     c = config()
     c.update(artifact_root=str(tmp_path), evidence_timeout_seconds=1)
@@ -347,9 +348,10 @@ def test_deployed_check_cli_uses_deployed_default_config_and_exposes_problems(mo
 
 
 @pytest.mark.parametrize('mode', ['empty', 'preserve', 'mutated', 'name_mutated', 'calibration', 'over_budget',
-                                  'authorized', 'authorized_unknown', 'authorized_overspend', 'authorized_continuation'])
+                                  'authorized', 'authorized_unknown', 'authorized_overspend', 'authorized_continuation', 'authorized_recovery', 'authorized_seed'])
 def test_minimal_native_campaign_runs_six_lifecycle_cases_without_local_services(monkeypatch, tmp_path, mode):
     from decimal import Decimal
+
     from live_simulations import deployed
     c = config()
     if mode in ('calibration', 'over_budget'):
@@ -358,8 +360,9 @@ def test_minimal_native_campaign_runs_six_lifecycle_cases_without_local_services
         c['campaign_authorization'] = {'authorization_id': 'approved-six-case', 'credit_ceiling': 8160}
         c['budget'].update(monthly_credits=45676, case_upper_estimate=1088)
     original_manifest = None
-    if mode == 'authorized_continuation':
-        c, _, _ = continuation_config(tmp_path)
+    if mode in ('authorized_continuation', 'authorized_recovery', 'authorized_seed'):
+        c, _, seed_row = (seeded_recovery_config(tmp_path) if mode == 'authorized_seed'
+                         else recovery_config(tmp_path) if mode == 'authorized_recovery' else continuation_config(tmp_path))
         ancestor_path = tmp_path / c['campaign_authorization']['continuation_of'] / 'manifest.json'
         original_manifest = ancestor_path.read_bytes()
     if mode != 'empty':
@@ -371,9 +374,13 @@ def test_minimal_native_campaign_runs_six_lifecycle_cases_without_local_services
               'appointment_time': '2026-11-02 10:00:00', 'new_time': '2026-11-03 10:00:00',
               'callback_time': '2026-11-02 14:00:00', 'new_callback_time': '2026-11-03 14:00:00',
               'business_timezone': 'America/New_York'}
+    if mode == 'authorized_seed':
+        values.update(customer_phone=c['variables']['customer_phone'], new_time=c['variables']['new_time'])
     baseline = [] if mode == 'empty' else [{'id': 99, 'phone': values['customer_phone'],
         'customer_name': 'Existing Customer',
         'status': 'confirmed', 'booking_type': 'appointment', 'booking_time': '2026-11-05 10:00:00'}]
+    if mode == 'authorized_seed':
+        baseline.append(seed_row.copy())
     rows, submitted, state = copy.deepcopy(baseline), [], {}
     agent = {'conversation_config': {'agent': {'prompt': {'tools': [
         {'type': 'webhook', 'name': 'book', 'api_schema': {
@@ -389,6 +396,8 @@ def test_minimal_native_campaign_runs_six_lifecycle_cases_without_local_services
             assert args[1]['customer_name'] == values['customer_name'] + ' ' + args[0][:8]
         if mode in ('calibration', 'over_budget'):
             assert case['max_turns'] <= 8
+        else:
+            assert case['max_turns'] == 12
         if baseline:
             assert '2026-11-05' in args[1]['recent_booking_context']
         return 'test-' + case['id']
@@ -450,23 +459,31 @@ def test_minimal_native_campaign_runs_six_lifecycle_cases_without_local_services
         assert result['status'] == ('failed' if mode == 'over_budget' else 'incomplete')
         assert result['baseline'] == baseline
         return
-    assert submitted == ['C01', 'C02', 'C03', 'C04', 'C05', 'C06']
+    expected_cases = (['C02', 'C03'] if mode == 'authorized_seed' else ['C01', 'C02', 'C03']
+                      if mode == 'authorized_recovery' else ['C01', 'C02', 'C03', 'C04', 'C05', 'C06'])
+    assert submitted == expected_cases
     assert all(r['functional_status'] == 'passed' for r in result['results'])
     assert result['status'] == 'incomplete'
-    assert result['spent_credits'] == '6'
+    assert result['spent_credits'] == str(len(expected_cases))
     assert result['unsettled_usage'] is False
     assert all(r['status'] == 'cancelled' for r in rows if r['id'] != 99)
-    assert rows[:len(baseline)] == baseline
-    if mode in ('authorized', 'authorized_continuation'):
+    assert rows[:1] == baseline[:1] if mode == 'authorized_seed' else rows[:len(baseline)] == baseline
+    if mode == 'authorized_seed':
+        assert [row['id'] for row in result['baseline']] == [99]
+        assert result['owned_recovery']['source_row'] == seed_row
+        assert result['recovery_source_baseline'] == baseline
+        assert len(rows) == 2  # No C01 replay and no new booking.
+    if mode in ('authorized', 'authorized_continuation', 'authorized_recovery', 'authorized_seed'):
         assert result['campaign_authorization'] == c['campaign_authorization']
         ledger = json.loads((tmp_path / 'usage-ledger.json').read_text())
         current_charges = [e for e in ledger['entries'] if e['run_id'] == result['run_id']]
-        assert len(current_charges) == 6
+        assert len(current_charges) == len(expected_cases)
         assert all(e['authorization_id'] == c['campaign_authorization']['authorization_id'] and not e['unsettled'] for e in current_charges)
         if original_manifest is not None:
             assert ancestor_path.read_bytes() == original_manifest
             assert result['prior_spent_credits'] == '634'
-            assert result['aggregate_spent_credits'] == '640'
+            assert result['aggregate_spent_credits'] == str(634 + len(expected_cases))
+            assert result['complete_tier'] is (mode not in ('authorized_recovery', 'authorized_seed'))
             assert all(e['continuation_ancestors'] == ['a' * 32] for e in current_charges)
         provider.create_agent = lambda *a: pytest.fail('Authorization reuse created a clone')
         provider.create = lambda *a: pytest.fail('Authorization reuse created a test')
@@ -682,9 +699,11 @@ def test_explicit_customer_binding_rejects_invalid_binding_without_native_reques
     from live_simulations import deployed
     c = config()
     c.update(preserve_existing_bookings=True, existing_customer_identity=binding)
-    with httpx.Client(transport=httpx.MockTransport(lambda _: pytest.fail('Invalid binding sent request'))) as client:
-        with pytest.raises(SimulationError, match='identity'):
-            deployed.preserved_customer_name(c, [{'customer_name': 'Existing Customer'}], client)
+    with (
+        httpx.Client(transport=httpx.MockTransport(lambda _: pytest.fail('Invalid binding sent request'))) as client,
+        pytest.raises(SimulationError, match='identity'),
+    ):
+        deployed.preserved_customer_name(c, [{'customer_name': 'Existing Customer'}], client)
 
 
 def test_explicit_customer_binding_fails_closed_on_native_transport_error():
@@ -693,9 +712,11 @@ def test_explicit_customer_binding_fails_closed_on_native_transport_error():
     c.update(preserve_existing_bookings=True, existing_customer_identity={'id': 7, 'name': 'Existing Customer'})
     def unavailable(request):
         raise httpx.ConnectError('unavailable', request=request)
-    with httpx.Client(transport=httpx.MockTransport(unavailable)) as client:
-        with pytest.raises(SimulationError, match='identity'):
-            deployed.preserved_customer_name(c, [{'customer_name': 'Existing Customer'}], client)
+    with (
+        httpx.Client(transport=httpx.MockTransport(unavailable)) as client,
+        pytest.raises(SimulationError, match='identity'),
+    ):
+        deployed.preserved_customer_name(c, [{'customer_name': 'Existing Customer'}], client)
 
 
 @pytest.mark.parametrize('preserve,baseline', [(False, [{'customer_name': 'Existing Customer'}]), (True, [])])
@@ -705,3 +726,161 @@ def test_explicit_customer_binding_requires_preserved_scoped_baseline(preserve, 
     c.update(preserve_existing_bookings=preserve, existing_customer_identity={'id': 7, 'name': 'Existing Customer'})
     with pytest.raises(SimulationError, match='identity'):
         deployed.preserved_customer_name(c, baseline)
+
+
+def recovery_config(tmp_path):
+    c, manifest, ledger = continuation_config(tmp_path)
+    c['campaign_authorization']['recovery_cases'] = ['C03']
+    manifest['results'] = [{'case_id': 'C01', 'status': 'failed', 'functional_status': 'failed'},
+                           {'case_id': 'C02', 'status': 'blocked'}, {'case_id': 'C03', 'status': 'blocked'},
+                           {'case_id': 'C04', 'status': 'incomplete', 'functional_status': 'passed'}]
+    (tmp_path / ('a' * 32) / 'manifest.json').write_text(json.dumps(manifest))
+    return c, manifest, ledger
+
+
+def test_recovery_expands_only_failed_blocked_chain_with_prior_spend(tmp_path):
+    from live_simulations import deployed
+    c, _, _ = recovery_config(tmp_path)
+    result = deployed.execute(c)
+    assert result['selected'] == ['C01', 'C02', 'C03']
+    assert result['complete_tier'] is False
+    assert result['status'] == 'planned'
+    assert result['estimated_credits'] == '2888'
+    assert result['prior_spent_credits'] == '634'
+
+
+@pytest.mark.parametrize('problem', ['no_ancestor', 'empty', 'duplicate', 'unknown', 'passed',
+    'functional_pass', 'missing', 'duplicate_result', 'inconsistent'])
+def test_recovery_rejects_unapproved_or_nonfailed_coverage(tmp_path, problem):
+    from live_simulations import deployed
+    c, manifest, _ = recovery_config(tmp_path)
+    authorization = c['campaign_authorization']
+    if problem == 'no_ancestor': authorization.pop('continuation_of')
+    elif problem == 'empty': authorization['recovery_cases'] = []
+    elif problem == 'duplicate': authorization['recovery_cases'] = ['C01', 'C01']
+    elif problem == 'unknown': authorization['recovery_cases'] = ['C07']
+    elif problem == 'passed': authorization['recovery_cases'] = ['C04']
+    elif problem == 'functional_pass': manifest['results'][0]['functional_status'] = 'passed'
+    elif problem == 'missing': manifest['results'].pop(1)
+    elif problem == 'duplicate_result': manifest['results'].append(manifest['results'][0].copy())
+    elif problem == 'inconsistent': manifest['results'][0]['functional_status'] = 'unknown'
+    (tmp_path / ('a' * 32) / 'manifest.json').write_text(json.dumps(manifest))
+    with pytest.raises(SimulationError, match='recovery'):
+        deployed.execute(c)
+
+
+def test_deployed_minimal_recipe_allows_twelve_turns_without_changing_catalog():
+    from live_simulations import deployed
+    from live_simulations.core import load_catalog
+    for case in load_catalog()[:6]:
+        original = copy.deepcopy(case)
+        scenario = deployed.deployed_scenario(case, {'customer_name': 'Synthetic', 'customer_phone': '5550100001',
+            'appointment_time': '2026-11-02 10:00:00', 'new_time': '2026-11-03 10:00:00',
+            'callback_time': '2026-11-02 14:00:00', 'new_callback_time': '2026-11-03 14:00:00'})
+        assert scenario['max_turns'] == 12
+        assert case == original
+        assert scenario['scenario']
+        assert len(scenario['success_conditions']) == len(case['success_conditions'])
+
+
+def test_recovery_eligibility_revalidated_before_clone_creation(monkeypatch, tmp_path):
+    from live_simulations import deployed
+    c, manifest, _ = recovery_config(tmp_path)
+    monkeypatch.setattr(deployed, 'deployment_readiness', lambda *a: ([], []))
+    def readiness(*args):
+        manifest['results'][0].update(status='incomplete', functional_status='passed')
+        (tmp_path / ('a' * 32) / 'manifest.json').write_text(json.dumps(manifest))
+        return {'provider': SimpleNamespace(create_agent=lambda *a: pytest.fail('Ineligible recovery created clone'))}, []
+    monkeypatch.setattr(deployed, 'provider_readiness', readiness)
+    with pytest.raises(SimulationError, match='recovery'):
+        deployed.execute(c, live=True)
+
+
+def test_recovery_still_respects_aggregate_reserve(tmp_path):
+    from live_simulations import deployed
+    c, manifest, ledger = recovery_config(tmp_path)
+    manifest['spent_credits'] = ledger['entries'][0]['credits'] = '6000'
+    (tmp_path / ('a' * 32) / 'manifest.json').write_text(json.dumps(manifest))
+    (tmp_path / 'usage-ledger.json').write_text(json.dumps(ledger))
+    assert deployed.execute(c)['status'] == 'over_budget'
+
+
+def seeded_recovery_config(tmp_path):
+    c, manifest, ledger = recovery_config(tmp_path)
+    c['variables']['customer_phone'] = '5550100001'
+    c['campaign_authorization'].update(recovery_cases=['C02', 'C03'], resume_request_id=50)
+    seed = {'id': 50, 'phone': '5550100001', 'customer_name': 'Existing Customer',
+            'booking_type': 'appointment', 'booking_time': '2026-11-03 10:00:00', 'status': 'pending',
+            'duration_minutes': 45, 'service_type': 'Oil Change'}
+    manifest['baseline'] = [{'id': 99, 'phone': '5550100001', 'customer_name': 'Existing Customer'}]
+    manifest['results'] = [{'case_id': 'C01', 'repeat': 1, 'status': 'incomplete', 'functional_status': 'passed'},
+                           {'case_id': 'C02', 'repeat': 1, 'status': 'failed', 'functional_status': 'failed'},
+                           {'case_id': 'C03', 'repeat': 1, 'status': 'blocked'}]
+    ledger['entries'][0].update(case_id='C02')
+    folder = tmp_path / ('a' * 32)
+    (folder / 'manifest.json').write_text(json.dumps(manifest))
+    (folder / 'C01-1-evidence.json').write_text(json.dumps({'after': [{**seed, 'booking_time': '2026-11-02 10:00:00'}]}))
+    (folder / 'C02-1-evidence.json').write_text(json.dumps({'after': [seed]}))
+    (tmp_path / 'usage-ledger.json').write_text(json.dumps(ledger))
+    c['variables']['new_time'] = '2026-11-04 10:00:00'
+    return c, manifest, seed
+
+
+def test_owned_seed_omits_passed_dependency_without_replaying_it(tmp_path):
+    from live_simulations import deployed
+    c, _, seed = seeded_recovery_config(tmp_path)
+    result = deployed.execute(c)
+    assert result['selected'] == ['C02', 'C03']
+    assert result['complete_tier'] is False
+    assert result['estimated_credits'] == '1800'
+    assert deployed.recovery_seed(c, [seed]) == seed
+
+
+@pytest.mark.parametrize('problem', ['original', 'arbitrary', 'cancelled', 'missing', 'phone',
+                                   'kind', 'time', 'changed', 'passed_requested', 'same_target'])
+def test_owned_recovery_seed_rejects_unproven_or_changed_record(tmp_path, problem):
+    from live_simulations import deployed
+    c, manifest, seed = seeded_recovery_config(tmp_path)
+    folder = tmp_path / ('a' * 32)
+    current = seed.copy()
+    if problem == 'original': manifest['baseline'].append(seed.copy())
+    elif problem == 'arbitrary': c['campaign_authorization']['resume_request_id'] = 51
+    elif problem == 'cancelled': seed['status'] = 'cancelled'
+    elif problem == 'missing': (folder / 'C02-1-evidence.json').unlink()
+    elif problem == 'phone': seed['phone'] = '5550100002'
+    elif problem == 'kind': seed['booking_type'] = 'callback'
+    elif problem == 'time': seed['booking_time'] = 'not-a-time'
+    elif problem == 'changed': current['service_type'] = 'Unexpected service'
+    elif problem == 'passed_requested': c['campaign_authorization']['recovery_cases'] = ['C01']
+    elif problem == 'same_target': c['variables']['new_time'] = seed['booking_time']
+    (folder / 'manifest.json').write_text(json.dumps(manifest))
+    if problem != 'missing': (folder / 'C02-1-evidence.json').write_text(json.dumps({'after': [seed]}))
+    with pytest.raises(SimulationError, match='recovery|seed'):
+        deployed.recovery_selection(c)
+        deployed.recovery_seed(c, [current])
+
+
+def test_owned_recovery_rechecks_fresh_row_before_clone_under_lock(monkeypatch, tmp_path):
+    from live_simulations import deployed
+    c, _, seed = seeded_recovery_config(tmp_path)
+    c['preserve_existing_bookings'] = True
+    monkeypatch.setattr(deployed, 'deployment_readiness', lambda *a: ([], [seed.copy()]))
+    monkeypatch.setattr(deployed, 'provider_readiness', lambda *a: ({
+        'provider': SimpleNamespace(create_agent=lambda *a: pytest.fail('Changed seed created clone'))}, []))
+    monkeypatch.setattr(deployed, 'get', lambda *a: [{**seed, 'service_type': 'Changed after readiness'}])
+    with pytest.raises(SimulationError, match='seed'):
+        deployed.execute(c, live=True)
+
+
+def test_owned_seed_handles_actual_redacted_evidence_and_checks_fresh_caller(tmp_path):
+    from live_simulations import deployed
+    from live_simulations.core import redact
+    c, _, seed = seeded_recovery_config(tmp_path)
+    folder = tmp_path / ('a' * 32)
+    for path in folder.glob('*-evidence.json'):
+        path.write_text(json.dumps(redact(json.loads(path.read_text()))))
+    assert deployed.recovery_selection(c) == ['C02', 'C03']
+    assert deployed.recovery_seed(c, [seed]) == seed
+    for changed in ({**seed, 'phone': '5550100002'}, {**seed, 'service_type': 'Unexpected change'}):
+        with pytest.raises(SimulationError, match='seed'):
+            deployed.recovery_seed(c, [changed])

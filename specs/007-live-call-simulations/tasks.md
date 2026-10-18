@@ -150,3 +150,24 @@ below before paid execution.
 Operational evidence (2026-10-18): T059 deployed `cf3db1ba` on Render `dep-dba57gm7bikc73ea3bs0`; migration 0006 and native read-only identity were verified. T060 patched only the saved first message with fresh provider read-back. T061 restored customer 5, preserved all 25 original portal rows, cancelled only owned booking 46 and verified its Google cancelled tombstone. The two historical name groups remain intact; the explicit native-verified ID/name binding supplies caller identity without rewriting history. Private evidence: `scratch/deployed-completion-20261018/{approved-corrections-result,deployment-verification,google-accounts-native-audit}.json`.
 
 T067/T068 complete offline gate: 771 unit/integration and 311 E2E tests passed, zero failures/errors/skips (`scratch/deployed-completion-20261018/final-v3-offline.log` and retained full XML). After import-spacing lint cleanup, all 8 browser-network contracts passed again; new modules pass Ruff. Native API C02–C06 recovery on owned requests 47/48 passed with full original-row preservation; that evidence does not reclassify the retained failed C01 or establish LLM acceptance.
+
+## Authorized targeted retest after measured truncation
+
+- [x] T069 Analyze FR-031/032 across spec, plan and existing authorization/ledger contracts; retain the failed eight-turn C01 evidence.
+- [x] T070 Regress deployed-only 12-turn scenarios and explicit settled failed/blocked recovery subsets, including dependency expansion, passed-case rejection, missing/inconsistent history, reserve and no-fork/reuse guards.
+- [x] T071 Implement the bounded recipe/recovery planning changes without mutating source scenarios, old manifests or normal isolated/tier semantics; run focused and complete offline validation.
+- [ ] T072 Execute only necessary authorized recovery cases after the current campaign settles, retain all prior/current charges and failures, verify native/browser effects, then converge.
+
+T070 focused evidence: 11 intended failures before implementation, then 120 captured-provider contracts passed. Private logs: `scratch/live-campaign-20261018/recovery-{red,green}.log`. The first continuation retained C01 max-turn truncation and 633 credits; C04/C05/C06 then passed functional checks at 612/437/420 credits respectively. Its total 2,102 plus the ancestor 634 equals 2,736 campaign credits; all charges settled.
+
+T071 complete gate: 785 unit/integration + 311 E2E passed, zero failures/errors/skips (`scratch/deployed-completion-20261018/final-v4-offline.log` and full retained XML). After import/context-manager cleanup, 120 focused deployed-harness contracts passed again; Ruff reports zero remaining issues in the changed harness files. Stable deployed application commit remains `ebc906a1` during the paid recovery; this change affects the local harness only.
+
+## Resume the already owned appointment
+
+- [x] T073 Analyze FR-033 ownership, fresh-state and passed-dependency boundaries.
+- [x] T074 Regress and implement verified owned-state seeding for an explicitly authorized failed/blocked suffix, preserving all current negative, budget and ancestry contracts; run complete verification.
+- [ ] T075 After the notification-claim repair, run only C02/C03 on owned booking 50 with a changed target date, retain all earlier outcomes and validate native/browser effects.
+
+Second recovery retained: `ef0ecb10e7d84f5f81e312bc334afea8`; C01 passed (609 credits) and created owned booking 50. C02 native identity/count/time-change/baseline checks all passed, but evaluation failed an unsupported sent-text claim (376 credits); C03 blocked. Total 985, aggregate 3,721 campaign credits, no unsettled usage. The owned appointment remains active at October 27 10:00 for a guarded suffix recovery after the prompt fix. No repeated creation or API reset is planned.
+
+T074 focused evidence: 134 deployed-harness contracts passed, including deliberately redacted saved evidence and a captured C02/C03 flow that reuses the owned ID without C01 creation. Complete gate: 811 unit/integration + 317 E2E passed, zero failures/errors/skips. The suffix preview selects only C02/C03, retains 3,721 prior campaign credits and admits 1,800 estimated credits within the unchanged reserve/ceiling.

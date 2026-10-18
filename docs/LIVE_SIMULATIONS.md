@@ -505,3 +505,29 @@ Deployed pricing evaluation uses facts retrieved from the deployed catalog/knowl
 base and requires the agent to quote those returned prices and durations before
 booking. Fixed prices from the isolated synthetic catalog are not imposed on a
 different deployment. Every other success criterion is retained.
+
+## Approved targeted recovery
+
+Deployed minimal conversations allow twelve caller turns, including ordinary
+clarification, catalog quotation, acceptance and native mutation. Isolated recipes
+retain their separately defined turn limits. A truncated conversation remains a
+failure.
+
+When targeted paid retests have been explicitly authorized, a fresh recovery
+configuration may add `campaign_authorization.recovery_cases`, for example
+`["C01", "C02", "C03"]`, alongside `continuation_of`. The runner expands lifecycle
+prerequisites and requires every selected case to have failed or been blocked in
+the immediate settled ancestor. Already-passed cases cannot be resubmitted.
+Ancestry, all prior charges, quota, reserve, authorization reuse and fork checks
+remain enforced. Do not change old manifests or reuse consumed authorization IDs.
+A recovery subset is never reported as a complete tier; retain the original
+failure and combine case outcomes only with explicit provenance.
+
+An authorized recovery may set `campaign_authorization.resume_request_id` for a
+request provably created by the immediate ancestor. Recorded latest evidence and
+a fresh native row must agree; the runner checks the raw designated phone and
+compares redacted saved fields. Only that owned row is removed from preservation
+and seeded into the continuing lifecycle. Already-passed prerequisites can then
+be omitted, without replay. For an already-applied failed reschedule, choose a
+different target time so another real change is verified. Missing ownership,
+changed state, original business records or a cancelled seed block admission.

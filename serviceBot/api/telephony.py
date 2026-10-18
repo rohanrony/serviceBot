@@ -10,6 +10,24 @@ from datetime import datetime, timedelta
 from serviceBot.services.booking import get_session_booking, track_session_booking
 
 
+def _with_notification_delivery_guidance(tool_name: str, result: dict) -> dict:
+    """Keep saved scheduling outcomes separate from unverified notification effects."""
+    if tool_name not in {
+        "create_service_request", "book_appointment", "request_callback",
+        "consolidate_appointment_service", "reschedule_appointment", "cancel_appointment",
+    } or result.get("success") is not True:
+        return result
+    return {
+        **result,
+        "notification_delivery_status": "unverified",
+        "agent_guidance": (
+            "Confirm only the saved scheduling state reported by this tool. "
+            "Notification delivery is unverified. Do not say a text was sent, dispatched, "
+            "or delivered unless a native notification receipt verifies that exact status."
+        ),
+    }
+
+
 class ConsolidateAppointmentRequest(BaseModel):
     appointment_id: int
     phone: Optional[str] = None
@@ -2171,7 +2189,7 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                         result = {
                             "success": True,
                             "appointment_id": appt_id,
-                            "message": f"Appointment #{appt_id} has been successfully cancelled. A confirmation text has been dispatched to your phone."
+                            "message": f"Appointment #{appt_id} has been successfully cancelled."
                         }
                     except Exception as e:
                         result = {
@@ -2231,7 +2249,7 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
 
     response_data = {
         "tool_call_id": tool_call_id,
-        "result": result
+        "result": _with_notification_delivery_guidance(tool_name, result)
     }
     return response_data
 

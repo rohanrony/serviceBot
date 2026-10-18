@@ -3213,12 +3213,13 @@ def get_sms_logs_by_appointment(appointment_id: int) -> list:
 def get_appointment_details_by_id(appointment_id: int) -> dict:
     """Fetches full details of an appointment for SMS log popup context."""
     from serviceBot.services.sms_reminders import parse_booking_datetime
+    from serviceBot.services import timezone_service
     import datetime as dt_mod
 
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             cursor.execute("""
-                SELECT sr.id, sr.service_type, sr.issue_description, sr.status, sr.time_slot, sr.booking_time, sr.booking_type, sr.created_at, sr.updated_at,
+                SELECT sr.id, sr.service_type, sr.issue_description, sr.status, sr.time_slot, sr.booking_time, sr.booking_type, sr.duration_minutes, sr.created_at, sr.updated_at,
                        sr.staff_agent_id, sr.confirmation_status, sr.escalation_status, sr.escalation_reason, sr.confirmation_cutoff_at, sr.confirmed_at,
                        c.id AS customer_id, c.name AS customer_name, c.phone AS customer_phone,
                        v.id AS vehicle_id, v.make AS vehicle_make, v.model AS vehicle_model, v.year AS vehicle_year,
@@ -3236,18 +3237,24 @@ def get_appointment_details_by_id(appointment_id: int) -> dict:
                     if r.get(ts_field) and not isinstance(r[ts_field], str):
                         r[ts_field] = r[ts_field].strftime("%Y-%m-%d %H:%M:%S")
 
-                svc = r.get("service_type") or r.get("issue_description") or ""
-                svc_fields = get_service_required_fields(svc) if svc else None
-                duration = (svc_fields.get("duration_minutes") or 60) if svc_fields else 60
+                duration = r.get("duration_minutes")
+                if duration is None:
+                    if r.get("booking_type") == "callback":
+                        duration = 15
+                    else:
+                        svc = r.get("service_type") or r.get("issue_description") or ""
+                        svc_fields = get_service_required_fields(svc) if svc else None
+                        duration = (svc_fields.get("duration_minutes") or 60) if svc_fields else 60
                 r["duration_minutes"] = duration
 
                 raw_time = r.get("booking_time") or r.get("time_slot")
                 if raw_time:
                     dt = parse_booking_datetime(str(raw_time))
                     if dt:
+                        dt = dt.replace(tzinfo=timezone_service.get_business_zoneinfo())
                         end_dt = dt + dt_mod.timedelta(minutes=duration)
-                        r["booking_start_time"] = dt.strftime("%Y-%m-%d %H:%M:%S")
-                        r["booking_end_time"] = end_dt.strftime("%Y-%m-%d %H:%M:%S")
+                        r["booking_start_time"] = dt.isoformat()
+                        r["booking_end_time"] = end_dt.isoformat()
                     else:
                         r["booking_start_time"] = str(raw_time)
                         r["booking_end_time"] = None

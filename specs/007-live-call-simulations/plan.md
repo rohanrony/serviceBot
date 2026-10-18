@@ -197,3 +197,15 @@ provider that mirrors native profile updates and proves original rows survive,
 plus missing/conflicting-name admission tests and explicit mutation detection.
 This is a local harness repair. No saved-agent patch, deployment, profile
 restoration, cleanup or automatic paid replay is included.
+
+## Eight-turn truncation and targeted recovery
+
+Observed native C01 stopped at the eight-turn limit immediately after accurate catalog quotation and consent request, without a booking. Keep that failed run and its settled 633 credits. Raise only deployed minimal recipe turn allowance to 12 so explicit acceptance and the native booking can occur. Preserve isolated scenario definitions and all evaluation/state checks.
+
+For already authorized targeted retests, add an explicit recovery case selection within campaign_authorization, requiring continuation_of. Use normal dependency expansion, validate every selected case against the immediate final ancestor's failed/blocked results, reject prior functional passes and inconsistent/missing results, and keep fresh authorization reuse/fork/settlement checks. Sum ancestor spending in the existing Budget. Report selected coverage honestly; no paid call is retried inside a run. Plan admission with conservative estimates for the new turn allowance before submission.
+
+Analysis: FR-032 is an explicit recovery exception to ordinary FR-024 all-six selection; unchanged normal campaigns, calibration, isolated recipes and CLI requested/repeat rejection retain their existing contracts. Recovery case selection is `campaign_authorization.recovery_cases`; it must depend on a final immediate ancestor and expand normal lifecycle prerequisites. Revalidate eligibility under the existing lock before resource creation. No prior functional success is eligible for another paid submission.
+
+## Resume an owned settled lifecycle
+
+The first targeted recovery created owned booking 50 successfully; C02 then rescheduled it with all native state checks passing but failed for unsupported notification wording. Retain that failure. Resume only C02/C03 against proven owned 50 after prompt repair, with a fresh later target date. Validate ownership from the ancestor recorded evidence (not its baseline), current row and caller identity before resource creation; preserve all other rows. Seed previous/group IDs so identity/time-change checks remain strict. Never replay passed C01 or callback scenarios.

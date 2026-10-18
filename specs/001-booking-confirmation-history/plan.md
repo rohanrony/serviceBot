@@ -133,3 +133,11 @@ Cancel-only reminder updates use the existing transaction cursor in both canonic
 booking cancellation and portal status cancellation. Remove their separate,
 best-effort helper connection. Verify reminder state and rollback under injected
 write failure for both entry points; preserve ordinary rescheduling helper behavior.
+
+## Trace timing repair
+
+Native browser evidence for owned callback 49 showed a correct 14:00-14:15 dashboard row and native reservation, but its trace overview displayed 10:00-11:00 (60 minutes). Trace and diagnose the existing DB read/API/render chain, then project canonical timing through that same path without a new state owner. Add a real-DB API and browser regression with a rescheduled 15-minute callback and a differently timed request, retaining historical events and read-only behavior. Run focused and complete verification before publishing.
+
+## Notification-claim repair
+
+The live C02 reschedule changed the correct booking at the correct time with consent, but the agent falsely claimed a confirmation text had been sent from a tool result that only reported queued work. Source diagnosis found an explicit cancellation sent-text example in the saved prompt and a native cancellation result claiming dispatch. Remove those claims, add a general receipt-based notification rule and make mutation results explicitly distinguish unverified delivery. Preserve booking success and all provider dispatch behavior. Patch only the approved active agent prompt after local regressions, with full other-settings read-back, and verify live reschedule/cancel wording.

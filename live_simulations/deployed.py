@@ -20,8 +20,19 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from . import evidence, fixtures
-from .core import (ROOT, Budget, SimulationError, fingerprint, load_catalog, number,
-                   private_json, redact, render, secret, select_cases)
+from .core import (
+    ROOT,
+    Budget,
+    SimulationError,
+    fingerprint,
+    load_catalog,
+    number,
+    private_json,
+    redact,
+    render,
+    secret,
+    select_cases,
+)
 from .provider import ElevenLabs
 from .runner import campaign_lock, current_remaining, estimates, load_reference, preview
 
@@ -313,6 +324,125 @@ def continuation_history(config, ledger=None, current_run_id=None):
     return total, ancestors
 
 
+def recovery_seed(config, current=None):
+    authorization = config.get('campaign_authorization') or {}
+    if 'resume_request_id' not in authorization:
+        return None
+    request_id = authorization['resume_request_id']
+    ancestor = authorization.get('continuation_of')
+    if (type(request_id) is not int or request_id <= 0 or not authorization.get('recovery_cases')
+            or not isinstance(ancestor, str) or not re.fullmatch(r'[0-9a-f]{32}', ancestor)):
+        raise SimulationError('Owned recovery seed requires explicit recovery cases and an ancestor')
+    root = Path(config.get('artifact_root', ROOT / 'scratch/live-simulations')).resolve()
+    try:
+        folder = root / ancestor
+        if folder.is_symlink() or folder.resolve().parent != root or (folder / 'manifest.json').is_symlink():
+            raise ValueError()
+        manifest = json.loads((folder / 'manifest.json').read_text())
+        baseline = manifest['baseline']
+        original_ids = {int(row['id']) for row in baseline} if isinstance(baseline, list) else {int(key) for key in baseline}
+        if request_id in original_ids:
+            raise ValueError()
+        ledger = json.loads((root / 'usage-ledger.json').read_text())
+        paid_cases = {entry.get('case_id') for entry in ledger['entries'] if entry.get('run_id') == ancestor}
+        candidate = None
+        for result in manifest['results']:
+            case_id = result['case_id']
+            if not re.fullmatch(r'C0[1-6]', case_id):
+                raise ValueError()
+            evidence_path = folder / f'{case_id}-{result.get("repeat", 1)}-evidence.json'
+            if evidence_path.is_symlink():
+                raise ValueError()
+            required = case_id in paid_cases or result.get('functional_status') in ('passed', 'failed')
+            if not evidence_path.exists():
+                if required:
+                    raise ValueError()
+                continue
+            evidence_rows = json.loads(evidence_path.read_text())['after']
+            matching = [row for row in evidence_rows if row.get('id') == request_id]
+            if len(matching) > 1:
+                raise ValueError()
+            if matching:
+                candidate = matching[0]
+        kind = candidate.get('booking_type') if candidate else None
+        group = {'appointment': {'C02', 'C03'}, 'callback': {'C05', 'C06'}}.get(kind, set())
+        designated_phone = phone(fixtures.variables(config)['customer_phone'])
+        baseline_rows = baseline if isinstance(baseline, list) else baseline.values()
+        known_baseline_phones = [row.get('phone') for row in baseline_rows
+                                 if isinstance(row.get('phone'), str) and row.get('phone') != '[phone]']
+        if (not candidate or not set(authorization['recovery_cases']) <= group
+                or candidate.get('status') not in ('pending', 'confirmed', 'in_progress', 'rescheduled')
+                or (candidate.get('phone') != '[phone]' and phone(candidate.get('phone')) != designated_phone)
+                or any(phone(value) != designated_phone for value in known_baseline_phones)):
+            raise ValueError()
+        def instant(value):
+            value = datetime.fromisoformat(str(value))
+            if value.tzinfo is None:
+                value = value.replace(tzinfo=ZoneInfo(config.get('app_config', {}).get('business_timezone', 'America/New_York')))
+            return value.astimezone(timezone.utc)
+        start = instant(candidate['booking_time'])
+        move_case = 'C02' if kind == 'appointment' else 'C05'
+        selected = {case['id'] for case in select_cases(load_catalog(), 'minimal', authorization['recovery_cases'])}
+        move_result = next((row for row in manifest['results'] if row['case_id'] == move_case), {})
+        if move_case in selected and move_result.get('functional_status') != 'passed':
+            target = fixtures.variables(config)['new_time' if kind == 'appointment' else 'new_callback_time']
+            if instant(target) == start:
+                raise ValueError()
+        if current is not None:
+            fresh = [row for row in current if row.get('id') == request_id]
+            if (len(fresh) != 1 or phone(fresh[0].get('phone')) != designated_phone
+                    or redact(fresh[0]) != redact(candidate)):
+                raise ValueError()
+            return fresh[0]
+        return candidate
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        raise SimulationError('Owned recovery seed lacks exact current active ancestor evidence or a changed target') from None
+
+
+def recovery_selection(config):
+    authorization = config.get('campaign_authorization') or {}
+    if 'resume_request_id' in authorization and 'recovery_cases' not in authorization:
+        raise SimulationError('Owned recovery seed requires explicit recovery cases')
+    if 'recovery_cases' not in authorization:
+        return None
+    requested = authorization['recovery_cases']
+    ancestor = authorization.get('continuation_of')
+    allowed = {f'C{i:02}' for i in range(1, 7)}
+    if (not isinstance(requested, list) or not requested
+            or any(not isinstance(case, str) or case not in allowed for case in requested)
+            or len(set(requested)) != len(requested)
+            or not isinstance(ancestor, str) or not re.fullmatch(r'[0-9a-f]{32}', ancestor)):
+        raise SimulationError('Campaign recovery requires unique minimal cases and a continuation ancestor')
+    selected = select_cases(load_catalog(), 'minimal', requested)
+    seed = recovery_seed(config)
+    root = Path(config.get('artifact_root', ROOT / 'scratch/live-simulations')).resolve()
+    try:
+        folder = root / ancestor
+        if folder.is_symlink() or folder.resolve().parent != root or (folder / 'manifest.json').is_symlink():
+            raise ValueError()
+        manifest = json.loads((folder / 'manifest.json').read_text())
+        results = manifest['results']
+        if (not isinstance(results, list)
+                or any(not isinstance(row, dict) or row.get('case_id') not in allowed for row in results)
+                or len({row.get('case_id') for row in results}) != len(results)):
+            raise ValueError()
+        retained = []
+        for case in selected:
+            rows = [row for row in results if row.get('case_id') == case['id']]
+            if (seed is not None and case['id'] not in requested and len(rows) == 1
+                    and rows[0].get('functional_status') == 'passed'
+                    and rows[0].get('status') in ('passed', 'incomplete')
+                    and case['id'] in ({'C01', 'C02'} if seed['booking_type'] == 'appointment' else {'C04', 'C05'})):
+                continue
+            if (len(rows) != 1 or rows[0].get('status') not in ('failed', 'blocked')
+                    or rows[0].get('functional_status') not in (None, 'failed', 'blocked', 'not_run')):
+                raise ValueError()
+            retained.append(case['id'])
+    except (OSError, ValueError, KeyError, TypeError):
+        raise SimulationError('Campaign recovery requires unique failed or blocked ancestor results for every dependency') from None
+    return retained
+
+
 def authorization_plan(config, tier, requested, repeat):
     authorization = config['campaign_authorization']
     if (not isinstance(authorization, dict) or tier != 'minimal' or requested is not None
@@ -322,14 +452,19 @@ def authorization_plan(config, tier, requested, repeat):
             or not authorization['authorization_id'].strip()):
         raise SimulationError('Campaign authorization requires a nonblank authorization_id')
     number(authorization.get('credit_ceiling'), positive=True)
+    recovery = recovery_selection(config)
     prior_spent, _ = continuation_history(config)
-    planned = preview(config, tier, requested, repeat)
+    planned = preview(config, tier, recovery, repeat)
+    if 'resume_request_id' in authorization:
+        planned.update(selected=recovery, complete_tier=False, resume_request_id=authorization['resume_request_id'])
     planned['campaign_authorization'] = copy.deepcopy(authorization)
     if config.get('budget', {}).get('verified_credit_units') is not True:
         return planned
     try:
         budget = campaign_budget(config, tier, config['budget']['remaining_credits'])
-        estimate = sum(estimates(config, select_cases(load_catalog(), tier)))
+        cases = ([case for case in load_catalog() if case['id'] in recovery]
+                 if 'resume_request_id' in authorization else select_cases(load_catalog(), tier, recovery))
+        estimate = sum(estimates(config, cases))
     except SimulationError:
         return planned
     planned.update(tier_cap=str(budget.cap), admission_limit=str(budget.cap * number('.8')),
@@ -366,6 +501,8 @@ def unchanged(baseline_index, observed):
 
 def deployed_scenario(case, values):
     result = render(case, values)
+    if case['id'] in {f'C{i:02}' for i in range(1, 7)}:
+        result['max_turns'] = 12
     result['success_conditions'] = [
         ('Before booking, retrieve service facts from the deployed catalog tools or knowledge base. '
          'Quote exactly the returned price range and duration for each requested service, '
@@ -433,7 +570,8 @@ def execute(config, tier='minimal', *, live=False, check=False, run_id=None,
     planned = (authorization_plan(config, tier, requested, repeat) if authorization is not None
                else calibration_plan(config, tier, requested, repeat) if calibration is not None
                else preview(config, tier, requested, repeat))
-    cases = select_cases(load_catalog(), tier, requested)
+    cases = ([case for case in load_catalog() if case['id'] in planned['selected']]
+             if planned.get('resume_request_id') is not None else select_cases(load_catalog(), tier, planned['selected']))
     unsupported = [c['id'] for c in cases if c['id'] not in {f'C{i:02}' for i in range(1, 7)}
                    or c['setup'] not in ('fresh', 'continue') or c.get('requires_binding')]
     planned.update(target='deployed', deployed_url=url,
@@ -447,6 +585,7 @@ def execute(config, tier='minimal', *, live=False, check=False, run_id=None,
         raise SimulationError('Workflow cannot start: ' + planned['status'] + '; configure verified monthly budget and case estimates')
     with httpx.Client(timeout=30, trust_env=False, follow_redirects=False) as client:
         problems, baseline = deployment_readiness(config, client)
+        seed = recovery_seed(config, baseline)
         try:
             existing_name = preserved_customer_name(config, baseline, client)
         except SimulationError as exc:
@@ -483,6 +622,15 @@ def execute(config, tier='minimal', *, live=False, check=False, run_id=None,
                     and e.get('run_id') != campaign.run_id for e in ledger['entries']):
                 raise SimulationError('Campaign authorization already used by another run')
             prior_spent, ancestors = continuation_history(config, ledger, campaign.run_id)
+            recovery_selection(config)  # Revalidate immediate-ancestor eligibility under the campaign lock.
+            if seed is not None:
+                seed = recovery_seed(config, scoped(get(client, url, '/api/v1/portal/service-requests'), fixtures.variables(config)['customer_phone']))
+                manifest['recovery_source_baseline'] = copy.deepcopy(baseline)
+                baseline = [row for row in baseline if row['id'] != seed['id']]
+                manifest['baseline'] = copy.deepcopy(baseline)
+                manifest['owned_recovery'] = {'source_run_id': authorization['continuation_of'],
+                    'request_id': seed['id'], 'source_row': copy.deepcopy(seed), 'raw_initial_row': copy.deepcopy(seed),
+                    'comparison_mode': 'redacted ancestor evidence plus raw designated-phone verification'}
             manifest.update(prior_spent_credits=str(prior_spent), continuation_ancestors=ancestors)
             campaign.save()
             provider, override = state['provider'], state['override']
@@ -496,6 +644,8 @@ def execute(config, tier='minimal', *, live=False, check=False, run_id=None,
             values['run_id'] = campaign.run_id
             baseline_index = {r['id']: r for r in baseline}
             previous, failed, group_ids = [], set(), set()
+            if seed is not None:
+                previous, group_ids = [copy.deepcopy(seed)], {seed['id']}
             try:
                 manifest.update(attempted=True, status='running', agent_create_pending=True,
                                 reference_fingerprint=fingerprint(override))

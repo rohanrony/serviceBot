@@ -163,3 +163,21 @@
 - [x] T034 Reproduce the DELETED projection state constraint failure, then add forward/rollback migration 0006 and verify deletion, rollback and reapplication in the disposable database per Constitution II and schema-change requirements (contradicts).
 - [x] T035 Reproduce stale projection retries overwriting a newer consolidation or cancelled state, then serialize current-reservation validation, provider effect and durable status in the existing transaction per FR-007/008 and Constitution II (contradicts).
 - [x] T036 Reproduce cancellation leaving stale pending reminders when its separate helper fails, then include reminder cancellation in both existing cancellation transactions and verify complete rollback on write failure per Constitution II (partial).
+
+## Phase 8: Native trace timing convergence
+
+- [x] T037 Analyze FR-010 and trace the observed callback 49 overview mismatch to its read/API/render source.
+- [x] T038 Add failing real-DB API and browser contracts for current start/end/duration after callback rescheduling, with another differently timed request and historical events preserved.
+- [ ] T039 Fix the existing canonical trace read/render path, run focused and complete verification, and verify the deployed overview matches native timing.
+- [ ] T040 Converge the trace repair and retain the native screenshot, query evidence and verified deployment.
+
+## Phase 9: Receipt-based notification claims
+
+- [x] T041 Analyze native C02 false sent-text claim, prompt examples and cancellation tool result against FR-011.
+- [x] T042 Add failing prompt/native mutation response contracts; remove unsupported dispatch claims and add receipt-based agent guidance, then run focused and complete verification.
+- [ ] T043 Publish the verified repair and patch only the active saved agent prompt; verify other prompt/tool/platform settings remain unchanged.
+- [ ] T044 Verify corrected wording through the outstanding live reschedule and cancellation, retaining prior failures and actual provider delivery evidence.
+
+Trace evidence: six initial API/browser failures, including separate browser failures at UTC and New York in daylight/standard time. After fixing only `get_appointment_details_by_id`, all six new timing contracts and eight existing lifecycle-trace tests passed. Persisted duration wins; API window strings include business-zone offset, while legacy booking_time and audit/created timestamps retain their existing contracts. Logs: `scratch/deployed-completion-20261018/trace-timing-*`.
+
+Complete local repair gate: 811 unit/integration + 317 E2E passed, no failures/errors/skips. Logs/full XML: `scratch/deployed-completion-20261018/final-v5-*`. Notification focused Red 11 failures then Green 30; the 12 new prompt/tool contracts passed again after import-only cleanup. Trace publication/native verification remains open in T039/T040.

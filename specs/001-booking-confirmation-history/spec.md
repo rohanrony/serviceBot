@@ -126,3 +126,9 @@ As a returning customer who already has an upcoming appointment for my vehicle, 
 - Existing Google Calendar integration supports modifying event duration and descriptions for existing events.
 - Single appointments can accommodate multiple service issues when the shop's technician schedule has adequate continuous capacity.
 - The voice platform (ElevenLabs / Twilio) allows passing dynamic session variables or retrieving customer context via synchronous tool call at the onset of intake.
+
+## Native portal trace timing (2026-10-18)
+
+- **FR-010**: The appointment trace overview must show the selected request's current canonical start, end and persisted duration after rescheduling, including fifteen-minute callbacks. It must agree with fresh portal booking data and reservation state; stale legacy defaults or another request's window cannot override current timing. Viewing a trace is read-only and retains historical lifecycle events.
+
+- **FR-011**: Successful booking mutations do not prove notification dispatch or delivery. Prompt examples and native tool results must not claim a text was sent/dispatched/delivered without a native notification receipt. Confirm the saved booking change; preserve queued/unverified delivery as distinct from provider outcomes.

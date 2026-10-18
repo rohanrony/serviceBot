@@ -213,3 +213,10 @@ deployment or cleanup. Retain failures and report live acceptance honestly.
   before provider resource creation or paid work. New callers retain the
   synthetic name and run suffix. Keep the complete original-record comparison;
   a profile or booking mutation must still fail and stop the campaign.
+
+### Settled targeted recovery and conversation allowance (2026-10-18)
+
+- **FR-031**: Deployed minimal scenarios need up to twelve caller turns to finish ordinary returning-caller clarification, price/duration quotation, explicit consent and native mutation. Preserve success conditions and native evidence; do not change isolated recipes or grant success for truncation. Retain the observed eight-turn C01 failure.
+- **FR-032**: The targeted paid retests already authorized in FR-028 may use a fresh explicitly recorded recovery authorization with `continuation_of` and an explicit case subset. Admission must verify that each selected case (including dependencies) was failed or blocked in the immediate settled ancestor, reject replay of passed/incomplete-success cases, retain the complete ancestry and all charges, and forbid forked/reused recovery. A subset is never a complete tier. No ambiguous or unsettled attempt can be retested. Keep reserve and current-quota guards; no automatic retry.
+
+- **FR-033**: An explicitly selected failed/blocked continuation may resume a booking already created by its immediate ancestor, using a recorded owned request ID and fresh exact native read-back. Exclude only that proven owned request from preservation baseline, preserve all other rows, and seed the existing lifecycle group with it. Satisfied passed dependencies may be omitted only with this verified ownership/state; never rerun them. Use a different target time when retrying an already-applied reschedule so the requested change and state assertion remain meaningful. All prior charges, failed evaluations, ancestry, reserve and no-fork gates still apply.
