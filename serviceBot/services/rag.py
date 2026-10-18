@@ -14,6 +14,24 @@ EMBEDDING_ADD_BATCH_SIZE = 1
 _DEFAULT_ENCODER = None
 
 
+class _SingleThreadOnnxRuntime:
+    """Bound only this encoder's session options; leave the runtime untouched."""
+
+    def __init__(self, runtime):
+        self._runtime = runtime
+
+    def __getattr__(self, name):
+        if name == "SessionOptions":
+            return self._session_options
+        return getattr(self._runtime, name)
+
+    def _session_options(self):
+        options = self._runtime.SessionOptions()
+        options.intra_op_num_threads = 1
+        options.inter_op_num_threads = 1
+        return options
+
+
 class _ProcessDefaultEmbeddingFunction(DefaultEmbeddingFunction):
     """Chroma's default identity with one lazy encoder for this process."""
 
@@ -24,7 +42,9 @@ class _ProcessDefaultEmbeddingFunction(DefaultEmbeddingFunction):
                 from chromadb.utils.embedding_functions.onnx_mini_lm_l6_v2 import (
                     ONNXMiniLM_L6_V2,
                 )
-                _DEFAULT_ENCODER = ONNXMiniLM_L6_V2()
+                encoder = ONNXMiniLM_L6_V2()
+                encoder.ort = _SingleThreadOnnxRuntime(encoder.ort)
+                _DEFAULT_ENCODER = encoder
             return _DEFAULT_ENCODER(input)
 
     @staticmethod

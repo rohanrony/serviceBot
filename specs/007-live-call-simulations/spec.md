@@ -415,3 +415,19 @@ the intended bytes were atomically published; do not retry that ambiguous write.
 No new OOM event occurred and sampled memory peaked at 390,778,880 bytes. Installed
 Chroma's default wrapper constructs a new ONNX embedder on every call, discarding
 its instance-cached inference session between the bounded chunks.
+
+- **FR-048**: Bound the shared encoder's ONNX session to one intra-operation
+  thread and one inter-operation thread for the current constrained CPU runtime.
+  Apply session options only to that encoder instance, preserving upstream
+  model loading, provider selection, tokenizer, normalization and optimization.
+  Never patch the global runtime or other sessions. Prove exact options and
+  isolation without downloading a model, retain FR-047 compatibility/reuse, and
+  validate actual native latency/memory before paid tests.
+
+FR-047's native warm three-chunk upload still took 11.7 seconds; the large
+upload again disconnected its client after exceeding one minute. Its write is
+being reconciled without retry. No OOM event or paid test occurred. Installed
+ONNX sessions default to intra/inter thread counts zero; official ONNX threading
+documentation states the intra default creates threads for host physical cores.
+Single-thread session configuration is a bounded repair hypothesis; improvement
+must be demonstrated on the deployed CPU quota.

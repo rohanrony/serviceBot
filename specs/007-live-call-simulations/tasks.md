@@ -323,3 +323,16 @@ the client. Native HTTP 200 and the exact downloaded hash settle that write.
 T098 evidence: two intended constructor-reuse failures preceded implementation; 27 focused FAQ/catalog contracts now pass. The reusable wrapper preserves default identity/configuration and384 dimensions, stays lazy for injected collections, and reopens a real persisted default collection with a deterministic captured encoder. Native Render Chroma1.5.9 matches local1.5.9; no real model download is used in offline tests. The complete gate is running for T099.
 
 T099 local gate passed **975 unit/integration +348 E2E**, zero failures/errors/skips (`deployed-default-encoder-full-offline.log` and copied XML). Source convergence found no material FR047 gap; Ruff has zero introduced findings. Publication is authorized; native memory, upload latency and restoration remain required before T095.
+
+Commit3dac44e is deployed live as dep-dbaj472vcj2c73aa92jg. Health/list read in
+1.37/1.69seconds and effective config hash matches. The warm three-chunk upload
+still took11.7seconds and the large upload disconnected after more than one
+minute, with no OOM event and sampled memory375MB. The source repair is valid
+but does not yet satisfy the native latency gate. No write retry or paid case.
+
+- [x] T100 Analyze FR048, regress and implement encoder-local single-thread ONNX session options with unchanged upstream behavior and no global mutation; retain FR047 compatibility/reuse tests.
+- [ ] T101 Converge, rerun focused/full offline/API/browser gates, publish under existing approval, settle prior upload and verify actual native document restoration, memory and latency before T095.
+
+T100 red/green: actual upstream cached model property first failed on thread counts0/0. The repaired encoder supplies1/1 only to its own session;28 focused tests pass, including unchanged path/provider filtering/optimization/logging, lazy shared default-compatible384-dimension encoder, existing collection reopen and rollback. Global runtime options remain untouched. Ruff has zero introduced findings; source is frozen for the complete gate.
+
+T101 local gate passed **976 unit/integration +348 E2E**, zero failures/errors/skips (`deployed-single-thread-full-offline.log` and copied XML). No material FR048 source gap or introduced Ruff finding. The prior81.278second catalog upload is settled by native200/request0b096f86 and exactGEThash, with no retry. Publication is authorized; native performance remains the final prerequisite.

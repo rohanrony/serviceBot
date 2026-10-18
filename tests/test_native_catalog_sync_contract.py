@@ -342,7 +342,9 @@ def captured_default_encoder(monkeypatch):
     from chromadb.utils.embedding_functions import onnx_mini_lm_l6_v2
     instances, calls = [], []
     class Encoder:
-        def __init__(self): instances.append(self)
+        def __init__(self):
+            self.ort = SimpleNamespace()
+            instances.append(self)
         def __call__(self,input):
             calls.append((self,list(input)))
             return [[float(len(text))]+[0.0]*383 for text in input]
@@ -407,3 +409,53 @@ def test_existing_persisted_default_collection_reopens_compatible_without_downlo
     instances,calls = captured_default_encoder
     assert len(instances)==1
     assert all(instance is instances[0] for instance,_ in calls)
+
+
+def test_encoder_session_threads_are_local_bounded_and_upstream_loading_is_preserved(monkeypatch,tmp_path):
+    from chromadb.utils.embedding_functions import onnx_mini_lm_l6_v2
+    upstream = onnx_mini_lm_l6_v2.ONNXMiniLM_L6_V2
+    sessions, encoders = [], []
+    optimized = object()
+    def options():
+        return SimpleNamespace(intra_op_num_threads=0,inter_op_num_threads=0,
+                               log_severity_level=0,graph_optimization_level=None)
+    def session(path,providers,sess_options):
+        created = SimpleNamespace(path=path,providers=providers,options=sess_options)
+        sessions.append(created)
+        return created
+    runtime = SimpleNamespace(SessionOptions=options,InferenceSession=session,
+        GraphOptimizationLevel=SimpleNamespace(ORT_ENABLE_ALL=optimized),
+        get_available_providers=lambda:['CoreMLExecutionProvider','CPUExecutionProvider'],
+        unrelated_attribute=object())
+    class CapturedEncoder(upstream):
+        def __init__(self):
+            self.ort = runtime
+            self._preferred_providers = None
+            self.DOWNLOAD_PATH = tmp_path/'captured-model'
+            encoders.append(self)
+        def __call__(self,input):
+            # Exercise the actual upstream cached model loader; no tokenizer,
+            # download or real inference/session allocation is involved.
+            assert self.model is self.model
+            return [[1.0]+[0.0]*383 for _ in input]
+    monkeypatch.setattr(onnx_mini_lm_l6_v2,'ONNXMiniLM_L6_V2',CapturedEncoder)
+    monkeypatch.setattr(rag,'_DEFAULT_ENCODER',None)
+    first = rag._ProcessDefaultEmbeddingFunction()
+    second = rag._ProcessDefaultEmbeddingFunction.build_from_config({})
+    assert encoders == [] and sessions == []
+    assert len(first(['first document'])[0]) == 384
+    second(['second document'])
+    assert len(encoders) == len(sessions) == 1
+    actual = sessions[0]
+    assert actual.options.intra_op_num_threads == 1
+    assert actual.options.inter_op_num_threads == 1
+    assert actual.options.log_severity_level == 3
+    assert actual.options.graph_optimization_level is optimized
+    assert actual.path == str(tmp_path/'captured-model'/'onnx'/'model.onnx')
+    assert actual.providers == ['CPUExecutionProvider']
+    assert encoders[0].ort.unrelated_attribute is runtime.unrelated_attribute
+    assert runtime.SessionOptions is options
+    assert runtime.InferenceSession is session
+    assert runtime.SessionOptions().intra_op_num_threads == 0
+    assert runtime.SessionOptions().inter_op_num_threads == 0
+    assert first.name() == 'default' and first.get_config() == {} and first.max_tokens() == 256

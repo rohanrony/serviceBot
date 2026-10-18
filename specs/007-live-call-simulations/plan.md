@@ -399,3 +399,19 @@ default collection using a deterministic captured encoder. Retain bounded adds,
 rollback and upload responsiveness tests. Rerun the full gate and publish the
 small validated repair under the existing approval. Native serial restoration,
 memory/latency read-back and the unchanged FR-042 proof precede any paid case.
+
+## Bound encoder CPU threads (FR-048)
+
+Keep the upstream ONNX embedding object. Give only that object's `ort` reference
+an instance-local forwarding facade whose `SessionOptions()` factory sets intra
+and inter operation thread counts to one. Forward provider enumeration, session
+construction, graph optimization and all other runtime attributes unchanged.
+Do not copy the upstream model loader or monkeypatch the imported runtime.
+Regress that the encoder receives bounded options while an unrelated runtime
+session keeps its defaults, and retain existing lazy/shared/default-collection
+contracts. Official primary reference:
+https://onnxruntime.ai/docs/performance/tune-performance/threading.html
+This is a testable performance hypothesis; actual upload completion and latency,
+not the option values alone, admit paid simulation. Settle the prior disconnected
+upload before another deployment/restoration. Repeat the full offline gate and
+publish under the existing explicit approval.
