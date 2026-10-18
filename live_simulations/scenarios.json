@@ -505,6 +505,16 @@
         "params": [
           "{{new_time}}"
         ]
+      },
+      {
+        "name": "unselected booking preserved",
+        "kind": "sql",
+        "query": "SELECT count(*) FROM service_requests s JOIN customers c ON c.id=s.customer_id WHERE c.phone=%s AND s.service_type='Tire Rotation' AND s.booking_type='appointment' AND s.booking_time=%s AND s.status<>'cancelled'",
+        "params": [
+          "{{customer_phone}}",
+          "{{callback_time}}"
+        ],
+        "expect": 1
       }
     ],
     "required_evidence": [
@@ -599,6 +609,16 @@
           "{{customer_phone}}"
         ],
         "expect": 1
+      },
+      {
+        "name": "requested callback type and time",
+        "kind": "sql",
+        "query": "SELECT count(*) FROM service_requests s JOIN customers c ON c.id=s.customer_id WHERE c.phone=%s AND s.booking_type='callback' AND s.booking_time=%s AND s.status<>'cancelled'",
+        "params": [
+          "{{customer_phone}}",
+          "{{callback_time}}"
+        ],
+        "expect": 1
       }
     ],
     "required_evidence": [
@@ -659,7 +679,7 @@
       {
         "name": "contiguous full visit",
         "kind": "sql",
-        "query": "SELECT EXTRACT(EPOCH FROM(max(booking_end_at)-min(booking_start_at)))/60=sum(duration_minutes) FROM service_requests WHERE status<>'cancelled'",
+        "query": "SELECT bool_and(starts_at IS NOT NULL AND ends_at IS NOT NULL AND ends_at=starts_at+duration_minutes*INTERVAL '1 minute' AND (previous_end IS NULL OR starts_at=previous_end)) FROM (SELECT r.starts_at,r.ends_at,s.duration_minutes,lag(r.ends_at) OVER (ORDER BY r.starts_at,s.id) AS previous_end FROM service_requests s LEFT JOIN appointment_reservations r ON r.service_request_id=s.id AND r.status='ACTIVE' WHERE s.status<>'cancelled') segments",
         "expect": true,
         "params": []
       }
@@ -722,9 +742,18 @@
       {
         "name": "contiguous full visit",
         "kind": "sql",
-        "query": "SELECT EXTRACT(EPOCH FROM(max(booking_end_at)-min(booking_start_at)))/60=sum(duration_minutes) FROM service_requests WHERE status<>'cancelled'",
+        "query": "SELECT bool_and(starts_at IS NOT NULL AND ends_at IS NOT NULL AND ends_at=starts_at+duration_minutes*INTERVAL '1 minute' AND (previous_end IS NULL OR starts_at=previous_end)) FROM (SELECT r.starts_at,r.ends_at,s.duration_minutes,lag(r.ends_at) OVER (ORDER BY r.starts_at,s.id) AS previous_end FROM service_requests s LEFT JOIN appointment_reservations r ON r.service_request_id=s.id AND r.status='ACTIVE' WHERE s.status<>'cancelled') segments",
         "expect": true,
         "params": []
+      },
+      {
+        "name": "two distinct qualified specialists",
+        "kind": "sql",
+        "query": "SELECT count(DISTINCT s.staff_agent_id)=2 AND count(*)=2 AND bool_and(a.is_active AND EXISTS (SELECT 1 FROM service_staff_agents sa JOIN services catalog ON catalog.id=sa.service_id WHERE sa.staff_agent_id=s.staff_agent_id AND catalog.name=s.service_type)) FROM service_requests s JOIN staff_agents a ON a.id=s.staff_agent_id JOIN customers c ON c.id=s.customer_id WHERE c.phone=%s AND s.status<>'cancelled'",
+        "params": [
+          "{{customer_phone}}"
+        ],
+        "expect": true
       }
     ],
     "required_evidence": [
@@ -786,9 +815,19 @@
       {
         "name": "contiguous full visit",
         "kind": "sql",
-        "query": "SELECT EXTRACT(EPOCH FROM(max(booking_end_at)-min(booking_start_at)))/60=sum(duration_minutes) FROM service_requests WHERE status<>'cancelled'",
+        "query": "SELECT bool_and(starts_at IS NOT NULL AND ends_at IS NOT NULL AND ends_at=starts_at+duration_minutes*INTERVAL '1 minute' AND (previous_end IS NULL OR starts_at=previous_end)) FROM (SELECT r.starts_at,r.ends_at,s.duration_minutes,lag(r.ends_at) OVER (ORDER BY r.starts_at,s.id) AS previous_end FROM service_requests s LEFT JOIN appointment_reservations r ON r.service_request_id=s.id AND r.status='ACTIVE' WHERE s.status<>'cancelled') segments",
         "expect": true,
         "params": []
+      },
+      {
+        "name": "exact new visit start",
+        "kind": "sql",
+        "query": "SELECT min(r.starts_at)=%s::timestamp FROM service_requests s JOIN customers c ON c.id=s.customer_id LEFT JOIN appointment_reservations r ON r.service_request_id=s.id AND r.status='ACTIVE' WHERE c.phone=%s AND s.status<>'cancelled'",
+        "params": [
+          "{{new_time}}",
+          "{{customer_phone}}"
+        ],
+        "expect": true
       }
     ],
     "required_evidence": [
@@ -1263,7 +1302,7 @@
       {
         "name": "contiguous full visit",
         "kind": "sql",
-        "query": "SELECT EXTRACT(EPOCH FROM(max(booking_end_at)-min(booking_start_at)))/60=sum(duration_minutes) FROM service_requests WHERE status<>'cancelled'",
+        "query": "SELECT bool_and(starts_at IS NOT NULL AND ends_at IS NOT NULL AND ends_at=starts_at+duration_minutes*INTERVAL '1 minute' AND (previous_end IS NULL OR starts_at=previous_end)) FROM (SELECT r.starts_at,r.ends_at,s.duration_minutes,lag(r.ends_at) OVER (ORDER BY r.starts_at,s.id) AS previous_end FROM service_requests s LEFT JOIN appointment_reservations r ON r.service_request_id=s.id AND r.status='ACTIVE' WHERE s.status<>'cancelled') segments",
         "expect": true,
         "params": []
       }

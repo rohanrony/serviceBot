@@ -105,7 +105,10 @@ def setup_escalated_request():
     }
 
 
-def test_get_service_requests_with_escalated_filter(client, setup_escalated_request):
+def test_get_service_requests_with_escalated_filter(client, setup_escalated_request, monkeypatch):
+    from serviceBot.services import timezone_service
+    current = dt.datetime(2026, 10, 7, 12, tzinfo=timezone_service.get_business_zoneinfo())
+    monkeypatch.setattr(timezone_service, "now_in_business_tz", lambda: current)
     data = setup_escalated_request
     resp = client.get("/api/v1/portal/service-requests?escalated=true")
     assert resp.status_code == 200

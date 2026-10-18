@@ -186,7 +186,7 @@ and original records are unchanged. Latest complete offline gate: 811 unit and
 317 E2E, no failures/errors/skips. Thirty unique WhatsApp messages for current
 owned lifecycle checks are natively delivered.
 
-- [ ] T076 Confirm receipt in the designated Gmail inbox. Native Gmail sends were accepted, but the authorized account has send-only scope and inbox reads return 403; the user confirmation question remains pending.
+- [x] T076 Confirm receipt in the designated Gmail inbox. The user confirmed receiving both WhatsApp messages and emails on 2026-10-18. This supplies operator receipt confirmation; the authorized Gmail account remains send-only and its native inbox read still returns 403. Preserve the original incomplete run manifests and do not infer a physical-audio or full 50-case acceptance pass from this confirmation.
 - [ ] T077 Complete owner/provider prerequisites for unrestricted production messaging: the US SMS sender returns 30034 until A2P registration, and WhatsApp remains a Sandbox requiring enrollment/open reply windows or approved production templates. Current test-handset WhatsApp delivery is verified; do not equate it with unrestricted production delivery.
 - [ ] T078 Reconnect the expired system Gmail OAuth grant through the owner login flow. The connected designated technician account currently sends successfully as fallback; do not replace the system credential with a different person's token.
 
@@ -195,3 +195,118 @@ prerequisites. Full 50-case isolated and physical audio release gates remain
 outside the approved deployed six-case campaign; their assertions are not relabeled
 as passed. Final native/provider/browser evidence is retained under
 `scratch/deployed-completion-20261018/`.
+
+## Differential medium stage (2026-10-18)
+
+The user explicitly defers T077/T078 and requests medium C07–C16 now, followed
+by only C17–C50 for a later full stage. Earlier passed cases must not be replayed.
+T076 is complete by operator receipt confirmation. Deferred production setup is
+not an excuse to mutate accounts or weaken the new isolated acceptance checks.
+
+- [x] T079 Reconcile FR-034–036, the existing subset selector, scope/fixture/budget contracts and parent source analysis before implementation. Graph MCP tools are unavailable; retain exact-source fallback limitations.
+- [x] T080 Regress linked native fixture row counts and missing C10/C12/C14/C15 durable-state checks with real owned PostgreSQL fixtures; implement fixes without external provider traffic.
+- [x] T081 Regress and implement exact-range isolated stage authorization, preview/admission, manifest/ledger provenance, single-use and unknown-charge/reuse guards; preserve cumulative defaults and deployed restrictions.
+- [ ] T082 Validate every selected medium setup prerequisite before paid work, including two designated specialist/calendar bindings and the selected email evidence mode. Prepare isolated infrastructure and private config using approved recipients; leave production messaging and system Gmail deferred.
+- [x] T083 Analyze/converge all changes, run focused and complete offline/browser verification, retain red/green and full results, then prepare the reviewed ten-case live plan and credit ceiling.
+- [ ] T084 Execute only authorized C07–C16 after readiness and stage budget pass; retain original six passing cases as provenance, settle every charge, verify case-specific native/browser effects, and clean only owned resources. Prepare the later full delta C17–C50 without paid replay or an unapproved full-stage submission.
+
+T080/T081 evidence: 14 intended authorization failures before implementation,
+then 24 focused authorization/campaign contracts passed; linked/native fixture
+regressions first failed 11 contracts and then passed all 13. The complete current
+offline gate passed 827 unit/integration and 330 E2E tests, zero failures/errors/
+skips. Evidence is retained under `scratch/medium-delta-20261018/` as
+`stage-{red,green}.*`, `fixtures-{red,green}.log`, `full-offline.log` and copied full
+XML. A bounded source converge found no remaining FR-034 implementation blocker.
+No new paid submissions have occurred. The current designated Google account is
+technician 7 (the email supplied by the user); a shared-account fixture choice or
+independent second account, receiving-inbox verification method, and the reviewed
+new-stage ceiling remain unresolved setup decisions. T077/T078 remain deferred.
+
+The user subsequently approved the proposed 11,250-credit ceiling, designated
+the Davidson Gmail account as the second technician, retained the app's existing
+Edvenswa admin recipient, and selected manual receipt with native inbox evidence
+pending. Revalidate both named accounts; shared-account alias support is no longer
+needed. Keep the older readiness observations as history.
+
+- [x] T085 Regress and implement FR-037 operator email mode with separate functional/incomplete acceptance outcomes, preserving default native inbox checks and every other failure. Validate before continuing T082–T084.
+
+Current final offline evidence: 841 unit/integration and 334 E2E tests passed,
+with zero failures, errors or skips (`full-v3-offline.log` and copied XML).
+The 38 focused operator/authorization/campaign contracts and 17 native fixture
+contracts passed. Final Ruff validation and `git diff --check` are clean. Source
+converge found no remaining FR-034/037 blocker; graph coverage remains unknown
+because the graph tools are unavailable. No medium paid invocation has occurred.
+
+T082 remains open for the Davidson account's owner Google consent, the exact
+Edvenswa admin address, and public gateway readiness. The synthetic KB was indexed
+through the isolated app's native upload endpoint. Automatic approval review
+rejected the test-token request to the task-owned tunnel; explicit approval is
+pending. System DNS also cannot currently resolve that tunnel's hostname. Manual
+email receipt is approved, with native inbox evidence retained as unverified.
+
+## Deployed-only medium correction (2026-10-18)
+
+The latest user instruction supersedes local live execution. All owned local
+live servers, OAuth helper and ngrok were stopped; no medium charge occurred.
+The native deployed app is healthy, and its Edvenswa recipient already matches.
+Both grants are verified, but Davidson still needs its deployed binding. Earlier
+T082/T084 local setup is retained as history and superseded for live execution.
+
+- [x] T086 Reconcile FR-038–041, deployed adapter boundaries, ownership/budget/data preservation contracts and test tasks; analyze before implementation.
+- [x] T087 Regress and implement target-explicit medium stage planning, one-use claims, native origin fidelity and deployed runner adapter integration while preserving minimal/isolated restrictions.
+- [x] T088 Regress and implement native test-owned deployed fixture setup, case-specific scoped request/reservation checks, ambiguity stops and owned cleanup; never expose isolated reset actions to deployment.
+- [x] T089 Prepare the designated deployed Davidson connection and unique catalog definitions; verify both calendars, all reachable recipients, existing customer identity and whole-stage setup without paid submissions. Native catalog creation belongs to locked T091 execution after the one-use authorization claim.
+- [x] T090 Analyze/converge the deployed medium changes; run focused and full offline/browser verification and retain exact evidence.
+- [ ] T091 Execute only C07–C16 against the deployed app within the approved ceiling, settle charges, inspect native/browser effects and clean owned test resources. Retain manual inbox as unverified and prepare only the later full delta without paid replay.
+
+T087–T089 current evidence: 164 deployed/stage contracts, 42 deployed fixture
+unit contracts and six native PostgreSQL/API/browser contracts passed. Captured
+regressions cover exact customer identity, independent case date overrides,
+future slot admission, immediate per-slot ownership rechecks, partial effects
+and unknown responses. Bounded source convergence resolved both reported
+slot/date findings. The standard deployed whole-stage `--check` returned
+`problems: []`, selecting only C07–C16 with a 9,000-credit admission estimate and
+11,250 ceiling. Both designated calendars are connected as staff 7 and 11; the
+admin address is verified. Original business-row hashes are unchanged. These
+are prerequisites, not paid conversation results; the new full offline gate is
+now complete: 914 unit/integration and 340 end-to-end tests passed, zero failures,
+errors or skips. The first full gate exposed a nested Playwright session in the
+new observer; its regression now keeps the existing browser session active and
+the observer owns a separate browser thread. Retained first-run failures are not
+overwritten. Final evidence: `deployed-full-v2-offline.log`, copied XML and
+`deployed-current-offline-gate.json` under `scratch/medium-delta-20261018/`.
+
+- [x] T092 Analyze FR-042 same-run unpaid continuation, then regress and implement explicit admission, immutable prior-attempt evidence, resource reuse and all unsafe-state rejections. No replacement authorization or additional capacity is permitted.
+- [x] T093 Regress and implement FR-043/044: serialize shared embedding/catalog publication, retain the prior index on replacement failure, offload blocking list work and omit past-start candidate provider lookups. Preserve future behavior, row/filter contracts and messaging settings; include native API/browser responsiveness tests.
+- [ ] T094 Converge and run focused plus complete offline/browser validation for recovery and app fixes; after explicit publication approval, publish only the necessary validated repair and read back native behavior. Earlier no-push/no-deploy instructions remain in force while approval is pending.
+- [ ] T095 Continue the original C07–C16 execution only after every FR-042 proof and fresh readiness/budget gate passes; preserve the blocked zero-credit original attempt and settle/clean all owned effects.
+
+T092/T093 red/green evidence: the initial unpaid-continuation contracts failed
+eight intended checks, then all 363 harness tests and 40 focused continuation
+checks passed. Native repair validation passed 74 relevant unit and 13 native
+API/browser tests, including captured concurrent embedding, real Chroma with
+deterministic embeddings, failure preservation, business-time eligibility and
+held-provider health responsiveness. Bounded source convergence found no critical
+FR-042–044 blocker. New test files are lint clean; legacy product files have zero
+introduced Ruff findings. Complete recovery gate and deployment remain T094.
+
+The complete recovery gate now passes 966 unit/integration and 345 end-to-end
+tests, zero failures/errors/skips. Evidence: `deployed-recovery-full-offline.log`,
+copied XML and `deployed-recovery-offline-gate.json`. Native deployment read-back
+and actual continuation remain pending; no medium conversation has been charged.
+
+- [x] T096 Regress and implement FR-045/046 for the confirmed native OOM: one-chunk embedding adds with exact-attempt rollback, safe KB upload replacement and threadpool responsiveness. Retain native OOM event and every failed restoration attempt; no native retry or paid simulation against the unrepaired indexing path.
+- [x] T097 Analyze/converge the OOM/upload repair, rerun focused and complete offline/API/browser gates, refresh the reviewable patch and preserve publication approval as pending. Actual deployed memory/index read-back remains required after deployment is approved.
+
+T096/T097 evidence: six intended bounded-batch/publication unit failures and
+native held-upload/late-failure regressions preceded implementation. Fifty focused
+unit and 57 native API/browser workflow tests passed. The complete current gate
+passed **972 unit/integration + 348 E2E**, zero failures/errors/skips
+(`deployed-kb-bounded-full-offline.log` and copied XML). Bounded source convergence
+found no material FR-045/046 gap; new tests are lint clean and legacy files have
+zero introduced findings. Native OOM event `evt-dbagtv942hec739a9j60` and the
+failed restoration remain retained. Health recovered automatically; all five
+authored document byte hashes remain intact, while the generated catalog needs
+rebuilding. No medium test submission or credit was consumed. Automatic approval
+review rejected push/deployment under the earlier no-publish instruction;
+T094/T095 and deployed memory/index/live acceptance remain pending explicit approval.

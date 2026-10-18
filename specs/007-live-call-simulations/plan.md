@@ -209,3 +209,177 @@ Analysis: FR-032 is an explicit recovery exception to ordinary FR-024 all-six se
 ## Resume an owned settled lifecycle
 
 The first targeted recovery created owned booking 50 successfully; C02 then rescheduled it with all native state checks passing but failed for unsupported notification wording. Retain that failure. Resume only C02/C03 against proven owned 50 after prompt repair, with a fresh later target date. Validate ownership from the ancestor recorded evidence (not its baseline), current row and caller identity before resource creation; preserve all other rows. Seed previous/group IDs so identity/time-change checks remain strict. Never replay passed C01 or callback scenarios.
+
+## Differential stages and medium fixture verification (FR-034–036)
+
+Keep `select_cases` and the existing `--cases` interface. Explicit medium IDs
+C07–C16 and future full IDs C17–C50 have no paid prerequisite chain. Retain prior
+minimal evidence as read-only provenance; it is not a new isolated result and
+does not turn a subset into a complete native-acceptance tier. The deployed
+adapter remains limited to C01–C06. Use the owned isolated Runtime, native fixture
+owner, tunnel gateway, source snapshot and dedicated database for new scenarios.
+
+Add bounded isolated stage authorization at the runner's existing preview,
+campaign lock and Budget integration points. Its exact tier/range/one-repeat
+scope and single-use ID must be verified before provider resource creation and
+recorded in every paid intent. Do not reuse deployed campaign authorizations,
+inflate monthly allowance, omit the global unsettled ledger, or count historical
+spend as new stage spending. Keep normal unconfigured limits unchanged.
+
+Reproduce linked fixture row-count rejection with a real disposable PostgreSQL
+database and captured external providers, then repair the fixture contract.
+Strengthen C10/C12/C14/C15 SQL checks for the named business outcomes and prove
+negative states are rejected. Validate all selected setup requirements before
+paid work, including two specialist bindings for split/linked profiles. No
+production staff/configuration writes or system Gmail reconnection are part of
+this work. Existing strict native notification evidence remains required.
+Use ACTIVE `appointment_reservations.starts_at/ends_at` as the timing authority
+for contiguity and exact linked starts. Native creation leaves nullable legacy
+request timing fields empty; a valid reservation must not fail solely because
+that cache is unset. Keep exact per-request duration and missing-reservation
+rejection. Real native creation and rescheduling regressions cover both paths;
+negative tests corrupt the authoritative reservation, not only a legacy cache.
+
+Test layers: focused captured authorization/admission/reuse/unknown-charge
+contracts; real-database fixture/check regressions; existing browser evidence
+tests; then complete offline unit/integration and E2E gate before live execution.
+Only the parent executes external actions or paid submissions. Missing account,
+receiving inbox permission or reviewed stage budget remains a disclosed setup
+prerequisite; do independent preparation while awaiting it.
+
+For FR-037 add an explicit operator email evidence mode to the isolated runner.
+Keep native mode unchanged and all scenarios' required_evidence intact. In
+operator mode omit only the receiver-token/profile read during preflight; record
+the original receiving-inbox assertion as `passed: false`, `status: unverified`,
+with a clear reason during outcome collection. Separate functional checks from
+that pending assertion when classifying a case. A passing functional conversation
+with pending inbox evidence has raw status `incomplete`; any other failed check
+remains failed. Reports expose both statuses and pending evidence. Default
+native mode still requires a valid receiver binding and actual matching inbox
+content. Add captured preflight/outcome/classification/CLI-report regressions,
+then rerun focused and complete gates. Do not copy the expired system sender
+grant into the isolated app or use user receipt from the earlier minimal stage
+as evidence for new messages.
+
+## Deployed medium stage (FR-038–041)
+
+Keep `deployed.execute` as the paid lifecycle owner. Extend shared stage planning
+with an explicit trusted target argument; isolated callers retain their original
+guard, and deployed support accepts only the exact medium range. Reuse
+`claim_stage` under the existing campaign lock, before native fixture changes or
+provider clone creation. The existing unused authorization ID is retained.
+
+Add a bounded `deployed_medium` adapter with this integration boundary:
+
+- `readiness(config, client, cases, baseline)` returns setup problems without
+  mutating business data; validate explicit owned catalog and staff bindings,
+  scoped database access, allowlisted receivers and case prerequisites.
+- `Adapter.prepare_catalog()` creates planned, uniquely named catalog items
+  through native APIs only after the run has claimed its authorization under
+  the campaign lock. Validate the resulting exact bindings before clone/billing.
+  There is no separate prepared claim or new claim reuse. Setup failure retains
+  its intent and consumes this one-use authorization. FR-042 permits only a
+  separately gated completion of the same unpaid execution and its resources.
+- `Adapter(campaign, client).arrange(case, values)` returns the adapted case and
+  its fixture request IDs. Persist fixture intent before each native API call;
+  retain exact created IDs and original calendar-slot values.
+- `Adapter.checks(case, values, before, after)` evaluates narrowly scoped native
+  request/reservation data and journals attributable new IDs. Case names map to
+  exact test catalog names; catalog duration drives strict complete/contiguous
+  visit checks. Existing customer records remain protected by the deployed
+  baseline comparison as well as native identity checks.
+- `Adapter.cleanup_case()` cancels only recorded requests through native tools
+  and restores only recorded test calendar blocks. Unknown responses require
+  reconciliation. Cleanup failure blocks subsequent paid cases; no global SQL
+  reset is accessible. Raw provider and failure evidence remains retained.
+- Calendar block setup admits only future AVAILABLE slots with no ACTIVE
+  reservation. Re-read exact ID/state immediately before each PATCH and
+  restoration. An intervening change or reservation stops cleanup rather than
+  overwriting the slot. Catalog cleanup removes only journaled items after all
+  owned booking/provider effects settle; retain blockers if native deletion
+  cannot preserve the booking audit.
+
+Use three uniquely named test-owned catalog items for oil, second same-technician
+service and split-specialist service. Their normal API qualification bindings
+establish the intended profiles without changing existing catalog records or
+assignments. Bind the owner's Davidson grant to a new deployed technician only
+after verifying the exact account, Google client and encryption owner. Retain
+that designated account connection; remove only temporary test catalog fixtures
+after their bookings and provider effects settle. Keep provider credentials in
+memory through Bun; remote DB access is read-only for outcome checks.
+
+No app deployment or tunnel is needed for this harness change. Native tool URLs
+and HMAC callback remain on the existing deployment. Browser/native calendar and
+notification follow-up evidence must remain distinguishable from raw campaign
+scope; operator inbox remains explicitly unverified. Retain the previous local
+gate, add focused captured/native fixture regressions, then rerun the complete
+offline gate before the first deployed paid invocation.
+
+The initial deployed medium branch requires explicit operator email mode;
+unsupported native inbox verification must reject during planning before claim,
+fixture changes or billing. Existing isolated native and deployed minimal paths
+keep their defaults. Regress this default-mode admission boundary explicitly.
+
+## Explicit unpaid continuation (FR-042)
+
+Add an explicit workflow continuation switch, rejected for every target/tier
+except the same claimed deployed medium run. Admission belongs under the same
+campaign lock. Do not broadly relax `Campaign` attempted-run protection or clear
+its flags. Validate the immutable original blocked attempt and exact ledger
+claim; require zero charge entries, provider tests/invocations or any historical
+test-create intent, no ambiguous/pending operation and no case fixture effects.
+Read back the existing clone fingerprint and every journaled service binding;
+reuse them without creation. Validate all normal readiness gates against owned
+catalog definitions while preserving the original baseline. Archive the original
+manifest/reports with hashes, then append a numbered continuation record before
+proceeding. Preserve budget/reserve/unknown guards and exact-once paid selection.
+Tests must prove every disqualifying condition rejects before mutation or paid
+work, and a read-only failure before case arrangement can resume exactly once
+without changing the claim or resource counts. Complete the full offline gate
+again before using this recovery path.
+
+## Native defects found by live setup (FR-043–044)
+
+Use a shared process `RLock` in `serviceBot.services.rag` around collection
+initialization, embedding add/query and the complete catalog synchronization
+snapshot. The current deployment runs one Uvicorn process; do not claim a
+cross-process guarantee. A file replacement operation retains the prior exact
+chunk IDs until replacement indexing succeeds, then removes those IDs. Write a
+temporary text file and atomically publish it after successful vector replacement;
+on embedding failure keep the original file/index. Exercise concurrency with
+events and a captured embedding boundary rather than real model downloads.
+
+Keep `get_service_requests` async and await `run_in_threadpool` for its synchronous
+implementation. Skip candidate lookup only for a reliably parsed past booking
+start in business time; keep every original row, future/unknown-time behavior,
+filters and fields. Regress a blocked candidate lookup with a health request
+and browser read-back before deployment. Memoize the existing WhatsApp
+connectivity lookup per exact phone within one list response, eliminating
+repeated nested database reads for the same technician without cross-request
+staleness. Regress duplicate and distinct phone behavior. These actual application
+fixes require explicit publication approval followed by a validated deployment.
+The earlier no-push/no-deploy instruction remains in force while that approval
+is pending; local artifact changes do not grant it. Production messaging and
+system Gmail deferrals remain in effect.
+
+## Bounded KB indexing and responsive uploads (FR-045–046)
+
+The existing collection add receives every 500-character chunk together; the
+installed default ONNX embedder internally permits batches of 32. Submit one
+chunk per add while retaining the shared lock for the complete replacement.
+Journal generated new IDs locally and delete exactly those IDs on a later-batch
+failure; preserve the previous index until all adds succeed. This bounds batch
+size, without claiming that offline tests prove a specific deployed memory peak.
+Include IDs of a failed add that may already have persisted; prove add-then-raise
+rollback and surface rollback failures explicitly.
+
+Move upload's synchronous KB replacement into a threadpool helper. Use the
+existing atomic temporary-file publication pattern and `replace_text`, preserving
+the API/response and old file/chunks on embedding failure. Regress bounded large
+input and hold the same shared lock until final file publication; regress
+concurrent same-filename index/file consistency. Regress partial batch failure
+and unrelated-document protection, plus native held-index health responsiveness
+and upload/download browser behavior. Validate
+actual memory and settled indexing after approved deployment before continuing
+paid calls; deployment approval is currently pending after automatic review
+enforced the earlier no-push/no-deploy instruction.

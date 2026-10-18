@@ -6,10 +6,17 @@ import json
 import sys
 import time
 
-from .core import SimulationError, load_config, redact
-from .runtime import Runtime, running
 from . import fixtures
-from .runner import cleanup, preview, run_campaign, write_report, campaign_status, reconcile
+from .core import SimulationError, load_config, redact
+from .runner import (
+    campaign_status,
+    cleanup,
+    preview,
+    reconcile,
+    run_campaign,
+    write_report,
+)
+from .runtime import Runtime, running
 
 
 def main(argv=None):
@@ -22,6 +29,7 @@ def main(argv=None):
         if command == 'workflow':
             p.add_argument('--target', choices=('isolated', 'deployed'))
             p.add_argument('--check', action='store_true', help='Read-only deployed readiness check; no paid submissions')
+            p.add_argument('--continue-unpaid', action='store_true', help='Explicit same-run zero-submit deployed medium continuation')
         if command in ('plan', 'run', 'workflow'):
             p.add_argument('--tier', choices=('minimal', 'medium', 'full'), default='minimal')
             p.add_argument('--cases', help='Comma-separated subset; includes lifecycle prerequisites')
@@ -48,7 +56,7 @@ def main(argv=None):
         if args.command == 'workflow':
             from .workflow import execute
             value = execute(config, args.tier, live=args.live, run_id=args.run_id,
-                            requested=requested, repeat=args.repeat, config_path=args.config, check=args.check)
+                            requested=requested, repeat=args.repeat, config_path=args.config, check=args.check, continue_unpaid=args.continue_unpaid)
             print(json.dumps(redact(value if not args.live else {
                 'status': value['status'], 'run_id': value['run_id']}), indent=2))
             return {'passed': 0, 'planned': 0, 'failed': 1, 'blocked': 2, 'incomplete': 3}.get(value['status'], 2)

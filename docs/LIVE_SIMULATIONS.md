@@ -123,6 +123,57 @@ produce a passing tier.
 
 ## Run every test layer with one command
 
+### Differential stages without paid replay
+
+When earlier cases already have retained passing evidence, select only the new
+range with `--cases`. Medium adds C07–C16; full adds C17–C50. These ranges have no
+catalog dependencies. Each selected case still creates its own isolated starting
+fixture through native application calls and the owned database. Prior results
+remain in their original reports, with their original target and acceptance
+scope. A new subset does not become a complete native-acceptance tier merely by
+referencing earlier deployed functional results.
+
+An explicitly reviewed isolated stage may configure:
+
+```json
+"stage_authorization": {
+  "authorization_id": "the-reviewed-stage-approval-id",
+  "tier": "medium",
+  "case_ids": ["C07", "C08", "C09", "C10", "C11", "C12", "C13", "C14", "C15", "C16"],
+  "credit_ceiling": 11250
+}
+```
+
+The amount is an example ceiling, not a price or authorization to spend. Fill it
+only after reviewing conservative estimates and obtaining the user's approval.
+The stage requires the exact explicit range once, rejects deployed/minimal
+campaign authorizations, and retains the normal 20 percent reserve, verified
+monthly allowance, fresh remaining quota and global unknown-charge stop. The
+authorization ID is durably claimed under the campaign lock and cannot fund
+another attempted run. Do not generate another ID to evade a consumed approval.
+Historical settled minimal spending remains visible and is not charged again to
+this distinct stage's ceiling.
+
+Preview the ten-case stage with the prepared private isolated config:
+
+```sh
+./run_live_simulations.sh --tier medium --config scratch/medium-delta-20261018/isolated.json \
+  --cases C07,C08,C09,C10,C11,C12,C13,C14,C15,C16
+```
+
+Live execution additionally requires a prepared owned runtime, valid tunnel and
+all designated provider/calendar/inbox bindings. Split/linked cases are rejected
+before paid work when two specialist/calendar bindings are absent. Supplying a
+calendar ID to the verifier does not redirect application writes: the current
+application uses each technician account's primary calendar. Shared-account
+fixtures do not prove independent Google-account behavior. Keep those limits
+explicit; never edit production technicians or weaken evidence to satisfy setup.
+
+A later full delta uses an independently approved `tier: "full"`, exact
+`case_ids` C17–C50 and explicit matching `--cases`; preparing medium does not
+authorize the full stage. Default cumulative selections and tier caps are
+unchanged without the opt-in.
+
 ```sh
 # All offline unit/integration and E2E tests.
 ./run_tests.sh --verify
@@ -531,3 +582,69 @@ and seeded into the continuing lifecycle. Already-passed prerequisites can then
 be omitted, without replay. For an already-applied failed reschedule, choose a
 different target time so another real change is verified. Missing ownership,
 changed state, original business records or a cancelled seed block admission.
+
+## Explicit deployed medium difference
+
+An explicitly approved medium stage can run **only C07–C16**, once, against the
+selected deployment. It uses `stage_authorization` with the same exact ten IDs,
+its unique unused authorization ID and the reviewed credit ceiling. Deployed
+full stages remain unsupported. Minimal recovery and isolated stages retain
+their existing contracts. The case selector still has cumulative defaults;
+always provide the explicit difference for this stage.
+
+The private `deployed_medium` configuration binds a database environment-variable
+name, the prepared ownership ID, two designated technician IDs and three unique
+test catalog definitions (`oil`, `second`, `split`, each with name, duration and
+price). Enable `browser_readback: true` for native portal reload checks. The
+database reader validates native identity and opens read-only transactions; it
+does not expose arbitrary SQL actions or local fixture resets.
+
+Readiness checks the whole selection. Execution claims the authorization under
+the existing campaign lock, then creates and verifies only the test-owned
+catalog/qualification records before provider clone creation or paid billing.
+It uses normal native booking/calendar APIs for case setup, journals exact owned
+IDs and verifies strict request/reservation outcomes. Calendar blocks admit only
+future available, unreserved slots and retain state witnesses for safe restore.
+Each settled case cancels only its owned bookings and waits for native calendar
+projection settlement before another paid case. Ambiguous setup, unknown charges,
+preservation changes or unresolved cleanup stop further paid work. Temporary
+catalog cleanup preserves cancelled booking audit rows and existing catalog data.
+
+Example after native account preparation, using the same config and prepared run:
+
+```sh
+./run_live_simulations.sh --target deployed --tier medium \
+  --config scratch/live-simulations.medium-deployed.json --run-id PREPARED_RUN_ID \
+  --cases C07,C08,C09,C10,C11,C12,C13,C14,C15,C16 --check
+```
+
+Use the preview first, then `--check`, then replace `--check` with `--live` after
+the complete offline gate and native readiness pass. Preserve a consumed claim;
+never generate a replacement authorization just to retry a failed preparation.
+The approved example ceiling is 11,250 credits with a 9,000-credit conservative
+estimate and 20 percent reserve; other ceilings require their own explicit scope.
+
+`email_receipt_mode: "operator"` is supported for this explicit deployed medium
+stage. Keep the receiving-inbox assertion false/unverified and report raw
+acceptance as incomplete. Functional results require provider evaluation and all
+other implemented native checks. Preserve any additional missing acceptance
+observations in the report, and record native/provider follow-up evidence
+separately. No old email receipt proves a new test message, and production
+messaging or expired system Gmail repair is not implied.
+
+## Continue a claimed stage before its first test submission
+
+The deployed medium workflow supports an explicit `--continue-unpaid` switch
+with `--live` and the same prepared `--run-id`. It completes the original
+C07–C16 claim and ceiling; it creates no replacement authorization, catalog or
+clone. This switch is rejected for preview/check, isolated runs and other tiers.
+
+Admission requires zero test submissions or test-creation intents, zero charge
+entries for the run or authorization, no unknown global charge, no pending or
+unknown writes, and no case fixtures/bookings/blocks. It rechecks the original
+baseline, exact owned catalog/qualifications and clone, designated accounts and
+current quota under the existing lock. Any ambiguous proof stops execution.
+The original blocked manifest and reports are archived read-only with hashes;
+numbered continuation rows retain their relationship to that failed attempt.
+Only one such continuation is supported. A zero credit total alone does not
+qualify a run whose test creation or paid submission was attempted.

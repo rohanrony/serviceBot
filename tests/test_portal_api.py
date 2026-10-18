@@ -280,7 +280,7 @@ def test_get_calls_endpoint():
         assert calls[0]["vehicle"] == "2021 Tesla Model 3"
         assert calls[1]["vehicle"] == "2020 Toyota Corolla"
 
-@patch("serviceBot.services.rag.FAQService.index_text")
+@patch("serviceBot.services.rag.FAQService.replace_text")
 def test_kb_upload_endpoint(mock_index_text):
     mock_index_text.return_value = 5
     # Send a mock text file
@@ -294,7 +294,7 @@ def test_kb_upload_endpoint(mock_index_text):
     assert data["success"] is True
     assert data["chunk_count"] == 5
 
-@patch("serviceBot.services.rag.FAQService.index_text")
+@patch("serviceBot.services.rag.FAQService.replace_text")
 @patch("serviceBot.services.rag.FAQService.delete_file")
 def test_kb_upload_list_download_delete_flow(mock_delete_file, mock_index_text):
     mock_index_text.return_value = 3

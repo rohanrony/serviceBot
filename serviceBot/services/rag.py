@@ -1,4 +1,5 @@
 import os
+from threading import RLock
 os.environ["ANONYMIZED_TELEMETRY"] = "False"
 os.environ["CHROMA_TELEMETRY_IMPL"] = "None"
 import chromadb
@@ -8,38 +9,44 @@ from serviceBot.logger import get_logger
 
 logger = get_logger("services.rag")
 
+EMBEDDING_ADD_BATCH_SIZE = 1
+
 class FAQService:
+    operation_lock = RLock()
+
     def __init__(self, collection=None):
         """
         Initializes the FAQService.
         By default, it uses an in-process persistent ChromaDB client pointing to ./chroma_db.
         If a collection is explicitly passed (e.g. in tests), it uses that collection instead.
         """
-        if collection is not None:
-            self.collection = collection
-        else:
-            import sys
-            is_testing = "pytest" in sys.modules or any("pytest" in arg or "unittest" in arg for arg in sys.argv)
-            path = "./scratch/chroma_db" if is_testing else "./chroma_db"
-            client = chromadb.PersistentClient(path=path)
-            self.collection = client.get_or_create_collection("faq_collection")
+        with self.operation_lock:
+            if collection is not None:
+                self.collection = collection
+            else:
+                import sys
+                is_testing = "pytest" in sys.modules or any("pytest" in arg or "unittest" in arg for arg in sys.argv)
+                path = "./scratch/chroma_db" if is_testing else "./chroma_db"
+                client = chromadb.PersistentClient(path=path)
+                self.collection = client.get_or_create_collection("faq_collection")
 
     def answer_question(self, question: str) -> str:
         """
         Queries the vector database for the closest semantic chunks and passes them
         as context to ChatOpenAI, ensuring strict adherence to context without hallucination.
         """
-        # Query ChromaDB collection for matches
-        try:
-            count = self.collection.count()
-            n_results = max(1, min(20, count))
-        except Exception:
-            n_results = 2
+        with self.operation_lock:
+            # Query ChromaDB collection for matches
+            try:
+                count = self.collection.count()
+                n_results = max(1, min(20, count))
+            except Exception:
+                n_results = 2
             
-        results = self.collection.query(
-            query_texts=[question],
-            n_results=n_results
-        )
+            results = self.collection.query(
+                query_texts=[question],
+                n_results=n_results
+            )
         
         # Consolidate retrieved document snippets
         context_snippets = []
@@ -98,11 +105,11 @@ class FAQService:
             return f"Error querying FAQ: {str(e)}"
 
     def index_text(self, text: str, filename: str) -> int:
-        """
-        Chunks the input text, generates metadata and IDs,
-        and adds them to the ChromaDB collection.
-        Returns the number of chunks successfully added.
-        """
+        """Add chunks while serializing the shared embedding implementation."""
+        with self.operation_lock:
+            return len(self._add_text(text, filename))
+
+    def _add_text(self, text: str, filename: str) -> list[str]:
         # Split text into chunks of ~500 characters
         chunk_size = 500
         words = text.split()
@@ -121,22 +128,36 @@ class FAQService:
             chunks.append(" ".join(current_chunk))
             
         if not chunks:
-            return 0
+            return []
             
         import uuid
-        ids = [f"chunk_{filename}_{uuid.uuid4().hex[:8]}_{i}" for i in range(len(chunks))]
+        attempt = uuid.uuid4().hex
+        ids = [f"chunk_{filename}_{attempt}_{i}" for i in range(len(chunks))]
         metadatas = [{"filename": filename} for _ in range(len(chunks))]
-        
-        self.collection.add(
-            documents=chunks,
-            metadatas=metadatas,
-            ids=ids
-        )
-        return len(chunks)
+        try:
+            for offset in range(0, len(chunks), EMBEDDING_ADD_BATCH_SIZE):
+                end = offset + EMBEDDING_ADD_BATCH_SIZE
+                self.collection.add(documents=chunks[offset:end],
+                                    metadatas=metadatas[offset:end], ids=ids[offset:end])
+        except Exception:  # Any batch may persist before raising.
+            # Include the failing batch, whose acknowledgement can be unknown.
+            # A cleanup error must propagate instead of reporting clean rollback.
+            self.collection.delete(ids=ids)
+            raise
+        return ids
+
+    def replace_text(self, text: str, filename: str) -> int:
+        """Keep prior searchable chunks until replacement embedding succeeds."""
+        with self.operation_lock:
+            old_ids = self.collection.get(where={"filename": filename}, include=[])['ids']
+            new_ids = self._add_text(text, filename)
+            if not new_ids:
+                raise ValueError("Replacement knowledge must contain searchable text")
+            if old_ids:
+                self.collection.delete(ids=old_ids)
+            return len(new_ids)
 
     def delete_file(self, filename: str):
-        """
-        Deletes all chunks associated with filename from the collection.
-        """
-        self.collection.delete(where={"filename": filename})
-
+        """Delete only this document under the shared collection boundary."""
+        with self.operation_lock:
+            self.collection.delete(where={"filename": filename})

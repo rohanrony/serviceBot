@@ -1,12 +1,13 @@
-"""Native deployed conversation/API smoke tests; no app setup, resets or tunnel.
+"""Deployed campaigns with native API smoke and scoped medium observations.
 
-This adapter deliberately reports incomplete full acceptance: a remote API read
-cannot establish the isolated runner's reservation, browser or signed callback
-observations. It shares that runner's budget and durable provider ledger.
+Acceptance remains incomplete while native provider evidence is unavailable.
+Budgets, durable invocation intents and bounded fixture ownership are shared.
 """
 from __future__ import annotations
 
+import contextlib
 import copy
+import hashlib
 import json
 import os
 import re
@@ -19,7 +20,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
-from . import evidence, fixtures
+from . import deployed_medium, evidence, fixtures
 from .core import (
     ROOT,
     Budget,
@@ -34,7 +35,18 @@ from .core import (
     select_cases,
 )
 from .provider import ElevenLabs
-from .runner import campaign_lock, current_remaining, estimates, load_reference, preview
+from .runner import (
+    campaign_lock,
+    case_variables,
+    claim_stage,
+    current_remaining,
+    email_mode,
+    estimates,
+    functional_checks,
+    load_reference,
+    preview,
+    stage_authorization,
+)
 
 MISSING_EVIDENCE = [
     'scoped database/reservation invariants', 'reloaded browser portal',
@@ -264,10 +276,13 @@ def result_status(checks, *, provider_passed):
 def campaign_budget(config, tier, remaining):
     calibration = config.get('calibration')
     authorization = config.get('campaign_authorization')
+    stage = config.get('stage_authorization')
     budget = Budget(config['budget']['monthly_credits'], tier, remaining,
-                  credit_ceiling=(authorization['credit_ceiling'] if authorization is not None
+                  credit_ceiling=(stage['credit_ceiling'] if stage is not None
+                                  else authorization['credit_ceiling'] if authorization is not None
                                   else calibration['credit_ceiling'] if calibration is not None else None))
-    budget.spent, _ = continuation_history(config)
+    if stage is None:
+        budget.spent, _ = continuation_history(config)
     return budget
 
 
@@ -546,37 +561,191 @@ class Campaign:
         private_json(self.folder / 'report.json', redact(self.manifest))
         lines = ['# Deployed live simulation ' + self.run_id, '',
                  'Status: **' + self.manifest['status'] + '**',
-                 'Scope: conversation/API smoke; complete acceptance requires isolated observations.', '',
-                 'Missing acceptance evidence: ' + ', '.join(MISSING_EVIDENCE), '']
+                 ('Scope: deployed medium native state and scoped browser observations.'
+                  if self.manifest.get('stage_authorization') else
+                  'Scope: conversation/API smoke; complete acceptance requires isolated observations.'), '',
+                 'Missing acceptance evidence: ' + ', '.join(self.manifest.get('missing_acceptance_evidence', MISSING_EVIDENCE)), '']
         if self.manifest.get('continuation_ancestors'):
             lines += ['Prior verified credits: ' + self.manifest.get('prior_spent_credits', 'unknown'),
                       'Current run credits: ' + self.manifest.get('spent_credits', 'unknown'),
                       'Aggregate credits: ' + self.manifest.get('aggregate_spent_credits', 'unknown'), '']
-        lines.extend(f'- {r["case_id"]}: smoke **{r.get("functional_status", "not_run")}**, '
+        lines.extend(f'- {r["case_id"]}' + (f' (attempt {r.get("attempt", 1)})' if self.manifest.get('unpaid_continuations') else '') + f': smoke **{r.get("functional_status", "not_run")}**, '
                      f'acceptance **{r["status"]}** — {r.get("reason", "")}'
                      for r in self.manifest['results'])
-        lines.extend(['', 'Deployment records and calendars are retained. No automatic business-data cleanup.'])
+        lines.extend(['', ('Owned medium fixtures and catalog are cleaned only after settled effects; unresolved resources are retained.'
+                           if self.manifest.get('stage_authorization') else
+                           'Deployment records and calendars are retained. No automatic business-data cleanup.')])
         (self.folder / 'report.md').write_text('\n'.join(lines) + '\n')
         print('Report: ' + str(self.folder / 'report.md'), flush=True)
 
 
+def _unpaid_campaign(config, run_id):
+    """Open existing evidence read-only; admission is separately proven under lock."""
+    campaign = Campaign.__new__(Campaign)
+    campaign.config = config
+    campaign.root = Path(config.get('artifact_root', ROOT / 'scratch/live-simulations')).resolve()
+    if not isinstance(run_id, str) or not re.fullmatch(r'[0-9a-f]{32}', run_id):
+        raise SimulationError('Invalid unpaid continuation run ID')
+    campaign.run_id, campaign.folder = run_id, campaign.root / run_id
+    if campaign.folder.is_symlink() or campaign.folder.resolve().parent != campaign.root:
+        raise SimulationError('Invalid unpaid continuation artifact path')
+    path = campaign.folder / 'manifest.json'
+    if path.is_symlink():
+        raise SimulationError('Invalid unpaid continuation manifest path')
+    campaign.manifest = json.loads(path.read_text())
+    return campaign
+
+
+def _prove_unpaid(campaign, ledger, auth, selected):
+    manifest = campaign.manifest
+    claims = [claim for claim in ledger.get('stage_authorizations', [])
+              if claim.get('authorization_id') == auth['authorization_id'] or claim.get('run_id') == campaign.run_id]
+    expected_claim = {**auth, 'run_id': campaign.run_id}
+    fixture = manifest.get('deployed_medium', {})
+    operations = fixture.get('operations', [])
+    services = fixture.get('services', {})
+    service_ids = {item.get('id') for item in services.values()}
+    if (manifest.get('target') != 'deployed' or manifest.get('run_id') != campaign.run_id
+            or manifest.get('deployed_url') != origin(campaign.config.get('deployed_url'))
+            or manifest.get('tier') != 'medium' or manifest.get('selected') != selected
+            or manifest.get('stage_authorization') != auth or auth.get('credit_ceiling') != 11250
+            or manifest.get('attempted') is not True or manifest.get('status') != 'blocked'
+            or claims != [expected_claim] or manifest.get('unpaid_continuations')
+            or any(record.get('run_id') == campaign.run_id or record.get('authorization_id') == auth['authorization_id']
+                   for record in ledger.get('unpaid_continuations', []))
+            or any(e.get('unsettled') or e.get('run_id') == campaign.run_id
+                   or e.get('authorization_id') == auth['authorization_id'] for e in ledger['entries'])
+            or manifest.get('provider_tests') or manifest.get('invocations')
+            or 'test_create_pending' in manifest or manifest.get('agent_create_pending')
+            or manifest.get('unsettled_usage') or number(manifest.get('spent_credits', 0)) != 0
+            or not isinstance(manifest.get('campaign_agent_id'), str) or not manifest['campaign_agent_id']
+            or fixture.get('blocked') or fixture.get('owned_request_ids') or fixture.get('current_request_ids')
+            or fixture.get('blocks') or 'current_case' in fixture or fixture.get('fixture_rows')
+            or len(services) != 3 or len(operations) != 3
+            or any(op.get('status') != 'observed' or op.get('method') != 'POST'
+                   or op.get('path') != '/api/v1/portal/services' or len(op.get('ids', [])) != 1 for op in operations)
+            or {op['ids'][0] for op in operations} != service_ids
+            or [row.get('case_id') for row in manifest.get('results', [])] != selected
+            or any(row.get('status') != 'blocked' or row.get('checks') for row in manifest.get('results', []))
+            or any(reason != 'Owned catalog retained: unresolved stage or provider effects'
+                   for reason in manifest.get('cleanup_blockers', []))):
+        raise SimulationError('Unpaid continuation proof failed; retain the blocked execution')
+
+
+def _archive_unpaid(campaign, ledger):
+    destination = campaign.folder / 'attempts' / 'attempt-1'
+    if destination.exists() or destination.is_symlink():
+        raise SimulationError('Unpaid continuation archive already exists')
+    originals = {}
+    for name in ('manifest.json', 'report.json', 'report.md'):
+        path = campaign.folder / name
+        if path.is_symlink() or not path.is_file():
+            raise SimulationError('Unpaid continuation original evidence is incomplete')
+        originals[name] = path.read_bytes()
+    destination.mkdir(parents=True, mode=0o700)
+    hashes = {}
+    for name, data in originals.items():
+        path = destination / name
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o400)
+        with os.fdopen(fd, 'wb') as stream:
+            stream.write(data)
+        hashes[name] = hashlib.sha256(data).hexdigest()
+    destination.chmod(0o500)
+    admission = {'attempt': 2, 'archive': str(destination.relative_to(campaign.folder)),
+                 'original_manifest_sha256': hashes['manifest.json'], 'files_sha256': hashes,
+                 'authorization_id': campaign.manifest['stage_authorization']['authorization_id'],
+                 'credit_ceiling': campaign.manifest['stage_authorization']['credit_ceiling'],
+                 'admitted_at': time.time()}
+    ledger.setdefault('unpaid_continuations', []).append({**admission, 'run_id': campaign.run_id})
+    private_json(campaign.root / 'usage-ledger.json', ledger)
+    campaign.manifest.setdefault('unpaid_continuations', []).append(admission)
+    campaign.save()
+
+
 def execute(config, tier='minimal', *, live=False, check=False, run_id=None,
-            requested=None, repeat=1, **_):
+            requested=None, repeat=1, continue_unpaid=False, **kwargs):
+    if not continue_unpaid:
+        return _execute(config, tier, live=live, check=check, run_id=run_id,
+                        requested=requested, repeat=repeat, **kwargs)
+    if (not live or check or tier != 'medium' or not run_id or config.get('target') != 'deployed'
+            or repeat != 1 or config.get('stage_authorization') is None):
+        raise SimulationError('Unpaid continuation requires explicit live same-run deployed medium execution')
+    planned = preview(config, tier, requested, repeat, target='deployed')
+    if planned['status'] != 'planned':
+        raise SimulationError('Unpaid continuation budget cannot admit selected coverage')
+    root = Path(config.get('artifact_root', ROOT / 'scratch/live-simulations')).resolve()
+    with campaign_lock(root), httpx.Client(timeout=30, trust_env=False, follow_redirects=False) as client:
+        campaign = _unpaid_campaign(config, run_id)
+        ledger = json.loads((root / 'usage-ledger.json').read_text())
+        auth = stage_authorization(config, tier, requested, planned['selected'], repeat, target='deployed')
+        _prove_unpaid(campaign, ledger, auth, planned['selected'])
+        cases = select_cases(load_catalog(), tier, planned['selected'])
+        designated = fixtures.variables(config)
+        for case in cases:
+            bound = case_variables(config, designated, case)
+            if any(bound[key] != designated[key] for key in ('customer_phone', 'customer_name', 'customer_email')):
+                raise SimulationError('Unpaid continuation per-case recipient identity differs')
+        problems, baseline = deployment_readiness(config, client)
+        if baseline != campaign.manifest.get('baseline'):
+            raise SimulationError('Unpaid continuation native baseline differs')
+        existing_name = preserved_customer_name(config, baseline, client)
+        services = campaign.manifest['deployed_medium']['services']
+        deployed_medium.validate_retained_catalog(config, client, services)
+        problems.extend(deployed_medium.readiness(config, client, cases, baseline, retained_catalog=services))
+        state, provider_problems = provider_readiness(config, client)
+        problems.extend(provider_problems)
+        if problems:
+            raise SimulationError('Unpaid continuation readiness failed: ' + '; '.join(problems))
+        provider = state['provider']
+        actual = native_override(provider.resolve_reference(provider.agent(campaign.manifest['campaign_agent_id'])),
+                                 origin(config.get('deployed_url')), state['webhook_id'])
+        expected = campaign.manifest.get('reference_fingerprint')
+        if fingerprint(actual) != expected or fingerprint(state['override']) != expected:
+            raise SimulationError('Unpaid continuation clone fingerprint differs')
+        remaining = current_remaining(config, provider)
+        budget = campaign_budget(config, tier, remaining)
+        if not budget.can_start(sum(estimates(config, cases))):
+            raise SimulationError('Unpaid continuation fresh quota or reserve cannot admit coverage')
+        state['remaining'] = remaining
+        _archive_unpaid(campaign, ledger)
+        campaign.manifest['unpaid_continuations'][-1]['resolved_retention_reasons'] = list(campaign.manifest.get('cleanup_blockers', []))
+        campaign.save()
+        return _execute(config, tier, live=True, requested=requested, repeat=repeat,
+                        _campaign=campaign, _admission={'baseline': baseline, 'state': state, 'existing_name': existing_name})
+
+
+def _execute(config, tier='minimal', *, live=False, check=False, run_id=None,
+             requested=None, repeat=1, _campaign=None, _admission=None, **_):
     if type(repeat) is not int or not 1 <= repeat <= 20:
         raise SimulationError('Repetitions must be between 1 and 20')
     url = origin(config.get('deployed_url'))
     calibration = config.get('calibration')
     authorization = config.get('campaign_authorization')
-    planned = (authorization_plan(config, tier, requested, repeat) if authorization is not None
+    stage = config.get('stage_authorization')
+    planned = (preview(config, tier, requested, repeat, target='deployed') if stage is not None
+               else authorization_plan(config, tier, requested, repeat) if authorization is not None
                else calibration_plan(config, tier, requested, repeat) if calibration is not None
                else preview(config, tier, requested, repeat))
     cases = ([case for case in load_catalog() if case['id'] in planned['selected']]
              if planned.get('resume_request_id') is not None else select_cases(load_catalog(), tier, planned['selected']))
-    unsupported = [c['id'] for c in cases if c['id'] not in {f'C{i:02}' for i in range(1, 7)}
-                   or c['setup'] not in ('fresh', 'continue') or c.get('requires_binding')]
+    if stage is not None:
+        designated = fixtures.variables(config)
+        for case in cases:
+            bound = case_variables(config, designated, case)
+            if any(bound[key] != designated[key] for key in ('customer_phone', 'customer_name', 'customer_email')):
+                raise SimulationError('Per-case customer identity must match the designated deployed recipient')
+    unsupported = ([] if stage is not None else
+                   [c['id'] for c in cases if c['id'] not in {f'C{i:02}' for i in range(1, 7)}
+                    or c['setup'] not in ('fresh', 'continue') or c.get('requires_binding')])
+    missing = ([item for item in MISSING_EVIDENCE
+                if item not in ('scoped database/reservation invariants', 'reloaded browser portal')]
+               if stage is not None else MISSING_EVIDENCE)
+    if stage is not None and not config.get('deployed_medium', {}).get('browser_readback'):
+        missing = [*missing, 'reloaded browser portal']
     planned.update(target='deployed', deployed_url=url,
-                   acceptance_scope='single_case_calibration_smoke' if calibration is not None else 'conversation_and_api_smoke',
-                   unsupported_cases=unsupported, missing_acceptance_evidence=MISSING_EVIDENCE)
+                   acceptance_scope=('deployed_medium_native_state' if stage is not None else
+                                     'single_case_calibration_smoke' if calibration is not None else 'conversation_and_api_smoke'),
+                   unsupported_cases=unsupported, missing_acceptance_evidence=missing)
     if not live and not check:
         return planned
     if live and check:
@@ -584,10 +753,14 @@ def execute(config, tier='minimal', *, live=False, check=False, run_id=None,
     if live and planned['status'] != 'planned':
         raise SimulationError('Workflow cannot start: ' + planned['status'] + '; configure verified monthly budget and case estimates')
     with httpx.Client(timeout=30, trust_env=False, follow_redirects=False) as client:
-        problems, baseline = deployment_readiness(config, client)
+        if _admission is None:
+            problems, baseline = deployment_readiness(config, client)
+        else:
+            problems, baseline = [], _admission['baseline']
         seed = recovery_seed(config, baseline)
         try:
-            existing_name = preserved_customer_name(config, baseline, client)
+            existing_name = (_admission['existing_name'] if _admission is not None
+                             else preserved_customer_name(config, baseline, client))
         except SimulationError as exc:
             if check:
                 return {**planned, 'status': 'blocked', 'problems': [*problems, str(exc)]}
@@ -596,23 +769,27 @@ def execute(config, tier='minimal', *, live=False, check=False, run_id=None,
             problems.append('Budget is ' + planned['status'] + ': verify units, monthly allowance, reset and conservative case estimates')
         if unsupported:
             problems.append('Isolated fixtures/state assertions are required for cases: ' + ', '.join(unsupported))
-        state, provider_problems = provider_readiness(config, client)
+        if stage is not None and _admission is None:
+            problems.extend(deployed_medium.readiness(config, client, cases, baseline))
+        state, provider_problems = ((_admission['state'], []) if _admission is not None
+                                    else provider_readiness(config, client))
         problems.extend(provider_problems)
         if check:
             return {**planned, 'status': 'blocked' if problems else 'planned', 'problems': problems}
         if problems:
             raise SimulationError('; '.join(problems))
-        campaign = Campaign(config, tier, planned['selected'], run_id)
+        campaign = _campaign or Campaign(config, tier, planned['selected'], run_id)
         manifest = campaign.manifest
         manifest.update(baseline=copy.deepcopy(baseline), complete_tier=planned['complete_tier'],
-                        reference_agent_id=config.get('agent_id'))
+                        reference_agent_id=config.get('agent_id'),
+                        acceptance_scope=planned['acceptance_scope'], missing_acceptance_evidence=missing)
         if calibration is not None:
             manifest.update(calibration=copy.deepcopy(calibration), acceptance_scope='single_case_calibration_smoke')
         if authorization is not None:
             manifest['campaign_authorization'] = copy.deepcopy(authorization)
         campaign.save()
         print('Deployed campaign: ' + campaign.run_id + ' at ' + url, flush=True)
-        with campaign_lock(campaign.root):
+        with (contextlib.nullcontext() if _campaign is not None else campaign_lock(campaign.root)):
             ledger_path = campaign.root / 'usage-ledger.json'
             ledger = json.loads(ledger_path.read_text()) if ledger_path.exists() else {'entries': []}
             if any(e.get('unsettled') for e in ledger['entries']):
@@ -621,6 +798,10 @@ def execute(config, tier='minimal', *, live=False, check=False, run_id=None,
                     e.get('authorization_id') == authorization['authorization_id']
                     and e.get('run_id') != campaign.run_id for e in ledger['entries']):
                 raise SimulationError('Campaign authorization already used by another run')
+            if stage is not None:
+                stage = stage_authorization(config, tier, requested, planned['selected'], repeat, target='deployed')
+                if _campaign is None:
+                    claim_stage(campaign, ledger, stage)
             prior_spent, ancestors = continuation_history(config, ledger, campaign.run_id)
             recovery_selection(config)  # Revalidate immediate-ancestor eligibility under the campaign lock.
             if seed is not None:
@@ -642,16 +823,26 @@ def execute(config, tier='minimal', *, live=False, check=False, run_id=None,
             values = fixtures.variables(config)
             values['customer_name'] = existing_name or values['customer_name'] + ' ' + campaign.run_id[:8]
             values['run_id'] = campaign.run_id
+            base_values = copy.deepcopy(values)
             baseline_index = {r['id']: r for r in baseline}
             previous, failed, group_ids = [], set(), set()
             if seed is not None:
                 previous, group_ids = [copy.deepcopy(seed)], {seed['id']}
+            adapter = deployed_medium.Adapter(campaign, client) if stage is not None else None
+            stage_blocked = False
             try:
-                manifest.update(attempted=True, status='running', agent_create_pending=True,
+                manifest.update(attempted=True, status='running', agent_create_pending=False,
                                 reference_fingerprint=fingerprint(override))
                 campaign.save()
+                if adapter is not None and _campaign is None:
+                    stage_blocked = True
+                    adapter.prepare_catalog()
+                    stage_blocked = False
+                manifest['agent_create_pending'] = _campaign is None
+                campaign.save()
                 try:
-                    manifest['campaign_agent_id'] = provider.create_agent(override, campaign.run_id)
+                    if _campaign is None:
+                        manifest['campaign_agent_id'] = provider.create_agent(override, campaign.run_id)
                 except SimulationError as exc:
                     if 'ambiguous' not in str(exc):
                         manifest['agent_create_pending'] = False
@@ -664,8 +855,19 @@ def execute(config, tier='minimal', *, live=False, check=False, run_id=None,
                     raise SimulationError('Created agent differs from approved native tool configuration')
                 for iteration in range(repeat):
                     for case, estimate in zip(cases, case_estimates):
-                        entry = {'case_id': case['id'], 'repeat': iteration + 1, 'status': 'blocked'}
+                        if adapter is not None:
+                            values = case_variables(config, base_values, case)
+                            # Native verified identity must keep its exact saved name;
+                            # synthetic suffixing belongs to isolated fixture ownership.
+                            values['customer_name'] = base_values['customer_name']
+                            values['run_id'] = base_values['run_id']
+                        entry = {'case_id': case['id'], 'repeat': iteration + 1, 'status': 'blocked',
+                                 'attempt': 2 if _campaign is not None else 1}
                         manifest['results'].append(entry)
+                        if adapter is not None and (stage_blocked or budget.unknown):
+                            entry['reason'] = 'Unresolved stage resource, cleanup or charge; no further paid work'
+                            entry['functional_status'] = 'blocked'
+                            continue
                         if any(dep in failed for dep in case.get('dependencies', [])):
                             entry['reason'] = 'Failed or blocked lifecycle prerequisite'
                             failed.add(case['id'])
@@ -674,19 +876,35 @@ def execute(config, tier='minimal', *, live=False, check=False, run_id=None,
                             entry['reason'] = 'Unresolved test resource creation; no automatic retry'
                             failed.add(case['id'])
                             continue
-                        if case['setup'] == 'fresh':
+                        if adapter is None and case['setup'] == 'fresh':
                             if any(r.get('status') != 'cancelled' for r in previous):
                                 entry['reason'] = 'Previous test booking remains active; no automatic cancellation/reset'
                                 failed.add(case['id'])
                                 continue
                             previous, group_ids = [], set()
+                        case_started = False
+                        read_stage = 'case admission'
                         try:
                             budget.remaining = min(budget.remaining, current_remaining(config, provider))
                             if not budget.can_start(estimate):
                                 raise SimulationError('Insufficient verified budget or unknown usage')
+                            adapted_case = case
+                            if adapter is not None:
+                                read_stage = 'native booking baseline before fixture'
+                                pre_setup = scoped(get(client, url, '/api/v1/portal/service-requests'), values['customer_phone'])
+                                if not unchanged(baseline_index, pre_setup):
+                                    stage_blocked = True
+                                    raise SimulationError('Existing customer records changed; stop before fixture setup')
+                                case_started = True
+                                read_stage = 'native fixture arrangement'
+                                adapted_case, fixture_ids = adapter.arrange(case, values)
+                                group_ids = set(fixture_ids)
+                            read_stage = 'native booking context'
                             current = scoped(get(client, url, '/api/v1/portal/service-requests'), values['customer_phone'])
                             if not unchanged(baseline_index, current):
                                 raise SimulationError('Existing customer records changed; stop before another paid submission')
+                            if adapter is not None:
+                                previous = [row for row in current if row['id'] in group_ids]
                             dynamic = {k: str(v) for k, v in values.items()}
                             context = '; '.join(f'{r.get("booking_type")}: {r.get("service_type")} at {r.get("booking_time")}'
                                                 for r in current if r.get('status') not in ('cancelled', 'cancelled_by_customer', 'completed', 'done'))
@@ -698,7 +916,7 @@ def execute(config, tier='minimal', *, live=False, check=False, run_id=None,
                             manifest['test_create_pending'] = case['id']
                             campaign.save()
                             try:
-                                rendered = deployed_scenario(case, values)
+                                rendered = deployed_scenario(adapted_case, values)
                                 if calibration is not None:
                                     rendered['max_turns'] = min(rendered['max_turns'], 8)
                                 test_id = provider.create(rendered, campaign.run_id, dynamic, config['environment'])
@@ -714,6 +932,8 @@ def execute(config, tier='minimal', *, live=False, check=False, run_id=None,
                                 raise SimulationError('Current allowance cannot admit this paid conversation')
                             charge = {'run_id': campaign.run_id, 'case_id': case['id'], 'test_id': test_id,
                                       'period_reset': config['budget']['reset_unix'], 'unsettled': True}
+                            if stage is not None:
+                                charge.update(authorization_id=stage['authorization_id'], stage_authorization=copy.deepcopy(stage))
                             if authorization is not None:
                                 charge['authorization_id'] = authorization['authorization_id']
                             if ancestors:
@@ -742,20 +962,32 @@ def execute(config, tier='minimal', *, live=False, check=False, run_id=None,
                                 new_ids = {r['id'] for r in observed} - {r['id'] for r in current}
                                 group_ids.update(new_ids)
                                 after = [r for r in observed if r['id'] in group_ids]
-                                checks = lifecycle_checks(case['id'], values, previous, after,
-                                    config.get('app_config', {}).get('business_timezone', 'America/New_York'))
+                                checks = (adapter.checks(case, values, previous, after) if adapter is not None else
+                                          lifecycle_checks(case['id'], values, previous, after,
+                                              config.get('app_config', {}).get('business_timezone', 'America/New_York')))
                                 checks.append(evidence.check('existing customer records unchanged',
                                     unchanged(baseline_index, observed)))
                                 if all(c['passed'] for c in checks) or time.monotonic() >= deadline:
                                     break
                                 time.sleep(1)
+                            if adapter is not None:
+                                if not unchanged(baseline_index, observed):
+                                    stage_blocked = True
+                                checks.extend(adapter.final_checks(case, values, after))
+                                if 'email' in case.get('required_evidence', []):
+                                    checks.append({'name': 'receiving inbox contains expected content', 'passed': False,
+                                                   'status': 'unverified',
+                                                   'reason': 'Native receiving-inbox verification pending; operator receipt is separate.'})
                             checks += [evidence.check('actual credits verified', credits is not None),
                                        evidence.check('tier budget respected', budget.spent <= budget.cap)]
                             passed = bool(result.get('test_runs')) and all(r.get('status') == 'passed' for r in result['test_runs'])
-                            status = result_status(checks, provider_passed=passed)
-                            functional_passed = passed and all(c['passed'] for c in checks)
+                            acceptance_checks = functional_checks(checks, email_mode(config, target='deployed')) if adapter is not None else checks
+                            status = result_status(acceptance_checks, provider_passed=passed)
+                            functional_passed = passed and all(c['passed'] for c in acceptance_checks)
                             entry.update(status=status, functional_status='passed' if functional_passed else 'failed',
-                                         checks=checks, reason='Missing full acceptance evidence' if functional_passed else 'Provider evaluation or API lifecycle failed')
+                                         checks=checks, reason=(('Native receiving-inbox verification pending; other missing acceptance evidence: ' + ', '.join(missing))
+                                                               if adapter is not None and functional_passed else
+                                                               'Missing full acceptance evidence' if functional_passed else 'Provider evaluation or API lifecycle failed'))
                             if not functional_passed:
                                 failed.add(case['id'])
                             previous = after
@@ -764,19 +996,49 @@ def execute(config, tier='minimal', *, live=False, check=False, run_id=None,
                         except (SimulationError, httpx.HTTPError) as exc:
                             entry['reason'] = str(exc) if isinstance(exc, SimulationError) else 'Provider/deployment HTTP request failed; inspect retained evidence'
                             failed.add(case['id'])
+                            if isinstance(exc, httpx.HTTPError):
+                                entry['failure_diagnostic'] = {'stage': read_stage, 'type': type(exc).__name__,
+                                    'status': exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None}
+                            if adapter is not None:
+                                stage_blocked = True
                             if any(e.get('unsettled') for e in ledger['entries']):
                                 budget.unknown = True
                         finally:
+                            if adapter is not None and case_started:
+                                if any(e.get('unsettled') for e in ledger['entries']):
+                                    stage_blocked = True
+                                elif not stage_blocked:
+                                    try:
+                                        adapter.cleanup_case()
+                                    except (SimulationError, httpx.HTTPError) as exc:
+                                        stage_blocked = True
+                                        entry.update(status='blocked', functional_status='blocked', reason='Owned cleanup pending: ' + str(exc))
+                                if stage_blocked:
+                                    manifest.setdefault('cleanup_blockers', []).append(case['id'] + ': owned stage effects unresolved')
                             manifest['spent_credits'] = str(budget.spent - prior_spent)
                             manifest['aggregate_spent_credits'] = str(budget.spent)
                             manifest['unsettled_usage'] = any(e.get('unsettled') and e['run_id'] == campaign.run_id for e in ledger['entries'])
                             campaign.save()
-                statuses = {r['status'] for r in manifest['results']}
+                statuses = {r['status'] for r in manifest['results']
+                            if r.get('attempt', 1) == (2 if _campaign is not None else 1)}
                 manifest['status'] = 'failed' if 'failed' in statuses else ('blocked' if 'blocked' in statuses else 'incomplete')
             except BaseException:
                 manifest['status'] = 'incomplete'
                 raise
             finally:
+                if (adapter is not None and not stage_blocked
+                        and not manifest.get('agent_create_pending')
+                        and not manifest.get('test_create_pending')
+                        and not [reason for reason in manifest.get('cleanup_blockers', [])
+                                 if _campaign is None or reason not in manifest['unpaid_continuations'][-1].get('resolved_retention_reasons', [])]
+                        and not any(e.get('unsettled') for e in ledger['entries'])):
+                    try:
+                        adapter.cleanup_catalog()
+                    except (SimulationError, httpx.HTTPError) as exc:
+                        manifest.setdefault('cleanup_blockers', []).append('Owned catalog cleanup pending: ' + str(exc))
+                        manifest['status'] = 'incomplete'
+                elif adapter is not None:
+                    manifest.setdefault('cleanup_blockers', []).append('Owned catalog retained: unresolved stage or provider effects')
                 campaign.save()
                 campaign.report()
         return manifest

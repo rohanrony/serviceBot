@@ -1,9 +1,9 @@
 """Synthetic baseline and declarative per-case arrangements in the owned database."""
 from __future__ import annotations
 
+import time
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-import time
 
 import httpx
 
@@ -117,7 +117,20 @@ def actions(runtime, items, values):
             raise SimulationError('Unsupported fixture action')
 
 
+def validate_setup(config, cases):
+    """Validate every selected case's designated local specialist bindings."""
+    for case in cases:
+        if case['setup'] not in ('split', 'linked', 'split_unavailable', 'three_services', 'inactive'):
+            continue
+        if len(config.get('staff', [])) < 2:
+            raise SimulationError('Scenario requires two designated test specialists: ' + case['id'])
+        calendars = config.get('calendar_ids', {})
+        if any(not isinstance(calendars.get(str(i)), str) or not calendars[str(i)].strip() for i in (1, 2)):
+            raise SimulationError('Scenario requires two designated specialist calendar bindings: ' + case['id'])
+
+
 def arrange(runtime, case, values):
+    validate_setup(runtime.config, [case])
     profile = case['setup']
     binding = runtime.config.get('case_bindings', {}).get(case['id'], {})
     if case.get('requires_binding') and not binding.get('ready'):
@@ -156,7 +169,7 @@ def arrange(runtime, case, values):
                                         issue_description='Tire Rotation', call_sid='fixture-second-booking')
             actions(runtime, [{'kind': 'http', 'path': '/api/v1/voice/tools', 'json': payload}], values)
     if profile in ('appointment', 'multiple', 'linked', 'consolidation_blocked'):
-        expected = 2 if profile == 'multiple' else 1
+        expected = 2 if profile in ('multiple', 'linked') else 1
         rows = runtime.rows('SELECT count(*) AS count FROM service_requests')
         if not rows or rows[0]['count'] != expected:
             raise SimulationError('Returning-customer fixture did not create its required bookings')

@@ -8,14 +8,24 @@ import os
 import time
 from datetime import datetime
 from decimal import Decimal
-from urllib.parse import urlparse, quote
+from urllib.parse import quote, urlparse
 from zoneinfo import ZoneInfo
 
 import httpx
 
 from . import evidence, fixtures
-from .core import (Budget, SimulationError, fingerprint, load_catalog, number,
-                   private_json, redact, render, secret, select_cases)
+from .core import (
+    Budget,
+    SimulationError,
+    fingerprint,
+    load_catalog,
+    number,
+    private_json,
+    redact,
+    render,
+    secret,
+    select_cases,
+)
 from .provider import ElevenLabs
 from .runtime import running
 
@@ -52,17 +62,91 @@ def caller_context(runtime, values):
     return context
 
 
-def preview(config, tier, requested=None, repeat=1):
+def stage_authorization(config, tier, requested, selected, repeat, *, target='isolated'):
+    """Validate the explicit target delta; selection remains owned by select_cases."""
+    if 'stage_authorization' not in config:
+        return None
+    auth = config['stage_authorization']
+    expected = ([f'C{i:02}' for i in range(7, 17)] if tier == 'medium'
+                else [f'C{i:02}' for i in range(17, 51)] if tier == 'full' else [])
+    if (not isinstance(auth, dict) or not expected or requested is None
+            or target not in ('isolated', 'deployed')
+            or config.get('target') not in ((None, 'isolated') if target == 'isolated' else ('deployed',))
+            or (target == 'deployed' and tier != 'medium')
+            or config.get('environment', '').lower() in ('production', 'prod')
+            or 'campaign_authorization' in config or config.get('calibration')
+            or type(repeat) is not int or repeat != 1
+            or auth.get('tier') != tier or auth.get('case_ids') != expected
+            or selected != expected or list(requested) != expected
+            or not isinstance(auth.get('authorization_id'), str)
+            or not auth['authorization_id'].strip()):
+        raise SimulationError('Invalid isolated stage authorization scope')
+    try:
+        number(auth.get('credit_ceiling'), positive=True)
+    except SimulationError:
+        raise SimulationError('Invalid stage authorization credit ceiling') from None
+    # Copy so a later config mutation cannot change retained intent provenance.
+    return json.loads(json.dumps(auth))
+
+
+def claim_stage(runtime, ledger, auth):
+    """Claim before resources exist, including attempts which never reach billing."""
+    if auth is None:
+        return
+    claims = ledger.setdefault('stage_authorizations', [])
+    identifier = auth['authorization_id']
+    if (any(c.get('authorization_id') == identifier for c in claims)
+            or any(e.get('authorization_id') == identifier for e in ledger['entries'])):
+        raise SimulationError('Stage authorization already used or claimed')
+    claims.append({**auth, 'run_id': runtime.run_id})
+    runtime.manifest['stage_authorization'] = auth
+    private_json(runtime.root / 'usage-ledger.json', ledger)
+    runtime.save()
+
+
+def email_mode(config, *, target='isolated'):
+    mode = config.get('email_receipt_mode', 'native')
+    if mode not in ('native', 'operator'):
+        raise SimulationError('Invalid email receipt mode')
+    if target == 'deployed' and mode != 'operator':
+        raise SimulationError('Deployed medium requires explicit operator email receipt mode')
+    if mode == 'operator' and (
+            not isinstance(config.get('stage_authorization'), dict)
+            or target not in ('isolated', 'deployed')
+            or config.get('target') not in ((None, 'isolated') if target == 'isolated' else ('deployed',))
+            or (target == 'deployed' and config['stage_authorization'].get('tier') != 'medium')
+            or 'campaign_authorization' in config
+            or str(config.get('environment', '')).lower() in ('production', 'prod')):
+        raise SimulationError('Operator email receipt requires an isolated stage authorization')
+    return mode
+
+
+def pending_inbox(check, mode):
+    return (mode == 'operator'
+            and check.get('name') == 'receiving inbox contains expected content'
+            and check.get('passed') is False and check.get('status') == 'unverified')
+
+
+def functional_checks(checks, mode):
+    return [check for check in checks if not pending_inbox(check, mode)]
+
+
+def preview(config, tier, requested=None, repeat=1, *, target='isolated'):
+    email_mode(config, target=target)
     catalog = load_catalog()
     cases = select_cases(catalog, tier, requested)
     result = {'tier': tier, 'selected': [c['id'] for c in cases],
               'complete_tier': requested is None, 'status': 'budget_unverified',
               'notes': ['Preview makes no provider requests.', 'WhatsApp/email/application model costs are separate.']}
+    auth = stage_authorization(config, tier, requested, result['selected'], repeat, target=target)
+    if auth is not None:
+        result['stage_authorization'] = auth
     b = config.get('budget', {})
     if b.get('verified_credit_units') is not True:
         return result
     try:
-        budget = Budget(b.get('monthly_credits'), tier, b.get('remaining_credits'))
+        budget = Budget(b.get('monthly_credits'), tier, b.get('remaining_credits'),
+                        credit_ceiling=auth['credit_ceiling'] if auth else None)
         estimate = sum(estimates(config, cases), Decimal(0)) * repeat
     except SimulationError:
         return result
@@ -241,6 +325,8 @@ def load_reference(config, provider):
 
 def preflight(runtime, cases, provider, client):
     config = runtime.config
+    mode = email_mode(config)
+    fixtures.validate_setup(config, cases)
     agent = load_reference(config, provider)
     url = urlparse(config.get('tunnel_url', ''))
     if (url.scheme != 'https' or not url.hostname or url.username or url.password
@@ -301,15 +387,16 @@ def preflight(runtime, cases, provider, client):
         response.raise_for_status()
     secret(config, 'twilio_sid')
     secret(config, 'twilio_token')
-    inbox = secret(config, 'gmail_receiver_token')
-    response = client.get('https://gmail.googleapis.com/gmail/v1/users/me/profile',
-                          headers={'Authorization': 'Bearer ' + inbox})
-    response.raise_for_status()
     receiver = config.get('email_receiver', values['customer_email'])
     if receiver not in allowed_emails:
         raise SimulationError('Email receiving inbox must be explicitly allowlisted')
-    if response.json().get('emailAddress', '').lower() != receiver.lower():
-        raise SimulationError('Gmail receiving token belongs to a different inbox')
+    if mode == 'native':
+        inbox = secret(config, 'gmail_receiver_token')
+        response = client.get('https://gmail.googleapis.com/gmail/v1/users/me/profile',
+                              headers={'Authorization': 'Bearer ' + inbox})
+        response.raise_for_status()
+        if response.json().get('emailAddress', '').lower() != receiver.lower():
+            raise SimulationError('Gmail receiving token belongs to a different inbox')
     remaining = current_remaining(config, provider)
     reset = config['budget']['reset_unix']
     provider.verify_webhook(config.get('post_call_webhook_id'), config['tunnel_url'], agent)
@@ -376,8 +463,13 @@ def outcome(runtime, case, values, started, before, client):
             set(runtime.config['allowlisted_phone_numbers']), binding.get('expect_notification_failure', False),
             render(binding.get('whatsapp_fragments', ['Toyota', 'Camry']), values), binding.get('expected_error_code')))
     if 'email' in required:
-        checks.append(evidence.email_receipt(client, secret(runtime.config, 'gmail_receiver_token'),
-            started, runtime.config.get('email_receiver', values['customer_email']), render(binding.get('email_fragments', ['{{customer_name}}', 'Toyota', 'Camry']), values)))
+        if email_mode(runtime.config) == 'operator':
+            checks.append({'name': 'receiving inbox contains expected content',
+                           'passed': False, 'status': 'unverified',
+                           'reason': 'Native receiving-inbox verification pending; operator receipt is separate.'})
+        else:
+            checks.append(evidence.email_receipt(client, secret(runtime.config, 'gmail_receiver_token'),
+                started, runtime.config.get('email_receiver', values['customer_email']), render(binding.get('email_fragments', ['{{customer_name}}', 'Toyota', 'Camry']), values)))
     return checks
 
 
@@ -385,13 +477,14 @@ def write_report(runtime):
     value = safe(runtime, runtime.manifest)
     private_json(runtime.folder / 'report.json', value)
     lines = [f'# Live simulation campaign {runtime.run_id}', '', f'Status: **{value["status"]}**',
+             f'Functional status: **{value.get("functional_status", value["status"])}**',
              f'Tier: {value.get("tier", "not launched")}; complete tier: {value.get("complete_tier", False)}',
              f'ElevenLabs credits: {value.get("spent_credits", "unknown")} verified'
              + ('; unsettled charges remain' if value.get('unsettled_usage') else ''),
              'WhatsApp/email/application model charges: separate, not included in this credit budget.',
-             '', '| Case | Result | Detail |', '| --- | --- | --- |']
+             '', '| Case | Result | Functional result | Detail |', '| --- | --- | --- | --- |']
     for row in value.get('results', []):
-        lines.append(f'| {row["case_id"]} | {row["status"]} | {row.get("reason", "")} |')
+        lines.append(f'| {row["case_id"]} | {row["status"]} | {row.get("functional_status", row["status"])} | {row.get("reason", "")} |')
     lines += ['', 'Provider-confirmed delivery and handset confirmation are separate.',
               'Simulation transcripts do not establish real phone/audio behavior.',
               'Evidence retention: 30 days. Cleanup does not unsend messages.']
@@ -402,6 +495,7 @@ def run_campaign(runtime, tier, requested=None, *, live=False, repeat=1):
     if not live:
         raise SimulationError('run requires --live; no provider work started')
     config = runtime.config
+    mode = email_mode(config)
     if type(repeat) is not int or not 1 <= repeat <= 20:
         raise SimulationError('Invalid repetition count')
     planned = preview(config, tier, requested, repeat)
@@ -416,17 +510,23 @@ def run_campaign(runtime, tier, requested=None, *, live=False, repeat=1):
     values['customer_name'] += ' ' + runtime.run_id[:8]
     values['run_id'] = runtime.run_id
     base_values = values
-    runtime.manifest.update(tier=tier, complete_tier=requested is None, status='running', selected=planned['selected'])
+    runtime.manifest.update(tier=tier, complete_tier=requested is None, status='running',
+                            selected=planned['selected'], email_receipt_mode=mode)
     with campaign_lock(runtime.root), httpx.Client(timeout=30, trust_env=False, follow_redirects=False) as client:
         ledger_path = runtime.root / 'usage-ledger.json'
         ledger = json.loads(ledger_path.read_text()) if ledger_path.exists() else {'entries': []}
         if any(e.get('unsettled') for e in ledger['entries']):
             raise SimulationError('Unsettled prior invocation blocks more paid work; reconcile its provider usage first')
+        auth = stage_authorization(config, tier, requested, planned['selected'], repeat)
+        if runtime.manifest.get('stage_authorization'):
+            raise SimulationError('Stage authorization already claimed by this attempted run')
+        claim_stage(runtime, ledger, auth)
         try:
             # Initial serve/setup created staff and connected accounts before this call.
             with running(runtime):
                 override, remaining = preflight(runtime, cases, provider, client)
-            budget = Budget(config['budget']['monthly_credits'], tier, remaining)
+            budget = Budget(config['budget']['monthly_credits'], tier, remaining,
+                            credit_ceiling=auth['credit_ceiling'] if auth else None)
             if not budget.can_start(sum(estimates(config, cases), Decimal(0))):
                 raise SimulationError('Current remaining allowance cannot admit selected coverage')
             runtime.manifest['agent_create_pending'] = True
@@ -489,6 +589,8 @@ def run_campaign(runtime, tier, requested=None, *, live=False, repeat=1):
                             raise SimulationError('Current account allowance cannot admit this conversation')
                         charge = {'run_id': runtime.run_id, 'case_id': case['id'], 'test_id': test_id,
                                   'period_reset': config['budget']['reset_unix'], 'unsettled': True}
+                        if auth is not None:
+                            charge.update(authorization_id=auth['authorization_id'], stage_authorization=auth)
                         ledger['entries'].append(charge)
                         private_json(ledger_path, ledger)
                         invocation = provider.run(runtime.manifest['campaign_agent_id'], test_id, override)
@@ -513,15 +615,19 @@ def run_campaign(runtime, tier, requested=None, *, live=False, repeat=1):
                         while time.monotonic() < deadline:
                             collect_events(runtime)
                             checks = outcome(runtime, spec, values, started, before, client)
-                            if all(c['passed'] for c in checks):
+                            if all(c['passed'] for c in functional_checks(checks, mode)):
                                 break
                             time.sleep(1)
                         checks.append(evidence.check('provider conversation evaluation',
                             all(r.get('status') == 'passed' for r in result['test_runs'])))
                         checks.append(evidence.check('actual credits verified', credits is not None))
                         checks.append(evidence.check('tier budget respected', budget.spent <= budget.cap))
-                        entry.update(checks=checks, status='passed' if all(c['passed'] for c in checks) else 'failed',
-                                     reason='; '.join(c['name'] for c in checks if not c['passed']))
+                        functional = all(c['passed'] for c in functional_checks(checks, mode))
+                        pending = any(pending_inbox(c, mode) for c in checks)
+                        entry.update(checks=checks,
+                                     functional_status='passed' if functional else 'failed',
+                                     status=('incomplete' if pending else 'passed') if functional else 'failed',
+                                     reason='; '.join(c.get('reason', c['name']) for c in checks if not c['passed']))
                         private_json(runtime.folder / f'{case["id"]}-evidence-{attempt}.json', safe(runtime, {'checks': checks, 'trace': traces(runtime, started), 'before': before, 'after': runtime.snapshot()}))
                 except (SimulationError, httpx.HTTPError) as exc:
                     entry.update(status='blocked', reason=str(redact(str(exc))))
@@ -537,10 +643,13 @@ def run_campaign(runtime, tier, requested=None, *, live=False, repeat=1):
                         runtime.manifest.setdefault('cleanup_blockers', []).append('Final state export failed: ' + case['id'])
                     runtime.manifest['spent_credits'] = str(budget.spent)
                     runtime.save()
-                if entry['status'] != 'passed':
+                entry.setdefault('functional_status', entry['status'])
+                if entry['functional_status'] != 'passed':
                     failed.add(case['id'])
                 else:
                     failed.discard(case['id'])
+            runtime.manifest['functional_status'] = campaign_status(
+                [{'status': row.get('functional_status', row['status'])} for row in runtime.manifest['results']])
             runtime.manifest['status'] = campaign_status(runtime.manifest['results'])
             if runtime.manifest.get('cleanup_blockers'):
                 runtime.manifest['status'] = 'incomplete'

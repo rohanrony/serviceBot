@@ -1,5 +1,6 @@
 import os
 import json
+import tempfile
 import httpx
 import datetime as dt_mod
 from datetime import datetime
@@ -7,6 +8,7 @@ from typing import Optional, List
 from fastapi import APIRouter, HTTPException, UploadFile, File, Request, BackgroundTasks
 from pydantic import BaseModel
 from dotenv import load_dotenv
+from starlette.concurrency import run_in_threadpool
 
 from serviceBot.services.calendar_availability import CalendarAvailabilityService, CalendarConflictError, CalendarError
 from serviceBot.logger import get_logger
@@ -391,31 +393,34 @@ def save_config(config_data):
 def sync_services_to_kb():
     from serviceBot.db.connection import get_db_connection, dict_cursor
     from serviceBot.services.rag import FAQService
-    
-    with get_db_connection() as conn:
-        with dict_cursor(conn) as cursor:
-            cursor.execute("SELECT name, description, price_range, duration_minutes FROM services")
-            rows = cursor.fetchall()
-        
-    lines = ["# Auto Service Catalog and Offerings"]
-    for row in rows:
-        lines.append(f"## {row['name']}")
-        lines.append(f"Description: {row['description'] or 'No description available'}")
-        lines.append(f"Price Range: {row['price_range'] or 'TBD'}")
-        lines.append(f"Duration: {row['duration_minutes'] or 'TBD'} minutes")
-        lines.append("")
-        
-    catalog_text = "\n".join(lines)
-    
-    os.makedirs(KB_DIR, exist_ok=True)
-    filename = "auto_services_catalog.txt"
-    file_path = os.path.join(KB_DIR, filename)
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write(catalog_text)
-        
-    service = FAQService()
-    service.delete_file(filename)
-    service.index_text(catalog_text, filename)
+
+    # The snapshot must be inside the same boundary as embedding/publication:
+    # an older background job cannot publish a snapshot it took before waiting.
+    with FAQService.operation_lock:
+        with get_db_connection() as conn:
+            with dict_cursor(conn) as cursor:
+                cursor.execute("SELECT name, description, price_range, duration_minutes FROM services")
+                rows = cursor.fetchall()
+        lines = ["# Auto Service Catalog and Offerings"]
+        for row in rows:
+            lines.extend([f"## {row['name']}",
+                f"Description: {row['description'] or 'No description available'}",
+                f"Price Range: {row['price_range'] or 'TBD'}",
+                f"Duration: {row['duration_minutes'] or 'TBD'} minutes", ""])
+        catalog_text = "\n".join(lines)
+        os.makedirs(KB_DIR, exist_ok=True)
+        filename = "auto_services_catalog.txt"
+        temporary_path = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=KB_DIR,
+                    prefix=".auto-services-", suffix=".tmp", delete=False) as temporary:
+                temporary_path = temporary.name
+                temporary.write(catalog_text)
+            FAQService().replace_text(catalog_text, filename)
+            os.replace(temporary_path, os.path.join(KB_DIR, filename))
+        finally:
+            if temporary_path and os.path.exists(temporary_path):
+                os.unlink(temporary_path)
 
 async def sync_prompt_to_elevenlabs(prompt_text: str, first_message: str = None):
     api_key = os.getenv("ELEVENLABS_API_KEY", "")
@@ -1344,6 +1349,32 @@ async def get_service_requests(
     offset: Optional[int] = None,
     escalated: Optional[bool] = None,
 ):
+    return await run_in_threadpool(_load_service_requests, limit, offset, escalated)
+
+
+def _booking_start_is_past(value):
+    from serviceBot.services import timezone_service
+    from serviceBot.services.sms_reminders import parse_booking_datetime
+
+    if not value:
+        return False
+    text = str(value).strip()
+    if " to " in text:
+        text = text.split(" to ", 1)[0].strip()
+    elif " - " in text and not text.startswith("-"):
+        text = text.split(" - ", 1)[0].strip()
+    try:
+        start = dt_mod.datetime.fromisoformat(text)
+    except (ValueError, TypeError):
+        start = parse_booking_datetime(text)
+    return start is not None and timezone_service.to_business_tz(start) < timezone_service.now_in_business_tz()
+
+
+def _load_service_requests(
+    limit: int | None = None,
+    offset: int | None = None,
+    escalated: bool | None = None,
+):
     from serviceBot.db.connection import get_db_connection, dict_cursor
     from serviceBot.db.queries import get_service_required_fields
     from serviceBot.services.sms_reminders import parse_booking_datetime
@@ -1388,6 +1419,7 @@ async def get_service_requests(
             cursor.execute(query, params)
             rows = cursor.fetchall()
             res = []
+            whatsapp_status_by_phone = {}
             for row in rows:
                 r = dict(row)
                 if not isinstance(r["created_at"], str) and r["created_at"]:
@@ -1403,7 +1435,9 @@ async def get_service_requests(
                 from serviceBot.db.queries import is_agent_whatsapp_connected
                 if r.get("staff_agent_id"):
                     sa_phone = r.get("staff_agent_phone")
-                    r["staff_agent_whatsapp_connected"] = is_agent_whatsapp_connected(sa_phone) if sa_phone else False
+                    if sa_phone and sa_phone not in whatsapp_status_by_phone:
+                        whatsapp_status_by_phone[sa_phone] = is_agent_whatsapp_connected(sa_phone)
+                    r["staff_agent_whatsapp_connected"] = whatsapp_status_by_phone.get(sa_phone, False)
                 else:
                     r["staff_agent_whatsapp_connected"] = None
 
@@ -1441,7 +1475,7 @@ async def get_service_requests(
                 # Compute candidate replacement agents for active escalated or reassigned items
                 candidates = []
                 is_closed_req = (r.get("status") or "").lower() in ("cancelled", "cancelled_by_customer", "completed", "done")
-                if not is_closed_req and (escalated is True or r.get("escalation_status") in ("escalated", "reassigned")):
+                if not is_closed_req and not _booking_start_is_past(raw_time) and (escalated is True or r.get("escalation_status") in ("escalated", "reassigned")):
                     try:
                         from serviceBot.db.queries import get_available_agents_for_request
                         all_agents = get_available_agents_for_request(r["id"])
@@ -1906,23 +1940,29 @@ async def upload_kb_file(file: UploadFile = File(...)):
     except UnicodeDecodeError:
         raise HTTPException(status_code=400, detail="Only UTF-8 encoded text files are supported in the MVP")
         
-    os.makedirs(KB_DIR, exist_ok=True)
-    file_path = os.path.join(KB_DIR, file.filename)
-    with open(file_path, "wb") as f:
-        f.write(contents)
-        
+    return await run_in_threadpool(_store_kb_upload, file.filename, contents, text)
+
+
+def _store_kb_upload(filename: str, contents: bytes, text: str):
     from serviceBot.services.rag import FAQService
-    service = FAQService()
-    # Delete first to allow clean overwrite in ChromaDB
-    service.delete_file(file.filename)
-    chunk_count = service.index_text(text, file.filename)
-    
-    return {
-        "file_id": f"kb_doc_{file.filename}",
-        "filename": file.filename,
-        "chunk_count": chunk_count,
-        "success": True
-    }
+
+    # Index and byte publication share one boundary, so another upload cannot
+    # publish an older file after a newer generation has become searchable.
+    with FAQService.operation_lock:
+        os.makedirs(KB_DIR, exist_ok=True)
+        temporary_path = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="wb", dir=KB_DIR,
+                    prefix=".kb-upload-", suffix=".tmp", delete=False) as temporary:
+                temporary_path = temporary.name
+                temporary.write(contents)
+            chunk_count = FAQService().replace_text(text, filename)
+            os.replace(temporary_path, os.path.join(KB_DIR, filename))
+        finally:
+            if temporary_path and os.path.exists(temporary_path):
+                os.unlink(temporary_path)
+    return {"file_id": f"kb_doc_{filename}", "filename": filename,
+            "chunk_count": chunk_count, "success": True}
 
 @router.get("/kb")
 async def get_kb_files():

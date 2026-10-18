@@ -181,11 +181,15 @@ class MemoryCollection:
             {key: (doc, meta) for key, doc, meta in zip(ids, documents, metadatas)}
         )
 
-    def delete(self, where):
+    def get(self, where, include=None):
+        return {"ids": [key for key, (_, meta) in self.entries.items()
+                        if all(meta.get(field) == value for field, value in where.items())]}
+
+    def delete(self, where=None, ids=None):
         self.entries = {
-            key: value
-            for key, value in self.entries.items()
-            if value[1]["filename"] != where["filename"]
+            key: value for key, value in self.entries.items()
+            if (key not in ids if ids is not None else not all(value[1].get(field) == expected
+                                                             for field, expected in where.items()))
         }
 
 

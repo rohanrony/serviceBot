@@ -7,16 +7,18 @@ import sys
 
 from . import fixtures
 from .core import SimulationError
-from .runtime import Runtime, running
 from .runner import preview, run_campaign, write_report
+from .runtime import Runtime, running
 
 
 def execute(config, tier='minimal', *, live=False, run_id=None, requested=None, repeat=1,
-            config_path='scratch/live-simulations.local.json', check=False):
+            config_path='scratch/live-simulations.local.json', check=False, continue_unpaid=False):
     if config.get('target') == 'deployed':
         from .deployed import execute as deployed_execute
         return deployed_execute(config, tier, live=live, check=check, run_id=run_id,
-                                requested=requested, repeat=repeat)
+                                requested=requested, repeat=repeat, continue_unpaid=continue_unpaid)
+    if continue_unpaid:
+        raise SimulationError('Unpaid continuation is available only for deployed medium')
     if check:
         raise SimulationError('--check is available for --target deployed')
     if type(repeat) is not int or not 1 <= repeat <= 20:

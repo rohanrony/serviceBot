@@ -220,3 +220,183 @@ deployment or cleanup. Retain failures and report live acceptance honestly.
 - **FR-032**: The targeted paid retests already authorized in FR-028 may use a fresh explicitly recorded recovery authorization with `continuation_of` and an explicit case subset. Admission must verify that each selected case (including dependencies) was failed or blocked in the immediate settled ancestor, reject replay of passed/incomplete-success cases, retain the complete ancestry and all charges, and forbid forked/reused recovery. A subset is never a complete tier. No ambiguous or unsettled attempt can be retested. Keep reserve and current-quota guards; no automatic retry.
 
 - **FR-033**: An explicitly selected failed/blocked continuation may resume a booking already created by its immediate ancestor, using a recorded owned request ID and fresh exact native read-back. Exclude only that proven owned request from preservation baseline, preserve all other rows, and seed the existing lifecycle group with it. Satisfied passed dependencies may be omitted only with this verified ownership/state; never rerun them. Use a different target time when retrying an already-applied reschedule so the requested change and state assertion remain meaningful. All prior charges, failed evaluations, ancestry, reserve and no-fork gates still apply.
+
+### Differential medium and full stages (2026-10-18)
+
+The user requests medium coverage now, executing only C07–C16 because C01–C06
+already have passing functional outcomes. A subsequent full stage executes only
+C17–C50. Production messaging registration/setup and system Gmail reconnection
+are explicitly deferred. The user confirms receipt of the earlier test WhatsApp
+messages and emails. Do not reinterpret that confirmation as receipt of new
+notifications, physical audio acceptance, or all 50 live cases passing.
+
+- **FR-034**: Use the existing explicit case selector for differential stages:
+  medium C07–C16 and full C17–C50, once each. Keep cumulative default selection
+  and dependency expansion unchanged. Report these as subsets, retain earlier
+  results with their original target and acceptance scope, and never submit a
+  previously passed case just to construct starting state. These ranges have no
+  catalog dependencies; each uses its declared isolated fixture. An opt-in
+  `stage_authorization` may declare a unique authorization ID, tier, exact
+  selected case IDs, and positive stage credit ceiling for isolated execution.
+  Validate exact scope/repeat=1 and single use under the existing campaign lock;
+  persist it in the manifest and invocation ledger before paid execution. Keep
+  verified billing units, fresh quota, per-case estimates, 20 percent reserve,
+  unknown-charge stops and attempted-run rejection. This is a distinct budget
+  from the historical minimal recovery, whose spend stays visible in provenance.
+  No full-stage paid submission is implied by preparing medium.
+- **FR-035**: Medium fixtures and checks must prove their stated business
+  outcomes before live use. Linked setup creates two linked service requests;
+  assert the native setup result rather than expecting one row. C10 must preserve
+  the unselected booking, C12 must persist the requested callback type/time,
+  C14 must use two distinct qualified specialists, and C15 must move the linked
+  visit to the exact requested new start while preserving its full duration and
+  contiguity. Keep real native creation and database ownership guards. Regression
+  tests must exercise actual owned database setup, not replace `arrange` with a
+  no-op and infer live fixture correctness.
+- **FR-036**: Reject a selected stage before paid submission when its declared
+  setup requires unavailable specialist/calendar bindings or native evidence
+  credentials. Check the whole selected range, not just its first case. Do not
+  fabricate a second independent account, edit production technicians, weaken
+  acceptance assertions, or repair the deferred production systems to pass
+  readiness. Preserve all case definitions and disclose any required owner setup.
+
+- **FR-037**: The user's explicit choice of `email_receipt_mode: "operator"`
+  for an isolated stage permits new conversation/state/calendar/WhatsApp checks
+  without a native receiving-inbox token. Keep email enabled with the designated
+  working sender account; do not reconnect the deferred system sender. Preserve
+  each case's required email assertion as false/unverified with its reason and
+  collect any later operator receipt separately. Report functional outcomes
+  separately; cases with pending inbox evidence and the campaign remain
+  `incomplete`, never `passed` from manual mode alone. Other failures, provider
+  rejections, unknown charges and native delivery checks remain failures/stops.
+  Native inbox verification remains the default; invalid modes are rejected
+  before provider resources or paid work. No prior receipt is evidence of a new
+  test message, and no scenario requirement is removed.
+
+The user approves an **11,250-credit ceiling for C07–C16 only**, with a
+9,000-credit conservative admission estimate and 20 percent reserve. The user
+designates `davidson.carcare.tech1@gmail.com` as the second technician account and
+retains the configured Edvenswa admin recipient. Verify those scoped existing
+account bindings before using them; all test phone notifications stay on the
+designated handset. The full delta still needs its own reviewed stage budget.
+
+### Deployed-only medium direction (2026-10-18)
+
+- **FR-038**: The latest user direction requires C07–C16 to run against the
+  deployed application only. Stop the local live servers and tunnel. Extend the
+  existing deployed runner with an explicitly validated medium stage; retain
+  isolated behavior and the deployed minimal path. The exact ten cases, once,
+  share the existing unused 11,250-credit authorization; do not create a new
+  authorization to bypass a prior claim. Deployed full remains unsupported.
+  Claim the stage durably before any fixture mutation or provider clone, retain
+  fresh quota/reserve/unknown-charge guards, and preserve native tool origins.
+- **FR-039**: Create deployed fixtures only through normal native APIs and only
+  as explicitly journaled test-owned catalog items, qualifications, calendar
+  blocks and bookings. Use the two owner-designated Google accounts and handset.
+  The owner-authorized Davidson connection may be bound as a new deployed
+  technician; never rewrite an existing technician's identity or credential.
+  Existing catalog entries, assignments, settings and customer bookings remain
+  unchanged. Use distinct test catalog names so voice selection distinguishes
+  test bookings from the existing customer's appointments. Preserve the verified
+  existing customer identity. Readiness must validate every selected case before
+  paying; failures or ambiguous fixture responses stop further paid work.
+  Prepare catalog definitions offline; create those catalog/qualification
+  fixtures only inside the single locked execution after the authorization
+  claim, before provider clone creation. No separate pre-claimed setup is
+  introduced; only the narrowly proven FR-042 continuation may complete an
+  existing unpaid execution. Calendar blocks require a future AVAILABLE slot with
+  no ACTIVE reservation, exact original-state journal and immediate state
+  rechecks before mutation and restoration. Restore only a still-matching block
+  without an intervening reservation; otherwise stop for reconciliation.
+- **FR-040**: Deployed medium outcomes require case-specific native observations,
+  including narrowly scoped read-only database reservation evidence. Preserve
+  C07 refusal, C08 blocked-slot alternative, C09 correction, C10 selected/unselected
+  identity, C11 corrected intake, C12 exact callback, C13 one qualified technician,
+  C14 two qualified technicians, C15 complete linked reschedule and C16 complete
+  linked cancellation. Bind service names, prices and durations to the actual
+  test-owned deployed catalog; keep full duration and adjacency checks strict.
+  Never run isolated global reset/SQL actions against the deployment. Cancel
+  only journaled test requests through the native API, release only owned blocks,
+  verify preservation, and stop before another paid case if cleanup is unresolved.
+- **FR-041**: Operator email mode also applies to this explicit deployed medium
+  stage. Native inbox verification stays false/unverified and acceptance stays
+  incomplete. Other unavailable acceptance observations remain disclosed; paid
+  provider evaluation and every implemented native business check must pass for
+  functional success. Production messaging and the expired system Gmail
+  connection remain deferred. Add scoped fixture/authorization regression tests
+  and run the complete offline gate before the deployed paid stage.
+  This initial deployed medium adapter requires explicit operator mode. Reject
+  unsupported native inbox mode before claiming or mutating resources, rather
+  than paying and inserting an unverified native assertion. Isolated native
+  defaults and existing deployed minimal behavior remain unchanged.
+
+FR-038–041 supersede the isolated-only target clauses of FR-034/037 for this
+explicit deployed medium request. They do not authorize rewriting production
+technicians or recipients merely to evade readiness checks.
+
+### Recovery before the first paid case (2026-10-18)
+
+- **FR-042**: An explicit same-run unpaid continuation may complete the already
+  claimed C07–C16 execution within its original authorization and ceiling. It
+  must not issue another authorization, claim twice, repeat a paid case, or
+  create replacement catalog/provider resources. Under the campaign lock,
+  require exactly one matching original claim, exact target/range/ceiling,
+  no charge entry whatsoever, no provider test or invocation, no test-creation
+  intent even if cleared, no pending/unknown write, no owned booking or calendar
+  block, and no fixture case already arranged. Revalidate native baseline,
+  designated identity/recipients, whole-stage readiness, exact owned catalog
+  definitions/qualifications and existing clone fingerprint. Refresh quota and
+  reserve admission. Preserve the original blocked manifest/report immutably
+  and append the numbered continuation admission before any test submission.
+  Any failed or ambiguous proof keeps the stage blocked. The claim remains
+  consumed; this is continuation of its unused execution, not a new allowance.
+
+The first deployed medium attempt stopped before any provider test was created:
+the booking-list read took 55.8 seconds, exceeding the harness's 30-second read
+timeout. No medium charge or invocation exists. Three catalog definitions and
+the verified clone remain owned and retained. Preserve that failure as evidence.
+
+- **FR-043**: Native concurrent catalog updates and FAQ embedding operations
+  must not race a shared model download or publish stale/empty catalog knowledge.
+  Serialize collection initialization and embedding-producing operations in the
+  current single-process deployment, with the catalog snapshot taken inside
+  that serialization boundary. Add replacement chunks before deleting the exact
+  prior chunk IDs; publish the catalog text atomically after successful indexing.
+  An embedding failure must preserve the previous file and searchable chunks.
+  Keep provider credentials, unrelated documents and messaging settings intact.
+- **FR-044**: Booking-list reads must not block the app's event loop during
+  synchronous database or calendar work. Preserve the async route interface,
+  filtering and response fields by offloading its blocking body. Retain past
+  requests in the list, but do not query Google availability to assign a
+  technician at a definitively past booking start; their candidate list is
+  empty. Future and unparseable-time eligibility retains its existing behavior.
+  Compare timestamps in the configured business timezone. Verify health
+  responsiveness during a deliberately held future-candidate lookup and the
+  portal's persisted data after that lookup finishes. Within each response,
+  evaluate WhatsApp connectivity once per distinct technician phone and reuse
+  that result for repeated rows; do not cache it across requests or change the
+  underlying onboarding/settings semantics.
+- **FR-045**: Knowledge-base indexing must bound each collection embedding add
+  to one chunk so the current small-memory deployment never submits a complete
+  catalog as one large inference batch. Keep the shared operation lock across
+  the full logical replacement. If a later batch fails, remove only that
+  attempt's exact new chunk IDs and preserve all previous and unrelated chunks.
+  Include the current add's IDs even if it persisted before throwing; surface
+  rollback failure as an explicit error rather than reporting a safe recovery.
+  Delete prior chunks only after every replacement batch succeeds. Verify the
+  chunk bound and partial-batch failure with captured and real Chroma contracts;
+  actual 512 MiB runtime behavior remains a separate deployed gate.
+- **FR-046**: Native UTF-8 KB uploads must offload synchronous indexing/file work
+  from the event loop, retaining their current public async interface and success
+  response. Reuse safe replacement semantics and atomically publish document
+  bytes only after indexing succeeds. An embedding failure preserves the prior
+  file and searchable chunks. Prove health responsiveness while upload indexing
+  is held, and preserve upload/download browser behavior and unrelated files.
+  Hold the same shared lock across replacement and final file publication so
+  concurrent uploads cannot leave file and index from different versions.
+
+Native evidence on 2026-10-18: two serial existing-document uploads returned
+200, then the larger catalog upload returned 502. Render event
+`evt-dbagtv942hec739a9j60` records an OOM kill with a 512 MiB limit at 18:25:01Z.
+Do not repeat that native write against the unrepaired runtime or spend paid
+simulation credits until the repair and prerequisite gates are safe.
