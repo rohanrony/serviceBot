@@ -68,8 +68,11 @@ class Adapter(medium.Adapter):
     def _catalog_readback(self):
         actual = {r['id']: r for r in medium._get(self.client, self.config, '/api/v1/portal/services')}
         for item in self.state['services'].values():
-            if any(actual.get(item['id'], {}).get(k) != item[k]
-                   for k in ('name', 'duration_minutes', 'price_range', 'assigned_agent_ids')):
+            observed = actual.get(item['id'], {})
+            agents = observed.get('assigned_agent_ids')
+            if (any(observed.get(k) != item[k] for k in ('name', 'duration_minutes', 'price_range'))
+                    or not isinstance(agents, list)
+                    or sorted(agents) != sorted(item['assigned_agent_ids'])):
                 self.state['blocked'] = True
                 self._save()
                 raise SimulationError('Full catalog native read-back differs')
