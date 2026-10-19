@@ -1384,6 +1384,11 @@ def _continue_remaining(config, tier, live, check, run_id, requested, repeat, *,
 def execute(config, tier='minimal', *, live=False, check=False, run_id=None,
             requested=None, repeat=1, continue_unpaid=False, continue_remaining=False, continue_unsubmitted=False,
             repair_linked_visit=False, **kwargs):
+    if tier == 'full' and (live or check or requested is not None or config.get('stage_authorization')
+                           or config.get('campaign_authorization') or config.get('calibration')):
+        if continue_unpaid or continue_remaining or continue_unsubmitted or repair_linked_visit:
+            raise SimulationError('Deployed full C17-C50 does not reuse medium continuation authority')
+        return _full_delta_preflight(config, live=live, check=check, requested=requested, repeat=repeat)
     if repair_linked_visit:
         if continue_unpaid or continue_remaining or continue_unsubmitted:
             raise SimulationError('Choose one explicit continuation mode')
@@ -1444,6 +1449,62 @@ def execute(config, tier='minimal', *, live=False, check=False, run_id=None,
         campaign.save()
         return _execute(config, tier, live=True, requested=requested, repeat=repeat,
                         _campaign=campaign, _admission={'baseline': baseline, 'state': state, 'existing_name': existing_name})
+
+
+def _full_delta_preflight(config, *, live, check, requested, repeat):
+    """Inspect remaining coverage without authorizing unimplemented native work."""
+    from . import deployed_full
+
+    if live and check:
+        raise SimulationError('Choose --check or --live, not both')
+    if not isinstance(requested, (list, tuple)) or tuple(requested) != deployed_full.FULL_IDS:
+        raise SimulationError('Deployed full authorization requires explicit C17-C50 exactly once; earlier tiers are not replayed')
+    authorization = config.get('stage_authorization')
+    if authorization is not None and (not isinstance(authorization, dict) or authorization.get('tier') != 'full'):
+        raise SimulationError('Full authorization cannot reuse the medium or malformed stage authorization')
+    cases = select_cases(load_catalog(), 'full', requested)
+    deployed_full.validate_delta(cases, repeat=repeat)
+    if live:
+        # This branch cannot create claims, fixtures, test definitions or paid
+        # invocations. Config declarations are not native implementation/evidence.
+        raise SimulationError('Deployed native full execution is unavailable until reviewed adapters, actual prerequisites and a new ceiling are ready')
+    url = origin(config.get('deployed_url'))
+    native = deployed_full.readiness(config, cases)
+    report = {
+        'tier': 'full', 'target': 'deployed', 'selected': list(deployed_full.FULL_IDS),
+        'complete_tier': False, 'status': 'blocked', 'deployed_url': url,
+        'acceptance_scope': 'full_delta_native_prerequisites', 'native_contracts': native,
+        'implemented_case_ids': native['supported_case_ids'],
+        'unsupported_cases': native['unsupported_case_ids'],
+        'native_readiness_checked': False, 'new_paid_submissions': 0,
+        'problems': ['Native full-case setup, durable assertions and cleanup are not yet completely implemented and proven',
+                     'A separately approved full-stage ceiling is required; the medium authorization cannot fund full cases'],
+        'notes': ['Preview makes no provider requests.',
+                  '--check performs readiness observations only; no fixture, claim or paid resource is created.'],
+    }
+    budget = config.get('budget', {})
+    remaining = budget.get('remaining_credits')
+    if check:
+        with httpx.Client(timeout=45, trust_env=False, follow_redirects=False) as client:
+            problems, _baseline = deployment_readiness(config, client)
+            state, provider_problems = provider_readiness(config, client)
+        report['problems'].extend([*problems, *provider_problems])
+        report['native_readiness_checked'] = True
+        if 'remaining' in state:
+            remaining = state['remaining']
+    try:
+        estimate = sum(estimates(config, cases))
+        allowance = number(remaining)
+        report.update(estimated_credits=str(estimate), remaining_credits=str(allowance),
+                      proposed_credit_ceiling=format(estimate / number('.8', positive=True), 'f'),
+                      credit_shortfall_to_estimate=str(max(number(0), estimate - allowance)),
+                      credit_units_verified=budget.get('verified_credit_units') is True,
+                      estimate_is_measured_bound=False)
+        if estimate > allowance:
+            report['problems'].append('Verified allowance is below the conservative full-delta estimate')
+    except SimulationError:
+        report['problems'].append('Full-delta budget or conservative case estimates are unverified')
+    return report
 
 
 def _execute(config, tier='minimal', *, live=False, check=False, run_id=None,

@@ -1481,7 +1481,7 @@ def create_callback_request(customer_id: int, service_request_id: int = None, pr
 
 
 CUSTOMER_APPOINTMENTS_SELECT = """
-    SELECT sr.id, sr.booking_time AS appointment_datetime, sr.booking_type, sr.service_type,
+    SELECT sr.id, sr.booking_time AS appointment_datetime, sr.booking_type, sr.service_type, sr.service_components,
            sr.issue_description, COALESCE(sr.duration_minutes, 60) AS duration_minutes,
            sr.status, v.year, v.make, v.model,
            CASE WHEN sr.booking_type = 'appointment' THEN sr.visit_group_id END AS visit_group_id,
@@ -3866,12 +3866,12 @@ def consolidate_appointment_service(
                 """
                 SELECT sr.id, sr.customer_id, sr.booking_time, sr.booking_type, sr.issue_description, sr.service_type,
                        COALESCE(sr.duration_minutes, 60) AS duration_minutes, sr.vehicle_id, sr.staff_agent_id,
-                       v.year, v.make, v.model,
+                       sr.service_components, sr.visit_group_id, v.year, v.make, v.model,
                        c.phone, c.name AS customer_name
                 FROM service_requests sr
                 LEFT JOIN vehicles v ON sr.vehicle_id = v.id
                 LEFT JOIN customers c ON sr.customer_id = c.id
-                WHERE sr.id = %s;
+                WHERE sr.id = %s FOR UPDATE OF sr;
                 """,
                 (appointment_id,)
             )
@@ -3917,6 +3917,38 @@ def consolidate_appointment_service(
             if additional_service_type and additional_service_type not in (new_service_type or ""):
                 new_service_type = f"{new_service_type}, {additional_service_type}"
 
+            components = None
+            if sr.get("service_components") is not None and additional_service_type:
+                from serviceBot.services.booking import _validated_components
+                try:
+                    prior_components = _validated_components(sr)
+                except ValueError:
+                    prior_components = None
+                cursor.execute("SELECT name FROM services WHERE name=%s", (additional_service_type,))
+                canonical = cursor.fetchall()
+                if (prior_components and len(canonical) == 1
+                        and canonical[0]["name"] == additional_service_type
+                        and additional_service_type not in {component["name"] for component in prior_components}):
+                    components = [*prior_components, {"name": additional_service_type,
+                        "duration_minutes": new_duration - existing_duration}]
+            if components:
+                # Canonical components remain one technician's indivisible block.
+                # Raw mappings distinguish mappingless services from tags whose
+                # only technicians have become inactive.
+                assigned = sr.get("staff_agent_id")
+                cursor.execute("SELECT id FROM staff_agents WHERE id=%s AND is_active IS NOT FALSE", (assigned,))
+                active_staff = cursor.fetchone()
+                cursor.execute("""SELECT s.name,m.staff_agent_id FROM services s
+                    JOIN service_staff_agents m ON m.service_id=s.id WHERE s.name=ANY(%s)""",
+                    ([component["name"] for component in components],))
+                mappings = {}
+                for row in cursor.fetchall():
+                    mappings.setdefault(row["name"], set()).add(row["staff_agent_id"])
+                if (not active_staff or any(assigned not in mappings[component["name"]]
+                        for component in components if component["name"] in mappings)):
+                    return {"success": False, "error": "Assigned technician is not active and qualified for every selected service."}
+                new_service_type = ", ".join(component["name"] for component in components)
+            # NULL makes unstructured legacy/additional work explicitly unselectable.
             start_dt = None
             new_end_dt = None
             if booking_time:
@@ -3997,12 +4029,13 @@ def consolidate_appointment_service(
                 SET issue_description = %s,
                     duration_minutes = %s,
                     service_type = %s,
+                    service_components = %s,
                     booking_end_at = %s,
                     calendar_integration_status = 'PENDING_CALENDAR',
                     updated_at = NOW()
                 WHERE id = %s;
                 """,
-                (combined_issues, new_duration, new_service_type, new_end_dt, appointment_id)
+                (combined_issues, new_duration, new_service_type, json.dumps(components) if components else None, new_end_dt, appointment_id)
             )
 
             if new_end_dt and res_row:
@@ -4054,10 +4087,11 @@ def consolidate_appointment_service(
                     WHERE customer_id = %s
                       AND vehicle_id = %s
                       AND id != %s
+                      AND (visit_group_id IS NULL OR visit_group_id IS DISTINCT FROM %s)
                       AND status IN ('pending', 'in_progress')
                       AND (booking_time::text LIKE %s OR booking_time IS NULL);
                     """,
-                    (customer_id, vehicle_id, appointment_id, f"{b_date_str}%")
+                    (customer_id, vehicle_id, appointment_id, sr.get("visit_group_id"), f"{b_date_str}%")
                 )
                 parsed_source_ids = [r["id"] for r in cursor.fetchall()]
 

@@ -4702,7 +4702,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let activeConfirmAction = null;
 
+  let serviceRequestModalVersion = 0;
   function closeSRModal() {
+    serviceRequestModalVersion += 1;
     if (srModal) srModal.style.display = 'none';
     if (srModalOverlay) srModalOverlay.style.display = 'none';
     srForm.reset();
@@ -4886,7 +4888,169 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // Selective removal uses the booked component snapshot, never a parsed label.
+  const serviceRemovalNeedsReload = new Set();
+  function renderServiceRemoval(req, feedbackText = '') {
+    document.getElementById('sr-service-removal')?.remove();
+    if (!srForm || !Array.isArray(req.service_components)) return;
+    const modalVersion = serviceRequestModalVersion;
+    const isCurrentModal = () => modalVersion === serviceRequestModalVersion &&
+      srModal?.style.display !== 'none' && document.getElementById('sr-form-id')?.value === String(req.id);
+    const components = req.service_components;
+    const names = components.map(component => component?.name);
+    const valid = components.every(component => component && typeof component.name === 'string' &&
+      component.name.trim() && component.name === component.name.trim() && Number.isInteger(component.duration_minutes) &&
+      component.duration_minutes > 0 && component.duration_minutes % 15 === 0) &&
+      new Set(names).size === names.length;
+    const total = components.reduce((sum, component) => sum + (component?.duration_minutes || 0), 0);
+    if (!valid || total !== req.duration_minutes) return;
+    const terminal = ['cancelled', 'cancelled_by_customer', 'completed', 'done'].includes(req.status);
+    const start = String(req.booking_start_time || req.booking_time || '').replace('T', ' ').slice(0, 19);
+    const end = String(req.booking_end_time || '').replace('T', ' ').slice(0, 19);
+    const section = document.createElement('section');
+    section.id = 'sr-service-removal';
+    section.style.cssText = 'padding:12px;margin-top:16px;border:1px solid var(--border-card);border-radius:8px;';
+    const heading = document.createElement('h4');
+    heading.textContent = terminal ? 'Appointment services (history)' : 'Appointment services';
+    section.appendChild(heading);
+    const summary = document.createElement('p');
+    summary.id = 'sr-component-summary';
+    summary.textContent = components.map(c => `${c.name} — ${c.duration_minutes} minutes`).join('; ') || 'No remaining services';
+    section.appendChild(summary);
+    const readback = document.createElement('p');
+    readback.id = 'sr-component-readback';
+    readback.style.whiteSpace = 'pre-line';
+    readback.textContent = `Service: ${req.service_type || 'None'}\n${terminal ? 'Booked duration' : 'Duration'}: ${req.duration_minutes} minutes\n${terminal ? 'Booked start' : 'Start'}: ${start || 'None'}\n${terminal ? 'Booked end' : 'End'}: ${end || 'Unavailable'}\nStatus: ${req.status}\nCalendar: ${req.calendar_integration_status || 'Unverified'}\nNotification queue: ${req.notification_queue_status || 'Unverified'}; delivery unverified.`;
+    section.appendChild(readback);
+    const feedback = document.createElement('p');
+    feedback.id = 'sr-remove-service-feedback';
+    feedback.setAttribute('role', 'status');
+    feedback.setAttribute('aria-live', 'polite');
+    feedback.textContent = feedbackText || (serviceRemovalNeedsReload.has(req.id) ? 'Reload the appointment before taking another action.' : '');
+    section.appendChild(feedback);
+    const reload = document.createElement('button');
+    reload.type = 'button';
+    reload.className = 'btn btn-secondary';
+    reload.textContent = 'Reload appointment';
+    async function reloadRequest() {
+      const response = await fetch('/api/v1/portal/service-requests', {cache: 'no-store'});
+      if (!response.ok) throw new Error('Reload failed');
+      const rows = await response.json();
+      const matches = Array.isArray(rows) ? rows.filter(row => row.id === req.id) : [];
+      if (matches.length !== 1) throw new Error('Appointment read-back unavailable');
+      return matches[0];
+    }
+    reload.addEventListener('click', async () => {
+      reload.disabled = true;
+      try {
+        const fresh = await reloadRequest();
+        if (!isCurrentModal()) {
+          await loadDashboardData();
+          return;
+        }
+        serviceRemovalNeedsReload.delete(req.id);
+        window.openSREditModal(fresh);
+      } catch {
+        feedback.textContent = 'Appointment could not be reloaded. Check its state before taking another action.';
+        reload.disabled = false;
+      }
+    });
+    section.appendChild(reload);
+    srForm.lastElementChild.before(section);
+    if (req.booking_type !== 'appointment' || !['pending', 'confirmed', 'in_progress'].includes(req.status) || !components.length ||
+        !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(start)) return;
+    const label = document.createElement('label');
+    label.htmlFor = 'sr-remove-service-select';
+    label.textContent = 'Service to remove';
+    label.style.cssText = 'display:block;margin-top:12px;';
+    const select = document.createElement('select');
+    select.id = 'sr-remove-service-select';
+    select.className = 'form-input';
+    for (const component of components) {
+      const option = document.createElement('option');
+      option.value = component.name;
+      option.textContent = `${component.name} — ${component.duration_minutes} minutes`;
+      select.appendChild(option);
+    }
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'btn btn-secondary';
+    remove.textContent = 'Remove selected service';
+    remove.style.marginTop = '8px';
+    let pending = serviceRemovalNeedsReload.has(req.id);
+    remove.disabled = pending;
+    select.disabled = pending;
+    remove.addEventListener('click', () => {
+      if (pending) return;
+      const component = components.find(item => item.name === select.value);
+      if (!component) return;
+      const remaining = total - component.duration_minutes;
+      const stamp = new Date(start.replace(' ', 'T') + 'Z');
+      if (!Number.isFinite(stamp.getTime())) return;
+      const shortenedEnd = new Date(stamp.getTime() + remaining * 60000).toISOString().slice(0, 19).replace('T', ' ');
+      const change = remaining
+        ? `Appointment start stays ${start}; end becomes ${shortenedEnd} (${remaining} minutes).`
+        : `Only this appointment will be cancelled; its last service is being removed.`;
+      openConfirmModal(`Remove ${component.name}?`,
+        `Customer consent is required to remove ${component.name} (${component.duration_minutes} minutes). ${change} Other appointments stay unchanged.`, async () => {
+          if (pending) return;
+          pending = true;
+          serviceRemovalNeedsReload.add(req.id);
+          remove.disabled = true;
+          select.disabled = true;
+          reload.disabled = true;
+          const save = document.getElementById('sr-save-btn');
+          if (save) save.disabled = true;
+          let confirmed = false;
+          try {
+            const response = await fetch(`/api/v1/portal/service-requests/${req.id}/remove-service`, {
+              method: 'POST', headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({service_name: component.name, customer_consent_obtained: true})
+            });
+            const result = await response.json();
+            if (!response.ok || result.success !== true) {
+              const detail = typeof result.detail === 'string' ? result.detail : result.message;
+              feedback.textContent = detail || 'Service removal was rejected. Reload the appointment before another action.';
+              return;
+            }
+            confirmed = true;
+            const fresh = await reloadRequest();
+            const cancelled = remaining === 0;
+            const freshStart = String(fresh.booking_start_time || fresh.booking_time || '').replace('T', ' ').slice(0, 19);
+            const freshEnd = String(fresh.booking_end_time || '').replace('T', ' ').slice(0, 19);
+            const expectedComponents = components.filter(item => item.name !== component.name);
+            if (freshStart !== start || (cancelled ? fresh.status !== 'cancelled' :
+                fresh.duration_minutes !== remaining || freshEnd !== shortenedEnd ||
+                !Array.isArray(fresh.service_components) || fresh.service_components.length !== expectedComponents.length ||
+                !fresh.service_components.every((item, index) => item.name === expectedComponents[index].name &&
+                  item.duration_minutes === expectedComponents[index].duration_minutes))) {
+              throw new Error('Removal read-back does not match');
+            }
+            await loadDashboardData();
+            serviceRemovalNeedsReload.delete(req.id);
+            if (!isCurrentModal()) return;
+            window.openSREditModal(fresh);
+            renderServiceRemoval(fresh, cancelled ? 'Selected appointment cancelled; other appointments unchanged.' : 'Service removed; other appointments unchanged.');
+          } catch {
+            feedback.textContent = confirmed
+              ? 'Removal response received, but the saved outcome could not be verified. Reload before another action.'
+              : 'Removal outcome is unknown. Reload the appointment before taking another action; do not retry blindly.';
+          } finally {
+            // Retrying a mutation after an uncertain response requires a fresh read.
+            reload.disabled = false;
+            if (save && isCurrentModal()) save.disabled = serviceRemovalNeedsReload.has(req.id);
+          }
+        });
+    });
+    section.insertBefore(label, reload);
+    section.insertBefore(select, reload);
+    section.insertBefore(remove, reload);
+  }
+
   window.openSREditModal = (req) => {
+    serviceRequestModalVersion += 1;
+    const saveButton = document.getElementById('sr-save-btn');
+    if (saveButton) saveButton.disabled = serviceRemovalNeedsReload.has(req.id);
     document.getElementById('sr-modal-title').textContent = 'Edit Service Request';
     document.getElementById('sr-form-id').value = req.id;
     
@@ -4953,6 +5117,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (srDurationSelect) srDurationSelect.value = String(durationMinutesVal);
     if (srDurationGroup) srDurationGroup.style.display = (bookingTypeVal === 'callback') ? 'none' : 'block';
 
+    renderServiceRemoval(req);
     if (srModal) srModal.style.display = 'block';
     if (srModalOverlay) srModalOverlay.style.display = 'block';
   };
@@ -4960,6 +5125,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnNewRequest = document.getElementById('btn-new-request');
   if (btnNewRequest) {
     btnNewRequest.addEventListener('click', async () => {
+      serviceRequestModalVersion += 1;
+      document.getElementById('sr-service-removal')?.remove();
+      const saveButton = document.getElementById('sr-save-btn');
+      if (saveButton) saveButton.disabled = false;
       document.getElementById('sr-modal-title').textContent = 'New Service Request';
       document.getElementById('sr-form-id').value = '';
       if (srForm) srForm.dataset.originalBookingTime = '';

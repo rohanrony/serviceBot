@@ -23,7 +23,7 @@ from e2e.test_workflows import PORTAL
 provider_capture = captured_provider_fixture
 
 
-@pytest.mark.parametrize("mode,agents", [("single", [1, 1]), ("split", [1, 2])])
+@pytest.mark.parametrize("mode,agents", [("single", [1]), ("split", [1, 2])])
 def test_voice_booking_persists_linked_contiguous_capacity(
     api, db, scenario, mode, agents
 ):
@@ -32,14 +32,30 @@ def test_voice_booking_persists_linked_contiguous_capacity(
     assert result["success"] is True, result
     rows = visit_rows(db, result["visit_group_id"])
     assert [row["staff_agent_id"] for row in rows] == agents
-    assert [row["service_type"] for row in rows] == services
-    assert [row["duration_minutes"] for row in rows] == [30, 45]
-    assert [datetime.fromisoformat(row["booking_time"]) for row in rows] == [
-        scenario["start"],
-        scenario["start"] + timedelta(minutes=30),
+    components = [
+        {"name": services[0], "duration_minutes": 30},
+        {"name": services[1], "duration_minutes": 45},
     ]
-    assert rows[0]["linked_appointment_id"] == rows[1]["id"]
-    assert rows[1]["linked_appointment_id"] == rows[0]["id"]
+    if mode == "single":
+        assert [row["service_type"] for row in rows] == [", ".join(services)]
+        assert [row["duration_minutes"] for row in rows] == [75]
+        assert rows[0]["linked_appointment_id"] is None
+        starts = [scenario["start"]]
+        snapshots = [components]
+    else:
+        assert [row["service_type"] for row in rows] == services
+        assert [row["duration_minutes"] for row in rows] == [30, 45]
+        assert rows[0]["linked_appointment_id"] == rows[1]["id"]
+        assert rows[1]["linked_appointment_id"] == rows[0]["id"]
+        starts = [scenario["start"], scenario["start"] + timedelta(minutes=30)]
+        snapshots = [[components[0]], [components[1]]]
+    assert [datetime.fromisoformat(row["booking_time"]) for row in rows] == starts
+    persisted = db(
+        "SELECT service_components FROM service_requests WHERE visit_group_id=%s ORDER BY booking_time, id",
+        (result["visit_group_id"],),
+    )
+    assert [row["service_components"] for row in persisted] == snapshots
+    assert sum(row["duration_minutes"] for row in rows) == 75
     for row in rows:
         segments = db(
             "SELECT s.segment_start FROM appointment_reservation_segments s JOIN appointment_reservations r ON r.id=s.reservation_id WHERE r.service_request_id=%s AND r.status='ACTIVE' ORDER BY s.segment_start",
@@ -57,9 +73,37 @@ def test_three_services_group_with_first_qualified_technician(api, db, scenario)
     result = multi_booking(api, scenario, services + ["Wheel Alignment"])
     assert result["success"] is True, result
     rows = visit_rows(db, result["visit_group_id"])
-    assert [row["staff_agent_id"] for row in rows] == [1, 1, 2]
+    assert [row["staff_agent_id"] for row in rows] == [1, 2]
+    assert [row["service_type"] for row in rows] == [", ".join(services), "Wheel Alignment"]
+    assert [row["duration_minutes"] for row in rows] == [75, 30]
     assert [datetime.fromisoformat(row["booking_time"]) for row in rows] == [
-        scenario["start"] + timedelta(minutes=offset) for offset in (0, 30, 75)
+        scenario["start"] + timedelta(minutes=offset) for offset in (0, 75)
+    ]
+    assert rows[0]["linked_appointment_id"] == rows[1]["id"]
+    assert rows[1]["linked_appointment_id"] == rows[0]["id"]
+    persisted = db(
+        "SELECT service_components FROM service_requests WHERE visit_group_id=%s ORDER BY booking_time, id",
+        (result["visit_group_id"],),
+    )
+    assert [row["service_components"] for row in persisted] == [
+        [{"name": services[0], "duration_minutes": 30},
+         {"name": services[1], "duration_minutes": 45}],
+        [{"name": "Wheel Alignment", "duration_minutes": 30}],
+    ]
+    reservations = db(
+        "SELECT r.service_request_id, r.starts_at, r.ends_at, "
+        "count(s.segment_start) AS segments FROM appointment_reservations r "
+        "JOIN service_requests sr ON sr.id=r.service_request_id "
+        "JOIN appointment_reservation_segments s ON s.reservation_id=r.id "
+        "WHERE sr.visit_group_id=%s AND r.status='ACTIVE' "
+        "GROUP BY r.id ORDER BY r.starts_at",
+        (result["visit_group_id"],),
+    )
+    assert len(reservations) == 2
+    assert [r["service_request_id"] for r in reservations] == [row["id"] for row in rows]
+    assert [r["segments"] for r in reservations] == [5, 2]
+    assert [r["ends_at"] - r["starts_at"] for r in reservations] == [
+        timedelta(minutes=75), timedelta(minutes=30),
     ]
 
 

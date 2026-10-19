@@ -52,7 +52,10 @@ def test_consolidation_database_failure_prevents_mutation_and_notification():
     capacity_cursor = MagicMock()
     capacity_cursor.__enter__.return_value = capacity_cursor
     capacity_cursor.execute.side_effect = OperationalError("reservation database unavailable")
-    with patch("serviceBot.api.telephony.get_db_connection", return_value=appointment_connection), \
+    with patch("serviceBot.api.telephony.get_customer_appointments", return_value=[{
+             "id": 27, "phone": "5550100001",
+         }]), \
+         patch("serviceBot.api.telephony.get_db_connection", return_value=appointment_connection), \
          patch("serviceBot.api.telephony.dict_cursor", return_value=appointment_cursor), \
          patch("serviceBot.services.calendar_availability.get_db_connection", return_value=capacity_connection), \
          patch("serviceBot.services.calendar_availability.dict_cursor", return_value=capacity_cursor), \
@@ -161,7 +164,10 @@ def test_consolidate_tool_passes_exclude_service_request_id():
         "vehicle": {"year": 2020, "make": "Tesla", "model": "Model 3"}
     }
 
-    with patch("serviceBot.api.telephony.verify_contiguous_slot_capacity") as mock_verify_cap, \
+    with patch("serviceBot.api.telephony.get_customer_appointments", return_value=[{
+             **mock_sr, "phone": "4242704893",
+         }]), \
+         patch("serviceBot.api.telephony.verify_contiguous_slot_capacity") as mock_verify_cap, \
          patch("serviceBot.api.telephony.consolidate_appointment_service", return_value=mock_consolidate_res), \
          patch("serviceBot.api.telephony.get_db_connection") as mock_get_conn:
 

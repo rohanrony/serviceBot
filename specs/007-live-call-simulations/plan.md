@@ -4,15 +4,20 @@
 
 ## Summary
 A separate Python CLI owns campaign setup, sequential ElevenLabs execution, budget
-admission, observable evidence and cleanup. The product code is copied, not changed.
-A loopback app runs normal lifespan workers; a small authenticated callback gateway
-exposes only voice tools and signed provider callbacks through a user-supplied tunnel.
+admission, observable evidence and cleanup. The original isolated mode copies the
+product into a disposable runtime. The deployed extension uses only the existing
+deployed app and native observers, with no local app/tunnel substitution. Its
+current product repairs enforce exact phone-scoped mutation admission and restore
+the derived service catalog at startup through the existing owners. The historical
+loopback gateway design below applies only to isolated mode.
 
 ## Technical Context
 Python 3.11+, stdlib/Decimal/httpx/psycopg2, existing Playwright. JSON catalog/config,
 private local manifests and append-only billing-period ledger. Offline pytest tests
 capture provider HTTP boundaries. Browser tests exercise the evidence reader against
-the existing real portal. No new application schema or application endpoint.
+the existing real portal. The current FR-065/066 extension adds one nullable JSONB
+snapshot column and a typed selective-removal route in the existing application;
+the earlier no-schema design below describes the original harness scope.
 
 ## Constitution Check
 I: one runner owner and existing booking owner. II: read-back assertions and no ambiguous
@@ -481,3 +486,100 @@ C15 generated two successive moves; the stale intermediate A-to-B projection ski
 C15 sample2 and C16 sample1 passed provider and functional checks with one anchor mutation and two lookups each. Their additional1024credits settle the medium aggregate at6421. Owned catalog/provider resources are removed and all original data hashes match; historical failures and native inbox uncertainty remain retained.
 
 The native app settings prompt and saved primary-agent prompt already differ. A normal settings save applies existing business-hours/lead-time formatters, so direct promotion of the clone prompt would not make the settings source consistent. Prepare a tracked prompt/settings candidate with the byte-identical tested policy sections, formatted with read-only native operational settings. Preserve the tracked recording disclosure and explicit callback lead-time rule; use a configured-lead-time reference in the follow-up sentence so alternate settings cannot leave an obsolete numeric rule. These base safeguards differ from the saved-agent simulation base; do not call the complete candidate a paid-tested prompt. Prove fixed-point formatting and policy preservation through deterministic offline regressions, then rerun the complete gate. Read-back proves the normal sync targets only the intended primary agent and preserves its existing name. Prepare prompt-only settings payload and before/after behavior/config hashes; require separate production/publication approval and no paid test rerun.
+
+## Remaining deployed full delta and ownership boundary (FR-062/063)
+
+Continue the existing feature. Create a case-specific full-native adapter contract rather than widening medium IDs or reusing medium success predicates for negative/recovery cases. Reuse journaled normal-route writes and the strictly read-only observer. Preserve no-tunnel/deployed-only execution, existing business settings and handset4893. Record real provider/time/operator prerequisites explicitly; local gateway faults, copied databases and forged callbacks cannot establish native deployed/provider outcomes. Admission and manual-inbox reporting must continue to separate functional outcomes from native acceptance. A draft plan is not a stage claim or spending authorization.
+
+Before any ownership live case, test-first repair the voice boundary in `serviceBot/api/telephony.py`. Resolve mutation targets against exact full-phone-owned appointment rows, including every consolidation source. Explicit invalid/foreign IDs fail closed and cannot fall back to the first row. Remove last-seven-digit-only mutation admission while preserving normalization of complete phone numbers and supported caller-phone fallback. Keep the database/domain mutation owners and linked-group behavior unchanged. Add focused route regressions and real PostgreSQL/HTTP contracts under `e2e/`, then run the complete offline/browser gate. Publication/deployment of this new repair remains a separately reviewable action.
+
+## Generated catalog restoration after instance replacement (FR-064)
+
+Read-only logs show instance shutdown at01:31 and a new instance at01:34 without
+a new deployed commit. The service uses the Free plan. The app prompt returned to
+the pre-promotion source checksum and the generated catalog misses12 of46 native
+service names; five authored KB files still match the previous backup. The saved
+primary-agent prompt remains the approved204af4 version. Render documents local
+file loss on spin-down/restart. The tracked approved prompt will ship with the next
+approved app deployment. This startup repair alone does not require a saved-agent
+edit; the grouped-visit behavior below has its own versioned prompt/tool proposal.
+
+At native lifespan startup, await an off-thread call to the single existing
+`portal.sync_services_to_kb` owner before starting workers or yielding readiness.
+Retain its atomic file/index replacement and shared lock. Record duration and
+propagate failure after sanitized logging; do not silently start with stale derived
+facts. The automated-test shortcut remains isolated. Add meaningful test-first
+startup ordering/failure/event-loop and real PostgreSQL/HTTP derived-file/index
+contracts; run the complete gate again. No new storage, schema or messaging owner.
+
+## Approved grouping and selective service removal (FR-065/066)
+
+The owner chose one appointment/calendar entry per technician and selective service
+removal. Their final correction keeps the selected appointment start and shortens
+its end; other technician blocks retain their confirmed times. The earlier choice
+to retain each component's internal time is superseded.
+
+Keep `BookingService` as the single transactional owner. Add a nullable JSONB
+`service_components` snapshot to `service_requests`, containing ordered exact
+canonical `name` and booked `duration_minutes` for each combined service. Times
+within a block are derived from its start and component offsets; catalog edits
+must not change the booked removal duration. Supply additive migration,
+verification and rollback scripts. Do not infer ambiguous legacy composites.
+
+During multi-service planning, group the selected qualified plan into contiguous
+technician blocks by first appearance, retaining component order within each
+block. Reserve each block once and enqueue one projection per block in the same
+transaction. Keep callbacks separate. Failed plans must roll back rows, capacity,
+components and outbox together. Keep existing grouped reschedule anchoring and
+whole-visit cancellation defaults.
+
+Add `BookingService.remove_appointment_service(request_id, service_name,
+customer_consent_obtained, triggered_by, reason)` as a keyword-only domain API.
+Under request/reservation locks, validate the exact component snapshot; retain the
+same start/staff/reservation when shrinking, release all removed trailing segments,
+and enqueue the replacement projection and ordinary domain notification/audit.
+If no component remains, use the existing cancellation owner with explicit
+selected-appointment scope. Preserve companions and unrelated rows. Safe legacy
+single-service removal may cancel only its selected row; composite legacy rows
+without authoritative component metadata must fail closed.
+
+Expose snapshots in existing appointment/portal read models. The voice
+`cancel_appointment` accepts optional `service_name`, using the existing complete
+phone/ID admission before delegating selective removal. Missing service_name keeps
+whole-visit cancellation. Add a typed portal POST
+`/service-requests/{request_id}/remove-service` with `service_name` and explicit
+consent. Portal controls select an exact returned component, explain the shortened
+end and preserved companions, and reload/read back the resulting row. Extend the
+static tool schema and prepare separately versioned prompt/tool proposals; do not
+execute the broad production/development sync script.
+
+The pure `live_simulations/tool_policy.py` proposal helper preserves every native
+authentication/timeout/tool setting while changing only the cancel description and
+optional service_name property. A minimal agent reference patch replaces exactly
+one source tool ID with a separately created owned revision, preserving every other
+tool ID and avoiding inline tool duplication. Prepare from fresh native GETs and
+complete dependent-agent pagination; do not edit the existing shared tool. No tool
+creation/attachment or saved-agent prompt update occurs without explicit approval.
+
+Tests must cover grouped C25's unchanged two-row expectation, exact service
+snapshots, qualifications, all-or-nothing conflicts, callback separation,
+concurrent/duplicate removal, last-service cancellation, trailing capacity release,
+unchanged companion times, projection failure rollback, snapshot drift, strict
+voice ownership and browser reload/notification state. Keep the previous v4 gate
+as historical evidence; a new full gate is required after this implementation.
+
+## Separated callback fixture and remaining native constraints
+
+C31 uses the existing native callback tools with two exact canonical services and
+designated qualified specialists. Arrange reads genuine callback availability and
+business/lead-time policy. Observe two independent15-minute reservations starting
+30minutes apart, a15-minute gap, no appointment components, one delivered calendar
+projection per callback and distinct created event IDs. Reject merged rows,
+unqualified staff, extra effects, incorrect metadata/grid/durations or unknown
+availability. Cleanup retires both owned reservation/event sets. Captured-provider
+HTTP/PostgreSQL tests establish these local contracts, not native execution.
+
+Keep C40/C45 blocked where a shared staff/customer phone cannot establish the
+required identity. Existing voice/customer booking notifications bypass quiet
+hours through the outbox, so C41 requires a policy/flow decision as well as real
+time and worker evidence. Production messaging and Gmail changes remain deferred.

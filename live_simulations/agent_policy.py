@@ -103,3 +103,60 @@ def apply_linked_visit_policy(override):
         raise SimulationError('Linked visit policy marker does not match the expected revision')
     result['conversation_config']['agent']['prompt']['prompt'] = original + '\n\n' + _LINKED_POLICY
     return result
+
+
+GROUPED_VISIT_POLICY_VERSION = 'linked-visit-service-removal-v2'
+_GROUPED_START = '[Owned simulation linked visit policy: ' + GROUPED_VISIT_POLICY_VERSION + ']'
+_GROUPED_REMOVAL = '''For new multi-service appointments, the server creates one appointment and calendar entry per technician.
+Each appointment's service_components contains its ordered exact canonical service names and
+snapshotted duration values. Keep every requested service in the single booking request;
+do not create separate duplicate appointments to imitate the server's grouping.
+When the caller wants only one service removed, use the authoritative lookup to select
+the exact owned appointment and exact canonical service_name from service_components.
+Do not infer component identity by splitting a display label or using current catalog
+durations. Missing, malformed, ambiguous or unsupported legacy component metadata needs
+clarification or supported staff recovery, never a whole-visit cancellation as a fallback.
+Explain the precise revision and obtain explicit consent: retain the same appointment start,
+remove only the selected service and shorten its end by that service's snapshotted duration.
+Keep the other technicians' appointment start times, end times and services unchanged.
+Make exactly one cancel_appointment(appointment_id=<selected owned appointment ID>,
+service_name=<exact canonical component name>) call with the existing required phone fields.
+The service_name argument selects removal; omit it only after explicit consent for the
+entire linked visit, or for an unlinked appointment cancellation. A selected technician appointment alone does not authorize whole-group cancellation.
+For a selected linked appointment, select the exact returned service component; clarify
+broader scope before mutation rather than omitting service_name as a shortcut.
+Never parallel or retry ambiguous removal mutations.
+Await the result and call get_customer_appointments again. For a shortened appointment,
+verify the same ID/start, only the requested component absent, exact remaining duration,
+shortened end and unchanged companion identities/times before confirming success.
+If this was its last component, require the mutation's explicit selected-only cancellation
+outcome plus companion read-back; absence from an active-only lookup is not cancellation proof.
+Do not invent calendar or notification delivery. State pending or failed projection/delivery
+honestly and offer supported recovery when the result or read-back is uncertain.'''
+_GROUPED_POLICY = _LINKED_POLICY.replace(_LINKED_START, _GROUPED_START).replace(
+    'the visit remains contiguous, and unrelated bookings are unchanged.',
+    'relative appointment offsets are preserved, and unrelated bookings are unchanged. '
+    'Do not close an intentional gap left by a previous service removal.',
+).replace(
+    "If the caller\nwants only one component, clarify the server's whole-group scope before any mutation.",
+    _GROUPED_REMOVAL,
+)
+
+
+def apply_grouped_visit_policy(override):
+    """Versioned prompt-only candidate; prior live policy helpers stay immutable."""
+    try:
+        original = override['conversation_config']['agent']['prompt']['prompt']
+    except (KeyError, TypeError):
+        raise SimulationError('Grouped visit policy requires an exact known source prompt') from None
+    if not isinstance(original, str) or original.count(_POLICY) != 1:
+        raise SimulationError('Grouped visit policy requires the exact canonical quote policy')
+    result = deepcopy(override)
+    if (original.count(_GROUPED_POLICY) == 1 and original.count(_GROUPED_START) == 1
+            and _LINKED_START not in original):
+        return result
+    if (_GROUPED_START in original or original.count(_LINKED_POLICY) != 1
+            or original.count(_LINKED_START) != 1):
+        raise SimulationError('Grouped visit policy marker does not match the expected revision')
+    result['conversation_config']['agent']['prompt']['prompt'] = original.replace(_LINKED_POLICY, _GROUPED_POLICY)
+    return result

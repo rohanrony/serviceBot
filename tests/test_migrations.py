@@ -57,6 +57,7 @@ def test_booking_integrity_migrations_have_explicit_rollbacks():
         "0004_audit_trace_enrichment",
         "0005_staff_agent_soft_delete_and_escalation",
         "0006_calendar_deletion_state",
+        "0007_service_components",
     ]
 
     for forward in migrations:
@@ -88,3 +89,33 @@ def test_migration_runner_is_idempotent_and_can_rollback(tmp_path):
     assert any("DROP TABLE example" in statement for statement in statements)
     assert conn.applied == set()
 
+
+
+def test_service_component_migration_preserves_legacy_rows_and_has_read_only_verification():
+    forward = next(path for path in available_migrations()
+                   if migration_version(path) == "0007_service_components")
+    sql = forward.read_text(encoding="utf-8")
+    assert "ADD COLUMN IF NOT EXISTS service_components JSONB" in sql
+    assert "NOT NULL" not in sql
+    assert "DEFAULT" not in sql
+    assert "UPDATE service_requests" not in sql
+    assert "IF NOT EXISTS (SELECT 1 FROM pg_constraint" in sql
+    assert "conrelid='service_requests'::regclass" in sql
+    assert "conname='service_requests_components_array'" in sql
+    assert "service_components IS NULL OR jsonb_typeof(service_components) = 'array'" in sql
+
+    rollback = forward.with_name(f"{forward.stem}.down.sql").read_text(encoding="utf-8")
+    assert "DROP COLUMN IF EXISTS service_components" in rollback
+    assert "DROP TABLE" not in rollback
+    assert "DELETE FROM" not in rollback
+
+    verification = forward.parent.parent / "migration_verification" / forward.name
+    statements = "\n".join(line for line in verification.read_text(encoding="utf-8").splitlines()
+                           if not line.lstrip().startswith("--"))
+    queries = [statement.strip() for statement in statements.split(";") if statement.strip()]
+    assert len(queries) == 2
+    assert all(query.startswith("SELECT ") for query in queries)
+    assert "data_type, is_nullable" in queries[0]
+    assert "column_name='service_components'" in queries[0]
+    assert "invalid_component_types" in queries[1]
+    assert "jsonb_typeof(service_components) <> 'array'" in queries[1]

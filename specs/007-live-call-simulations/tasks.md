@@ -408,6 +408,90 @@ no replay (`c12-repaired-native-browser-receipt.json`).
 T120: d3b298b is deployed live as dep-dbalm8flk1mc73d0uph0. All6KB documents restored/indexed exactly; configuration and original business hashes match. Owned linked policy19b6b658... observed; protected reference unchanged. C15sample2 passed503credits and C16sample1 passed521credits, each with one anchor mutation and two lookups. Additional1024; medium aggregate6421; no unsettled charges. Native audit confirms all16owned requests cancelled, all recorded Google events deleted/absent, all recorded Twilio delivered and98signed callbacks. The catalog listing timeout was read-only; archived before normal owned cleanup removed47–49 without paid replay. All11provider test definitions and owned clone are removed. Original C15 receipt/evidence/PNG remain byte-identical to attempt5 archive. Raw stage remains incomplete/failed history; native receiving inbox remains unverified under the operator choice.
 
 - [x] T121 Prepare the consistent production prompt/settings proposal under FR-061 with fixed-point/policy-preservation regressions, exact tracked candidate, full gate and before/after hashes. No production mutation or paid conversation.
-- [ ] T122 Only after explicit scoped approval, publish the reviewed production prompt with [skip render], apply one normal-settings prompt update to the verified primary target, and read back exact prompt/config/behavior preservation. Retain intent/failure evidence and do not retry an ambiguous update.
+- [x] T122 Only after explicit scoped approval, publish the reviewed production prompt with [skip render], apply one normal-settings prompt update to the verified primary target, and read back exact prompt/config/behavior preservation. Retain intent/failure evidence and do not retry an ambiguous update.
 
 T121: The frozen final gate passed **1,212 unit/integration +353 E2E**, with zero failures, errors or skips; all 309 frozen source hashes match. Five focused regressions and Ruff passed. Separate bounded review found no actionable finding. Candidate SHA256 `204af40283c4290426b3252d09da207654ceb3f535379790f96f7619c581fffd` preserves both exact tested policies and the tracked recording/callback safeguards; native/alternate formatting and return to native are stable. The complete combined prompt is not claimed paid-tested. Fresh read-only preparation verified the primary target alone, all 47 existing config keys and unchanged source behavior. Exact prompt-only settings payload and before/after hashes are retained in `production-policy-proposal/settings-proposal.json`. Production promotion is unapproved, no write intent exists, and no additional paid conversation was run.
+
+T122 completion supersedes the preceding pre-execution approval status: explicit approval received, exact five-file package merged as308ee04 with [skip render], one normal settings POST returned200, and two independent read-backs verified exact app/primary-agent prompt and all other settings. No extra paid conversation; Render's existing backend deployment remained live. Private completion receipt: `production-policy-proposal/production-promotion-completion.json`.
+
+## Remaining full delta: native admission and ownership
+
+- [x] T123 Prepare the per-case C17–C50 deployed fixture/evidence/cleanup contracts, fresh read-only budget/provider readiness and exact single-handset limitations under FR-062. Preserve all previous case results and charges.
+- [x] T124 Regress and repair exact customer-owned target admission for cancel/reschedule/consolidation under FR-063 in `serviceBot/api/telephony.py`, with meaningful no-mutation assertions in `tests/test_voice_mutation_ownership.py` and PostgreSQL/HTTP contracts in `e2e/test_voice_mutation_ownership.py`.
+- [x] T125 Implement full-stage prerequisite and native-case contracts with deterministic failure and coverage tests in `live_simulations/deployed_full.py` and `tests/test_deployed_full_contracts.py`. Do not claim native capability from a ready flag, a local gateway fault or simulated provider evidence.
+- [x] T126 Converge the implemented scope, run focused and complete offline/browser gates, and prepare a concrete publication/deployment and full-only budget proposal. Real recipient/time/operator prerequisites remain explicit; do not spend before the reviewed ceiling is approved.
+- [ ] T127 Execute only admitted C17–C50 once after complete readiness and approved budget, settle each real charge/effect and clean only owned fixtures. Retain all historical failures, ambiguous-write stops and native acceptance gaps.
+
+## Phase 24: Convergence — remaining native full mechanisms
+
+Bounded FR-062/063 assessment: the local ownership repair and full planning
+contracts do not complete full execution. The initial source-owned adapter implemented15
+offline fixture paths; Phase26 and C31 below bring that to18. All34 actual full live cases remain unrun. The following
+unbuilt work is required before T127, with product/provider/operator prerequisites
+preserved rather than converted into passing flags.
+
+- [ ] T128 Integrate the full adapter into the existing deployed workflow only after every selected native prerequisite is independently verified; add full-only authorization, retained common-ledger admission, per-case evidence, ambiguous-write recovery and owned cleanup regressions in `live_simulations/deployed.py` and `tests/test_deployed_full_preflight.py` (FR-062). Keep the current zero-effect live block until that implementation is complete.
+- [x] T129 Resolve C25 grouping and C30 selective-removal requirements with the owner, then implement the agreed native domain/fixture contracts and exact durable regressions. Preserve the existing two-row C25 catalog expectation and default whole-group behavior; no assertion weakening (FR-062/065/066). Native use remains part of T127/T137.
+- [ ] T130 Design and test bounded native C23/C35/C36/C37 calendar-failure, projection-recovery, lost-response and provider-rejection mechanisms in the full adapter, with exact ownership and genuine deployed/provider causal evidence. Local gateway faults cannot admit those cases (FR-062).
+- [ ] T131 Establish actual C38–C41 unenrolled-recipient, closed-window, owned opt-out and quiet-hours prerequisites and restoration without changing deferred production messaging/Gmail configuration. The sole enrolled handset cannot be labeled unenrolled, and a simulated clock cannot prove a native elapsed boundary (FR-062).
+- [ ] T132 Establish C33 distinct-customer ownership and C42–C45 correlated staff confirmation/decline/timeout/late-original-sender evidence. Respect handset4893 permission; same-number identities cannot prove a distinct phone or sender. Record required operator participation and real elapsed deadlines (FR-062/063).
+- [ ] T133 Implement and test supported native C31 separated callbacks and C47 unavailable-human handoff fixtures/assertions, preserving honest outcomes and existing single domain owners (FR-062).
+- [ ] T134 Implement genuine interrupted-invocation recovery for C48 and actual provider conversation/signed-callback/CRM provenance for C50. Seeded bookings or synthetic local signatures cannot substitute for those sources (FR-062).
+- [ ] T135 After native mechanisms are ready, refresh full-only measured estimates, quota/units and recipient/time/account readiness; prepare the exact C17–C50 execution proposal and obtain a separately approved affordable ceiling. Keep manual inbox unverified and preserve medium6421-credit history (FR-062).
+
+## Phase 25: Native instance-replacement repair
+
+- [x] T136 Regress and implement normal startup catalog regeneration through the existing owner before readiness in `serviceBot/main.py`, preserving event-loop responsiveness, fail-closed startup, authored files/chunks and isolated test lifespan. Add focused startup and actual PostgreSQL/HTTP contracts; rerun the complete offline/browser gate (FR-064).
+- [ ] T137 Prepare the exact reviewed publication/deployment proposal with fresh six-file preservation, current deployed/config/prompt/tool/schema hashes and full offline proof. After explicit approval of the expanded batch, publish/deploy the ownership/startup/grouped-visit repairs and additive migration; create and attach only the reviewed owned cancel-tool revision and synchronize the separately versioned grouped prompt to the primary agent. Restore only required preserved authored data, verify native migration/catalog/index/app-agent prompt/tool consistency and startup duration. Keep production messaging configuration and system Gmail work deferred (FR-061/063/064/065/066).
+
+T123–T126/T136 local preparation passed1367unit/integration+385E2E tests with zero failures/errors/skips (`scratch/full-delta-20261019/full-offline-v4.log`, copied XML and source-frozen gate proof). Exact ownership rejection and startup failure preserve durable state; all new provider tests are captured offline. Independent source reviews found the Google traceback-context leak, which was fixed with three red/green regressions, and no remaining actionable finding in the implemented ownership/startup scope. Full native execution is not converged: T127–T135 and native publication/restoration T137 remain open. No C17–C50 paid submissions or native fixture mutations were made; medium remains11settledinvocations/6421credits.
+
+## Phase 26: Owner-approved visit behavior
+
+T129's product decisions are resolved: combine services per technician and support
+selective removal. The final correction keeps the selected appointment start and
+reduces its end; companion appointment times stay unchanged. Its implementation
+work continues through the tasks below. The previous24-file proposal remains an
+unapproved historical snapshot and must be superseded before any publication.
+
+- [x] T138 Add the authoritative nullable component snapshot schema plus additive migration/verification/rollback; test-first group new appointment services per qualified technician while retaining callbacks and atomic admission in `serviceBot/services/booking.py`, `serviceBot/db/connection.py`, `serviceBot/db/queries.py`, focused tests and PostgreSQL contracts (FR-065).
+- [x] T139 Test-first implement atomic consented exact selective removal in the existing booking owner, using snapshotted duration, fixed selected start, shortened end, released trailing capacity, preserved companions, last-service selected-only cancellation, idempotent safe rejection and outbox/audit rollback (FR-066).
+- [x] T140 Expose component read-back and selective removal through voice and typed portal boundaries, retaining strict full-phone ID ownership and default whole-visit cancellation. Extend the static cancel-tool schema without executing provider sync; add boundary/HTTP regressions (FR-063/065/066).
+- [x] T141 Add exact component selection/removal and reloaded outcome/notification-state browser coverage in the existing portal, with no false success on rejection or ambiguous response (FR-066).
+- [x] T142 Prepare separately versioned prompt/tool proposals, adapt C25/C30 native fixtures without weakening original assertions, reconcile specification/data/contracts and converge; run an immutable complete offline/API/browser gate, then replace the exact publication/deployment proposal. Native schema/tool/prompt/deployment and paid execution remain separately gated (FR-062/065/066).
+
+## Phase 27: Separated callbacks and native convergence
+
+- [x] T143 Implement the source-owned C31 separated-callback fixture through existing native voice/domain mechanisms, with actual availability/policy prerequisites, exact canonical/specialist/15-minute reservation/15-minute gap/projection/cleanup regressions and captured-provider HTTP/PostgreSQL contracts. Preserve the full-stage live block and all native acceptance gaps (FR-062, partial local completion of T133).
+- [ ] T144 Resolve C41's expected deferred notification against the existing voice/customer quiet-hours bypass before implementing its native fixture. Preserve the owner's deferral of production messaging work; real waiting alone cannot establish queue/release under that bypass. Keep shared-phone customer-opt-out and distinct-staff-sender limitations explicit (FR-062, T131/T132).
+
+The first expanded complete gate retained three genuine stale-contract failures:
+one migration inventory and two per-service row-count expectations. The fixes add
+the exact0007 forward/rollback/verification contract and preserve service identity,
+total durations, linked metadata and capacity while asserting approved grouped
+snapshots. Scoped migration3 and multiserviceHTTP/browser15 tests pass. Independent
+source reviews found no further actionable issue in those changes, the scoped
+tool/prompt proposal or C31. The final combined gate and expanded publication
+proposal below remain required; no full case or native fixture has run.
+
+Final expanded local gate passed **1458 unit/integration +440 E2E**, with zero
+failures, errors or skips (`scratch/full-delta-20261019/full-offline-v6.log`,
+copied XML and `full-offline-v6-gate.json`); every frozen source hash is unchanged.
+New Python files have zero Ruff findings and modified files introduce none against
+HEAD; JavaScript syntax and diff whitespace checks pass. Independent bounded
+reviews found no remaining actionable issue in the implemented scope. C25/C30/C31
+fixture contracts have104 focused and11 captured-provider HTTP/PostgreSQL tests;
+these are included in the complete gate, not additional live cases.
+
+Fresh read-only checks confirm deployed d3b298b, six preserved KB files, unchanged
+other settings, approved oil-change price79–119, primary prompt204af4 and21,904
+available credits. The deployed app prompt remains the earlier a9454a instance
+snapshot and the new component column/migration0007 are absent. The expanded
+local proposal in `scratch/full-delta-20261019/review-proposal-v6/` supersedes the
+old24-file proposal and requires explicit approval before publication, deployment,
+schema application, owned tool creation/attachment or new saved-primary prompt.
+No native write or paid submission occurred in this phase; ledger hash and medium
+11 settled invocations/6421credits remain unchanged, with zero C17–C50 entries.
+All34 native full cases and receiving-inbox verification remain unverified.
+T127–T137's unfinished native work and T144 remain open; the full draft30,600-credit
+estimate/38,250 reserve ceiling is an unapproved assumption above current balance.

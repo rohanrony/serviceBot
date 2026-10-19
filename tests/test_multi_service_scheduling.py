@@ -93,18 +93,24 @@ def test_single_agent_priority_at_preferred_slot():
         appointment_datetime=target_dt_str,
     )
 
-    # Should allocate both services to Agent 1
-    assert len(receipts) == 2
+    # The approved grouping contract has one appointment for this technician.
+    assert len(receipts) == 1
     assert receipts[0]["staff_agent_id"] == a1
-    assert receipts[1]["staff_agent_id"] == a1
-    # Check consecutive times: Service 1 @ 10:00 (60 min) -> Service 2 @ 11:00 (60 min)
     assert receipts[0]["booking_time"] == target_dt_str
-    assert receipts[1]["booking_time"] == (tomorrow.replace(hour=11, minute=0, second=0)).strftime("%Y-%m-%d %H:%M:%S")
-
-    # Verify visit_group_id is shared
+    assert receipts[0]["duration_minutes"] == 120
+    assert receipts[0]["service_components"] == [
+        {"name": "Brake Service Test", "duration_minutes": 60},
+        {"name": "Transmission Flush Test", "duration_minutes": 60},
+    ]
     assert receipts[0]["visit_group_id"] is not None
-    assert receipts[0]["visit_group_id"] == receipts[1]["visit_group_id"]
-    assert receipts[0]["linked_appointment_id"] == receipts[1]["service_request_id"]
+    with get_db_connection() as conn, dict_cursor(conn) as cursor:
+        cursor.execute("SELECT r.ends_at-r.starts_at AS span, (SELECT count(*) FROM appointment_reservation_segments s WHERE s.reservation_id=r.id) AS segments FROM appointment_reservations r WHERE r.service_request_id=%s AND r.status='ACTIVE'", (receipts[0]["service_request_id"],))
+        reservations = cursor.fetchall()
+        assert len(reservations) == 1
+        assert reservations[0]["span"] == timedelta(minutes=120)
+        assert reservations[0]["segments"] == 8
+        cursor.execute("SELECT count(*) AS count FROM outbox_notifications WHERE request_id=%s AND event_type='calendar_projection'", (receipts[0]["service_request_id"],))
+        assert cursor.fetchone()["count"] == 1
 
 
 def test_back_to_back_split_when_no_single_agent():
@@ -319,16 +325,22 @@ def test_greedy_partitioning_three_plus_services():
         appointment_datetime=target_dt_str,
     )
 
-    assert len(receipts) == 3
-    # Greedy grouping assigns first two services to a1
+    assert len(receipts) == 2
+    # Greedy grouping combines the first two services into a single a1 block.
     assert receipts[0]["staff_agent_id"] == a1
-    assert receipts[1]["staff_agent_id"] == a1
-    # Third service assigned to a2 or a3
-    assert receipts[2]["staff_agent_id"] in (a2, a3)
-    # Handoff times: 10:00 -> 10:30 -> 11:00
+    assert receipts[1]["staff_agent_id"] in (a2, a3)
+    assert receipts[0]["duration_minutes"] == 60
+    assert receipts[1]["duration_minutes"] == 30
+    assert receipts[0]["service_components"] == [
+        {"name": "Greedy Svc 1", "duration_minutes": 30},
+        {"name": "Greedy Svc 2", "duration_minutes": 30},
+    ]
+    assert receipts[1]["service_components"] == [{"name": "Greedy Svc 3", "duration_minutes": 30}]
+    assert sum(row["duration_minutes"] for row in receipts) == 90
     assert receipts[0]["booking_time"] == target_dt_str
-    assert receipts[1]["booking_time"] == (tomorrow.replace(hour=10, minute=30, second=0)).strftime("%Y-%m-%d %H:%M:%S")
-    assert receipts[2]["booking_time"] == (tomorrow.replace(hour=11, minute=0, second=0)).strftime("%Y-%m-%d %H:%M:%S")
+    assert receipts[1]["booking_time"] == (tomorrow.replace(hour=11, minute=0, second=0)).strftime("%Y-%m-%d %H:%M:%S")
+    assert receipts[0]["visit_group_id"] == receipts[1]["visit_group_id"]
+    assert receipts[0]["linked_appointment_id"] == receipts[1]["service_request_id"]
 
 
 def test_cancel_multi_service_visit():

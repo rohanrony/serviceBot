@@ -6,7 +6,7 @@ import datetime as dt_mod
 from datetime import datetime
 from typing import Optional, List
 from fastapi import APIRouter, HTTPException, UploadFile, File, Request, BackgroundTasks
-from pydantic import BaseModel
+from pydantic import BaseModel, StrictBool, StrictStr, field_validator
 from dotenv import load_dotenv
 from starlette.concurrency import run_in_threadpool
 
@@ -1394,8 +1394,10 @@ def _load_service_requests(
 
             query = f"""
                 SELECT sr.id, sr.service_type, sr.issue_description, sr.status, sr.time_slot, sr.created_at, sr.updated_at,
-                       sr.booking_type, sr.booking_time, sr.duration_minutes, sr.staff_agent_id,
-                       sr.notification_dispatched_at, sr.sla_expires_at,
+                       sr.booking_type, sr.booking_time, sr.duration_minutes, sr.staff_agent_id, sr.service_components,
+                       sr.notification_dispatched_at, sr.sla_expires_at, sr.calendar_integration_status,
+                       (SELECT status FROM outbox_notifications WHERE request_id = sr.id
+                        AND event_type = 'booking_notification' ORDER BY created_at DESC, id DESC LIMIT 1) AS notification_queue_status,
                        sr.confirmation_status, sr.escalation_status, sr.escalation_reason,
                        sr.confirmation_cutoff_at, sr.confirmed_at,
                        c.name AS customer_name, c.phone,
@@ -1778,6 +1780,39 @@ async def edit_service_request_endpoint(request_id: int, payload: ServiceRequest
         status_code = 404 if str(exc) == "Service request not found" else 400
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
     return {"success": True}
+
+class RemoveServicePayload(BaseModel):
+    service_name: StrictStr
+    customer_consent_obtained: StrictBool = False
+
+    @field_validator("service_name")
+    @classmethod
+    def nonblank_service_name(cls, value):
+        if not value.strip():
+            raise ValueError("Select one exact canonical service name")
+        return value
+
+
+@router.post("/service-requests/{request_id}/remove-service")
+async def remove_service_endpoint(request_id: int, payload: RemoveServicePayload):
+    from serviceBot.services.booking import (
+        BookingConflictError,
+        BookingService,
+        BookingValidationError,
+    )
+
+    if payload.customer_consent_obtained is not True:
+        raise HTTPException(status_code=400, detail="Explicit customer consent is required")
+    try:
+        return BookingService().remove_appointment_service(
+            request_id=request_id, service_name=payload.service_name,
+            customer_consent_obtained=True, triggered_by="portal",
+        )
+    except BookingConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except BookingValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
 
 @router.patch("/service-requests/{request_id}/status")
 @router.put("/service-requests/{request_id}/status")

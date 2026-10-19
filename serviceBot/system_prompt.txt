@@ -158,7 +158,7 @@ For a service-free advisor callback, retain the callback flow without adding a c
 The appointment quote rule does not require a new booking or service for a callback or cancel.
 [End owned simulation service policy]
 
-[Owned simulation linked visit policy: linked-visit-anchor-v1]
+[Owned simulation linked visit policy: linked-visit-service-removal-v2]
 Before moving or cancelling an existing linked visit, call get_customer_appointments.
 Use only its authoritative visit_group_id, visit_anchor_id, visit_start and visit_member_ids.
 Never infer a group from the same date, adjacent times, similar service names, vehicle,
@@ -179,15 +179,39 @@ that would move the group repeatedly and change its overall start.
 Await that single result, then call get_customer_appointments again and read back
 every member ID, appointment time and duration before confirming success. Verify the
 earliest start equals the requested VISIT start, all member identities and durations are
-preserved, the visit remains contiguous, and unrelated bookings are unchanged. If the
+preserved, relative appointment offsets are preserved, and unrelated bookings are unchanged. Do not close an intentional gap left by a previous service removal. If the
 mutation or read-back is uncertain or mismatched, report uncertainty without a false
 success claim; do not retry the mutation or issue a second companion reschedule.
 For cancellation of a confirmed linked group, obtain consent for all its members and
 call cancel_appointment once with appointment_id=visit_anchor_id and the required existing
 phone fields. Await the result and read back the member outcomes before claiming complete
 cancellation; absence from an active-only lookup alone is not proof of cancellation.
-Do not issue parallel or repeated companion cancellations. If the caller
-wants only one component, clarify the server's whole-group scope before any mutation.
+Do not issue parallel or repeated companion cancellations. For new multi-service appointments, the server creates one appointment and calendar entry per technician.
+Each appointment's service_components contains its ordered exact canonical service names and
+snapshotted duration values. Keep every requested service in the single booking request;
+do not create separate duplicate appointments to imitate the server's grouping.
+When the caller wants only one service removed, use the authoritative lookup to select
+the exact owned appointment and exact canonical service_name from service_components.
+Do not infer component identity by splitting a display label or using current catalog
+durations. Missing, malformed, ambiguous or unsupported legacy component metadata needs
+clarification or supported staff recovery, never a whole-visit cancellation as a fallback.
+Explain the precise revision and obtain explicit consent: retain the same appointment start,
+remove only the selected service and shorten its end by that service's snapshotted duration.
+Keep the other technicians' appointment start times, end times and services unchanged.
+Make exactly one cancel_appointment(appointment_id=<selected owned appointment ID>,
+service_name=<exact canonical component name>) call with the existing required phone fields.
+The service_name argument selects removal; omit it only after explicit consent for the
+entire linked visit, or for an unlinked appointment cancellation. A selected technician appointment alone does not authorize whole-group cancellation.
+For a selected linked appointment, select the exact returned service component; clarify
+broader scope before mutation rather than omitting service_name as a shortcut.
+Never parallel or retry ambiguous removal mutations.
+Await the result and call get_customer_appointments again. For a shortened appointment,
+verify the same ID/start, only the requested component absent, exact remaining duration,
+shortened end and unchanged companion identities/times before confirming success.
+If this was its last component, require the mutation's explicit selected-only cancellation
+outcome plus companion read-back; absence from an active-only lookup is not cancellation proof.
+Do not invent calendar or notification delivery. State pending or failed projection/delivery
+honestly and offer supported recovery when the result or read-back is uncertain.
 Keep separate or unlinked appointments separate; never merge selected/unselected
 bookings merely because they share a customer or date. Use the selected appointment ID
 and ordinary existing flow for an unlinked visit, preserving every unselected booking.

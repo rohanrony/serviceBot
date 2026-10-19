@@ -1,10 +1,10 @@
-"""Offline regression gate for the local FR061 production prompt candidate."""
+"""Offline regression gate for the local FR061/066 production prompt candidate."""
 
 from pathlib import Path
 
 import pytest
 
-from live_simulations.agent_policy import _LINKED_POLICY, _POLICY
+from live_simulations.agent_policy import _GROUPED_POLICY, _LINKED_START, _POLICY
 from serviceBot.services.prompt_service import (
     update_prompt_business_hours,
     update_prompt_lead_time_buffers,
@@ -23,14 +23,15 @@ def transform(prompt, settings=NATIVE):
 
 
 def assert_policies(prompt):
-    for policy in (_POLICY, _LINKED_POLICY):
+    for policy in (_POLICY, _GROUPED_POLICY):
         assert prompt.count(policy) == 1
         assert prompt.count(policy.splitlines()[0]) == 1
         assert prompt.count(policy.splitlines()[-1]) == 1
-    assert prompt.index(_POLICY) < prompt.index(_LINKED_POLICY)
+    assert prompt.index(_POLICY) < prompt.index(_GROUPED_POLICY)
+    assert _LINKED_START not in prompt
 
 
-def test_candidate_contains_exact_tested_policies_once():
+def test_candidate_contains_exact_canonical_and_revised_policies_once():
     assert_policies(PROMPT_PATH.read_text(encoding="utf-8"))
 
 

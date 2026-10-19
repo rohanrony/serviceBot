@@ -15,7 +15,10 @@ def test_consolidation_checks_normalized_combined_capacity(increment, normalized
         "duration_minutes": 60,
         "staff_agent_id": 1,
     }
-    with patch("serviceBot.api.telephony.get_db_connection"), \
+    with patch("serviceBot.api.telephony.get_customer_appointments", return_value=[{
+             "id": 1042, "phone": "5550100001",
+         }]), \
+         patch("serviceBot.api.telephony.get_db_connection"), \
          patch("serviceBot.api.telephony.dict_cursor") as cursor_factory, \
          patch("serviceBot.api.telephony.verify_contiguous_slot_capacity", return_value=False) as capacity, \
          patch("serviceBot.api.telephony.consolidate_appointment_service") as mutate:
@@ -24,6 +27,7 @@ def test_consolidation_checks_normalized_combined_capacity(increment, normalized
             "name": "consolidate_appointment_service",
             "arguments": {
                 "appointment_id": 1042,
+                "phone": "5550100001",
                 "additional_issue": "Brake squeak",
                 "additional_duration_minutes": increment,
             },
@@ -38,13 +42,16 @@ def test_consolidation_checks_normalized_combined_capacity(increment, normalized
 def test_consolidation_without_known_start_cannot_mutate():
     cursor = MagicMock()
     cursor.fetchone.return_value = {"id": 1042, "booking_time": None, "duration_minutes": 60}
-    with patch("serviceBot.api.telephony.get_db_connection"), \
+    with patch("serviceBot.api.telephony.get_customer_appointments", return_value=[{
+             "id": 1042, "phone": "5550100001",
+         }]), \
+         patch("serviceBot.api.telephony.get_db_connection"), \
          patch("serviceBot.api.telephony.dict_cursor") as cursor_factory, \
          patch("serviceBot.api.telephony.consolidate_appointment_service") as mutate:
         cursor_factory.return_value.__enter__.return_value = cursor
         response = client.post("/api/v1/voice/tools", json={
             "name": "consolidate_appointment_service",
-            "arguments": {"appointment_id": 1042, "additional_issue": "Brake squeak"},
+            "arguments": {"appointment_id": 1042, "phone": "5550100001", "additional_issue": "Brake squeak"},
         })
         assert response.status_code == 200
         result = response.json().get("result", response.json())
@@ -58,7 +65,10 @@ def test_consolidation_preserves_domain_rejection_without_notification():
         "id": 1042, "booking_time": "2026-10-19 10:00:00", "duration_minutes": 60,
     }
     rejection = {"success": False, "capacity_blocked": True, "message": "Capacity changed during consolidation."}
-    with patch("serviceBot.api.telephony.get_db_connection"), \
+    with patch("serviceBot.api.telephony.get_customer_appointments", return_value=[{
+             "id": 1042, "phone": "5550100001",
+         }]), \
+         patch("serviceBot.api.telephony.get_db_connection"), \
          patch("serviceBot.api.telephony.dict_cursor") as cursor_factory, \
          patch("serviceBot.api.telephony.verify_contiguous_slot_capacity", return_value=True), \
          patch("serviceBot.api.telephony.consolidate_appointment_service", return_value=rejection), \
@@ -184,7 +194,9 @@ def test_consolidate_appointment_with_sources_and_sms():
                 "duration_minutes": 60,
                 "phone": "4242704893",
                 "customer_name": "Rohan Roy"
-            }
+            },
+            {"id": 22, "phone": "4242704893", "service_type": "Repair"},
+            {"id": 26, "phone": "4242704893", "service_type": "Repair"},
         ]
 
         payload = {

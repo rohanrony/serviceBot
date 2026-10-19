@@ -2,6 +2,8 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
 import os
+import asyncio
+import time
 import threading
 from contextlib import asynccontextmanager
 from dotenv import find_dotenv, load_dotenv
@@ -34,12 +36,38 @@ logger = get_logger("main")
 
 
 
+def _isolated_startup():
+    return any(x in sys.modules for x in ["pytest", "unittest"]) or any(
+        "demo" in arg or "test" in arg for arg in sys.argv
+    )
+
+
+async def _restore_startup_catalog():
+    """Restore disposable catalog artifacts from PostgreSQL before readiness."""
+    from serviceBot.api.portal import sync_services_to_kb
+
+    started = time.monotonic()
+    try:
+        await asyncio.to_thread(sync_services_to_kb)
+    except Exception:  # noqa: BLE001 - startup fails closed without exposing owner diagnostics
+        logger.error(
+            "[catalog_startup] Recovery failed duration_seconds=%.3f acceptance_budget_seconds=120",
+            time.monotonic() - started,
+        )
+        raise RuntimeError("Service catalog startup recovery failed") from None
+    logger.info(
+        "[catalog_startup] Recovery completed duration_seconds=%.3f acceptance_budget_seconds=120",
+        time.monotonic() - started,
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    import sys
-    if any(x in sys.modules for x in ["pytest", "unittest"]) or any("demo" in arg or "test" in arg for arg in sys.argv):
+    if _isolated_startup():
         yield
         return
+
+    await _restore_startup_catalog()
 
     # 1. Start background worker threads (For persistent container environments like Docker / Render)
     try:

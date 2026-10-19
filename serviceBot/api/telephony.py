@@ -145,6 +145,54 @@ def clean_and_validate_phone(phone: str) -> Optional[str]:
         return digits
     return None
 
+def _owned_mutation_arguments(args):
+    """Resolve explicit IDs only inside the complete-phone-owned active set."""
+    phone = clean_and_validate_phone(args.get("phone") or args.get("phone_number"))
+    caller_phone = clean_and_validate_phone(
+        args.get("caller_phone") or args.get("caller_id")
+        or args.get("callerId") or args.get("from_number")
+    )
+    if not phone:
+        phone = caller_phone
+    if not phone:
+        raise ValueError("A complete customer phone number is required")
+    appointments = get_customer_appointments(phone)
+    if not appointments and caller_phone and caller_phone != phone:
+        phone = caller_phone
+        appointments = get_customer_appointments(phone)
+    owned = {int(row["id"]) for row in appointments}
+
+    def identifier(value):
+        if type(value) is int and value > 0:
+            return value
+        if isinstance(value, str) and re.fullmatch(r"[1-9][0-9]*", value):
+            return int(value)
+        raise ValueError("Appointment IDs must be positive integers")
+
+    if "appointment_id" in args:
+        target = identifier(args["appointment_id"])
+    elif len(owned) == 1:
+        target = next(iter(owned))
+    else:
+        raise ValueError("Select one exact owned appointment ID")
+    if target not in owned:
+        raise ValueError("Appointment ID does not belong to this phone number")
+    resolved = dict(args, phone=phone, appointment_id=target)
+    for key in ("source_appointment_ids", "source_appointment_id", "cancelled_appointment_ids"):
+        if key not in args:
+            continue
+        raw = args[key]
+        sources = (raw if isinstance(raw, list) else
+                   [part.strip() for part in raw.split(",")] if isinstance(raw, str) else [raw])
+        if not sources:
+            raise ValueError("Explicit source appointment IDs cannot be empty")
+        sources = [identifier(value) for value in sources]
+        if any(source not in owned for source in sources):
+            raise ValueError("Every source appointment must belong to this phone number")
+        resolved[key] = sources
+    return resolved
+
+
 def generate_service_summary(transcript: str) -> str:
     """
     Generates a structured, service-oriented summary for Davidson Car Care
@@ -796,10 +844,39 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
     if str(args.get("caller_phone", "")).startswith("{{"):
         args.pop("caller_phone", None)
 
+    if tool_name in {"cancel_appointment", "reschedule_appointment", "consolidate_appointment_service"}:
+        try:
+            args = _owned_mutation_arguments(args)
+        except (ValueError, TypeError, KeyError) as exc:
+            return {"tool_call_id": tool_call_id, "result": {
+                "success": False, "error_code": "APPOINTMENT_OWNERSHIP_REQUIRED",
+                "message": str(exc),
+            }}
+        except Exception:  # noqa: BLE001 - any lookup failure must reject safely without leaking database details
+            logger.warning("Voice mutation ownership lookup is unavailable")
+            return {"tool_call_id": tool_call_id, "result": {
+                "success": False, "error_code": "APPOINTMENT_OWNERSHIP_UNVERIFIED",
+                "message": "Could not verify appointment ownership. Please try again before making changes.",
+            }}
+
     result = {"success": False, "message": f"Unknown tool called: {tool_name}"}
 
     try:
-        if tool_name == "check_availability":
+        if tool_name == "cancel_appointment" and "service_name" in args:
+            service_name = args["service_name"]
+            if not isinstance(service_name, str) or not service_name.strip():
+                result = {"success": False, "message": "Select one exact canonical service name to remove."}
+            else:
+                from serviceBot.services.booking import BookingService
+                result = BookingService().remove_appointment_service(
+                    request_id=args["appointment_id"], service_name=service_name,
+                    customer_consent_obtained=True, triggered_by="voice_agent",
+                    reason=args.get("cancellation_reason") or args.get("cancel_reason") or args.get("reason"),
+                )
+            # Selective removal is not whole-visit cancellation. Preserve the
+            # domain's exact saved outcome and queued notification status.
+            return {"tool_call_id": tool_call_id, "result": result}
+        elif tool_name == "check_availability":
             preferred_date = args.get("preferred_date") or args.get("preferredDate")
             preferred_time = args.get("preferred_time") or args.get("preferredTime") or args.get("time") or args.get("preferred_slot")
             service_type = args.get("service_type") or args.get("serviceType") or args.get("service") or args.get("issue_description") or args.get("issue")
@@ -2049,37 +2126,6 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
             else:
                 phone = validated_phone
                 appts = get_customer_appointments(phone)
-                if not appts and validated_caller_phone and validated_caller_phone != phone:
-                    alt_appts = get_customer_appointments(validated_caller_phone)
-                    if alt_appts:
-                        appts = alt_appts
-                        phone = validated_caller_phone
-
-                if not appts and len(phone) >= 7:
-                    try:
-                        with get_db_connection() as conn:
-                            with dict_cursor(conn) as cursor:
-                                cursor.execute(
-                                    """
-                                    SELECT sr.id, sr.booking_time AS appointment_datetime, sr.booking_type, sr.service_type,
-                                           sr.issue_description, COALESCE(sr.duration_minutes, 60) AS duration_minutes,
-                                           sr.status, v.year, v.make, v.model
-                                    FROM service_requests sr
-                                    JOIN customers c ON sr.customer_id = c.id
-                                    LEFT JOIN vehicles v ON sr.vehicle_id = v.id
-                                    WHERE RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(c.phone, '-', ''), ' ', ''), '(', ''), ')', ''), '+1', ''), 7) = %s
-                                      AND sr.status IN ('pending', 'in_progress', 'confirmed')
-                                      AND (sr.booking_type IN ('appointment', 'callback', 'appointment_and_callback') OR sr.booking_time IS NOT NULL)
-                                    ORDER BY sr.booking_time ASC NULLS LAST;
-                                    """,
-                                    (phone[-7:],)
-                                )
-                                s_rows = cursor.fetchall()
-                                if s_rows:
-                                    appts = [dict(r) for r in s_rows]
-                    except Exception as resch_s_err:
-                        logger.warning(f"Reschedule suffix lookup error: {resch_s_err}")
-
                 if not appts:
                     result = {
                         "success": False,
@@ -2127,37 +2173,6 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
             else:
                 phone = validated_phone
                 appts = get_customer_appointments(phone)
-                if not appts and validated_caller_phone and validated_caller_phone != phone:
-                    alt_appts = get_customer_appointments(validated_caller_phone)
-                    if alt_appts:
-                        appts = alt_appts
-                        phone = validated_caller_phone
-
-                if not appts and len(phone) >= 7:
-                    try:
-                        with get_db_connection() as conn:
-                            with dict_cursor(conn) as cursor:
-                                cursor.execute(
-                                    """
-                                    SELECT sr.id, sr.booking_time AS appointment_datetime, sr.booking_type, sr.service_type,
-                                           sr.issue_description, COALESCE(sr.duration_minutes, 60) AS duration_minutes,
-                                           sr.status, v.year, v.make, v.model
-                                    FROM service_requests sr
-                                    JOIN customers c ON sr.customer_id = c.id
-                                    LEFT JOIN vehicles v ON sr.vehicle_id = v.id
-                                    WHERE RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(c.phone, '-', ''), ' ', ''), '(', ''), ')', ''), '+1', ''), 7) = %s
-                                      AND sr.status IN ('pending', 'in_progress', 'confirmed')
-                                      AND (sr.booking_type IN ('appointment', 'callback', 'appointment_and_callback') OR sr.booking_time IS NOT NULL)
-                                    ORDER BY sr.booking_time ASC NULLS LAST;
-                                    """,
-                                    (phone[-7:],)
-                                )
-                                s_rows = cursor.fetchall()
-                                if s_rows:
-                                    appts = [dict(r) for r in s_rows]
-                    except Exception as cancel_s_err:
-                        logger.warning(f"Cancel appointment suffix lookup error: {cancel_s_err}")
-
                 if not appts:
                     result = {
                         "success": False,
