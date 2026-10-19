@@ -140,11 +140,21 @@ def service_request_node(state: AgentState) -> Dict[str, Any]:
     if req_fields.get("location") and not customer.get("location"):
         missing.append("location")
  
+    from serviceBot.services.business_profile import get_business_profile, validate_intake_data
+    profile = get_business_profile(config)
+    if not profile["collect_vehicle_details"]:
+        missing = [field for field in missing if field != "vehicle make/model/year"]
+    try:
+        intake_data = validate_intake_data(state.get("intake_data") or customer.get("intake_data"), profile)
+    except ValueError as exc:
+        missing.append(str(exc))
+        intake_data = {}
+
     # Check if any required fields are missing
     if missing:
         # Ask follow-up question via LLM
         prompt_text = config.get("system_prompt", "You are a customer service representative.")
-        system_msg = SystemMessage(content=prompt_text)
+        system_msg = SystemMessage(content=prompt_text + "\nMissing intake details: " + ", ".join(missing))
         response = llm.invoke([system_msg] + messages)
         return {
             "messages": [response],
@@ -155,8 +165,10 @@ def service_request_node(state: AgentState) -> Dict[str, Any]:
     vehicle_details = {
         "make": make or "Unknown",
         "model": model or "Unknown",
-        "year": year or 2000
+        "year": year or 2000,
     }
+    if intake_data or not profile["collect_vehicle_details"]:
+        vehicle_details["intake_data"] = intake_data
     sr_id = create_service_request(
         customer_id=customer_id,
         vehicle_details=vehicle_details,
@@ -188,7 +200,7 @@ def appointment_booking_node(state: AgentState) -> Dict[str, Any]:
     sr_id = state.get("service_request_id")
 
     # Get service type
-    service_type = "Brake repair"
+    service_type = state.get("service_type") or "General Service"
     if sr_id:
         from serviceBot.db.connection import get_db_connection, dict_cursor
         with get_db_connection() as conn:
@@ -220,11 +232,14 @@ def appointment_booking_node(state: AgentState) -> Dict[str, Any]:
         if not customer_id:
             return "Error: Customer ID not found in state."
         try:
+            from serviceBot.services.business_profile import validate_intake_data
+            intake = validate_intake_data(state.get("intake_data") or customer.get("intake_data"))
             appt_id = book_appointment(
                 customer_id=customer_id,
                 service_request_id=sr_id,
                 appointment_datetime=appointment_datetime,
-                service_type=service_type
+                service_type=service_type,
+                vehicle_details={"intake_data": intake},
             )
             return json.dumps({"status": "success", "appointment_id": appt_id})
         except Exception as e:
@@ -322,11 +337,14 @@ def appointment_booking_node(state: AgentState) -> Dict[str, Any]:
     appt_id = appointment_id
     if appt_datetime and customer_id and not appt_id:
         try:
+            from serviceBot.services.business_profile import validate_intake_data
+            intake = validate_intake_data(state.get("intake_data") or customer.get("intake_data"))
             appt_id = book_appointment(
                 customer_id=customer_id,
                 service_request_id=sr_id,
                 appointment_datetime=appt_datetime,
-                service_type=service_type
+                service_type=service_type,
+                vehicle_details={"intake_data": intake},
             )
         except Exception:
             pass

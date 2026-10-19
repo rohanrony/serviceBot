@@ -44,7 +44,7 @@ def format_vehicle_line(veh: str) -> str:
     if not veh or str(veh).strip().upper() in ("NONE", "NULL", "N/A", ""):
         return ""
     clean = str(veh).strip()
-    return f"\nVehicle: {clean}"
+    return f"\nDetails: {clean}"
 
 
 def format_issue_line(iss: str) -> str:
@@ -617,7 +617,7 @@ class SMSNotificationRouter:
                 f"📋 [ADMIN ALERT] Appt #{appointment_id} {event_type}\n"
                 f"New Advisor: {new_ag} | Prev: {old_ag}\n"
                 f"Customer: {cust_name} ({cust_ph})\n"
-                f"Vehicle: {veh} | Service: {srv}\n"
+                f"Details: {veh} | Service: {srv}\n"
                 f"Slot: {slot_range_str}"
             )
             dispatches.extend(self._dispatch_to(

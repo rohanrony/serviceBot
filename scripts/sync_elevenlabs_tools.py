@@ -14,7 +14,7 @@ PROMPT_PATH = os.path.join(BASE_DIR, "serviceBot", "system_prompt.txt")
 
 # Load environment variables directly from .env
 env_vars = {}
-if os.path.exists(ENV_PATH):
+if os.path.exists(ENV_PATH) and os.getenv("PYTHON_DOTENV_DISABLED") != "1":
     with open(ENV_PATH, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -22,7 +22,7 @@ if os.path.exists(ENV_PATH):
                 k, _, v = line.partition("=")
                 env_vars[k.strip()] = v.strip().strip("\"'")
 
-api_key = env_vars.get("ELEVENLABS_API_KEY")
+api_key = os.getenv("ELEVENLABS_API_KEY") or env_vars.get("ELEVENLABS_API_KEY")
 if not api_key:
     print("❌ Error: Missing ELEVENLABS_API_KEY in .env")
     exit(1)
@@ -354,6 +354,18 @@ for _tool in TOOL_DEFINITIONS:
     _tool["api_schema"]["request_headers"] = {
         "X-Caller-ID": "{{system__caller_id}}"
     }
+
+# Intake schema is supplied at runtime by get_service_fields. A JSON string keeps
+# compatibility with providers that require fixed object property definitions.
+for _tool in TOOL_DEFINITIONS:
+    if _tool["name"] in {"create_service_request", "book_appointment", "request_callback"}:
+        _body = _tool["api_schema"]["request_body_schema"]
+        _body.setdefault("properties", {})["intake_data_json"] = {
+            "type": "string",
+            "description": "Configured intake values as a JSON object string. Use keys and types from get_service_fields; collect required fields before booking.",
+        }
+        _body["required"] = [key for key in _body.get("required", []) if key not in {"make", "model", "year"}]
+
 
 def sync_agents():
     print(f"🚀 Synchronizing {len(TOOL_DEFINITIONS)} tools & prompt to ElevenLabs agents...")

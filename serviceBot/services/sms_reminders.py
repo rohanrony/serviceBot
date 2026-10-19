@@ -78,7 +78,7 @@ def fetch_appointment_customer_details(appointment_id: int) -> dict:
         with get_db_connection() as conn:
             with dict_cursor(conn) as cursor:
                 cursor.execute("""
-                    SELECT sr.id, sr.service_type, sr.issue_description, sr.booking_time, sr.time_slot, sr.duration_minutes,
+                    SELECT sr.id, sr.service_type, sr.issue_description, sr.booking_time, sr.time_slot, sr.duration_minutes, sr.intake_data,
                            c.name AS customer_name, c.phone AS customer_phone,
                            v.year AS vehicle_year, v.make AS vehicle_make, v.model AS vehicle_model,
                            sa.id AS agent_id, sa.name AS agent_name
@@ -91,8 +91,8 @@ def fetch_appointment_customer_details(appointment_id: int) -> dict:
                 row = cursor.fetchone()
                 if not row:
                     return {}
-                v_parts = [row.get("vehicle_year"), row.get("vehicle_make"), row.get("vehicle_model")]
-                v_str = " ".join([str(p).strip() for p in v_parts if p and str(p).strip().upper() not in ("NONE", "NULL", "N/A")]).strip()
+                from serviceBot.services.business_profile import format_service_details
+                v_str = format_service_details({**row, "year": row.get("vehicle_year"), "make": row.get("vehicle_make"), "model": row.get("vehicle_model")})
                 b_time = row.get("booking_time") or row.get("time_slot") or ""
                 return {
                     "customer_name": row.get("customer_name") or "there",
@@ -100,7 +100,7 @@ def fetch_appointment_customer_details(appointment_id: int) -> dict:
                     "service_type": row.get("service_type") or "Service",
                     "booking_time": str(b_time)[:19] if b_time else "",
                     "duration_minutes": row.get("duration_minutes") or 60,
-                    "vehicle": v_str or "Vehicle on file",
+                    "vehicle": v_str or "Details on file",
                     "agent_name": row.get("agent_name"),
                     "issue": row.get("issue_description") or "",
                 }
@@ -495,7 +495,7 @@ def run_reminder_polling_worker_cycle() -> int:
         loc_block = ("\n" + "\n".join(loc_lines)) if loc_lines else ""
 
         veh_clean = veh if veh and str(veh).lower() not in ("n/a", "none") else ""
-        veh_line = f"\n🚘 Vehicle: {veh_clean}" if veh_clean else ""
+        veh_line = f"\n📋 Details: {veh_clean}" if veh_clean else ""
         iss_clean = iss if iss and str(iss).lower() not in ("n/a", "none") else ""
         iss_line = f"\n🔧 Issue: {iss_clean}" if iss_clean else ""
         slot_line = f"\n📅 When: {slot_str}" if slot_str and slot_str != "N/A" else ""
@@ -542,7 +542,7 @@ def run_reminder_polling_worker_cycle() -> int:
         elif rec_type == "agent":
             cust_ph = apt_details.get("customer_phone") or ""
             cust_line = f"Customer: {cust_name}" + (f" ({cust_ph})" if cust_ph else "")
-            v_line = f"\nVehicle: {veh_clean}" if veh_clean else ""
+            v_line = f"\nDetails: {veh_clean}" if veh_clean else ""
             i_line = f"\nIssue: {iss_clean}" if iss_clean else ""
             s_line = f"\nSlot: {slot_str}" if slot_str and slot_str != "N/A" else ""
 
@@ -590,7 +590,7 @@ def run_reminder_polling_worker_cycle() -> int:
         elif rec_type == "supervisor":
             cust_ph = apt_details.get("customer_phone") or ""
             cust_line = f"Customer: {cust_name}" + (f" ({cust_ph})" if cust_ph else "")
-            v_line = f"\nVehicle: {veh_clean}" if veh_clean else ""
+            v_line = f"\nDetails: {veh_clean}" if veh_clean else ""
             i_line = f"\nIssue: {iss_clean}" if iss_clean else ""
             s_line = f"\nSlot: {slot_str}" if slot_str and slot_str != "N/A" else ""
             body = (
@@ -771,7 +771,7 @@ def dispatch_supervisor_escalation_alert(service_request_id: int, reason: str = 
         with dict_cursor(conn) as cursor:
             cursor.execute(
                 """
-                SELECT sr.id, sr.status, sr.staff_agent_id, sr.service_type, sr.issue_description, sr.booking_time,
+                SELECT sr.id, sr.status, sr.staff_agent_id, sr.service_type, sr.issue_description, sr.booking_time, sr.intake_data,
                        c.name AS customer_name, c.phone AS customer_phone,
                        sa.name AS agent_name, sa.email AS agent_email,
                        v.year AS vehicle_year, v.make AS vehicle_make, v.model AS vehicle_model,
@@ -807,17 +807,20 @@ def dispatch_supervisor_escalation_alert(service_request_id: int, reason: str = 
                     service_type = row["service_type"]
                 if row.get("issue_description"):
                     issue_desc = row["issue_description"]
-                if row.get("vehicle_make"):
-                    vehicle_str = f"{row.get('vehicle_year') or ''} {row['vehicle_make']} {row.get('vehicle_model') or ''}".strip()
+                from serviceBot.services.business_profile import format_service_details
+                vehicle_str = format_service_details({**row, "year": row.get("vehicle_year"), "make": row.get("vehicle_make"), "model": row.get("vehicle_model")})
                 if row.get("starts_at"):
                     time_str = row["starts_at"].strftime("%b %-d at %-I:%M %p")
                 elif row.get("booking_time"):
                     time_str = str(row["booking_time"])
 
+    from serviceBot.services.business_profile import notification_portal_url
+    portal_url = notification_portal_url(cfg)
+    portal_action = f"Review & reassign: {portal_url}" if portal_url else "Review & reassign this appointment in your portal."
     body = (
         f"URGENT ESCALATION: Appointment #{service_request_id} ({customer_name} at {time_str}) "
-        f"is UNCONFIRMED by technician {technician_name} (Reason: {reason}). "
-        f"Review & reassign: https://davidson.carcare/portal/reassign/{service_request_id}"
+        f"is UNCONFIRMED by agent {technician_name} (Reason: {reason}). "
+        f"{portal_action}"
     )
 
     # Determine enabled channels from Notification Matrix

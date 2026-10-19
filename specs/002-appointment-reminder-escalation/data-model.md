@@ -204,3 +204,14 @@ The following parameters must be exposed in `config.json` and editable via `GET 
 
 4. **Row-Level Lock Integrity**:
    State transitions on `sms_reminders` and `service_requests` MUST use `SELECT ... FOR UPDATE` (or `FOR UPDATE SKIP LOCKED` in polling cycles) to prevent dual-processing or race conditions between incoming webhooks and the background escalation runner.
+
+
+## US4 Normal Dropdown Recovery (2026-10-19)
+
+No schema change. For a successful different-agent scheduled assignment, persist the
+request's pending confirmation, clear confirmed_at and obsolete escalation_reason, and
+transition an escalated/reassigned request to reassigned. Record the fresh configured
+confirmation_cutoff_at in the same transaction that transfers reservation and segments,
+cancels pending former-agent reminders and queues projection/notification work. A reassigned
+pending request becomes eligible for escalation again at its new cutoff. Same-agent retries
+retain state and deadlines. Unknown calendar state does not authorize a reservation.

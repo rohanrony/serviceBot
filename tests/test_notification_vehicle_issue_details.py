@@ -106,7 +106,7 @@ def test_customer_booking_notification_includes_vehicle_and_issue(mock_twilio):
 
     assert len(mock_twilio.sent) == 1
     msg = mock_twilio.sent[0]["body"]
-    assert "Vehicle: 2021 Toyota Camry" in msg
+    assert "Details: 2021 Toyota Camry" in msg
     assert "Issue: Squeaking front brakes" in msg
     assert "Service: Brake Inspection" in msg
 
@@ -150,7 +150,7 @@ def test_customer_rescheduled_notification_includes_vehicle_and_issue(mock_twili
 
     assert len(mock_twilio.sent) == 1
     msg = mock_twilio.sent[0]["body"]
-    assert "Vehicle: 2021 Toyota Camry" in msg
+    assert "Details: 2021 Toyota Camry" in msg
     assert "Issue: Squeaking front brakes" in msg
 
 
@@ -196,7 +196,7 @@ def test_customer_reminders_include_vehicle_and_issue(mock_twilio, mock_db_ctx):
 
     assert len(mock_twilio.sent) == 1
     msg = mock_twilio.sent[0]["body"]
-    assert "Vehicle: 2021 Toyota Camry" in msg
+    assert "Details: 2021 Toyota Camry" in msg
     assert "Issue: Squeaking front brakes" in msg
 
 
@@ -236,7 +236,7 @@ def test_agent_booking_alert_includes_vehicle_and_issue(mock_twilio):
     agent_sent = [m for m in mock_twilio.sent if m["recipient_type"] == "agent"]
     assert len(agent_sent) == 1
     msg = agent_sent[0]["body"]
-    assert "Vehicle: 2021 Toyota Camry" in msg
+    assert "Details: 2021 Toyota Camry" in msg
     assert "Issue: Squeaking front brakes" in msg
     assert "Reply CONFIRM or C to accept, or DECLINE if unavailable." in msg
 
@@ -283,7 +283,7 @@ def test_agent_followup_reminder_full_multiline_block(mock_twilio, mock_db_ctx):
 
     assert len(mock_twilio.sent) == 1
     msg = mock_twilio.sent[0]["body"]
-    assert "Vehicle: 2021 Toyota Camry" in msg
+    assert "Details: 2021 Toyota Camry" in msg
     assert "Issue: Squeaking front brakes" in msg
     assert "Appt #301" in msg
     assert "Reply CONFIRM or C to accept, or DECLINE" in msg
@@ -332,7 +332,7 @@ def test_agent_urgent_reminder_full_multiline_block(mock_twilio, mock_db_ctx):
     assert len(mock_twilio.sent) == 1
     msg = mock_twilio.sent[0]["body"]
     assert "URGENT" in msg
-    assert "Vehicle: 2021 Toyota Camry" in msg
+    assert "Details: 2021 Toyota Camry" in msg
     assert "Issue: Squeaking front brakes" in msg
     assert "Reply CONFIRM or C to accept, or DECLINE" in msg
 
@@ -375,7 +375,7 @@ def test_supervisor_escalation_alert_includes_vehicle_and_issue(mock_twilio, moc
     assert len(mock_twilio.sent) == 1
     msg = mock_twilio.sent[0]["body"]
     assert "ESCALATION ALERT" in msg
-    assert "Vehicle: 2021 Toyota Camry" in msg
+    assert "Details: 2021 Toyota Camry" in msg
     assert "Issue: Squeaking front brakes" in msg
 
 
@@ -416,7 +416,7 @@ def test_partial_vehicle_and_empty_issue_fallbacks_cleanly(mock_twilio):
 
     assert len(mock_twilio.sent) == 1
     msg = mock_twilio.sent[0]["body"]
-    assert "Vehicle: Honda Civic" in msg
+    assert "Details: Honda Civic" in msg
     assert "None" not in msg
     assert "Issue: N/A" not in msg
 
@@ -485,10 +485,10 @@ def test_router_enriches_missing_vehicle_and_generic_issue_from_database(mock_tw
     cust_msg = next(m for m in mock_twilio.sent if m["recipient_type"] == "customer")["body"]
     agent_msg = next(m for m in mock_twilio.sent if m["recipient_type"] == "agent")["body"]
 
-    assert "Vehicle: 2014 Ford Model T" in cust_msg
+    assert "Details: 2014 Ford Model T" in cust_msg
     assert "Issue: Brake inspection" in cust_msg
 
-    assert "Vehicle: 2014 Ford Model T" in agent_msg
+    assert "Details: 2014 Ford Model T" in agent_msg
     assert "Issue: Brake inspection" in agent_msg
 
 

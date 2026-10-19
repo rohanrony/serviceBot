@@ -66,6 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const res = await fetch('/api/v1/portal/config');
       if (res.ok) {
         const cfg = await res.json();
+        applyBusinessProfile(cfg);
         if (cfg && cfg.business_timezone) {
           setAppBusinessTimezone(cfg.business_timezone);
         }
@@ -75,6 +76,130 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+
+  let activeBusinessProfile = { industry: 'Service business', collect_vehicle_details: true, intake_fields: [] };
+  function agentRole(value) {
+    return String(value || 'Agent').replace(/technicians/gi, 'Agents').replace(/technician/gi, 'Agent');
+  }
+  function safeBusinessText(value) {
+    const element = document.createElement('span');
+    element.textContent = String(value ?? '');
+    return element.innerHTML;
+  }
+  function applyBusinessProfile(config) {
+    activeBusinessProfile = config.business_profile || activeBusinessProfile;
+    const section = document.getElementById('sr-vehicle-section');
+    if (section) {
+      section.hidden = !activeBusinessProfile.collect_vehicle_details;
+      section.querySelectorAll('input').forEach(input => {
+        input.disabled = !activeBusinessProfile.collect_vehicle_details;
+        input.required = activeBusinessProfile.collect_vehicle_details && input.id !== 'sr-veh-vin';
+      });
+    }
+    ['new-service-req-vehicle-details', 'edit-service-req-vehicle-details'].forEach(id => {
+      const checkbox = document.getElementById(id);
+      if (checkbox) checkbox.closest('label').hidden = !activeBusinessProfile.collect_vehicle_details;
+    });
+  }
+  function renderRequestIntake(values = {}) {
+    const container = document.getElementById('sr-intake-fields');
+    if (!container) return;
+    container.replaceChildren();
+    activeBusinessProfile.intake_fields.forEach(field => {
+      const label = document.createElement('label');
+      label.textContent = field.label + (field.required ? ' *' : '');
+      const input = document.createElement('input');
+      input.type = field.type === 'number' ? 'number' : 'text';
+      if (field.type === 'number') input.step = 'any';
+      input.className = 'form-input';
+      input.dataset.intakeKey = field.key;
+      input.required = field.required;
+      if (field.type === 'text') input.maxLength = 2000;
+      input.value = values[field.key] ?? '';
+      label.appendChild(input);
+      container.appendChild(label);
+    });
+    const configured = new Set(activeBusinessProfile.intake_fields.map(field => field.key));
+    Object.entries(values).filter(([key]) => !configured.has(key)).forEach(([key, value]) => {
+      const historical = document.createElement('p');
+      historical.className = 'text-muted';
+      historical.textContent = `${key.replaceAll('_', ' ')}: ${value} (previously collected)`;
+      container.appendChild(historical);
+    });
+  }
+  function collectRequestIntake() {
+    const values = {};
+    document.querySelectorAll('#sr-intake-fields [data-intake-key]').forEach(input => {
+      if (input.value.trim()) values[input.dataset.intakeKey] = input.type === 'number' ? Number(input.value) : input.value;
+    });
+    return values;
+  }
+  function intakeDescription(request) {
+    const fields = Object.fromEntries(activeBusinessProfile.intake_fields.map(field => [field.key, field.label]));
+    const intake = Object.entries(request.intake_data || {}).map(([key, value]) => `${fields[key] || key.replaceAll('_', ' ')}: ${value}`).join('; ');
+    const legacy = [request.year, request.make, request.model].filter(Boolean).join(' ');
+    return safeBusinessText([legacy, intake].filter(Boolean).join(' · ') || '—');
+  }
+  function addBusinessIntakeRow(field = {}) {
+    const row = document.createElement('div');
+    row.className = 'business-intake-row form-group mt-4';
+    row.dataset.key = field.key || '';
+    row.style.cssText = 'display:flex;flex-direction:row;gap:12px;align-items:center;flex-wrap:wrap';
+    row.innerHTML = '<label>Field label<input class="intake-label form-input" required maxlength="80"></label>' +
+      '<label>Type<select class="intake-type form-input"><option value="text">Text</option><option value="number">Number</option></select></label>' +
+      '<label class="checkbox-item"><input type="checkbox" class="intake-required">Required</label>' +
+      '<button type="button" class="btn btn-secondary intake-remove">Remove</button>';
+    row.querySelector('.intake-label').value = field.label || '';
+    row.querySelector('.intake-type').value = field.type || 'text';
+    row.querySelector('.intake-required').checked = !!field.required;
+    row.querySelector('.intake-remove').addEventListener('click', () => row.remove());
+    document.getElementById('business-intake-fields').appendChild(row);
+  }
+  async function loadBusinessProfile() {
+    try {
+      const response = await fetch('/api/v1/portal/config');
+      if (!response.ok) throw new Error('Could not load business settings');
+      const config = await response.json();
+      applyBusinessProfile(config);
+      document.getElementById('business-name').value = config.business_name || '';
+      document.getElementById('business-portal-url').value = config.portal_base_url || '';
+      document.getElementById('business-industry').value = activeBusinessProfile.industry;
+      document.getElementById('business-collect-vehicle').checked = activeBusinessProfile.collect_vehicle_details;
+      document.getElementById('business-regenerate-prompt').checked = false;
+      document.getElementById('business-intake-fields').replaceChildren();
+      activeBusinessProfile.intake_fields.forEach(addBusinessIntakeRow);
+    } catch (error) { showToast(error.message, 'error'); }
+  }
+  document.getElementById('add-intake-field')?.addEventListener('click', () => {
+    if (document.querySelectorAll('.business-intake-row').length >= 20) return showToast('Up to 20 intake fields are supported.', 'warning');
+    addBusinessIntakeRow();
+  });
+  document.getElementById('business-profile-form')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = form.querySelector('button[type="submit"]');
+    button.disabled = true;
+    try {
+      const fields = Array.from(document.querySelectorAll('.business-intake-row')).map(row => {
+        const label = row.querySelector('.intake-label').value.trim();
+        const key = row.dataset.key || label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
+        return { key, label, type: row.querySelector('.intake-type').value, required: row.querySelector('.intake-required').checked };
+      });
+      const response = await fetch('/api/v1/portal/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+        business_name: document.getElementById('business-name').value.trim(),
+        portal_base_url: document.getElementById('business-portal-url').value.trim(),
+        business_profile: { industry: document.getElementById('business-industry').value.trim(), collect_vehicle_details: document.getElementById('business-collect-vehicle').checked, intake_fields: fields },
+        regenerate_business_prompt: document.getElementById('business-regenerate-prompt').checked
+      }) });
+      if (!response.ok) {
+        const body = await response.json();
+        throw new Error(typeof body.detail === 'string' ? body.detail : 'Check field labels and ensure each field has a unique name beginning with a letter.');
+      }
+      await loadBusinessProfile();
+      showToast('Business settings saved.');
+    } catch (error) { showToast(error.message, 'error'); }
+    finally { button.disabled = false; }
+  });
 
   // Elements
   const appContainer = document.querySelector('.app-container');
@@ -222,7 +347,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (documentDrawerOverlay) documentDrawerOverlay.addEventListener('click', closeDocumentDrawer);
   
   // Mapped View Titles & Subtitles
-  const CONFIG_SUBTABS = ['staff', 'gmail', 'sms-config', 'customer-onboarding', 'intents', 'keys', 'analytics'];
+  const CONFIG_SUBTABS = ['business', 'staff', 'gmail', 'sms-config', 'customer-onboarding', 'intents', 'keys', 'analytics'];
   let activeConfigSubtab = 'staff';
 
   const TAB_METADATA = {
@@ -230,13 +355,14 @@ document.addEventListener('DOMContentLoaded', () => {
       title: 'Dashboard Overview',
       subtitle: 'Real-time summaries, call metrics, and captured service request triage.'
     },
+    'business': { title: 'Business & Intake', subtitle: 'Business identity and configurable customer intake fields.' },
     'config': {
       title: 'System Configuration',
       subtitle: 'Manage system settings, AI prompts, notifications, calendars, and API integrations.'
     },
     'analytics': {
       title: 'Operational Analytics & SLA Performance',
-      subtitle: 'Real-time metrics on technician SLA compliance, escalation resolution, and staff response times.'
+      subtitle: 'Real-time metrics on agent SLA compliance, escalation resolution, and staff response times.'
     },
     'intents': {
       title: 'AI Agent Config',
@@ -345,7 +471,9 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       // Trigger data loader for active subtab
-      if (targetSubtab === 'staff') {
+      if (targetSubtab === 'business') {
+        loadBusinessProfile();
+      } else if (targetSubtab === 'staff') {
         loadStaffView();
       } else if (targetSubtab === 'gmail') {
         loadGmailConfig();
@@ -670,6 +798,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (targetReq) {
         targetReq.staff_agent_id = parsedId;
         const updated = data.data || {};
+        Object.assign(targetReq, updated);
         targetReq.status = updated.status || 'pending';
         targetReq.confirmation_status = updated.confirmation_status || 'pending_agent_confirmation';
         targetReq.confirmed_at = updated.confirmed_at || null;
@@ -846,7 +975,7 @@ document.addEventListener('DOMContentLoaded', () => {
       paginatedReqs.forEach(req => {
         const tr = document.createElement('tr');
         
-        const vehicleStr = `${req.year} ${req.make} ${req.model}`;
+        const vehicleStr = intakeDescription(req);
         const baseDesc = formatIssueDescription(req.issue_description);
         const cleanDesc = req.booking_type === 'callback'
           ? `<span class="booking-type-tag callback">Callback</span>${baseDesc}`
@@ -867,7 +996,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const isDone = ['completed', 'done', 'cancelled', 'cancelled_by_customer'].includes(currentStatus);
 
         let initialAgentName = req.staff_agent_name || 'Select Agent';
-        let initialAgentRole = req.staff_agent_role || '';
+        let initialAgentRole = agentRole(req.staff_agent_role);
         if (!initialAgentRole && req.staff_agent_name && req.staff_agent_name.includes(' - ')) {
           const parts = req.staff_agent_name.split(' - ');
           initialAgentName = parts[0].trim();
@@ -888,9 +1017,9 @@ document.addEventListener('DOMContentLoaded', () => {
               <div class="agent-role-line">${initialAgentRole}</div>
               ${waDisconnectedNotice}
             </div>
-            <select class="agent-select-badge" data-id="${req.id}" ${isDone ? 'disabled title="Agent cannot be changed for completed or cancelled tasks"' : ''}>
-              <option value="" data-name="${initialAgentName}" data-role="${initialAgentRole}">${req.staff_agent_name || 'Select Agent'}</option>
-            </select>
+            <button type="button" class="agent-select-badge" data-id="${req.id}"
+              aria-label="Change assigned agent" aria-haspopup="dialog"
+              ${isDone ? 'disabled title="Agent cannot be changed for completed or cancelled tasks"' : ''}></button>
           </div>
         `;
 
@@ -991,75 +1120,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const agentSelect = tr.querySelector('.agent-select-badge');
         if (agentSelect) {
-          let optionsLoaded = false;
-          let optionsLoading = false;
-          const loadAgentOptions = async () => {
-            if (isDone || agentSelect.disabled || optionsLoaded || optionsLoading || !agentSelect.isConnected) return;
-            optionsLoading = true;
-            agentSelect.setAttribute('aria-busy', 'true');
-            agentSelect.title = 'Checking availability…';
-            try {
-              const data = await requestAvailableAgents(req.id, () => agentSelect.isConnected && !agentSelect.disabled);
-              if (!data || !agentSelect.isConnected) return;
-              optionsLoaded = true;
-              agentSelect.title = '';
-              if (data.agents && data.agents.length > 0) {
-                let optionsHtml = `<option value="" data-name="Select Agent" data-role="Unassigned">Select Agent</option>`;
-                data.agents.forEach(a => {
-                  const currentAgentId = req.assigned_staff_id || req.staff_agent_id;
-                  const isSel = (currentAgentId && Number(currentAgentId) === Number(a.id)) || (req.staff_agent_name === a.name);
-                  const isUnavailable = a.is_available === false;
-                  const labelSuffix = isUnavailable ? ` (Unavailable - ${a.reason || 'Busy'})` : '';
-                  const waSuffix = a.whatsapp_connected === false ? ' (⚠️ WhatsApp Disconnected)' : '';
-                  const disabledAttr = (isUnavailable && !isSel) ? 'disabled' : '';
-                  optionsHtml += `<option value="${a.id}" data-name="${a.name}" data-role="${a.role || ''}" data-whatsapp-connected="${a.whatsapp_connected ? 'true' : 'false'}" ${isSel ? 'selected' : ''} ${disabledAttr}>${a.name} - ${a.role}${waSuffix}${labelSuffix}</option>`;
-                });
-                agentSelect.innerHTML = optionsHtml;
-                if (isDone) {
-                  agentSelect.disabled = true;
-                  agentSelect.title = "Agent cannot be changed for completed or cancelled tasks";
-                }
-
-                const selectedOpt = agentSelect.options[agentSelect.selectedIndex];
-                if (selectedOpt && selectedOpt.dataset.name) {
-                  const nameLine = tr.querySelector('.agent-name-line');
-                  const roleLine = tr.querySelector('.agent-role-line');
-                  if (nameLine) nameLine.textContent = selectedOpt.dataset.name;
-                  if (roleLine) roleLine.textContent = selectedOpt.dataset.role || '';
-                }
-              }
-            } catch (err) {
-              console.error('Failed to fetch available agents:', err);
-              if (agentSelect.isConnected) agentSelect.title = 'Could not load availability. Open again to retry.';
-            } finally {
-              optionsLoading = false;
-              if (agentSelect.isConnected) agentSelect.removeAttribute('aria-busy');
-            }
-          };
-
-          agentSelect.addEventListener('pointerdown', (event) => {
-            if (!optionsLoaded) event.preventDefault();
-            loadAgentOptions();
-          });
-          agentSelect.addEventListener('focus', loadAgentOptions);
-          agentSelect.addEventListener('keydown', (event) => {
-            if (['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(event.key)) {
-              if (!optionsLoaded) event.preventDefault();
-              loadAgentOptions();
-            }
-          });
-
-          agentSelect.addEventListener('change', (e) => {
-            const selectedOpt = agentSelect.options[agentSelect.selectedIndex];
-            const nameLine = tr.querySelector('.agent-name-line');
-            const roleLine = tr.querySelector('.agent-role-line');
-            if (selectedOpt) {
-              if (nameLine) nameLine.textContent = selectedOpt.dataset.name || selectedOpt.text.split(' - ')[0] || 'Select Agent';
-              if (roleLine) roleLine.textContent = selectedOpt.dataset.role || selectedOpt.text.split(' - ')[1] || '';
-            }
-            updateAssignedAgent(req.id, e.target.value).catch(() => {
-              applyServiceRequestsFilter();
-            });
+          agentSelect.addEventListener('click', () => {
+            if (!agentSelect.disabled) window.openReassignModal(req);
           });
         }
 
@@ -1480,7 +1542,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const isChecked = selectedSet.has(Number(agent.id));
       label.innerHTML = `
         <input type="checkbox" value="${agent.id}" ${isChecked ? 'checked' : ''} style="cursor: pointer;">
-        <span>${agent.name} <small class="text-muted">(${agent.role || 'Advisor'})</small></span>
+        <span>${agent.name} <small class="text-muted">(${agentRole(agent.role) || 'Advisor'})</small></span>
       `;
       container.appendChild(label);
     });
@@ -2452,11 +2514,11 @@ document.addEventListener('DOMContentLoaded', () => {
         opt.value = agent.id;
         const emailSuffix = agent.email ? ` - ${agent.email}` : '';
         const waSuffix = agent.whatsapp_connected === false ? ' [No WA]' : '';
-        opt.textContent = `${agent.name} (${agent.role || 'Service Agent'})${emailSuffix}${waSuffix}`;
+        opt.textContent = `${agent.name} (${agentRole(agent.role) || 'Service Agent'})${emailSuffix}${waSuffix}`;
         opt.dataset.email = agent.email || '';
         opt.dataset.dbEmail = agent.db_email || agent.email || '';
         opt.dataset.name = agent.name || '';
-        opt.dataset.role = agent.role || '';
+        opt.dataset.role = agentRole(agent.role) || '';
         opt.dataset.phone = agent.phone_number || '';
         opt.dataset.whatsappConnected = agent.whatsapp_connected ? 'true' : 'false';
         staffAgentSelector.appendChild(opt);
@@ -2788,7 +2850,7 @@ document.addEventListener('DOMContentLoaded', () => {
               if (res.ok) {
                 const agent = await res.json();
                 name = agent.name || name;
-                role = agent.role || role;
+                role = agentRole(agent.role) || role;
                 email = agent.db_email || agent.email || email;
                 phone = agent.phone_number || phone;
               }
@@ -3032,59 +3094,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // --- VIEW 7: ADMIN NOTIFICATION CONFIG ---
-  function toggleGmailAuthFields(authType) {
-    const smtpPassGroup = document.getElementById('gmail-smtp-pass-group');
-    const smtpServerGroup = document.getElementById('gmail-smtp-server-group');
-    const smtpPortGroup = document.getElementById('gmail-smtp-port-group');
-    
-    const oauthIdGroup = document.getElementById('gmail-oauth-id-group');
-    const oauthSecretGroup = document.getElementById('gmail-oauth-secret-group');
-    const oauthStatusGroup = document.getElementById('gmail-oauth-status-group');
-    
-    const senderGroup = document.getElementById('gmail-sender-group');
-    const senderInput = document.getElementById('gmail-sender');
-    
-    const smtpHelp = document.getElementById('smtp-help-text');
-    const oauthHelp = document.getElementById('oauth-help-text');
-    
-    if (authType === 'oauth2') {
-      if (smtpPassGroup) smtpPassGroup.style.display = 'none';
-      if (smtpServerGroup) smtpServerGroup.style.display = 'none';
-      if (smtpPortGroup) smtpPortGroup.style.display = 'none';
-      
-      if (oauthIdGroup) oauthIdGroup.style.display = 'none';
-      if (oauthSecretGroup) oauthSecretGroup.style.display = 'none';
-      if (oauthStatusGroup) oauthStatusGroup.style.display = '';
-      
-      if (senderGroup) senderGroup.style.display = 'none';
-      if (senderInput) senderInput.removeAttribute('required');
-      
-      if (smtpHelp) smtpHelp.style.display = 'none';
-      if (oauthHelp) oauthHelp.style.display = 'block';
-    } else {
-      if (smtpPassGroup) smtpPassGroup.style.display = '';
-      if (smtpServerGroup) smtpServerGroup.style.display = '';
-      if (smtpPortGroup) smtpPortGroup.style.display = '';
-      
-      if (oauthIdGroup) oauthIdGroup.style.display = 'none';
-      if (oauthSecretGroup) oauthSecretGroup.style.display = 'none';
-      if (oauthStatusGroup) oauthStatusGroup.style.display = 'none';
-      
-      if (senderGroup) senderGroup.style.display = '';
-      if (senderInput) senderInput.setAttribute('required', 'required');
-      
-      if (smtpHelp) smtpHelp.style.display = 'block';
-      if (oauthHelp) oauthHelp.style.display = 'none';
-    }
-  }
-
-  // Bind change handler on auth type selector
-  const authTypeSelect = document.getElementById('gmail-auth-type');
-  if (authTypeSelect) {
-    authTypeSelect.addEventListener('change', (e) => {
-      toggleGmailAuthFields(e.target.value);
-    });
-  }
+  let gmailSender = '';
 
   async function loadGmailConfig() {
     try {
@@ -3102,31 +3112,13 @@ document.addEventListener('DOMContentLoaded', () => {
         gmailEnabledEl.checked = !!config.gmail_enabled;
       }
 
-      const authTypeEl = document.getElementById('gmail-auth-type');
-      if (authTypeEl) {
-        authTypeEl.value = config.gmail_auth_type || 'app_password';
-      }
-
-      const senderEl = document.getElementById('gmail-sender');
-      if (senderEl) {
-        senderEl.value = config.gmail_sender || '';
-      }
+      gmailSender = config.gmail_sender || '';
 
       const recipientEl = document.getElementById('gmail-recipient');
       if (recipientEl) {
         recipientEl.value = config.gmail_recipient || '';
       }
 
-      const smtpServerEl = document.getElementById('gmail-smtp-server');
-      if (smtpServerEl) {
-        smtpServerEl.value = config.gmail_smtp_server || 'smtp.gmail.com';
-      }
-
-      const smtpPortEl = document.getElementById('gmail-smtp-port');
-      if (smtpPortEl) {
-        smtpPortEl.value = config.gmail_smtp_port || 587;
-      }
-      
       // Load Google Client ID
       const clientIdInput = document.getElementById('gmail-client-id');
       if (clientIdInput) {
@@ -3140,16 +3132,6 @@ document.addEventListener('DOMContentLoaded', () => {
           clientSecretInput.value = '••••••••••••••••';
         } else {
           clientSecretInput.value = '';
-        }
-      }
-
-      // Mask SMTP password if stored
-      const passwordInput = document.getElementById('gmail-password');
-      if (passwordInput) {
-        if (config.has_password) {
-          passwordInput.value = '••••••••••••••••';
-        } else {
-          passwordInput.value = '';
         }
       }
 
@@ -3178,8 +3160,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
       
-      // Update UI fields display
-      toggleGmailAuthFields(config.gmail_auth_type || 'app_password');
 
     } catch (err) {
       console.error(err);
@@ -3195,26 +3175,18 @@ document.addEventListener('DOMContentLoaded', () => {
       
       const gmailEnabledEl = document.getElementById('gmail-enabled');
       const enableAgentSelectEl = document.getElementById('enable-agent-selection');
-      const authTypeEl = document.getElementById('gmail-auth-type');
-      const senderEl = document.getElementById('gmail-sender');
-      const passwordEl = document.getElementById('gmail-password');
       const recipientEl = document.getElementById('gmail-recipient');
       const adminPhoneEl = document.getElementById('admin-sms-phone');
-      const smtpServerEl = document.getElementById('gmail-smtp-server');
-      const smtpPortEl = document.getElementById('gmail-smtp-port');
       const clientIdEl = document.getElementById('gmail-client-id');
       const clientSecretEl = document.getElementById('gmail-client-secret');
 
       const payload = {
         gmail_enabled: gmailEnabledEl ? gmailEnabledEl.checked : false,
         enable_agent_selection: enableAgentSelectEl ? enableAgentSelectEl.checked : false,
-        gmail_auth_type: authTypeEl ? authTypeEl.value : 'app_password',
-        gmail_sender: senderEl ? senderEl.value.trim() : '',
-        gmail_password: passwordEl ? passwordEl.value : '',
+        gmail_auth_type: 'oauth2',
+        gmail_sender: gmailSender,
         gmail_recipient: recipientEl ? recipientEl.value.trim() : '',
         admin_phone_number: adminPhoneEl ? adminPhoneEl.value.trim() : null,
-        gmail_smtp_server: (smtpServerEl ? smtpServerEl.value.trim() : '') || 'smtp.gmail.com',
-        gmail_smtp_port: parseInt(smtpPortEl ? smtpPortEl.value : '587', 10) || 587,
         gmail_client_id: clientIdEl ? clientIdEl.value.trim() : '',
         gmail_client_secret: clientSecretEl ? clientSecretEl.value : ''
       };
@@ -3241,35 +3213,22 @@ document.addEventListener('DOMContentLoaded', () => {
     testGmailBtn.addEventListener('click', async () => {
       const gmailEnabledEl = document.getElementById('gmail-enabled');
       const enableAgentSelectEl = document.getElementById('enable-agent-selection');
-      const authTypeEl = document.getElementById('gmail-auth-type');
-      const senderEl = document.getElementById('gmail-sender');
-      const passwordEl = document.getElementById('gmail-password');
       const recipientEl = document.getElementById('gmail-recipient');
-      const smtpServerEl = document.getElementById('gmail-smtp-server');
-      const smtpPortEl = document.getElementById('gmail-smtp-port');
       const clientIdEl = document.getElementById('gmail-client-id');
       const clientSecretEl = document.getElementById('gmail-client-secret');
 
       const payload = {
         gmail_enabled: gmailEnabledEl ? gmailEnabledEl.checked : false,
         enable_agent_selection: enableAgentSelectEl ? enableAgentSelectEl.checked : false,
-        gmail_auth_type: authTypeEl ? authTypeEl.value : 'app_password',
-        gmail_sender: senderEl ? senderEl.value.trim() : '',
-        gmail_password: passwordEl ? passwordEl.value : '',
+        gmail_auth_type: 'oauth2',
+        gmail_sender: gmailSender,
         gmail_recipient: recipientEl ? recipientEl.value.trim() : '',
-        gmail_smtp_server: (smtpServerEl ? smtpServerEl.value.trim() : '') || 'smtp.gmail.com',
-        gmail_smtp_port: parseInt(smtpPortEl ? smtpPortEl.value : '587', 10) || 587,
         gmail_client_id: clientIdEl ? clientIdEl.value.trim() : '',
         gmail_client_secret: clientSecretEl ? clientSecretEl.value : ''
       };
       
-      if (!payload.gmail_sender || !payload.gmail_recipient) {
-        showToast('Please fill out Sender Address and Recipient Address fields first.', 'error');
-        return;
-      }
-      
-      if (payload.gmail_auth_type === 'app_password' && !payload.gmail_password) {
-        showToast('Please enter an App Password for SMTP test.', 'error');
+      if (!payload.gmail_recipient) {
+        showToast('Please fill out the Admin Notification Email first.', 'error');
         return;
       }
       
@@ -4184,8 +4143,8 @@ document.addEventListener('DOMContentLoaded', () => {
               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; font-size: 12px;">
                 <div><span style="color: var(--text-muted);">Customer:</span> <span style="color: var(--text-main); font-weight: 500;">${app.customer_name || 'N/A'}</span></div>
                 <div><span style="color: var(--text-muted);">Phone:</span> <span style="color: var(--text-main); font-weight: 500;">${app.customer_phone || 'N/A'}</span></div>
-                <div><span style="color: var(--text-muted);">Technician:</span> <span style="color: var(--text-main); font-weight: 500;">${app.staff_agent_name || app.assigned_agent_name || 'Unassigned'}</span></div>
-                <div><span style="color: var(--text-muted);">Vehicle:</span> <span style="color: var(--text-main); font-weight: 500;">${vehicleStr}</span></div>
+                <div><span style="color: var(--text-muted);">Agent:</span> <span style="color: var(--text-main); font-weight: 500;">${app.staff_agent_name || app.assigned_agent_name || 'Unassigned'}</span></div>
+                <div><span style="color: var(--text-muted);">Details:</span> <span style="color: var(--text-main); font-weight: 500;">${vehicleStr}</span></div>
                 <div style="grid-column: span 2;"><span style="color: var(--text-muted);">Service:</span> <span style="color: var(--text-main); font-weight: 500;">${formatIssueDescription(app.service_type) || 'N/A'}</span></div>
                 <div style="grid-column: span 2;"><span style="color: var(--text-muted);">Scheduled Window:</span> <span style="color: var(--text-main); font-weight: 500;">${appTimeStr}</span></div>
               </div>
@@ -4256,7 +4215,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                app && !['completed', 'done', 'cancelled', 'cancelled_by_customer'].includes(app.status);
           const actionBtnHtml = isActionable ? `
             <button type="button" class="btn btn-primary btn-sm timeline-quick-reassign" style="background: #ef4444; border-color: #ef4444; color: #fff; margin-top: 8px; font-size: 11.5px; padding: 3px 8px;">
-              Reassign Technician
+              Reassign Agent
             </button>
           ` : '';
 
@@ -5189,6 +5148,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('sr-veh-model').value = req.model || '';
     document.getElementById('sr-veh-year').value = req.year || '';
     document.getElementById('sr-veh-vin').value = req.vin || '';
+    renderRequestIntake(req.intake_data);
     const svcSelect = document.getElementById('sr-service-type');
     const rawValToSet = req.service_type || '';
     const valToSet = formatIssueDescription(rawValToSet);
@@ -5246,6 +5206,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (saveButton) saveButton.disabled = false;
       document.getElementById('sr-modal-title').textContent = 'New Service Request';
       document.getElementById('sr-form-id').value = '';
+      renderRequestIntake();
+      ['sr-cust-name', 'sr-cust-phone', 'sr-veh-make', 'sr-veh-model', 'sr-veh-year', 'sr-veh-vin', 'sr-issue-desc'].forEach(id => { document.getElementById(id).value = ''; });
       if (srForm) {
         srForm.dataset.originalBookingTime = '';
         srForm.dataset.bookingType = 'appointment';
@@ -5268,6 +5230,17 @@ document.addEventListener('DOMContentLoaded', () => {
       if (agentSelectContainer) agentSelectContainer.style.display = 'none';
       if (autoAssignText) autoAssignText.style.display = 'block';
       if (agentSelect) agentSelect.value = '';
+
+      try {
+        const [profileResponse, servicesResponse] = await Promise.all([fetch('/api/v1/portal/config'), fetch('/api/v1/portal/services')]);
+        if (!profileResponse.ok || !servicesResponse.ok) throw new Error('Could not load business intake and services');
+        applyBusinessProfile(await profileResponse.json());
+        renderRequestIntake();
+        const services = await servicesResponse.json();
+        const select = document.getElementById('sr-service-type');
+        select.replaceChildren(new Option('Select Service Type...', ''));
+        services.forEach(service => select.add(new Option(service.name, service.name)));
+      } catch (error) { showToast(error.message, 'error'); return; }
 
       // Enable all fields
       document.getElementById('sr-cust-name').disabled = false;
@@ -5308,7 +5281,7 @@ document.addEventListener('DOMContentLoaded', () => {
         agents.forEach(a => {
           const opt = document.createElement('option');
           opt.value = a.id;
-          opt.textContent = `${a.name} (${a.role})`;
+          opt.textContent = `${a.name} (${agentRole(a.role)})`;
           if (selectedAgentId && a.id == selectedAgentId) opt.selected = true;
           selectEl.appendChild(opt);
         });
@@ -5373,12 +5346,13 @@ document.addEventListener('DOMContentLoaded', () => {
           const selectedDurationMinutes = metadata.durationMinutes;
 
           const payload = {
-            vehicle_details: {
+            intake_data: collectRequestIntake(),
+            vehicle_details: activeBusinessProfile.collect_vehicle_details ? {
               make: document.getElementById('sr-veh-make').value,
               model: document.getElementById('sr-veh-model').value,
               year: parseInt(document.getElementById('sr-veh-year').value),
               vin: document.getElementById('sr-veh-vin').value || null
-            },
+            } : null,
             booking_time: bookingTimeStr || null,
             booking_type: selectedBookingType,
             duration_minutes: selectedDurationMinutes,
@@ -5405,6 +5379,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 phone: document.getElementById('sr-cust-phone').value
               },
               vehicle: payload.vehicle_details,
+              intake_data: payload.intake_data,
               service_request: {
                 service_type: document.getElementById('sr-service-type').value,
                 issue_description: payload.issue_description,
@@ -5474,50 +5449,64 @@ document.addEventListener('DOMContentLoaded', () => {
     modal.dataset.isCallback = isCallback ? 'true' : 'false';
 
     document.getElementById('reassign-current-agent').textContent = req.staff_agent_name || 'Unassigned';
-    document.getElementById('reassign-reason-display').textContent = req.escalation_reason || 'TIMEOUT_NO_RESPONSE';
+    document.getElementById('reassign-reason-display').textContent = req.escalation_reason || 'Manual reassignment';
     document.getElementById('reassign-reason-note').value = '';
 
     const agentSelect = document.getElementById('reassign-agent-select');
-    agentSelect.innerHTML = '<option value="">Checking live availability...</option>';
-
+    agentSelect.removeAttribute('aria-busy');
+    const status = document.getElementById('reassign-availability-status');
+    const retry = document.getElementById('reassign-availability-retry');
+    const submit = document.getElementById('reassign-submit-btn');
+    document.getElementById('reassign-escalation-badge').hidden = req.escalation_status !== 'escalated';
+    modal.returnFocus = document.activeElement;
     modal.style.display = 'block';
     overlay.style.display = 'block';
+    modal.focus();
 
     const invocation = Symbol('reassign availability');
     modal.availabilityInvocation = invocation;
     const isCurrent = () => modal.availabilityInvocation === invocation && modal.style.display !== 'none';
-    try {
-      // Query live availability only for the explicitly opened appointment.
-      const data = await requestAvailableAgents(req.id, isCurrent);
-      if (!data || !isCurrent()) return;
-      const candidates = data.agents || [];
-
-      if (candidates && candidates.length > 0) {
-        let opts = '<option value="">-- Choose Candidate Technician --</option>';
+    const loadCandidates = async () => {
+      if (!isCurrent() || agentSelect.getAttribute('aria-busy') === 'true') return;
+      agentSelect.setAttribute('aria-busy', 'true');
+      agentSelect.disabled = true;
+      submit.disabled = true;
+      retry.hidden = true;
+      agentSelect.replaceChildren(new Option('Checking live availability…', ''));
+      status.textContent = 'Checking live availability…';
+      try {
+        const data = await requestAvailableAgents(req.id, isCurrent);
+        if (!data || !isCurrent()) return;
+        if (!Array.isArray(data.agents)) throw new Error('Invalid availability response');
+        agentSelect.replaceChildren(new Option('-- Choose Replacement Agent --', ''));
         const currentId = req.assigned_staff_id || req.staff_agent_id;
-        candidates.forEach(c => {
-          const cId = c.agent_id || c.id;
-          const cName = c.agent_name || c.name;
-          if (Number(cId) === Number(currentId)) return;
-
-          const isAvail = c.is_available !== false && c.available !== false;
-          let badge = '✅ Available';
-          if (!isAvail) {
-            badge = `⚠️ Busy${c.reason && c.reason !== 'Busy' && c.reason !== 'Available' ? ` (${c.reason})` : ''}`;
-          }
-          const jobsText = c.current_job_count_today !== undefined ? ` • ${c.current_job_count_today} jobs today` : '';
-          const skillsText = c.skills_match === false ? ' • ⚠️ Skill Mismatch' : '';
-          opts += `<option value="${cId}">${cName} (${badge}${jobsText}${skillsText})</option>`;
+        let availableCount = 0;
+        data.agents.forEach(candidate => {
+          const id = candidate.agent_id || candidate.id;
+          if (Number(id) === Number(currentId)) return;
+          const available = candidate.is_available !== false && candidate.available !== false;
+          const availability = available ? 'Available' : `Unavailable (${candidate.reason || 'Not available'})`;
+          const option = new Option(`${candidate.agent_name || candidate.name} — ${availability}`, id);
+          option.disabled = !available;
+          agentSelect.append(option);
+          if (available) availableCount++;
         });
-        agentSelect.innerHTML = opts;
-      } else {
-        agentSelect.innerHTML = '<option value="">No alternative technicians found</option>';
+        agentSelect.disabled = false;
+        submit.disabled = availableCount === 0;
+        status.textContent = availableCount ? 'Choose an available replacement agent.' : 'No available replacement agents for this time.';
+        retry.hidden = availableCount > 0;
+        if (modal.contains(document.activeElement)) agentSelect.focus();
+      } catch (err) {
+        if (!isCurrent()) return;
+        agentSelect.replaceChildren(new Option('Availability could not be verified', ''));
+        status.textContent = 'Could not verify agent availability. Please retry.';
+        retry.hidden = false;
+      } finally {
+        if (isCurrent()) agentSelect.removeAttribute('aria-busy');
       }
-    } catch (err) {
-      console.error('Error fetching candidates for reassignment:', err);
-      if (!isCurrent()) return;
-      agentSelect.innerHTML = '<option value="">Failed to load candidates</option>';
-    }
+    };
+    retry.onclick = loadCandidates;
+    await loadCandidates();
   };
 
   function closeReassignModal() {
@@ -5525,7 +5514,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const overlay = document.getElementById('reassign-modal-overlay');
     if (modal) modal.style.display = 'none';
     if (overlay) overlay.style.display = 'none';
+    if (modal?.returnFocus?.isConnected) modal.returnFocus.focus();
   }
+
+  document.getElementById('reassign-modal')?.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeReassignModal();
+    }
+  });
 
   const closeReassignBtn = document.getElementById('close-reassign-modal-btn');
   if (closeReassignBtn) closeReassignBtn.addEventListener('click', closeReassignModal);
@@ -5545,7 +5542,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const note = document.getElementById('reassign-reason-note').value.trim();
 
       if (!newAgentId) {
-        showToast('Please select a replacement technician.', 'error');
+        showToast('Please select a replacement agent.', 'error');
         return;
       }
 
@@ -5571,7 +5568,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const typeLabel = isCallback ? 'Callback' : 'Appointment';
-        showToast(`${typeLabel} reassigned! New technician notified via SMS.`, 'success');
+        showToast(`${typeLabel} reassignment saved. Waiting for agent confirmation.`, 'success');
         closeReassignModal();
 
         // Refresh service requests
@@ -5622,7 +5619,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // Technician table search input
+  // Agent table search input
   const techSearchInput = document.getElementById('tech-search-input');
   if (techSearchInput) {
     techSearchInput.addEventListener('input', () => {
@@ -5676,7 +5673,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderEscalationCharts(escData);
       }
 
-      // 4. Fetch Technician Scorecard
+      // 4. Fetch Agent Scorecard
       const techRes = await fetch(`/api/v1/portal/analytics/technicians?timeframe=${tf}`);
       if (techRes.ok) {
         cachedTechnicianScorecard = await techRes.json();
@@ -5933,13 +5930,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const filtered = scorecard.filter(t => {
       if (!filterQuery) return true;
       const name = (t.agent_name || '').toLowerCase();
-      const role = (t.role || '').toLowerCase();
+      const role = (agentRole(t.role) || '').toLowerCase();
       const email = (t.email || '').toLowerCase();
       return name.includes(filterQuery) || role.includes(filterQuery) || email.includes(filterQuery);
     });
 
     if (filtered.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="8" class="text-center py-6 text-muted">No technicians match search filter.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8" class="text-center py-6 text-muted">No agents match search filter.</td></tr>`;
       return;
     }
 
@@ -5955,7 +5952,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div style="font-weight: 600; color: #fff;">${t.agent_name}</div>
             <div style="font-size: 11px; color: var(--text-muted);">${t.email}</div>
           </td>
-          <td><span class="badge neutral" style="font-size: 11px;">${t.role}</span></td>
+          <td><span class="badge neutral" style="font-size: 11px;">${agentRole(t.role)}</span></td>
           <td><strong>${t.total_assigned}</strong></td>
           <td>${t.confirmed_count}</td>
           <td>

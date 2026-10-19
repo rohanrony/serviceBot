@@ -174,7 +174,7 @@ def test_customer_reminder_messages_omit_appointment_number_and_include_details(
     assert "Hi Sarah Connor, your appointment is scheduled!" in imm_body
     assert "🔧 Service: Full Synthetic Oil Change" in imm_body
     assert "📅 When: Oct 20, 2026 (2:00 PM - 3:00 PM)" in imm_body
-    assert "🚘 Vehicle: 2021 Toyota Camry" in imm_body
+    assert "📋 Details: 2021 Toyota Camry" in imm_body
     assert "👤 Advisor: Tech Tom" in imm_body
     assert "📍 Location: 123 Main St, Springfield, NC 27513" in imm_body
     assert "🗺️ Map: https://maps.app.goo.gl/davidson-car-care" in imm_body

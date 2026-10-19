@@ -664,7 +664,7 @@ Refreshes and syncs all connected Google Calendar schedules into SQLite calendar
 
 ---
 
-### 2.5 Gmail & SMTP Email Configuration
+### 2.5 Gmail OAuth Email Configuration
 
 #### Fetch Gmail Settings Config
 * **Endpoint:** `GET /api/v1/portal/gmail-config`
@@ -675,9 +675,6 @@ Refreshes and syncs all connected Google Calendar schedules into SQLite calendar
     "gmail_auth_type": "oauth2",
     "gmail_sender": "business@gmail.com",
     "gmail_recipient": "alerts@business.com",
-    "gmail_smtp_server": "smtp.gmail.com",
-    "gmail_smtp_port": 587,
-    "has_password": true,
     "gmail_client_id": "google-client-id-here",
     "has_client_secret": true,
     "is_connected": true
@@ -686,7 +683,8 @@ Refreshes and syncs all connected Google Calendar schedules into SQLite calendar
 
 #### Save Gmail Settings Config
 * **Endpoint:** `POST /api/v1/portal/gmail-config`
-* **Request Payload:** Same structure as configuration output (sensitive parameters like password/secret are stored encrypted with AES-256).
+* **Request Payload:** `gmail_enabled`, `gmail_sender`, `gmail_recipient`, optional `enable_agent_selection`, `admin_phone_number`, `gmail_client_id`, `gmail_client_secret`, and optional `gmail_auth_type` (only `oauth2`; defaults to `oauth2`). Google client credentials are encrypted at rest. Blank sender preserves the connected account identity. Status fields in the GET response are read-only. Unsupported selectors and unknown fields, including SMTP fields, return 422 without writing or sending.
+* **Legacy settings:** App-password delivery is removed. Existing Google tokens remain intact, old SMTP fields are removed on a successful settings save, and app-password-only installations must connect Google before sending mail. Connection tests require the system Google connection; missing authorization returns 400 and provider failure returns 500.
 * **Response (200 OK):**
   ```json
   {

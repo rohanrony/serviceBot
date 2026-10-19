@@ -121,7 +121,7 @@ class FAQService:
         
         from serviceBot.api.portal import load_config
         config = load_config()
-        faq_prompt = config.get("system_prompt", "You are a helpful customer service FAQ assistant for an automotive shop.\nAnswer the caller's question strictly using the provided search snippets context.\nIf the answer is not contained in the context, reply with: 'I am sorry, but I do not have that information in my knowledge base.'\nDo not make up any information or hallucinate.")
+        faq_prompt = config.get("system_prompt", "You are a helpful customer service FAQ assistant for the configured business.\nAnswer the caller's question strictly using the provided search snippets context.\nIf the answer is not contained in the context, reply with: 'I am sorry, but I do not have that information in my knowledge base.'\nDo not make up any information or hallucinate.")
         
         if "{context}" not in faq_prompt:
             faq_prompt += "\n\nContext:\n{context}"

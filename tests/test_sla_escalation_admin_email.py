@@ -12,6 +12,7 @@ def test_send_admin_notification_escalation(mock_load, mock_send_api):
         "gmail_enabled": True,
         "gmail_sender": "sender@davidsoncarcare.com",
         "gmail_recipient": "admin@davidsoncarcare.com",
+        "portal_base_url": "https://studio.example",
         "gmail_auth_type": "oauth2"
     }
     mock_send_api.return_value = True
@@ -52,11 +53,11 @@ def test_send_admin_notification_escalation(mock_load, mock_send_api):
     assert "Jane Doe" in html_body
     assert "2022 Honda Civic" in html_body
     assert "Bob Technician" in html_body
-    assert "/portal/reassign/401" in html_body
+    assert "https://studio.example/portal/#dashboard" in html_body
 
     plain_body = kwargs.get("plain_body", "")
     assert "TIMEOUT_NO_RESPONSE" in plain_body
-    assert "/portal/reassign/401" in plain_body
+    assert "https://studio.example/portal/#dashboard" in plain_body
 
 
 @patch("serviceBot.services.sms_reminders.TwilioSMSClient")
@@ -179,18 +180,18 @@ def test_outbox_worker_processes_escalation_event(mock_dispatch_alert):
     assert kwargs.get("reason") == "TIMEOUT_NO_RESPONSE"
 
 
+@patch("serviceBot.services.gmail.send_gmail_api_email", side_effect=RuntimeError("System disconnected"))
 @patch("serviceBot.services.gmail.send_gmail_via_api")
 @patch("serviceBot.db.connection.get_db_connection")
 @patch("serviceBot.db.connection.dict_cursor")
 @patch("serviceBot.services.gmail.load_config")
-def test_send_admin_notification_fallback_to_user_google_accounts(mock_load_cfg, mock_dict_cur, mock_get_conn, mock_send_via_api):
-    """Verify that when system SMTP password is missing, send_admin_notification falls back to connected Google account."""
+def test_send_admin_notification_fallback_to_user_google_accounts(mock_load_cfg, mock_dict_cur, mock_get_conn, mock_send_via_api, mock_send_system):
+    """Verify that a disconnected system Google account falls back to a connected staff Google account."""
     mock_load_cfg.return_value = {
         "gmail_enabled": True,
         "gmail_sender": "rohanrony@gmail.com",
         "gmail_recipient": "rohan.roy@edvenswainc.com",
-        "gmail_auth_type": "app_password",
-        "gmail_password": "",  # Empty password triggers fallback
+        "gmail_auth_type": "oauth2",
     }
 
     mock_conn = MagicMock()
@@ -218,6 +219,7 @@ def test_send_admin_notification_fallback_to_user_google_accounts(mock_load_cfg,
     )
 
     assert res is True
+    mock_send_system.assert_called_once()
     assert mock_send_via_api.called
     _, kwargs = mock_send_via_api.call_args
     assert kwargs["agent_id"] == 8

@@ -12,6 +12,9 @@
       "No unauthorized or duplicate reservation, partial visit, invented fact, or false success claim.",
       "Explicit confirmation precedes each requested mutation; customer, vehicle, service and times remain accurate.",
       "The opening disclosure states the call is recorded. No statement implies a message was delivered before evidence supports it.",
+      "Follow the configured business intake fields and staff terminology. Do not demand vehicle details when vehicle collection is disabled, or invent missing intake answers.",
+      "A saved booking and notification delivery are separate outcomes. Confirm scheduling only after a successful mutation with a saved request ID. Never claim an SMS or email was sent or delivered without a native receipt for that exact message.",
+      "If availability cannot be verified or a booking tool fails, explicitly say the request is unconfirmed. Do not invent a busy calendar. Offer a verified alternative or request an advisor callback only after explicit consent and a successful callback tool result.",
       "Before booking, quote catalog facts accurately: Oil Change $80-$120, 60 minutes; Tire Rotation $30-$50, 30 minutes; Brake Inspection $50-$90, 60 minutes, for each service actually requested."
     ],
     "expected_tools": [],
@@ -66,6 +69,9 @@
       "Reschedule appointment succeeds according to the requested business outcome.",
       "No unauthorized or duplicate reservation, partial visit, invented fact, or false success claim.",
       "Explicit confirmation precedes each requested mutation; customer, vehicle, service and times remain accurate.",
+      "Follow the configured business intake fields and staff terminology. Do not demand vehicle details when vehicle collection is disabled, or invent missing intake answers.",
+      "A saved booking and notification delivery are separate outcomes. Confirm scheduling only after a successful mutation with a saved request ID. Never claim an SMS or email was sent or delivered without a native receipt for that exact message.",
+      "If availability cannot be verified or a booking tool fails, explicitly say the request is unconfirmed. Do not invent a busy calendar. Offer a verified alternative or request an advisor callback only after explicit consent and a successful callback tool result.",
       "The opening disclosure states the call is recorded. No statement implies a message was delivered before evidence supports it."
     ],
     "expected_tools": [
@@ -122,6 +128,9 @@
       "Cancel appointment succeeds according to the requested business outcome.",
       "No unauthorized or duplicate reservation, partial visit, invented fact, or false success claim.",
       "Explicit confirmation precedes each requested mutation; customer, vehicle, service and times remain accurate.",
+      "Follow the configured business intake fields and staff terminology. Do not demand vehicle details when vehicle collection is disabled, or invent missing intake answers.",
+      "A saved booking and notification delivery are separate outcomes. Confirm scheduling only after a successful mutation with a saved request ID. Never claim an SMS or email was sent or delivered without a native receipt for that exact message.",
+      "If availability cannot be verified or a booking tool fails, explicitly say the request is unconfirmed. Do not invent a busy calendar. Offer a verified alternative or request an advisor callback only after explicit consent and a successful callback tool result.",
       "The opening disclosure states the call is recorded. No statement implies a message was delivered before evidence supports it."
     ],
     "expected_tools": [
@@ -172,6 +181,9 @@
       "Schedule callback succeeds according to the requested business outcome.",
       "No unauthorized or duplicate reservation, partial visit, invented fact, or false success claim.",
       "Explicit confirmation precedes each requested mutation; customer, vehicle, service and times remain accurate.",
+      "Follow the configured business intake fields and staff terminology. Do not demand vehicle details when vehicle collection is disabled, or invent missing intake answers.",
+      "A saved booking and notification delivery are separate outcomes. Confirm scheduling only after a successful mutation with a saved request ID. Never claim an SMS or email was sent or delivered without a native receipt for that exact message.",
+      "If availability cannot be verified or a booking tool fails, explicitly say the request is unconfirmed. Do not invent a busy calendar. Offer a verified alternative or request an advisor callback only after explicit consent and a successful callback tool result.",
       "The opening disclosure states the call is recorded. No statement implies a message was delivered before evidence supports it."
     ],
     "expected_tools": [],
@@ -226,6 +238,9 @@
       "Reschedule callback succeeds according to the requested business outcome.",
       "No unauthorized or duplicate reservation, partial visit, invented fact, or false success claim.",
       "Explicit confirmation precedes each requested mutation; customer, vehicle, service and times remain accurate.",
+      "Follow the configured business intake fields and staff terminology. Do not demand vehicle details when vehicle collection is disabled, or invent missing intake answers.",
+      "A saved booking and notification delivery are separate outcomes. Confirm scheduling only after a successful mutation with a saved request ID. Never claim an SMS or email was sent or delivered without a native receipt for that exact message.",
+      "If availability cannot be verified or a booking tool fails, explicitly say the request is unconfirmed. Do not invent a busy calendar. Offer a verified alternative or request an advisor callback only after explicit consent and a successful callback tool result.",
       "The opening disclosure states the call is recorded. No statement implies a message was delivered before evidence supports it."
     ],
     "expected_tools": [
@@ -282,6 +297,9 @@
       "Cancel callback succeeds according to the requested business outcome.",
       "No unauthorized or duplicate reservation, partial visit, invented fact, or false success claim.",
       "Explicit confirmation precedes each requested mutation; customer, vehicle, service and times remain accurate.",
+      "Follow the configured business intake fields and staff terminology. Do not demand vehicle details when vehicle collection is disabled, or invent missing intake answers.",
+      "A saved booking and notification delivery are separate outcomes. Confirm scheduling only after a successful mutation with a saved request ID. Never claim an SMS or email was sent or delivered without a native receipt for that exact message.",
+      "If availability cannot be verified or a booking tool fails, explicitly say the request is unconfirmed. Do not invent a busy calendar. Offer a verified alternative or request an advisor callback only after explicit consent and a successful callback tool result.",
       "The opening disclosure states the call is recorded. No statement implies a message was delivered before evidence supports it."
     ],
     "expected_tools": [
