@@ -2966,59 +2966,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // --- VIEW 7: ADMIN NOTIFICATION CONFIG ---
-  function toggleGmailAuthFields(authType) {
-    const smtpPassGroup = document.getElementById('gmail-smtp-pass-group');
-    const smtpServerGroup = document.getElementById('gmail-smtp-server-group');
-    const smtpPortGroup = document.getElementById('gmail-smtp-port-group');
-    
-    const oauthIdGroup = document.getElementById('gmail-oauth-id-group');
-    const oauthSecretGroup = document.getElementById('gmail-oauth-secret-group');
-    const oauthStatusGroup = document.getElementById('gmail-oauth-status-group');
-    
-    const senderGroup = document.getElementById('gmail-sender-group');
-    const senderInput = document.getElementById('gmail-sender');
-    
-    const smtpHelp = document.getElementById('smtp-help-text');
-    const oauthHelp = document.getElementById('oauth-help-text');
-    
-    if (authType === 'oauth2') {
-      if (smtpPassGroup) smtpPassGroup.style.display = 'none';
-      if (smtpServerGroup) smtpServerGroup.style.display = 'none';
-      if (smtpPortGroup) smtpPortGroup.style.display = 'none';
-      
-      if (oauthIdGroup) oauthIdGroup.style.display = 'none';
-      if (oauthSecretGroup) oauthSecretGroup.style.display = 'none';
-      if (oauthStatusGroup) oauthStatusGroup.style.display = '';
-      
-      if (senderGroup) senderGroup.style.display = 'none';
-      if (senderInput) senderInput.removeAttribute('required');
-      
-      if (smtpHelp) smtpHelp.style.display = 'none';
-      if (oauthHelp) oauthHelp.style.display = 'block';
-    } else {
-      if (smtpPassGroup) smtpPassGroup.style.display = '';
-      if (smtpServerGroup) smtpServerGroup.style.display = '';
-      if (smtpPortGroup) smtpPortGroup.style.display = '';
-      
-      if (oauthIdGroup) oauthIdGroup.style.display = 'none';
-      if (oauthSecretGroup) oauthSecretGroup.style.display = 'none';
-      if (oauthStatusGroup) oauthStatusGroup.style.display = 'none';
-      
-      if (senderGroup) senderGroup.style.display = '';
-      if (senderInput) senderInput.setAttribute('required', 'required');
-      
-      if (smtpHelp) smtpHelp.style.display = 'block';
-      if (oauthHelp) oauthHelp.style.display = 'none';
-    }
-  }
-
-  // Bind change handler on auth type selector
-  const authTypeSelect = document.getElementById('gmail-auth-type');
-  if (authTypeSelect) {
-    authTypeSelect.addEventListener('change', (e) => {
-      toggleGmailAuthFields(e.target.value);
-    });
-  }
+  let gmailSender = '';
 
   async function loadGmailConfig() {
     try {
@@ -3036,31 +2984,13 @@ document.addEventListener('DOMContentLoaded', () => {
         gmailEnabledEl.checked = !!config.gmail_enabled;
       }
 
-      const authTypeEl = document.getElementById('gmail-auth-type');
-      if (authTypeEl) {
-        authTypeEl.value = config.gmail_auth_type || 'app_password';
-      }
-
-      const senderEl = document.getElementById('gmail-sender');
-      if (senderEl) {
-        senderEl.value = config.gmail_sender || '';
-      }
+      gmailSender = config.gmail_sender || '';
 
       const recipientEl = document.getElementById('gmail-recipient');
       if (recipientEl) {
         recipientEl.value = config.gmail_recipient || '';
       }
 
-      const smtpServerEl = document.getElementById('gmail-smtp-server');
-      if (smtpServerEl) {
-        smtpServerEl.value = config.gmail_smtp_server || 'smtp.gmail.com';
-      }
-
-      const smtpPortEl = document.getElementById('gmail-smtp-port');
-      if (smtpPortEl) {
-        smtpPortEl.value = config.gmail_smtp_port || 587;
-      }
-      
       // Load Google Client ID
       const clientIdInput = document.getElementById('gmail-client-id');
       if (clientIdInput) {
@@ -3074,16 +3004,6 @@ document.addEventListener('DOMContentLoaded', () => {
           clientSecretInput.value = '••••••••••••••••';
         } else {
           clientSecretInput.value = '';
-        }
-      }
-
-      // Mask SMTP password if stored
-      const passwordInput = document.getElementById('gmail-password');
-      if (passwordInput) {
-        if (config.has_password) {
-          passwordInput.value = '••••••••••••••••';
-        } else {
-          passwordInput.value = '';
         }
       }
 
@@ -3112,8 +3032,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
       
-      // Update UI fields display
-      toggleGmailAuthFields(config.gmail_auth_type || 'app_password');
 
     } catch (err) {
       console.error(err);
@@ -3129,26 +3047,18 @@ document.addEventListener('DOMContentLoaded', () => {
       
       const gmailEnabledEl = document.getElementById('gmail-enabled');
       const enableAgentSelectEl = document.getElementById('enable-agent-selection');
-      const authTypeEl = document.getElementById('gmail-auth-type');
-      const senderEl = document.getElementById('gmail-sender');
-      const passwordEl = document.getElementById('gmail-password');
       const recipientEl = document.getElementById('gmail-recipient');
       const adminPhoneEl = document.getElementById('admin-sms-phone');
-      const smtpServerEl = document.getElementById('gmail-smtp-server');
-      const smtpPortEl = document.getElementById('gmail-smtp-port');
       const clientIdEl = document.getElementById('gmail-client-id');
       const clientSecretEl = document.getElementById('gmail-client-secret');
 
       const payload = {
         gmail_enabled: gmailEnabledEl ? gmailEnabledEl.checked : false,
         enable_agent_selection: enableAgentSelectEl ? enableAgentSelectEl.checked : false,
-        gmail_auth_type: authTypeEl ? authTypeEl.value : 'app_password',
-        gmail_sender: senderEl ? senderEl.value.trim() : '',
-        gmail_password: passwordEl ? passwordEl.value : '',
+        gmail_auth_type: 'oauth2',
+        gmail_sender: gmailSender,
         gmail_recipient: recipientEl ? recipientEl.value.trim() : '',
         admin_phone_number: adminPhoneEl ? adminPhoneEl.value.trim() : null,
-        gmail_smtp_server: (smtpServerEl ? smtpServerEl.value.trim() : '') || 'smtp.gmail.com',
-        gmail_smtp_port: parseInt(smtpPortEl ? smtpPortEl.value : '587', 10) || 587,
         gmail_client_id: clientIdEl ? clientIdEl.value.trim() : '',
         gmail_client_secret: clientSecretEl ? clientSecretEl.value : ''
       };
@@ -3175,35 +3085,22 @@ document.addEventListener('DOMContentLoaded', () => {
     testGmailBtn.addEventListener('click', async () => {
       const gmailEnabledEl = document.getElementById('gmail-enabled');
       const enableAgentSelectEl = document.getElementById('enable-agent-selection');
-      const authTypeEl = document.getElementById('gmail-auth-type');
-      const senderEl = document.getElementById('gmail-sender');
-      const passwordEl = document.getElementById('gmail-password');
       const recipientEl = document.getElementById('gmail-recipient');
-      const smtpServerEl = document.getElementById('gmail-smtp-server');
-      const smtpPortEl = document.getElementById('gmail-smtp-port');
       const clientIdEl = document.getElementById('gmail-client-id');
       const clientSecretEl = document.getElementById('gmail-client-secret');
 
       const payload = {
         gmail_enabled: gmailEnabledEl ? gmailEnabledEl.checked : false,
         enable_agent_selection: enableAgentSelectEl ? enableAgentSelectEl.checked : false,
-        gmail_auth_type: authTypeEl ? authTypeEl.value : 'app_password',
-        gmail_sender: senderEl ? senderEl.value.trim() : '',
-        gmail_password: passwordEl ? passwordEl.value : '',
+        gmail_auth_type: 'oauth2',
+        gmail_sender: gmailSender,
         gmail_recipient: recipientEl ? recipientEl.value.trim() : '',
-        gmail_smtp_server: (smtpServerEl ? smtpServerEl.value.trim() : '') || 'smtp.gmail.com',
-        gmail_smtp_port: parseInt(smtpPortEl ? smtpPortEl.value : '587', 10) || 587,
         gmail_client_id: clientIdEl ? clientIdEl.value.trim() : '',
         gmail_client_secret: clientSecretEl ? clientSecretEl.value : ''
       };
       
-      if (!payload.gmail_sender || !payload.gmail_recipient) {
-        showToast('Please fill out Sender Address and Recipient Address fields first.', 'error');
-        return;
-      }
-      
-      if (payload.gmail_auth_type === 'app_password' && !payload.gmail_password) {
-        showToast('Please enter an App Password for SMTP test.', 'error');
+      if (!payload.gmail_recipient) {
+        showToast('Please fill out the Admin Notification Email first.', 'error');
         return;
       }
       
