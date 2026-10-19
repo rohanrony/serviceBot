@@ -6,7 +6,6 @@ from serviceBot.services.gmail import (
     refresh_gmail_token,
     get_gmail_access_token,
     send_gmail_api_email,
-    send_smtp_email,
     send_booking_notification,
     send_admin_notification,
     create_admin_calendar_event
@@ -83,26 +82,18 @@ def test_send_gmail_api_email(mock_post, mock_get_token):
     assert res is True
     assert mock_post.called
 
-@patch("smtplib.SMTP")
-def test_send_smtp_email(mock_smtp):
-    """Verify send_smtp_email interacts correctly with smtplib.SMTP."""
-    mock_instance = MagicMock()
-    mock_smtp.return_value = mock_instance
-    
-    res = send_smtp_email(
-        sender="sender@example.com",
-        encrypted_password=encrypt_key("pwd"), # must be valid encrypted string
-        recipient="recipient@example.com",
-        server="smtp.example.com",
-        port=587,
-        subject="SMTP Test",
-        html_body="<p>Body</p>"
-    )
-    
-    assert res is True
-    assert mock_instance.starttls.called
-    assert mock_instance.login.called
-    assert mock_instance.sendmail.called
+@patch("serviceBot.services.gmail.get_gmail_access_token", return_value="oauth-token")
+@patch("httpx.post")
+def test_send_gmail_api_email_reports_provider_failure(mock_post, mock_get_token):
+    mock_post.return_value.status_code = 403
+    mock_post.return_value.text = "permission denied"
+    with pytest.raises(Exception, match="HTTP 403"):
+        send_gmail_api_email(
+            sender="sender@example.com",
+            recipient="recipient@example.com",
+            subject="OAuth Test",
+            html_body="<p>Body</p>"
+        )
 
 @patch("serviceBot.services.gmail.send_gmail_api_email")
 @patch("serviceBot.services.gmail.load_config")

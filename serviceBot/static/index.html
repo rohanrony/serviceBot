@@ -822,34 +822,6 @@
                   </label>
                 </div>
 
-                <div class="form-group full-width">
-                  <label for="gmail-auth-type">Authentication Method</label>
-                  <select id="gmail-auth-type" class="form-input">
-                    <option value="app_password" selected>SMTP App Password (Legacy)</option>
-                    <option value="oauth2">Google OAuth2 Connection (New Age)</option>
-                  </select>
-                </div>
-
-                <div class="form-group" id="gmail-sender-group">
-                  <label for="gmail-sender">Sender Gmail Address</label>
-                  <input type="email" id="gmail-sender" class="form-input" placeholder="e.g. your-bot@gmail.com" required>
-                </div>
-                
-                <div class="form-group" id="gmail-smtp-pass-group">
-                  <label for="gmail-password">Gmail App Password</label>
-                  <input type="password" id="gmail-password" class="form-input" placeholder="••••••••••••••••">
-                </div>
-                
-                <div class="form-group" id="gmail-smtp-server-group">
-                  <label for="gmail-smtp-server">SMTP Server Host</label>
-                  <input type="text" id="gmail-smtp-server" class="form-input" value="smtp.gmail.com" placeholder="smtp.gmail.com">
-                </div>
-                
-                <div class="form-group" id="gmail-smtp-port-group">
-                  <label for="gmail-smtp-port">SMTP Server Port</label>
-                  <input type="number" id="gmail-smtp-port" class="form-input" value="587" placeholder="587">
-                </div>
-
                 <div class="form-group" id="gmail-oauth-id-group" style="display: none;">
                   <label for="gmail-client-id">Google Client ID</label>
                   <input type="text" id="gmail-client-id" class="form-input" placeholder="Enter Google Client ID">
@@ -860,8 +832,8 @@
                   <input type="password" id="gmail-client-secret" class="form-input" placeholder="Enter Google Client Secret">
                 </div>
 
-                <div class="form-group full-width" id="gmail-oauth-status-group" style="display: none;">
-                  <label>OAuth Authorization Status</label>
+                <div class="form-group full-width" id="gmail-oauth-status-group">
+                  <label>Google Account Connection</label>
                   <div style="display: flex; align-items: center; gap: 12px; margin-top: 4px;">
                     <span id="gmail-oauth-status-badge" class="badge danger">Disconnected</span>
                     <button type="button" class="btn btn-secondary" id="connect-gmail-btn" style="border-color: var(--color-primary); color: #fff;">
@@ -926,18 +898,7 @@
                 <p class="text-muted">How to configure email notifications.</p>
               </div>
               
-              <div id="smtp-help-text" style="font-size: 13px; line-height: 1.6; color: var(--text-muted); display: flex; flex-direction: column; gap: 12px;">
-                <p><strong>App Password Setup:</strong></p>
-                <ol style="margin-left: 18px; display: flex; flex-direction: column; gap: 6px;">
-                  <li>Go to your <strong>Google Account</strong> settings.</li>
-                  <li>Select <strong>Security</strong>, turn on <strong>2-Step Verification</strong>.</li>
-                  <li>Click on <strong>App Passwords</strong>.</li>
-                  <li>Select <strong>Mail</strong> and generate a password.</li>
-                  <li>Copy the 16-character code and paste it here.</li>
-                </ol>
-              </div>
-
-              <div id="oauth-help-text" style="font-size: 13px; line-height: 1.6; color: var(--text-muted); display: none; flex-direction: column; gap: 12px;">
+              <div id="oauth-help-text" style="font-size: 13px; line-height: 1.6; color: var(--text-muted); display: flex; flex-direction: column; gap: 12px;">
                 <p><strong>Google OAuth2 Setup:</strong></p>
                 <ol style="margin-left: 18px; display: flex; flex-direction: column; gap: 6px;">
                   <li>Go to <strong>Google Cloud Console</strong>.</li>

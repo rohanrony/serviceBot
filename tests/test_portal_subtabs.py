@@ -128,7 +128,7 @@ def test_portal_gmail_config_endpoint():
         payload = {
             "gmail_enabled": True,
             "enable_agent_selection": False,
-            "gmail_auth_type": "app_password",
+            "gmail_auth_type": "oauth2",
             "gmail_sender": "test@example.com",
             "gmail_recipient": "admin@example.com"
         }

@@ -4,7 +4,7 @@ import tempfile
 import httpx
 import datetime as dt_mod
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Literal
 from fastapi import APIRouter, HTTPException, UploadFile, File, Request, BackgroundTasks
 from pydantic import BaseModel, StrictBool, StrictStr, field_validator
 from dotenv import load_dotenv
@@ -318,12 +318,9 @@ Speak the filler naturally as part of the conversation so the caller experiences
         "first_message": "Hello! Thank you for calling Davidson Car Care. I am Rachel, AI voice Assistant. Please note that this conversation will be recorded. How can I help you today?",
         "gmail_enabled": False,
         "gmail_sender": "",
-        "gmail_password": "",
         "gmail_recipient": "",
-        "gmail_smtp_server": "smtp.gmail.com",
         "enable_agent_selection": False,
-        "gmail_smtp_port": 587,
-        "gmail_auth_type": "app_password",
+        "gmail_auth_type": "oauth2",
         "gmail_client_id": "",
         "gmail_client_secret": "",
         "gmail_access_token": "",
@@ -2056,15 +2053,14 @@ async def delete_kb_file(filename: str):
     return {"filename": filename, "success": True}
 
 class GmailConfigPayload(BaseModel):
+    model_config = {"extra": "forbid"}
+
     gmail_enabled: bool
     enable_agent_selection: Optional[bool] = False
-    gmail_auth_type: str
+    gmail_auth_type: Literal["oauth2"] = "oauth2"
     gmail_sender: str
-    gmail_password: Optional[str] = None
     gmail_recipient: str
     admin_phone_number: Optional[str] = None
-    gmail_smtp_server: Optional[str] = "smtp.gmail.com"
-    gmail_smtp_port: Optional[int] = 587
     gmail_client_id: Optional[str] = None
     gmail_client_secret: Optional[str] = None
 
@@ -2086,19 +2082,15 @@ async def get_gmail_config():
         client_id_decrypted = os.getenv("GOOGLE_CLIENT_ID") or os.getenv("GMAIL_CLIENT_ID") or ""
         
     has_client_secret = bool(config.get("gmail_client_secret")) or bool(os.getenv("GOOGLE_CLIENT_SECRET") or os.getenv("GMAIL_CLIENT_SECRET"))
-    has_password = bool(config.get("gmail_password"))
     is_connected = bool(config.get("gmail_refresh_token"))
     
     return {
         "gmail_enabled": config.get("gmail_enabled", False),
         "enable_agent_selection": config.get("enable_agent_selection", False),
-        "gmail_auth_type": config.get("gmail_auth_type", "app_password"),
+        "gmail_auth_type": "oauth2",
         "gmail_sender": config.get("gmail_sender", ""),
         "gmail_recipient": config.get("gmail_recipient", ""),
         "admin_phone_number": admin_phone,
-        "gmail_smtp_server": config.get("gmail_smtp_server", "smtp.gmail.com"),
-        "gmail_smtp_port": config.get("gmail_smtp_port", 587),
-        "has_password": has_password,
         "gmail_client_id": client_id_decrypted,
         "has_client_secret": has_client_secret,
         "is_connected": is_connected
@@ -2111,12 +2103,12 @@ async def update_gmail_config(payload: GmailConfigPayload):
     
     config["gmail_enabled"] = payload.gmail_enabled
     config["enable_agent_selection"] = payload.enable_agent_selection
-    config["gmail_auth_type"] = payload.gmail_auth_type
-    if payload.gmail_sender or payload.gmail_auth_type != "oauth2":
+    config["gmail_auth_type"] = "oauth2"
+    if payload.gmail_sender:
         config["gmail_sender"] = payload.gmail_sender
     config["gmail_recipient"] = payload.gmail_recipient
-    config["gmail_smtp_server"] = payload.gmail_smtp_server or "smtp.gmail.com"
-    config["gmail_smtp_port"] = payload.gmail_smtp_port or 587
+    for legacy_key in ("gmail_password", "gmail_smtp_server", "gmail_smtp_port"):
+        config.pop(legacy_key, None)
     
     if payload.admin_phone_number is not None:
         config["admin_phone_number"] = payload.admin_phone_number
@@ -2132,9 +2124,6 @@ async def update_gmail_config(payload: GmailConfigPayload):
                 )
         except Exception as e:
             logger.warning(f"Could not persist admin phone to database: {e}")
-        
-    if payload.gmail_password and payload.gmail_password != "••••••••••••••••":
-        config["gmail_password"] = encrypt_key(payload.gmail_password)
         
     if payload.gmail_client_id:
         config["gmail_client_id"] = encrypt_key(payload.gmail_client_id)
@@ -2420,8 +2409,7 @@ async def gmail_oauth_callback(request: Request, code: str = None, error: str = 
 
 @router.post("/gmail-config/test")
 async def test_gmail_config(payload: GmailConfigPayload):
-    from serviceBot.services.encryption import encrypt_key
-    from serviceBot.services.gmail import send_smtp_email, send_gmail_api_email
+    from serviceBot.services.gmail import send_gmail_api_email
     
     config = load_config()
     subject = "[BayFull] Gmail Integration Test Email"
@@ -2445,37 +2433,18 @@ async def test_gmail_config(payload: GmailConfigPayload):
     """
     
     try:
-        if payload.gmail_auth_type == "oauth2":
-            if not config.get("gmail_refresh_token"):
-                raise HTTPException(
-                    status_code=400,
-                    detail="Google Account is not connected. Please click 'Connect Gmail Account' first to authorize access."
-                )
-            success = send_gmail_api_email(
-                sender=payload.gmail_sender,
-                recipient=payload.gmail_recipient,
-                subject=subject,
-                html_body=html_body,
-                plain_body="Gmail integration OAuth2 test email."
+        if not config.get("gmail_refresh_token"):
+            raise HTTPException(
+                status_code=400,
+                detail="Google Account is not connected. Please click 'Connect Gmail Account' first to authorize access."
             )
-        else:
-            encrypted_password = config.get("gmail_password", "")
-            if payload.gmail_password and payload.gmail_password != "••••••••••••••••":
-                encrypted_password = encrypt_key(payload.gmail_password)
-                
-            if not encrypted_password:
-                raise HTTPException(status_code=400, detail="SMTP App Password is required to run connection test.")
-                
-            success = send_smtp_email(
-                sender=payload.gmail_sender,
-                encrypted_password=encrypted_password,
-                recipient=payload.gmail_recipient,
-                server=payload.gmail_smtp_server or "smtp.gmail.com",
-                port=payload.gmail_smtp_port or 587,
-                subject=subject,
-                html_body=html_body,
-                plain_body="Gmail integration SMTP test email."
-            )
+        success = send_gmail_api_email(
+            sender=payload.gmail_sender or config.get("gmail_sender", ""),
+            recipient=payload.gmail_recipient,
+            subject=subject,
+            html_body=html_body,
+            plain_body="Gmail integration OAuth2 test email."
+        )
             
         if not success:
             raise HTTPException(status_code=500, detail="Gmail connection test failed. Please verify configurations.")
