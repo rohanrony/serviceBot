@@ -889,9 +889,14 @@ document.addEventListener('DOMContentLoaded', () => {
               <div class="agent-role-line">${initialAgentRole}</div>
               ${waDisconnectedNotice}
             </div>
-            <select class="agent-select-badge" data-id="${req.id}" ${isDone ? 'disabled title="Agent cannot be changed for completed or cancelled tasks"' : ''}>
-              <option value="" data-name="${initialAgentName}" data-role="${initialAgentRole}">${req.staff_agent_name || 'Select Agent'}</option>
-            </select>
+            <button type="button" class="agent-select-badge" data-id="${req.id}"
+              aria-label="Change assigned agent" aria-haspopup="menu" aria-expanded="false"
+              aria-controls="agent-options-${req.id}" popovertarget="agent-options-${req.id}"
+              ${isDone ? 'disabled title="Agent cannot be changed for completed or cancelled tasks"' : ''}></button>
+            <div id="agent-options-${req.id}" class="agent-options-menu" popover="auto"
+              role="menu" aria-label="Assign agent" tabindex="-1">
+              <div role="status">Checking availability…</div>
+            </div>
           </div>
         `;
 
@@ -990,77 +995,130 @@ document.addEventListener('DOMContentLoaded', () => {
           });
         }
 
-        const agentSelect = tr.querySelector('.agent-select-badge');
-        if (agentSelect) {
+        const agentButton = tr.querySelector('.agent-select-badge');
+        const agentMenu = tr.querySelector('.agent-options-menu');
+        if (agentButton && agentMenu) {
           let optionsLoaded = false;
           let optionsLoading = false;
+          const currentAgentId = req.assigned_staff_id || req.staff_agent_id;
+          const focusChoice = () => {
+            const choice = agentMenu.querySelector('[aria-checked="true"]:not(:disabled)')
+              || agentMenu.querySelector('button:not(:disabled)');
+            (choice || agentMenu).focus();
+          };
+          const showLookupMessage = (message, retry = false) => {
+            agentMenu.replaceChildren();
+            const status = document.createElement('div');
+            status.setAttribute('role', 'status');
+            status.textContent = message;
+            agentMenu.append(status);
+            if (retry) {
+              const button = document.createElement('button');
+              button.type = 'button';
+              button.setAttribute('role', 'menuitem');
+              button.textContent = 'Retry';
+              button.addEventListener('click', loadAgentOptions);
+              agentMenu.append(button);
+            }
+          };
           const loadAgentOptions = async () => {
-            if (isDone || agentSelect.disabled || optionsLoaded || optionsLoading || !agentSelect.isConnected) return;
+            if (isDone || agentButton.disabled || optionsLoaded || optionsLoading || !agentButton.isConnected) return;
             optionsLoading = true;
-            agentSelect.setAttribute('aria-busy', 'true');
-            agentSelect.title = 'Checking availability…';
+            agentButton.setAttribute('aria-busy', 'true');
+            // The in-page menu stays open while async results arrive. Native select
+            // pickers cannot reliably open/update after the original user gesture.
+            showLookupMessage('Checking availability…');
             try {
-              const data = await requestAvailableAgents(req.id, () => agentSelect.isConnected && !agentSelect.disabled);
-              if (!data || !agentSelect.isConnected) return;
-              optionsLoaded = true;
-              agentSelect.title = '';
-              if (data.agents && data.agents.length > 0) {
-                let optionsHtml = `<option value="" data-name="Select Agent" data-role="Unassigned">Select Agent</option>`;
-                data.agents.forEach(a => {
-                  const currentAgentId = req.assigned_staff_id || req.staff_agent_id;
-                  const isSel = (currentAgentId && Number(currentAgentId) === Number(a.id)) || (req.staff_agent_name === a.name);
-                  const isUnavailable = a.is_available === false;
-                  const labelSuffix = isUnavailable ? ` (Unavailable - ${a.reason || 'Busy'})` : '';
-                  const waSuffix = a.whatsapp_connected === false ? ' (⚠️ WhatsApp Disconnected)' : '';
-                  const disabledAttr = (isUnavailable && !isSel) ? 'disabled' : '';
-                  optionsHtml += `<option value="${a.id}" data-name="${a.name}" data-role="${a.role || ''}" data-whatsapp-connected="${a.whatsapp_connected ? 'true' : 'false'}" ${isSel ? 'selected' : ''} ${disabledAttr}>${a.name} - ${a.role}${waSuffix}${labelSuffix}</option>`;
-                });
-                agentSelect.innerHTML = optionsHtml;
-                if (isDone) {
-                  agentSelect.disabled = true;
-                  agentSelect.title = "Agent cannot be changed for completed or cancelled tasks";
-                }
-
-                const selectedOpt = agentSelect.options[agentSelect.selectedIndex];
-                if (selectedOpt && selectedOpt.dataset.name) {
-                  const nameLine = tr.querySelector('.agent-name-line');
-                  const roleLine = tr.querySelector('.agent-role-line');
-                  if (nameLine) nameLine.textContent = selectedOpt.dataset.name;
-                  if (roleLine) roleLine.textContent = selectedOpt.dataset.role || '';
-                }
+              const data = await requestAvailableAgents(req.id, () => agentButton.isConnected && !agentButton.disabled);
+              if (!data || !agentButton.isConnected || agentButton.disabled) return;
+              if (!Array.isArray(data.agents)) throw new Error('Invalid agent availability response');
+              if (!data.agents.length) {
+                showLookupMessage('No agents found for this appointment.', true);
+                return;
               }
+              optionsLoaded = true;
+              agentMenu.replaceChildren();
+              const choices = [{ id: '', name: 'Select Agent', role: 'Unassigned' }, ...data.agents];
+              choices.forEach(agent => {
+                const selected = currentAgentId ? Number(currentAgentId) === Number(agent.id) : !agent.id;
+                const unavailable = agent.is_available === false;
+                const option = document.createElement('button');
+                option.type = 'button';
+                option.setAttribute('role', 'menuitemradio');
+                option.setAttribute('aria-checked', String(selected));
+                option.tabIndex = -1;
+                option.dataset.agentId = agent.id;
+                option.dataset.whatsappConnected = String(agent.whatsapp_connected === true);
+                option.disabled = unavailable && !selected;
+                const waSuffix = agent.whatsapp_connected === false ? ' (⚠️ WhatsApp Disconnected)' : '';
+                const unavailableSuffix = unavailable ? ` (Unavailable - ${agent.reason || 'Busy'})` : '';
+                option.textContent = `${agent.name}${agent.role ? ` - ${agent.role}` : ''}${waSuffix}${unavailableSuffix}`;
+                agentMenu.append(option);
+              });
             } catch (err) {
               console.error('Failed to fetch available agents:', err);
-              if (agentSelect.isConnected) agentSelect.title = 'Could not load availability. Open again to retry.';
+              if (agentButton.isConnected) showLookupMessage('Could not load availability. Please retry.', true);
             } finally {
               optionsLoading = false;
-              if (agentSelect.isConnected) agentSelect.removeAttribute('aria-busy');
+              agentButton.removeAttribute('aria-busy');
+              if (agentMenu.matches(':popover-open') && agentMenu.contains(document.activeElement)) focusChoice();
             }
           };
 
-          agentSelect.addEventListener('pointerdown', (event) => {
-            if (!optionsLoaded) event.preventDefault();
+          agentMenu.addEventListener('beforetoggle', (event) => {
+            const opening = event.newState === 'open';
+            agentButton.setAttribute('aria-expanded', String(opening));
+            if (!opening) return;
+            const rect = agentButton.getBoundingClientRect();
+            const width = Math.min(360, window.innerWidth - 16);
+            agentMenu.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - width - 8))}px`;
+            const below = window.innerHeight - rect.bottom - 8;
+            const above = rect.top - 8;
+            const openBelow = below >= Math.min(320, above);
+            agentMenu.style.maxHeight = `${Math.min(320, openBelow ? below : above)}px`;
+            agentMenu.style.top = openBelow ? `${rect.bottom + 4}px` : 'auto';
+            agentMenu.style.bottom = openBelow ? 'auto' : `${window.innerHeight - rect.top + 4}px`;
             loadAgentOptions();
           });
-          agentSelect.addEventListener('focus', loadAgentOptions);
-          agentSelect.addEventListener('keydown', (event) => {
-            if (['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(event.key)) {
-              if (!optionsLoaded) event.preventDefault();
-              loadAgentOptions();
+          agentMenu.addEventListener('toggle', (event) => {
+            if (event.newState === 'open') focusChoice();
+          });
+          agentButton.addEventListener('keydown', (event) => {
+            if (!agentButton.disabled && ['ArrowDown', 'ArrowUp'].includes(event.key)) {
+              event.preventDefault();
+              agentMenu.showPopover();
             }
           });
-
-          agentSelect.addEventListener('change', (e) => {
-            const selectedOpt = agentSelect.options[agentSelect.selectedIndex];
-            const nameLine = tr.querySelector('.agent-name-line');
-            const roleLine = tr.querySelector('.agent-role-line');
-            if (selectedOpt) {
-              if (nameLine) nameLine.textContent = selectedOpt.dataset.name || selectedOpt.text.split(' - ')[0] || 'Select Agent';
-              if (roleLine) roleLine.textContent = selectedOpt.dataset.role || selectedOpt.text.split(' - ')[1] || '';
+          agentMenu.addEventListener('keydown', (event) => {
+            const options = Array.from(agentMenu.querySelectorAll('button:not(:disabled)'));
+            if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+              event.preventDefault();
+              if (!options.length) return;
+              const index = options.indexOf(document.activeElement);
+              const next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1
+                : (index + (event.key === 'ArrowUp' ? -1 : 1) + options.length) % options.length;
+              options[next].focus();
+            } else if (event.key === 'Escape' || event.key === 'Tab') {
+              agentMenu.hidePopover();
+              agentButton.focus();
+              if (event.key === 'Escape') event.preventDefault();
             }
-            updateAssignedAgent(req.id, e.target.value).catch(() => {
+          });
+          agentMenu.addEventListener('click', async (event) => {
+            const option = event.target.closest('[data-agent-id]');
+            if (!option || option.disabled || agentButton.disabled) return;
+            agentMenu.hidePopover();
+            agentButton.focus();
+            if (option.getAttribute('aria-checked') === 'true') return;
+            agentButton.disabled = true;
+            try {
+              await updateAssignedAgent(req.id, option.dataset.agentId);
+            } catch {
               applyServiceRequestsFilter();
-            });
+            } finally {
+              if (agentButton.isConnected) agentButton.disabled = isDone;
+              else document.querySelector(`.agent-select-badge[data-id="${req.id}"]`)?.focus();
+            }
           });
         }
 
@@ -1082,10 +1140,10 @@ document.addEventListener('DOMContentLoaded', () => {
             else badgeClass = 'neutral';
             statusSelect.className = `status-select-badge ${badgeClass}`;
 
-            if (agentSelect) {
+            if (agentButton) {
               const isNowDone = ['completed', 'done', 'cancelled', 'cancelled_by_customer'].includes(newStatus);
-              agentSelect.disabled = isNowDone;
-              agentSelect.title = isNowDone ? "Agent cannot be changed for completed or cancelled tasks" : "";
+              agentButton.disabled = isNowDone;
+              agentButton.title = isNowDone ? "Agent cannot be changed for completed or cancelled tasks" : "";
               const agentWrapper = tr.querySelector('.agent-badge-wrapper');
               if (agentWrapper) {
                 if (isNowDone) agentWrapper.classList.add('disabled');

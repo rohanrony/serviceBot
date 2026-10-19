@@ -11,7 +11,27 @@ from serviceBot.services.booking import get_session_booking, track_session_booki
 
 
 def _with_notification_delivery_guidance(tool_name: str, result: dict) -> dict:
-    """Keep saved scheduling outcomes separate from unverified notification effects."""
+    """Give the voice agent explicit boundaries for booking and delivery claims."""
+    if tool_name in {
+        "check_availability", "create_service_request", "book_appointment", "request_callback",
+    } and result.get("success") is False:
+        return {
+            **result,
+            "booking_confirmation_status": "unconfirmed",
+            "customer_message": (
+                "I could not confirm a technician's availability right now, so I can't confirm that appointment."
+                if tool_name == "check_availability" else
+                "I could not confirm that appointment. We can check another time, or I can help you request an advisor callback."
+            ),
+            "agent_guidance": (
+                "Do not claim an appointment was booked, changed, or confirmed, or that a technician can attend. "
+                "Explain the reported failure using the customer_message and any specific agent_instruction. "
+                "An unknown or disconnected calendar does not prove the technician is busy. "
+                "Check existing appointments before retrying an uncertain operation. "
+                "Offer only verified alternative times; request a callback only with the caller's consent "
+                "and confirm it only after its tool succeeds."
+            ),
+        }
     if tool_name not in {
         "create_service_request", "book_appointment", "request_callback",
         "consolidate_appointment_service", "reschedule_appointment", "cancel_appointment",
@@ -1056,7 +1076,9 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
             try:
                 slots = check_availability(**check_kwargs)
             except AvailabilityUnknownError as exc:
-                return {"tool_call_id": tool_call_id, "result": exc.as_result()}
+                return {"tool_call_id": tool_call_id, "result": _with_notification_delivery_guidance(
+                    tool_name, exc.as_result()
+                )}
 
             from serviceBot.db.queries import parse_specific_time, parse_preferred_date_and_time
             iso_date_target, _, _ = parse_preferred_date_and_time(preferred_date)
@@ -1261,7 +1283,7 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                             }
                             response_data = {
                                 "tool_call_id": tool_call_id,
-                                "result": result
+                                "result": _with_notification_delivery_guidance(tool_name, result)
                             }
                             return response_data
 
@@ -1497,7 +1519,7 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                         }
                         response_data = {
                             "tool_call_id": tool_call_id,
-                            "result": result
+                            "result": _with_notification_delivery_guidance(tool_name, result)
                         }
                         return response_data
 
@@ -1817,7 +1839,7 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                                 }
                                 response_data = {
                                     "tool_call_id": tool_call_id,
-                                    "result": result
+                                    "result": _with_notification_delivery_guidance(tool_name, result)
                                 }
                                 return response_data
 

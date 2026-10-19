@@ -303,15 +303,16 @@ def test_browser_normal_dropdown_removes_red_warning_and_survives_reload(
     with page.expect_response(
         lambda r: r.url.endswith(f"/{request_id}/available-agents")
     ):
-        select.focus()
-    expect(select.locator('option[value="2"]')).to_be_enabled()
+        select.click()
+    choice = page.get_by_role('menu', name='Assign agent').locator('[data-agent-id="2"]')
+    expect(choice).to_be_enabled()
     with page.expect_response(
         lambda r: (
             r.url.endswith(f"/{request_id}/assign-agent")
             and r.request.method == "PATCH"
         )
     ) as saved:
-        select.select_option("2")
+        choice.click()
     assert saved.value.status == 200, saved.value.text()
     expect(row.locator(".sla-warning-badge")).to_contain_text("Reassigned")
     expect(row.locator(".agent-name-line")).to_have_text("Morgan E2E")
@@ -363,8 +364,9 @@ def test_browser_assignment_race_shows_error_and_preserves_escalation(
     with page.expect_response(
         lambda r: r.url.endswith(f"/{request_id}/available-agents")
     ):
-        select.focus()
-    expect(select.locator('option[value="2"]')).to_be_enabled()
+        select.click()
+    choice = page.get_by_role('menu', name='Assign agent').locator('[data-agent-id="2"]')
+    expect(choice).to_be_enabled()
     book(api, scenario, phone="+15550100002", agent=2)
     before = state(db)
     with page.expect_response(
@@ -373,7 +375,7 @@ def test_browser_assignment_race_shows_error_and_preserves_escalation(
             and r.request.method == "PATCH"
         )
     ) as saved:
-        select.select_option("2")
+        choice.click()
     assert saved.value.status == 409
     expect(page.locator(".toast").last).to_contain_text("no longer available")
     row = page.locator("tr").filter(has=select)

@@ -1137,6 +1137,11 @@ textarea.form-input {
   border-color: rgba(255, 255, 255, 0.25);
 }
 
+.agent-badge-wrapper:focus-within .agent-badge-display {
+  outline: 2px solid var(--primary, #60a5fa);
+  outline-offset: 2px;
+}
+
 .agent-badge-wrapper.disabled {
   opacity: 0.65;
 }
@@ -1178,11 +1183,57 @@ textarea.form-input {
   line-height: 1.15;
 }
 
-.agent-select-badge option {
-  background-color: #1a1e29;
-  color: #f3f4f6;
-  font-weight: 500;
-  padding: 6px 10px;
+.agent-options-menu {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  box-sizing: border-box;
+  width: min(360px, calc(100vw - 16px));
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--border-card);
+  border-radius: 8px;
+  background: var(--bg-card, #1a1e29);
+  color: var(--text-main, #f3f4f6);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  font: inherit;
+  font-size: 12px;
+}
+
+.agent-options-menu button {
+  display: block;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.agent-options-menu button:hover:not(:disabled),
+.agent-options-menu button:focus-visible {
+  background: rgba(96, 165, 250, 0.15);
+  outline: 1px solid #60a5fa;
+}
+
+.agent-options-menu [aria-checked="true"] {
+  font-weight: 600;
+  background: rgba(96, 165, 250, 0.1);
+}
+
+.agent-options-menu button:disabled,
+.agent-options-menu [role="status"] {
+  color: var(--text-muted, #9ca3af);
+  padding: 9px 10px;
+}
+
+.agent-options-menu button:disabled {
+  cursor: not-allowed;
 }
 
 
