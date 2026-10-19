@@ -253,7 +253,7 @@ def test_browser_disconnected_candidate_is_disabled_without_attempting_assignmen
         "request",
         lambda request: (
             assignments.append(request.url)
-            if request.url.endswith("/assign-agent")
+            if request.url.endswith(("/assign-agent", "/reassign"))
             else None
         ),
     )
@@ -262,8 +262,9 @@ def test_browser_disconnected_candidate_is_disabled_without_attempting_assignmen
     with page.expect_response(
         lambda r: r.url.endswith(f"/{request_id}/available-agents")
     ):
-        select.focus()
-    replacement = select.locator('option[value="2"]')
+        select.click()
+    expect(page.get_by_role("dialog", name="Reassign Service Appointment")).to_be_visible()
+    replacement = page.locator('#reassign-agent-select option[value="2"]')
     expect(replacement).to_be_disabled()
     expect(replacement).to_contain_text("Calendar state unavailable")
     row = page.locator("tr").filter(has=select)
@@ -286,15 +287,17 @@ def test_browser_recovery_leaves_escalations_filter_and_clears_banner(
     with page.expect_response(
         lambda r: r.url.endswith(f"/{request_id}/available-agents")
     ):
-        select.focus()
-    expect(select.locator('option[value="2"]')).to_be_enabled()
+        select.click()
+    replacement = page.locator("#reassign-agent-select")
+    expect(replacement.locator('option[value="2"]')).to_be_enabled()
     with page.expect_response(
         lambda r: (
-            r.url.endswith(f"/{request_id}/assign-agent")
-            and r.request.method == "PATCH"
+            r.url.endswith(f"/{request_id}/reassign")
+            and r.request.method == "POST"
         )
     ) as saved:
-        select.select_option("2")
+        replacement.select_option("2")
+        page.locator("#reassign-submit-btn").click()
     assert saved.value.status == 200, saved.value.text()
     expect(select).to_have_count(0)
     expect(page.locator("#escalation-alert-banner")).not_to_be_visible()
