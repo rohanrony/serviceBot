@@ -682,6 +682,10 @@ def check_availability(service_type: str = None, preferred_date: str = None, boo
 
     is_callback = (booking_type == "callback") or (service_type and "callback" in str(service_type).lower())
 
+    if not services_list and service_type:
+        fields = get_service_required_fields(service_type, strict=True)
+        services_list = fields.get("service_names") if fields else None
+
     parsed_services = []
     if services_list and len(services_list) > 1:
         accum_offset = 0
@@ -1277,6 +1281,44 @@ def find_best_service_match(query_name: str, services_list: list) -> dict:
     return best_match
 
 
+def match_catalog_service_names(service_name: str, catalog_names: list[str]) -> list[str]:
+    """Resolve a complete sequence of catalogue labels before interpreting separators.
+
+    Punctuation belongs to a label until that whole label has matched. Requiring
+    complete consumption prevents free-text symptoms from becoming a partial order.
+    """
+    import re
+    from collections import Counter
+    from functools import lru_cache
+
+    if not isinstance(service_name, str) or not service_name.strip():
+        return []
+    text = service_name.strip()
+    patterns = [(name, re.compile(re.escape(name), re.IGNORECASE))
+                for name in sorted(catalog_names, key=len, reverse=True)]
+    separator = re.compile(r"(?:\s*(?:[,/+&]|\band\b)\s*)+", re.IGNORECASE)
+
+    @lru_cache(maxsize=None)
+    def match_from(position):
+        for name, pattern in patterns:
+            match = pattern.match(text, position)
+            if match is None:
+                continue
+            if match.end() == len(text):
+                return (name,)
+            boundary = separator.match(text, match.end())
+            if boundary is not None:
+                remaining = match_from(boundary.end())
+                if remaining:
+                    return (name, *remaining)
+        return ()
+
+    result = list(match_from(0))
+    counts = Counter(name.casefold() for name in catalog_names)
+    return result if all(counts[name.casefold()] == 1 for name in result) else []
+
+
+
 def get_service_required_fields(service_name: str, *, strict: bool = False) -> dict:
     """
     Looks up a service by name (fuzzy matching supported) in the services table
@@ -1315,10 +1357,12 @@ def get_service_required_fields(service_name: str, *, strict: bool = False) -> d
         if cleaned_query == clean_str(s["name"]):
             return s
 
-    # 2. Multi-service delimiter check
-    matched_services = []
+    # 2. Match whole canonical labels before the legacy fuzzy-name fallback.
+    canonical_names = match_catalog_service_names(service_name, [s["name"] for s in rows])
+    by_name = {s["name"]: s for s in rows}
+    matched_services = [by_name[name] for name in canonical_names]
     parts = [p.strip() for p in re.split(r'[,/+]|\band\b|&', service_name, flags=re.IGNORECASE) if p.strip()]
-    if len(parts) > 1:
+    if not canonical_names and len(parts) > 1:
         for part in parts:
             part_clean = clean_str(part)
             if not part_clean:
@@ -1347,6 +1391,7 @@ def get_service_required_fields(service_name: str, *, strict: bool = False) -> d
         price_str = ", ".join(prices) if prices else "Varies by service"
         return {
             "name": service_name,
+            "service_names": [s["name"] for s in matched_services],
             "description": f"Multiple services requested: {matched_names}",
             "price_range": price_str,
             "duration_minutes": total_duration,

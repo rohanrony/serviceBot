@@ -8,10 +8,31 @@ import zoneinfo
 from datetime import datetime, timedelta
 
 from serviceBot.services.booking import get_session_booking, track_session_booking
+from serviceBot.db.queries import match_catalog_service_names
 
 
 def _with_notification_delivery_guidance(tool_name: str, result: dict) -> dict:
-    """Keep saved scheduling outcomes separate from unverified notification effects."""
+    """Give the voice agent explicit boundaries for booking and delivery claims."""
+    if tool_name in {
+        "check_availability", "create_service_request", "book_appointment", "request_callback",
+    } and result.get("success") is False:
+        return {
+            **result,
+            "booking_confirmation_status": "unconfirmed",
+            "customer_message": (
+                "I could not confirm the assigned staff member's availability right now, so I can't confirm that appointment."
+                if tool_name == "check_availability" else
+                "I could not confirm that appointment. We can check another time, or I can help you request an advisor callback."
+            ),
+            "agent_guidance": (
+                "Do not claim an appointment was booked, changed, or confirmed, or that the assigned staff member can attend. "
+                "Explain the reported failure using the customer_message and any specific agent_instruction. "
+                "An unknown or disconnected calendar does not prove the agent is busy. "
+                "Check existing appointments before retrying an uncertain operation. "
+                "Offer only verified alternative times; request a callback only with the caller's consent "
+                "and confirm it only after its tool succeeds."
+            ),
+        }
     if tool_name not in {
         "create_service_request", "book_appointment", "request_callback",
         "consolidate_appointment_service", "reschedule_appointment", "cancel_appointment",
@@ -305,13 +326,11 @@ def _update_cached_session_booking(*, session_key, session, phone, requested_tim
                 else:
                     from serviceBot.services.booking import _validated_components
                     booked_names.update(normalized(item["name"]) for item in _validated_components(row))
-            requested_names = []
             if not isinstance(service_type, str) or not service_type.strip():
                 raise ValueError("Requested service is not verified")
-            if normalized(service_type) in booked_names:
-                requested_names.append(service_type)
-            else:
-                requested_names.extend(re.split(r'[,/+]|\band\b|&', service_type, flags=re.IGNORECASE))
+            requested_names = match_catalog_service_names(normalized(service_type), list(booked_names))
+            if not requested_names:
+                raise ValueError("Service change requires an explicit supported update")
             if services is not None:
                 if not isinstance(services, list) or not services:
                     raise ValueError("Requested service list is invalid")
@@ -1056,7 +1075,9 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
             try:
                 slots = check_availability(**check_kwargs)
             except AvailabilityUnknownError as exc:
-                return {"tool_call_id": tool_call_id, "result": exc.as_result()}
+                return {"tool_call_id": tool_call_id, "result": _with_notification_delivery_guidance(
+                    tool_name, exc.as_result()
+                )}
 
             from serviceBot.db.queries import parse_specific_time, parse_preferred_date_and_time
             iso_date_target, _, _ = parse_preferred_date_and_time(preferred_date)
@@ -1202,16 +1223,16 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                 explicit_service_type = args.get("service_type") or args.get("serviceType")
                 service_type = explicit_service_type or "Repair"
                 if not explicit_service_type and not (args.get("is_uncataloged") or args.get("isUncataloged")) and isinstance(issue_description, str):
-                    # Recover only an unambiguous catalog label, without interpreting free text.
+                    # Recover complete catalog labels, without interpreting free text.
                     with get_db_connection() as conn:
                         with dict_cursor(conn) as cursor:
                             cursor.execute(
-                                "SELECT name FROM services WHERE LOWER(BTRIM(name)) = LOWER(%s) LIMIT 2;",
-                                (issue_description.strip(),),
+                                "SELECT name FROM services;",
                             )
-                            exact_services = cursor.fetchall()
-                    if len(exact_services) == 1:
-                        service_type = exact_services[0]["name"]
+                            catalog_names = [row["name"] for row in cursor.fetchall()]
+                    exact_services = match_catalog_service_names(issue_description, catalog_names)
+                    if exact_services:
+                        service_type = ", ".join(exact_services)
                 time_slot = args.get("time_slot") or args.get("timeSlot")
                 booking_type = args.get("booking_type") or args.get("bookingType")
                 booking_time = args.get("booking_time") or args.get("bookingTime") or args.get("appointment_datetime") or args.get("preferred_time") or time_slot
@@ -1352,6 +1373,7 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
 
                 price_range = "Varies"
                 duration_minutes = 60
+                fields = None
                 if booking_type == "appointment":
                     try:
                         fields = get_service_required_fields(service_type)
@@ -1362,11 +1384,9 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                         pass
 
                 services_list = args.get("services") or args.get("service_types")
-                if not services_list and isinstance(service_type, str):
-                    import re
-                    parts = [p.strip() for p in re.split(r'[,/+]|\band\b|&', service_type, flags=re.IGNORECASE) if p.strip()]
-                    if len(parts) > 1:
-                        services_list = parts
+                if not services_list:
+                    service_fields = fields or get_service_required_fields(service_type)
+                    services_list = service_fields.get("service_names") if service_fields else None
 
                 if booking_type == "appointment" and existing_session is not None:
                     result = _update_cached_session_booking(
@@ -1388,6 +1408,17 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                         )
                         first_appt = receipts[0]
                         total_duration = sum(r["duration_minutes"] for r in receipts)
+                        end_dt_str, win_msg = format_appointment_window_message(
+                            booking_time=booking_time, duration_minutes=total_duration,
+                            price_range=price_range, is_update=False,
+                        )
+                        if booking_type == "appointment":
+                            track_session_booking(
+                                session_key=session_key,
+                                service_request_id=first_appt["service_request_id"],
+                                booking_time=booking_time, duration_minutes=total_duration,
+                                phone=phone, vehicle=vehicle_details,
+                            )
                         result = {
                             "success": True,
                             "service_request_id": first_appt["service_request_id"],
@@ -1396,8 +1427,9 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                             "booking_type": booking_type,
                             "booking_time": booking_time,
                             "duration_minutes": total_duration,
+                            "expected_end_time": end_dt_str,
                             "is_uncataloged": is_uncataloged,
-                            "message": "Service request callback recorded successfully. Calendar projection and notifications are queued." if booking_type == "callback" else "Service request created successfully.",
+                            "message": "Service request callback recorded successfully. Calendar projection and notifications are queued." if booking_type == "callback" else win_msg,
                         }
                     except BookingConflictError as b_err:
                         result = {
@@ -1598,6 +1630,7 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
 
                 price_range = "Varies"
                 duration_minutes = 60
+                fields = None
                 try:
                     fields = get_service_required_fields(service_type)
                     if fields:
@@ -1615,13 +1648,8 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                 else:
                     # Check for multi-service scheduling request
                     services_list = args.get("services") or args.get("service_types")
-                    if not services_list and isinstance(service_type, str):
-                        fields = get_service_required_fields(service_type)
-                        if fields and fields.get("description", "").startswith("Multiple services requested"):
-                            import re
-                            parts = [p.strip() for p in re.split(r'[,/+]|\band\b|&', service_type, flags=re.IGNORECASE) if p.strip()]
-                            if len(parts) > 1:
-                                services_list = parts
+                    if not services_list and fields:
+                        services_list = fields.get("service_names")
 
                     if services_list and len(services_list) > 1:
                         from serviceBot.services.booking import reserve_multi_service_appointment, BookingConflictError

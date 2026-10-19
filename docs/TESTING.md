@@ -113,6 +113,38 @@ database sessions are terminated and no setup failures are swallowed.
 Application behavior changes follow [SPECKIT_WORKFLOW.md](SPECKIT_WORKFLOW.md).
 Test maintenance does not authorize product changes, live messages or deployment.
 
+## Multi-service booking regression contracts
+
+The reported brake/suspension visit must retain the full catalogue labels, create
+one linked appointment per selected technician, and reserve 90 then 120 minutes.
+The tests use the actual voice HTTP routes, booking service, disposable PostgreSQL,
+outbox worker and Chromium. Only external provider boundaries are replaced.
+
+| Requirement | Evidence |
+| --- | --- |
+| Preserve punctuation within catalogue names and reject ambiguous matches | `tests/test_canonical_service_names.py` covers delimiters, longest labels, order, duplicates and unmatched remainders. |
+| Resolve all services through either booking tool, including intake with only issue text | `e2e/test_canonical_multiservice_booking.py` reads linked rows, canonical component snapshots, technician IDs, reservation spans, every 15-minute segment and both queued effect payloads. |
+| Reject a blocked or unverifiable second technician without saving the first appointment | The same acceptance module compares requests, reservations, segments, outbox, vehicles and local calendar slots before/after. Disconnection and provider exceptions must produce an explicit unconfirmed outcome without leaking provider diagnostics. |
+| Prevent duplicate bookings on same-call retries | Cross-tool retries must preserve the complete saved visit and leave all scheduling/effect state unchanged. Repeated services must be rejected rather than silently removed. |
+| Notify customers with the saved service windows | A booking drives the real queue, worker and Twilio SDK to captured HTTP. Each service's customer message must name its technician and correct start/end times; another worker pass must send nothing again. A rejected booking must dispatch no confirmation. |
+| Show the recorded outcome after a browser reload | The successful browser journey looks up both services, checks availability, books via HTTP, and verifies both technician rows and windows. A rejected calendar lookup leaves no requested visit visible after reload. |
+| Preserve existing lifecycle and race contracts | `e2e/test_multiservice_contracts.py`, `e2e/test_grouped_service_components.py` and the session-outcome suites retain concurrency, closing boundaries, reschedule, cancellation, selected-service removal and retry coverage. |
+
+Run the isolated layers separately so their database lifecycles stay independent:
+
+```bash
+./run_tests.sh --file tests/test_canonical_service_names.py tests/test_booking_confirmation_guard.py tests/test_session_booking_outcomes.py tests/test_db_queries.py tests/test_multiservice_duration_consistency.py tests/test_multi_service_scheduling.py tests/test_service_agent_availability_and_timezone.py tests/test_truthful_voice_outcomes.py tests/test_transactional_booking.py tests/live_simulations/test_runtime.py tests/test_grouped_visit_agent_policy.py
+./run_tests.sh --file e2e/test_canonical_multiservice_booking.py e2e/test_intake_catalog_identity.py e2e/test_multiservice_contracts.py e2e/test_grouped_service_components.py e2e/test_truthful_portal_availability.py e2e/test_session_booking_outcomes.py
+./run_tests.sh --file e2e/test_canonical_multiservice_booking.py -m browser
+```
+
+These files are discovered by the normal `tests/` and `e2e/` runners, including
+`--verify`. Render's current bare `pytest` build command discovers `tests/` only;
+passing that build does not establish browser acceptance. Captured provider
+acceptance and outbox completion do not prove handset delivery, live OAuth/calendar
+health, or that the deployed voice model speaks the failure guidance correctly.
+Those remain separate live acceptance checks.
+
 ## Additional engines and live acceptance
 
 Chromium is default. Explicitly install and run other engines if needed:
