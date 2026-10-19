@@ -1,90 +1,123 @@
 ---
 name: speckit-workflow
-description: Run the project's complete Spec-Kit feature workflow, including test-first implementation and iterative convergence. Use for a feature or behavior change; not for documentation-only edits.
-compatibility: Requires this project's .specify/ setup and Spec-Kit skills.
+description: Take a VoiceService change from investigation or requirements through implementation, meaningful tests and review. Select a bug-fix, small-change or full Spec-Kit route according to intent, uncertainty and impact.
 ---
 
-# Project Spec-Kit Workflow
+# VoiceService change workflow
 
-Run this skill with a feature or behavior-change description, for example:
-`$speckit-workflow Add browser notifications when an appointment is confirmed`.
-Treat the user's request as the source of intent. For an existing feature, continue its spec/task
-cycle when intent is unchanged; create a new feature only for new work. Do not run this workflow
-for documentation-only changes that do not alter behavior.
+Start with `$speckit-workflow` and describe the outcome or symptom. Natural-language route
+preferences are supported, for example `Bug fix: investigate failed booking saves using logs`,
+`Small change: rename this field`, or `Full feature: add booking approvals`. These are chat
+instructions, not command-line flags. The user need not choose a route.
 
-Follow [the project workflow](../../../docs/SPECKIT_WORKFLOW.md) and the detailed instructions in
-each corresponding `speckit-*` skill. Respect their prerequisites, hooks, artifact boundaries, and
-validation rules. Do not bypass a stage just because a later stage can proceed without it.
+Follow [the project workflow](../../../docs/SPECKIT_WORKFLOW.md). Its shared testing and
+publication gates apply to every route. Documentation-only edits without behavioral impact
+need document/diff validation; workflow, prompt and configuration changes need appropriate
+behavioral review and publication verification.
 
-## Workflow
+## Start and select a route
 
-1. Read `.specify/memory/constitution.md` and identify the active feature directory, if any. If
-   there is no active feature for this request, use `$speckit-specify` to create one.
-2. Run `$speckit-clarify` before planning when material ambiguity or unresolved decisions remain.
-   Resolve those questions in the spec; do not turn an assumption into acceptance criteria.
-3. Run `$speckit-plan`, then `$speckit-tasks`. Ensure the spec and plan identify each changed
-   behavior contract and its needed test layers. User-visible browser journeys require tests in
-   `e2e/`; notification scenarios must assert the expected observable notification outcome.
-4. Run `$speckit-analyze` after tasks exist. Resolve critical inconsistencies and missing test
-   tasks before implementation; rerun analysis after changing the spec, plan, or tasks.
-5. Run `$speckit-implement` using Red-Green-Refactor. For each behavioral change, first add or
-   update a meaningful test and confirm it fails for the intended reason, then implement, refactor,
-   and run focused validation. Before handoff, run the relevant complete test suite, including
-   browser `e2e/` tests for affected browser journeys. Report exact commands and results.
-6. Run `$speckit-converge` after implementation. If it finds actionable gaps, use the feedback
-   routing below; do not stop after reporting or appending tasks.
+1. Read `.specify/memory/constitution.md`, inspect branch/workspace state and relevant existing
+   change artifacts. Preserve unrelated work. Do not select a feature merely because
+   `.specify/feature.json` points to it; confirm that its intent matches this request.
+2. Reuse applicable session initialization and diagnosis already completed in this conversation.
+   Read [initialize-session](../initialize-session/SKILL.md) for local setup or, when needed,
+   bounded read-only operational evidence. Default to offline setup; use diagnostic mode
+   only for an actual investigation. Do not run legacy unconditional credential loading or
+   health probes. Missing production credentials do not block offline development.
+3. Choose by intent, uncertainty and impact, rather than file/line count. Announce the route
+   and one concrete reason. Honor an explicit full-path request. An explicit bug/small preference
+   does not justify guessing requirements or bypassing the shared gates; explain and escalate
+   when investigation discovers broader requirements or design decisions.
 
-## Converge feedback loop
+| Route | Use when | Work sequence |
+| --- | --- | --- |
+| Bug fix | Restore established expected behavior | Systematic debugging → failing regression → fix/refactor → review |
+| Small change | Clear, bounded intent with limited interactions | Short acceptance/test record → test update → implementation → review |
+| Full feature | Material product ambiguity, cross-component design, data migration, new authorization or provider semantics, or consequential state changes | Specify → Clarify → Plan → Checklist review → Tasks → Analyze → Implement ↔ Converge |
 
-Return to the earliest artifact that owns each finding:
+Unknown root cause calls for debugging first; it does not by itself require a new feature spec.
+A small-looking change affecting security, ownership or booking correctness can require the full
+route. Clarify missing user intent before dependent work; continue independent work when possible.
 
-- Missing implementation or regression/acceptance coverage with approved requirements and design:
-  keep the converge task traceable, add/fix the test first, run `$speckit-implement`, then converge
-  again.
-- Missing test layer for a browser journey: add the browser test task, implement it before any
-  related behavior change, run the relevant browser suite, then converge again.
-- Wrong, incomplete, or changed requirement: update the active spec and clarify it; reconcile the
-  plan and tasks, rerun analyze, implement, then converge.
-- Incorrect architecture, data model, or integration decision: update the plan and reconcile tasks;
-  also revisit the spec if user-visible behavior changes. Rerun analyze before implementation.
-- Artifact inconsistency: fix the earliest inconsistent artifact, reconcile downstream artifacts,
-  analyze again, then implement.
+## Bug-fix route
 
-The converge command is append-only and must not edit code or upstream artifacts. If upstream
-changes require task regeneration, preserve completed work and valid IDs where possible; explicitly
-mark obsolete convergence findings as superseded rather than silently dropping or blindly retaining
-them. Repeat implementation and convergence until there are no actionable findings and all tasks
-are complete. If the loop uncovers a decision that requires the user, ask a focused question and
-pause that dependent work; continue independent safe work when possible.
+Use the installed `systematic-debugging` skill: collect evidence, reproduce, compare working
+behavior, test a specific hypothesis, then fix the cause. If it is unavailable, follow that
+sequence directly and disclose the fallback. Reuse a current, established diagnosis instead of
+starting it again; validate its environment, revision and relevance to the symptom.
 
-## Test obligations and publication
+For logs/database investigation, follow `initialize-session` in diagnostic mode. Record the
+environment, time window/timezone, relevant identifiers, bounded query, observations and limits.
+Distinguish confirmed cause from hypothesis; absent access or absent logs is not proof of health.
+Do not alter production state to reproduce a defect. Capture a redacted deterministic offline
+fixture from the relevant evidence when useful, not production secrets or full customer records.
 
-Before implementation, create/update the feature's `test-coverage.yaml` using
-`.specify/templates/test-coverage-template.yaml`. Every acceptance criterion must record
-observable behavior, preconditions, success, failure, invariants, test identifiers, layers
-and live acceptance; explain each omitted layer. Review test quality through behavior and
-failure modes, fresh persistence reads/reloads and prohibited effects. Required behavior
-must not remain a placeholder, skip or expected failure. Review removals/weakened assertions.
+Record expected behavior, root-cause evidence, invariants, regression test and Red/Green results
+in the existing relevant feature or a short change record. Do not create spec/plan/tasks merely
+to fix a bounded defect. Add a permanent regression before changing behavior; include fresh
+persisted reads/reload and prohibited effects where applicable. Escalate to the full route if
+the fix requires new product semantics or substantial design decisions.
 
-Complete the sequence with Review → Verify → Push → CI → Merge. Before authorized publication,
-select the exact committed candidate and current target, then run
-`./scripts/verify_change.sh --base <target-ref> --head <commit-sha>`. It runs configured static
-checks and the complete `./run_tests.sh --verify`, independently collecting both suites and
-retaining exact-candidate evidence. Browser journeys are a subset of E2E. A changed source
-or target invalidates earlier evidence. Already committed work must also be verified.
-Use explicit files in the publication helper; no bypass or automatic main merge is supported.
-Require current aggregate CI and resolved review findings before separately authorized merge.
+## Small-change route
 
-Provider behavior changes must update relevant live scenarios and record recipients,
-calendars, permissions, independently verified effects, cleanup/recovery, credit estimates,
-spending ceiling and unknown-charge handling. Reuse valid differential evidence; live execution
-requires separate authorization. Report Offline verified, Live pending/verified/not required,
-Merged and Deployed separately. See `docs/MERGE_READINESS.md` for enforcement and evidence.
+Write a short scope/acceptance note and behavior-to-test mapping, using existing artifacts when
+appropriate. No full PRD, technical plan or new active feature pointer is required for a label
+rename or similarly bounded change. For a behavioral change, demonstrate the intended failure
+before implementation and update the relevant boundary test. A label/accessibility change may
+need an existing browser assertion updated; do not invent unrelated business-rule tests.
 
-## Completion
+When a small new feature benefits from durable design artifacts, use the shorter Spec-Kit path:
+Specify → Plan → Tasks → Implement ↔ Converge. Honor each invoked stage's prerequisites and
+checklist gate. Add clarification, checklist review or analysis if scope or ambiguity warrants it.
 
-Report the feature directory, spec/plan/tasks changes, convergence iterations, remaining
-limitations, and validation results. Do not claim completion if tasks remain, converge reports
-actionable gaps, or affected browser tests were not run. Offline mocks do not prove live-provider
-delivery; keep live acceptance separate. Do not commit, push, deploy, or perform external actions
-unless separately requested.
+## Full-feature route
+
+Follow each corresponding `speckit-*` skill, including its hooks and artifact boundaries:
+
+1. Read the existing constitution. Run `speckit-constitution` only for an authorized policy change.
+2. `speckit-specify`: capture what/why, acceptance criteria, failure modes and exclusions.
+3. `speckit-clarify`: assess ambiguity before planning. Ask material questions and persist answers;
+   report when no meaningful ambiguity remains rather than inventing questions or answers.
+4. `speckit-plan`: resolve technical uncertainties and document design/contracts/test layers.
+5. `speckit-checklist`: generate requirements-quality items, then obtain reviewer evaluation.
+   Custom items remain unchecked until reviewed; the agent may evaluate only when explicitly
+   asked. Checked items mean requirements quality was accepted, not implementation completed.
+   Return requirement gaps to Specify/Clarify and reconcile the plan before proceeding.
+6. `speckit-tasks`: generate dependency-ordered test-first implementation work.
+7. `speckit-analyze`: produce a read-only consistency report. Correct owning artifacts outside
+   analysis and rerun until material findings are resolved.
+8. `speckit-implement`: use Red → Green → Refactor. Treat checklist files/markers as read-only;
+   ask before proceeding with unchecked items, as that skill requires. Only Specify/Clarify
+   maintain the built-in `checklists/requirements.md`; custom checklist state is reviewer-owned.
+9. `speckit-converge`: append remaining work to tasks, without editing code or upstream artifacts.
+   Implement/test gaps return to tasks/implementation; requirement gaps return to Specify/Clarify;
+   design gaps return to Plan. Reconcile downstream artifacts and rerun Analyze after upstream
+   changes. Preserve valid task IDs/completed work; mark obsolete findings superseded. Repeat
+   until all tasks are complete and no actionable convergence findings remain.
+
+## Shared testing and publication gates
+
+Every route maps acceptance criteria to appropriate tests and failure cases before implementation.
+Use `test-coverage.yaml` beside the existing feature or short change record, following
+`.specify/templates/test-coverage-template.yaml`; one acceptance row can suffice for a bounded fix.
+Explain omitted layers. Review observable outcomes, fresh persistence/reload, prohibited effects,
+deterministic fixtures and external-boundary mocks. Required behavior cannot remain a placeholder,
+skip or expected failure. Review removed tests and weakened assertions.
+
+Run focused tests while iterating. Before handoff run the complete offline `./run_tests.sh --verify`.
+For authorized publication, select the exact committed candidate and current target first, then
+run `./scripts/verify_change.sh --base <target-ref> --head <commit-sha>`; its full-suite run can
+satisfy the handoff check. Browser tests are a subset of E2E. Changed head/target invalidates
+earlier evidence, including for already committed work. Use explicit files with `git-push-merge`;
+require current aggregate CI and resolved review findings before separately authorized merge.
+
+Normal tests, verification, pre-push and CI stay offline with synthetic credentials; diagnostic
+credentials and production data must never enter their environment. Provider changes also update
+relevant live scenarios, effects/read-back, prerequisites, cleanup/recovery and spending bounds.
+Reuse valid differential evidence. Live execution requires separate authorization.
+
+Report the route/reason, change artifacts, diagnosis/acceptance evidence, actual tests/results,
+review findings and remaining limits. Report Offline verified, Live pending/verified/not required,
+Committed/Pushed, Merged and Deployed separately. Do not publish, merge, deploy or make external
+mutations without authorization. Do not claim completed behavior with unresolved relevant gaps.
