@@ -1,6 +1,7 @@
 """Offline legacy-suite harness: owned database, synthetic secrets, isolated files."""
 
 import builtins
+import hashlib
 import io
 import os
 import socket
@@ -180,6 +181,21 @@ def setup_and_cleanup_test_db():
         admin.close()
         os.environ["TEST_DATABASE_URL"] = test_db_url
         os.environ["DATABASE_URL"] = test_db_url
+
+
+@pytest.fixture(autouse=True)
+def offline_embedding_transport(monkeypatch):
+    """Keep FAQ/chunking/Chroma real; replace only the downloadable model encoder."""
+    from serviceBot.services import rag
+
+    def encode(documents):
+        vectors = []
+        for document in documents:
+            fingerprint = hashlib.sha256(document.encode()).digest()
+            vectors.append([(fingerprint[i % 32] - 128) / 128.0 for i in range(384)])
+        return vectors
+
+    monkeypatch.setattr(rag, "_DEFAULT_ENCODER", encode)
 
 
 @pytest.fixture(autouse=True)

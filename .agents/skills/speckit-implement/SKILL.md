@@ -224,3 +224,16 @@ Report final status with summary of completed work.
 - [ ] Implementation validated against specification, plan, and test coverage
 - [ ] Extension hooks dispatched or skipped according to the rules in Mandatory Post-Execution Hooks above
 - [ ] Completion reported to user with summary of completed work
+
+## Project test-coverage obligation
+
+Follow `docs/SPECKIT_WORKFLOW.md` and `docs/MERGE_READINESS.md`. Each changed acceptance
+contract requires a feature-local `test-coverage.yaml` before implementation, with behavior,
+preconditions, success/failure, invariants, real test IDs, layers, omitted-layer reasons and
+live requirements. Tests are mandatory for behavioral changes. Review meaningful Red → Green
+→ Refactor evidence, fresh persisted reads/reloads, prohibited effects and realistic external
+boundary transports. Counts alone are insufficient. Required behavior cannot be skipped,
+xfail or placeholder. At analysis/convergence, report missing or stale coverage as a gap.
+Before authorized publication, require exact-SHA/current-target verification through
+`./scripts/verify_change.sh --base <target-ref> --head <commit-sha>`, including both complete
+offline suites and browser journeys within E2E. Live execution remains separately authorized.

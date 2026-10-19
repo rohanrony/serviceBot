@@ -26,6 +26,12 @@
 
 **Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]
 
+**Behavioral coverage**: Create/update `test-coverage.yaml` beside the spec before implementation.
+Map acceptance criteria to observable success/failure, preconditions, invariants, real collected
+test IDs, layers and remaining live requirements; explain omitted layers. Plan meaningful Red →
+Green → Refactor tests and review. Publication requires complete offline exact-candidate evidence
+from `./scripts/verify_change.sh --base <target-ref> --head <commit-sha>`.
+
 **Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]
 
 **Project Type**: [e.g., library/cli/web-service/mobile-app/compiler/desktop-app or NEEDS CLARIFICATION]

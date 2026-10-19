@@ -3,6 +3,30 @@
 Trigger the complete cycle with **`$speckit-workflow`** and a feature description. Its project-local
 skill is defined in `.agents/skills/speckit-workflow/SKILL.md`.
 
+## Access the workflow
+
+In a Codex session opened in this repository, invoke the skill directly:
+
+```text
+$speckit-workflow Add or fix <describe the behavior>
+```
+
+In Codex CLI or the IDE extension, `/skills` opens the skill picker; select
+`speckit-workflow`. The directly invocable skill name uses `$`; this repository does
+not install a separate `/speckit-workflow` slash alias. See the
+[official skills guide](https://learn.chatgpt.com/docs/build-skills).
+
+Use `$git-push-merge` for verified publication of completed work. It commits explicitly
+selected files and pushes a feature branch after full verification; merge remains a separate
+authorized PR step. To authorize publication as part of a feature request, say so explicitly:
+
+```text
+$speckit-workflow Fix <describe the bug>. Once verified, commit and push to a new branch.
+```
+
+The terminal entry point for verification alone is
+`./scripts/verify_change.sh --base <target-ref> --head <commit-sha>`.
+
 This document is the project's outer loop for using Spec-Kit. It connects the individual
 commands into one repeatable, iterative process. The constitution is the governing policy;
 this document is the operational guide. See the [official Spec-Kit workflow for evolving
@@ -34,6 +58,10 @@ Keep prior feature artifacts as history unless the team explicitly chooses a liv
 4. **Plan** — Run `$speckit-plan` to define architecture, data changes, integrations, test layers,
    and implementation constraints. Identify which acceptance scenarios require browser automation
    in `e2e/` and which can be validated at unit or integration level.
+   Before implementation, create `test-coverage.yaml` beside the spec using
+   `.specify/templates/test-coverage-template.yaml`. Map every acceptance criterion to behavior,
+   preconditions (including permissions/configuration/clock), success, failure, invariants,
+   real test identifiers, layers and remaining live acceptance. Explain every omitted layer.
 5. **Tasks** — Run `$speckit-tasks` to produce an ordered, traceable implementation checklist.
    The spec/plan MUST make the TDD and affected test layers explicit so generated tasks include
    test-first work for each changed contract, including browser end-to-end tests for changed
@@ -49,6 +77,23 @@ Keep prior feature artifacts as history unless the team explicitly chooses a liv
 8. **Converge** — Run `$speckit-converge` after implementation to compare the current code with the
    spec, plan, tasks, and constitution. Converge appends traceable remaining-work tasks to
    `tasks.md`; it does not change code or rewrite the upstream artifacts.
+9. **Review** — Review changed contracts and the matrix for meaningful assertions, fresh
+   persistence reads/reloads, prohibited effects, deterministic fixtures and external-boundary
+   mocks. Resolve findings. Review test removals, weakened assertions and any skips/xfails;
+   required behavior cannot be represented by a placeholder or unexplained expected failure.
+10. **Verify** — Select the exact committed candidate, fetch/integrate the current target, then
+    run `./scripts/verify_change.sh --base <target-ref> --head <commit-sha>`. It performs static
+    checks and the complete `./run_tests.sh --verify`, with independent collection and retained
+    evidence. `tests/` and `e2e/` are separate suites; browser journeys are a subset of E2E.
+11. **Push** — After explicit publication authorization, use `scripts/git_push_merge.sh` with
+    explicit files if committing, or push already committed work. Both the supported helper
+    and installed pre-push hook require evidence for the outgoing SHA and current target.
+12. **CI** — Require the `Merge readiness` aggregate on the current integration candidate.
+    It rejects skipped/failed mandatory jobs and absent/incomplete reports. Target changes
+    require an updated candidate and evidence. See [MERGE_READINESS.md](MERGE_READINESS.md).
+13. **Merge** — After explicit merge authorization, require current CI, resolved review findings,
+    meaningful acceptance tests and recorded live obligations. Protected server rules enforce
+    checks/reviews; local hooks alone cannot enforce them.
 
 ## Feedback loop after converge
 
@@ -77,6 +122,22 @@ unit/integration and browser acceptance tests pass, and the implementation has b
 against the acceptance criteria. A passing test run by itself is not proof that every contract is
 covered. Live-provider delivery remains a separate operational acceptance gate; offline mocks do
 not prove delivery to an external provider.
+
+Every changed behavioral contract follows Red → Green → Refactor. Choose layers for the
+changed behavior: unit rules/boundaries; database ownership/transactions/rollback/concurrency;
+HTTP parsing/auth/status/persisted effects; browser visible actions/reload/error recovery;
+realistic provider transports; composed existing-state/retry/partial-failure workflows;
+migration upgrade/verification/rollback/preservation; and targeted accessibility/performance/
+security checks where affected. A changed booking form requires browser coverage. Include
+save/reload, validation, disabled controls, double submission, network failure and stale-response
+cases when relevant. Composed bookings include canceled records, multiple technicians and retries.
+Counts and coverage percentages support review; they do not replace behavior evidence.
+
+Normal development, pre-push and CI remain offline. Provider behavior changes also update live
+scenarios with recipients/calendars/permissions, expected effects and independent read-back,
+cleanup/recovery, credit estimates, spending ceiling and unknown-charge handling. Live execution
+requires separate authorization. Preserve valid differential coverage and rerun invalidated cases.
+Always report **Offline verified · Live pending/verified/not required · Merged · Deployed** separately.
 
 ## Handoff record
 

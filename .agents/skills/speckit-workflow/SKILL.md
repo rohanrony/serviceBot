@@ -57,6 +57,30 @@ them. Repeat implementation and convergence until there are no actionable findin
 are complete. If the loop uncovers a decision that requires the user, ask a focused question and
 pause that dependent work; continue independent safe work when possible.
 
+## Test obligations and publication
+
+Before implementation, create/update the feature's `test-coverage.yaml` using
+`.specify/templates/test-coverage-template.yaml`. Every acceptance criterion must record
+observable behavior, preconditions, success, failure, invariants, test identifiers, layers
+and live acceptance; explain each omitted layer. Review test quality through behavior and
+failure modes, fresh persistence reads/reloads and prohibited effects. Required behavior
+must not remain a placeholder, skip or expected failure. Review removals/weakened assertions.
+
+Complete the sequence with Review → Verify → Push → CI → Merge. Before authorized publication,
+select the exact committed candidate and current target, then run
+`./scripts/verify_change.sh --base <target-ref> --head <commit-sha>`. It runs configured static
+checks and the complete `./run_tests.sh --verify`, independently collecting both suites and
+retaining exact-candidate evidence. Browser journeys are a subset of E2E. A changed source
+or target invalidates earlier evidence. Already committed work must also be verified.
+Use explicit files in the publication helper; no bypass or automatic main merge is supported.
+Require current aggregate CI and resolved review findings before separately authorized merge.
+
+Provider behavior changes must update relevant live scenarios and record recipients,
+calendars, permissions, independently verified effects, cleanup/recovery, credit estimates,
+spending ceiling and unknown-charge handling. Reuse valid differential evidence; live execution
+requires separate authorization. Report Offline verified, Live pending/verified/not required,
+Merged and Deployed separately. See `docs/MERGE_READINESS.md` for enforcement and evidence.
+
 ## Completion
 
 Report the feature directory, spec/plan/tasks changes, convergence iterations, remaining

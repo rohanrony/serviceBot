@@ -1,74 +1,29 @@
 ---
 name: git-push-merge
-description: Automated workflow to commit work, push to a new feature/dev branch, safely fast-forward merge into main without checking out main (protecting .env and avoiding sandbox locks), and push to remote origin.
+description: Publish an explicitly selected feature commit only after complete offline exact-candidate verification; merge through separately authorized PR review and CI.
 ---
 
-# Git Push & Fast-Merge Workflow
+# Verified feature publication
 
-Use this skill whenever you need to push ongoing work or completed commits to a branch, merge cleanly into `main`, and push the result to GitHub (`origin`).
+The compatibility script name remains `scripts/git_push_merge.sh`; it no longer merges main.
+Use only with explicit user publication authorization. Inspect existing dirty/staged work,
+select the intended branch and explicit file paths, then use:
 
-Trigger phrases: `/git-push-merge`, "push to branch and merge with main", "merge to main and push", "deploy to main".
-
----
-
-## ⚡ The Quick One-Liner
-
-Run the automated workflow script:
-
-```bash
-bash scripts/git_push_merge.sh -b <branch_name> -m "<commit_message>"
+```sh
+./scripts/git_push_merge.sh --branch feature/name --message 'feat: description' --files path/to/change specs/feature/test-coverage.yaml tests/test_feature.py
+# Already committed work (including a clean checkout) is still verified:
+./scripts/git_push_merge.sh
 ```
 
-### Common Variations
+The helper selects/commits first, fetches the target, runs
+`./scripts/verify_change.sh --base <current-target-sha> --head <outgoing-sha>`, validates
+current remote target evidence and pushes the pinned feature SHA. It preserves unrelated
+staged paths. No skip-tests, implicit stage-all, direct main update or automatic merge.
+Install the local supporting hook with `./scripts/install_git_hooks.sh`; preserve custom hooks.
 
-- **Push current branch and merge with main:**
-  ```bash
-  bash scripts/git_push_merge.sh -m "feat(telephony): add callback slot validation"
-  ```
-
-- **Create a new branch, commit, push, and merge:**
-  ```bash
-  bash scripts/git_push_merge.sh -b dev-v0.8.4-feature-name -m "feat: implement feature"
-  ```
-
-- **Fast push skipping tests (e.g. documentation or spec updates):**
-  ```bash
-  bash scripts/git_push_merge.sh -b docs-update -m "docs: update constitution" --skip-tests
-  ```
-
-- **Dry-run simulation:**
-  ```bash
-  bash scripts/git_push_merge.sh -b dev-v0.8.4 -m "test run" --dry-run
-  ```
-
----
-
-## 🛡️ Sandbox & Safety Rules
-
-1. **Never run `git checkout main`**:
-   Checking out `main` in the IDE sandbox can trigger file-permission errors, unstage tracked work, or attempt to overwrite local `.env` files.
-   Instead, the workflow uses:
-   ```bash
-   git update-ref refs/heads/main <BRANCH_SHA>
-   ```
-   This updates local `main` directly at the git ref level in 1 millisecond with zero working-tree disruption.
-
-2. **Network Sandbox Access (`BypassSandbox: true`)**:
-   `git push` contacts GitHub (`github.com`), which requires outbound network access. Inside the agent, execute `bash scripts/git_push_merge.sh ...` with `BypassSandbox: true` so git can authenticate and push to remote origin.
-
-3. **Global GitConfig Isolation**:
-   The script automatically exports `GIT_CONFIG_GLOBAL=/dev/null` to prevent sandbox permission errors when accessing `~/.gitconfig`. Local author configurations (`user.name=rohanrony`, `user.email=rohanrony@gmail.com`) in `.git/config` are preserved and used automatically.
-
----
-
-## 📋 Execution Protocol Steps
-
-When invoked manually or by the agent:
-
-1. **Status Inspection**: Verify `git status` and test suite readiness via `./run_tests.sh`.
-2. **Branch Setup**: Create or checkout the target branch (`-b <branch_name>`).
-3. **Commit**: Stage and commit all pending modifications (`-m "<message>"`).
-4. **Push Branch**: `git push -u origin <branch_name>`.
-5. **Safe Fast-Forward**: Verify `git merge-base main <branch_name>` and fast-forward local `main` pointer via `git update-ref refs/heads/main <branch_name>`.
-6. **Push Main to Remote**: `git push origin main`.
-7. **Verify & Report**: Display the commit hash, remote status, and active branch state.
+Follow `docs/SPECKIT_WORKFLOW.md` and `docs/MERGE_READINESS.md`: require the coverage matrix,
+meaningful tests, full tests/ and e2e/ execution including the browser subset, and exact
+head/base evidence. Merge only with separate authorization, current aggregate CI, required
+review and resolved findings. Remote rules require explicit approval to change.
+Report local commit, pushed SHA, offline evidence, live requirements, merge and deployment
+separately. Never run live simulations as part of publication without separate authorization.
