@@ -237,7 +237,7 @@ def get_escalation_analytics(timeframe: Optional[str] = "7d") -> Dict[str, Any]:
 
 def get_technician_scorecard(timeframe: Optional[str] = "7d") -> List[Dict[str, Any]]:
     """
-    Returns performance scorecard per staff agent/technician.
+    Returns performance scorecard per staff agent.
     """
     time_filter = _get_time_filter_clause(timeframe, "sr.created_at")
 
@@ -288,7 +288,7 @@ def get_technician_scorecard(timeframe: Optional[str] = "7d") -> List[Dict[str, 
             "agent_id": r["agent_id"],
             "agent_name": r["agent_name"],
             "email": r["email"] or "N/A",
-            "role": r["role"] or "Technician",
+            "role": r["role"] or "Agent",
             "total_assigned": assigned,
             "confirmed_count": confirmed,
             "on_time_count": on_time,

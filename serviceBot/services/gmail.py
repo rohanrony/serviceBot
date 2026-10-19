@@ -330,7 +330,7 @@ def send_booking_notification(booking_type: str, details: dict, agent_email: Opt
                         <td>{details.get('phone', 'N/A')}</td>
                     </tr>
                     <tr>
-                        <th>Vehicle Details</th>
+                        <th>Service Details</th>
                         <td>{details.get('vehicle', 'N/A')}</td>
                     </tr>
                     <tr>
@@ -360,7 +360,7 @@ def send_booking_notification(booking_type: str, details: dict, agent_email: Opt
     === {type_title} ===
     Customer: {details.get('customer_name', 'N/A')}
     Phone: {details.get('phone', 'N/A')}
-    Vehicle: {details.get('vehicle', 'N/A')}
+    Details: {details.get('vehicle', 'N/A')}
     Service Type: {details.get('service_type', 'N/A')}
     Duration: {details.get('duration_minutes', 60)} mins
     {time_label}: {details.get('time', 'N/A')}
@@ -466,7 +466,8 @@ def send_admin_notification(
         subject = f"[Admin Copy] {type_title} - {agent_name or 'Staff'}"
 
     appt_id = details.get("appointment_id")
-    reassign_url = f"https://davidson.carcare/portal/reassign/{appt_id}" if appt_id else "https://davidson.carcare/portal"
+    from serviceBot.services.business_profile import notification_portal_url
+    reassign_url = notification_portal_url(config)
     is_escalation = booking_type in ["escalation", "escalated", "sla_breach"]
     esc_reason = details.get("escalation_reason") or details.get("reason")
 
@@ -524,7 +525,7 @@ def send_admin_notification(
                     </tr>
                     {"<tr><th>Issue Description</th><td>" + details.get('issue') + "</td></tr>" if details.get('issue') else ""}
                 </table>
-                {"<div style=\"margin-top: 24px; text-align: center;\"><a href=\"" + reassign_url + "\" style=\"background-color: #dc2626; color: #ffffff; padding: 10px 22px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block;\">Review & Reassign in Portal</a></div>" if is_escalation else ""}
+                {"<div style=\"margin-top: 24px; text-align: center;\"><a href=\"" + reassign_url + "\" style=\"background-color: #dc2626; color: #ffffff; padding: 10px 22px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block;\">Review & Reassign in Portal</a></div>" if is_escalation and reassign_url else ""}
             </div>
             <div class="footer">
                 Admin Notification sent automatically by serviceBot.
@@ -540,11 +541,11 @@ def send_admin_notification(
     {"Escalation Reason: " + str(esc_reason) if esc_reason else ""}
     Customer: {details.get('customer_name', 'N/A')}
     Phone: {details.get('phone', 'N/A')}
-    Asset: {details.get('vehicle', 'N/A')}
+    Details: {details.get('vehicle', 'N/A')}
     Service Type: {details.get('service_type', 'N/A')}
     {time_label}: {details.get('time', 'N/A')}
     {"Issue: " + details.get('issue') if details.get('issue') else ""}
-    {"Portal Action: " + reassign_url if is_escalation else ""}
+    {"Portal Action: " + reassign_url if is_escalation and reassign_url else ""}
     """
 
     try:

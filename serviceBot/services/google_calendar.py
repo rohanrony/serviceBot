@@ -313,9 +313,9 @@ def create_multi_service_calendar_events(
     """
     T042/T043: Synchronizes Google Calendar events for a multi-service visit.
     - T042: Attempts to create a unified customer visit event spanning T_start -> T_end
-      with all services and technicians itemized. If unified event encounters provider errors,
+      with all services and agents itemized. If unified event encounters provider errors,
       falls back gracefully to sequential per-segment events.
-    - T043: Synchronizes individual technician calendar events for their respective segments.
+    - T043: Synchronizes individual agent calendar events for their respective segments.
     """
     if not segments:
         return {"success": False, "message": "No segments provided"}
@@ -338,7 +338,7 @@ def create_multi_service_calendar_events(
     desc_lines = []
     for s in sorted_segs:
         svc = s.get("service_name") or s.get("service_type") or "Service"
-        tech = s.get("staff_agent_name") or f"Technician #{s.get('staff_agent_id')}"
+        tech = s.get("staff_agent_name") or f"Agent #{s.get('staff_agent_id')}"
         b_time = str(s.get("booking_time"))[:16]
         dur = s.get("duration_minutes") or 60
         desc_lines.append(f"• {svc} with {tech} ({b_time}, {dur} mins)")

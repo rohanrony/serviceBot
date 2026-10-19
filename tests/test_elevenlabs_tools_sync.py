@@ -71,3 +71,32 @@ def test_check_availability_tool_schema_has_preferred_time():
     assert "preferred_time" in body_schema["properties"], "preferred_time must be defined in check_availability tool schema"
     assert body_schema["properties"]["preferred_time"]["type"] == "string"
 
+
+@pytest.mark.parametrize("name", ["create_service_request", "book_appointment", "request_callback"])
+def test_booking_tools_accept_configured_intake_without_mandatory_automotive_fields(name):
+    tool = next(tool for tool in TOOL_DEFINITIONS if tool["name"] == name)
+    schema = tool["api_schema"]["request_body_schema"]
+    assert schema["properties"]["intake_data_json"]["type"] == "string"
+    assert not ({"make", "model", "year"} & set(schema.get("required", [])))
+    assert "phone" in schema.get("properties", {})
+
+
+def test_tool_contract_loading_honors_offline_environment(monkeypatch):
+    import builtins
+    import os
+    import runpy
+    from pathlib import Path
+
+    monkeypatch.setenv("PYTHON_DOTENV_DISABLED", "1")
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "synthetic-contract-key")
+    original = builtins.open
+
+    def offline_open(path, *args, **kwargs):
+        if isinstance(path, (str, os.PathLike)) and Path(path).name == ".env":
+            raise AssertionError("Offline contract loading must not read developer credentials")
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", offline_open)
+    namespace = runpy.run_path(str(Path(__file__).resolve().parents[1] / "scripts/sync_elevenlabs_tools.py"))
+    assert namespace["api_key"] == "synthetic-contract-key"
+

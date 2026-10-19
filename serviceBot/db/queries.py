@@ -158,6 +158,8 @@ def _create_service_request_legacy(
     Supports booking_type ('appointment', 'callback', 'appointment_and_callback'), booking_time, and uncataloged callbacks.
     For callbacks, enforces 15-minute duration and resolves ASAP times to the earliest available slot.
     """
+    from serviceBot.services.business_profile import get_business_profile, validate_intake_data
+    intake_data = validate_intake_data((vehicle_details or {}).get("intake_data"))
     import datetime as dt_mod
     # Try fuzzy catalog matching for service type
     fields = get_service_required_fields(service_type)
@@ -174,21 +176,23 @@ def _create_service_request_legacy(
 
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
-            # Check if vehicle exists
-            cursor.execute(
-                "SELECT id FROM vehicles WHERE customer_id = %s AND make = %s AND model = %s AND year = %s;",
-                (customer_id, vehicle_details.get("make"), vehicle_details.get("model"), vehicle_details.get("year"))
-            )
-            row = cursor.fetchone()
-            if row:
-                vehicle_id = row['id']
-            else:
+            vehicle_id = None
+            if get_business_profile()["collect_vehicle_details"]:
+                # Check if vehicle exists
                 cursor.execute(
-                    "INSERT INTO vehicles (customer_id, make, model, year) VALUES (%s, %s, %s, %s) RETURNING id;",
+                    "SELECT id FROM vehicles WHERE customer_id = %s AND make = %s AND model = %s AND year = %s;",
                     (customer_id, vehicle_details.get("make"), vehicle_details.get("model"), vehicle_details.get("year"))
                 )
-                vehicle_id = cursor.fetchone()['id']
-            
+                row = cursor.fetchone()
+                if row:
+                    vehicle_id = row['id']
+                else:
+                    cursor.execute(
+                        "INSERT INTO vehicles (customer_id, make, model, year) VALUES (%s, %s, %s, %s) RETURNING id;",
+                        (customer_id, vehicle_details.get("make"), vehicle_details.get("model"), vehicle_details.get("year"))
+                    )
+                    vehicle_id = cursor.fetchone()['id']
+
             # If staff_agent_id is not specified, assign default staff agent if available
             if not staff_agent_id:
                 cursor.execute("SELECT id FROM staff_agents WHERE is_active IS NOT FALSE ORDER BY id ASC LIMIT 1;")
@@ -208,6 +212,8 @@ def _create_service_request_legacy(
                 (customer_id, vehicle_id, matched_service_name, issue, "pending", time_slot, booking_type, booking_time, duration_minutes, staff_agent_id, is_uncataloged, linked_appointment_id, callback_priority, callback_number)
             )
             sr_id = cursor.fetchone()['id']
+            from serviceBot.services.booking import BookingService
+            BookingService._persist_intake(cursor, sr_id, intake_data)
 
 
 
@@ -1364,7 +1370,7 @@ def get_service_required_fields(service_name: str, *, strict: bool = False) -> d
 
     return {
         "name": service_name,
-        "description": "Vehicle service and repair",
+        "description": "Service request",
         "price_range": "Varies by service",
         "duration_minutes": 60,
         "req_customer_name": True,
@@ -1513,7 +1519,7 @@ def create_callback_request(customer_id: int, service_request_id: int = None, pr
 CUSTOMER_APPOINTMENTS_SELECT = """
     SELECT sr.id, sr.booking_time AS appointment_datetime, sr.booking_type, sr.service_type, sr.service_components,
            sr.issue_description, COALESCE(sr.duration_minutes, 60) AS duration_minutes,
-           sr.status, v.year, v.make, v.model,
+           sr.status, sr.intake_data, v.year, v.make, v.model,
            CASE WHEN sr.booking_type = 'appointment' THEN sr.visit_group_id END AS visit_group_id,
            linked.visit_start, linked.visit_anchor_id,
            COALESCE(linked.visit_member_ids, ARRAY[]::integer[]) AS visit_member_ids
@@ -2296,7 +2302,7 @@ def update_service_request_status(request_id: int, status: str, triggered_by: st
 
 def _assign_staff_agent_to_service_request_legacy(request_id: int, staff_agent_id: int = None) -> dict:
     """
-    Assigns or updates the assigned staff agent / technician for a service request.
+    Assigns or updates the assigned staff agent for a service request.
     Triggers slot booking changes in mock_calendar_slots, cancels the old agent's Google Calendar invite,
     sends a new Google Calendar invite & email to the new agent, and updates the Admin via email and calendar.
     """
@@ -2779,7 +2785,7 @@ def get_available_agents_for_request(request_id: int) -> list:
 
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
-            # 1. Active schedule load today per technician
+            # 1. Active schedule load today per agent
             cursor.execute(
                 """
                 SELECT staff_agent_id, COUNT(*) AS cnt
@@ -2842,7 +2848,7 @@ def get_available_agents_for_request(request_id: int) -> list:
             )
             overlapping_sr_agent_ids = {row["staff_agent_id"] for row in cursor.fetchall()}
 
-    # Check skills qualification if service has tagged technicians
+    # Check skills qualification if service has tagged agents
     provider_start = starts_at.replace(tzinfo=timezone)
     provider_end = ends_at.replace(tzinfo=timezone)
 
@@ -3372,9 +3378,9 @@ def get_appointment_full_trace(appointment_id: int) -> Optional[dict]:
     sms_template_titles = {
         "booking": "Customer Confirmation Dispatched",
         "booking_confirmation": "Customer Confirmation Dispatched",
-        "agent_booking": "Technician Assignment Alert Dispatched",
-        "agent_reassigned": "Replacement Technician Alert Dispatched",
-        "unassignment": "Previous Technician Unassigned Notice",
+        "agent_booking": "Agent Assignment Alert Dispatched",
+        "agent_reassigned": "Replacement Agent Alert Dispatched",
+        "unassignment": "Previous Agent Unassigned Notice",
         "reschedule": "Reschedule Notice Dispatched",
         "cancellation": "Cancellation Notice Dispatched",
         "reminder_24h": "24h Pre-Appointment Reminder Dispatched",
@@ -3426,7 +3432,7 @@ def get_appointment_full_trace(appointment_id: int) -> Optional[dict]:
         created_str = str(a.get("created_at") or "")[:19]
         evt_type = a.get("event_type") or "STATUS_CHANGE"
         trig = (a.get("triggered_by") or "").lower()
-        actor = a.get("actor_name") or ("Portal Staff" if "portal" in trig or "admin" in trig else ("Voice AI Agent" if "voice" in trig or "elevenlabs" in trig else ("Technician" if "agent" in trig else ("Customer" if "customer" in trig else "System"))))
+        actor = a.get("actor_name") or ("Portal Staff" if "portal" in trig or "admin" in trig else ("Voice AI Agent" if "voice" in trig or "elevenlabs" in trig else ("Agent" if "agent" in trig else ("Customer" if "customer" in trig else "System"))))
         actor_type = "agent" if "agent" in trig else ("customer" if "customer" in trig else ("admin" if "staff" in trig or "admin" in trig or "supervisor" in trig else "system"))
 
         to_st = (a.get("to_status") or "").lower()
@@ -3443,15 +3449,15 @@ def get_appointment_full_trace(appointment_id: int) -> Optional[dict]:
             badge_color = "info"
         elif evt_type in ("AGENT_ASSIGNED", "AGENT_REASSIGNED") or "assigned" in notes.lower():
             category = "REASSIGNMENT" if "reassigned" in notes.lower() or evt_type == "AGENT_REASSIGNED" else "ASSIGNMENT"
-            title = "Technician Reassigned" if category == "REASSIGNMENT" else "Technician Assigned"
+            title = "Agent Reassigned" if category == "REASSIGNMENT" else "Agent Assigned"
             badge_color = "info"
         elif evt_type == "AGENT_CONFIRMED" or to_st == "confirmed" or "confirmation status changed to confirmed" in notes.lower():
             category = "CONFIRMATION"
-            title = "Technician Confirmed Assignment"
+            title = "Agent Confirmed Assignment"
             badge_color = "success"
         elif evt_type == "AGENT_DECLINED" or to_st == "declined" or "declined" in notes.lower():
             category = "DECLINE"
-            title = "Technician Declined Assignment"
+            title = "Agent Declined Assignment"
             badge_color = "danger"
         elif evt_type == "ESCALATION_TRIGGERED" or to_st == "escalated" or "escalated" in notes.lower():
             category = "ESCALATION"
@@ -3524,11 +3530,11 @@ def get_appointment_full_trace(appointment_id: int) -> Optional[dict]:
             "timestamp": str(app["created_at"])[:19],
             "category": "ASSIGNMENT",
             "event_type": "AGENT_ASSIGNED",
-            "title": "Technician Assigned",
+            "title": "Agent Assigned",
             "actor": "Dispatch System",
             "actor_type": "system",
             "badge_color": "info",
-            "description": f"Assigned to technician {assigned_name}.",
+            "description": f"Assigned to agent {assigned_name}.",
             "metadata": {
                 "staff_agent_id": app["staff_agent_id"],
                 "staff_agent_name": app.get("staff_agent_name"),
@@ -3539,14 +3545,14 @@ def get_appointment_full_trace(appointment_id: int) -> Optional[dict]:
     has_confirmation = any(ev.get("category") == "CONFIRMATION" or ev.get("event_type") == "AGENT_CONFIRMED" for ev in timeline)
     if app.get("staff_agent_id") and app.get("confirmation_status") == "confirmed" and not has_confirmation:
         conf_time = app.get("confirmed_at") or app.get("updated_at") or app.get("created_at")
-        tech_name = app.get("staff_agent_name") or "Technician"
+        tech_name = app.get("staff_agent_name") or "Agent"
         timeline.append({
             "id": f"synth-confirm-{appointment_id}",
             "raw_timestamp": conf_time,
             "timestamp": str(conf_time)[:19],
             "category": "CONFIRMATION",
             "event_type": "AGENT_CONFIRMED",
-            "title": "Technician Confirmed Assignment",
+            "title": "Agent Confirmed Assignment",
             "actor": tech_name,
             "actor_type": "agent",
             "badge_color": "success",
@@ -3985,9 +3991,9 @@ def consolidate_appointment_service(
                     components = [*prior_components, {"name": additional_service_type,
                         "duration_minutes": new_duration - existing_duration}]
             if components:
-                # Canonical components remain one technician's indivisible block.
+                # Canonical components remain one agent's indivisible block.
                 # Raw mappings distinguish mappingless services from tags whose
-                # only technicians have become inactive.
+                # only agents have become inactive.
                 assigned = sr.get("staff_agent_id")
                 cursor.execute("SELECT id FROM staff_agents WHERE id=%s AND is_active IS NOT FALSE", (assigned,))
                 active_staff = cursor.fetchone()
@@ -3999,7 +4005,7 @@ def consolidate_appointment_service(
                     mappings.setdefault(row["name"], set()).add(row["staff_agent_id"])
                 if (not active_staff or any(assigned not in mappings[component["name"]]
                         for component in components if component["name"] in mappings)):
-                    return {"success": False, "error": "Assigned technician is not active and qualified for every selected service."}
+                    return {"success": False, "error": "Assigned agent is not active and qualified for every selected service."}
                 new_service_type = ", ".join(component["name"] for component in components)
             # NULL makes unstructured legacy/additional work explicitly unselectable.
             start_dt = None
@@ -4052,7 +4058,7 @@ def consolidate_appointment_service(
                         "success": False,
                         "capacity_blocked": True,
                         "appointment_id": appointment_id,
-                        "message": "Technician schedule cannot accommodate the extra duration contiguous with this appointment."
+                        "message": "Agent schedule cannot accommodate the extra duration contiguous with this appointment."
                     }
 
                 cursor.execute(
@@ -4073,7 +4079,7 @@ def consolidate_appointment_service(
                         "success": False,
                         "capacity_blocked": True,
                         "appointment_id": appointment_id,
-                        "message": "Technician schedule cannot accommodate the extra duration contiguous with this appointment."
+                        "message": "Agent schedule cannot accommodate the extra duration contiguous with this appointment."
                     }
 
             cursor.execute(
@@ -4368,14 +4374,14 @@ def update_appointment_confirmation_status(
             cursor.execute(
                 """
                 INSERT INTO service_request_audit_log (request_id, from_status, to_status, triggered_by, actor_name, event_type, notes, metadata)
-                VALUES (%s, %s, %s, 'agent', 'Technician', %s, %s, %s);
+                VALUES (%s, %s, %s, 'agent', 'Agent', %s, %s, %s);
                 """,
                 (
                     request_id,
                     current.get("confirmation_status") or "pending_agent_confirmation",
                     confirmation_status,
                     evt_type,
-                    f"Technician confirmation status changed to {confirmation_status} (escalation: {escalation_status})",
+                    f"Agent confirmation status changed to {confirmation_status} (escalation: {escalation_status})",
                     json.dumps({
                         "confirmation_status": confirmation_status,
                         "escalation_status": escalation_status,
@@ -4436,7 +4442,7 @@ def escalate_service_request(
             )
             updated = dict(cursor.fetchone())
 
-            actor = "Technician" if triggered_by == "agent_sms" else ("SLA Monitor" if triggered_by in ("system", "system_poller") else triggered_by)
+            actor = "Agent" if triggered_by == "agent_sms" else ("SLA Monitor" if triggered_by in ("system", "system_poller") else triggered_by)
             cursor.execute(
                 """
                 INSERT INTO service_request_audit_log (request_id, from_status, to_status, triggered_by, actor_name, event_type, notes, metadata)

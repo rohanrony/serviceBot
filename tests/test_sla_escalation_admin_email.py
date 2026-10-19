@@ -12,6 +12,7 @@ def test_send_admin_notification_escalation(mock_load, mock_send_api):
         "gmail_enabled": True,
         "gmail_sender": "sender@davidsoncarcare.com",
         "gmail_recipient": "admin@davidsoncarcare.com",
+        "portal_base_url": "https://studio.example",
         "gmail_auth_type": "oauth2"
     }
     mock_send_api.return_value = True
@@ -52,11 +53,11 @@ def test_send_admin_notification_escalation(mock_load, mock_send_api):
     assert "Jane Doe" in html_body
     assert "2022 Honda Civic" in html_body
     assert "Bob Technician" in html_body
-    assert "/portal/reassign/401" in html_body
+    assert "https://studio.example/portal/#dashboard" in html_body
 
     plain_body = kwargs.get("plain_body", "")
     assert "TIMEOUT_NO_RESPONSE" in plain_body
-    assert "/portal/reassign/401" in plain_body
+    assert "https://studio.example/portal/#dashboard" in plain_body
 
 
 @patch("serviceBot.services.sms_reminders.TwilioSMSClient")

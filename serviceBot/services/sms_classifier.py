@@ -77,7 +77,7 @@ def classify_inbound_message(body: str) -> dict:
 
 def parse_agent_confirmation_intent(body: str) -> dict:
     """
-    Parses staff agent / technician confirmation replies:
+    Parses staff agent confirmation replies:
     - Batch: 'CONFIRM ALL', 'ACCEPT ALL', 'C ALL', 'YES ALL' -> CONFIRM_ALL
              'DECLINE ALL', 'REJECT ALL', 'NO ALL' -> DECLINE_ALL
     - Numeric selection: 'CONFIRM 1', 'C 1', 'CONFIRM #101', 'DECLINE 2', etc.
@@ -119,10 +119,10 @@ def parse_agent_confirmation_intent(body: str) -> dict:
 
 def handle_agent_confirmation_action(staff_agent: dict, body: str, twilio_message_sid: str = None, from_phone: str = None) -> dict:
     """
-    Handles inbound SMS replies from staff agents / technicians:
+    Handles inbound SMS replies from staff agents:
     - Confirms assignment on 'CONFIRM', 'C', 'YES', 'ACCEPT' (or targeted selection)
     - Declines assignment and triggers supervisor escalation on 'DECLINE', 'UNAVAILABLE', 'NO', 'CANNOT'
-    - Presents disambiguation menu when technician has >1 pending assignments and sends bare response
+    - Presents disambiguation menu when agent has >1 pending assignments and sends bare response
     - Atomically confirms all assignments on 'CONFIRM ALL'
     - Accepts late confirmation if appointment escalated but not yet reassigned ('agent_confirm_late')
     - Rejects late confirmation if appointment already reassigned to someone else ('agent_confirm_superseded')
@@ -220,7 +220,7 @@ def handle_agent_confirmation_action(staff_agent: dict, body: str, twilio_messag
     # If appointment was already reassigned to another agent and no pending appointments exist
     if superseded_sr and not pending_list:
         target_sr = superseded_sr
-        new_name = target_sr.get("new_agent_name") or "another technician"
+        new_name = target_sr.get("new_agent_name") or "another agent"
         reply_text = f"Appointment #{target_sr['id']} was already reassigned to {new_name}. No action required."
         dispatch_agent_receipt(reply_text)
         return {
@@ -236,7 +236,7 @@ def handle_agent_confirmation_action(staff_agent: dict, body: str, twilio_messag
         category = "agent_confirm_noop" if "CONFIRM" in action else "agent_decline_noop"
         return {"status": "processed", "category": category, "reply": reply_text}
 
-    agent_name = staff_agent.get("name") or "Technician"
+    agent_name = staff_agent.get("name") or "Agent"
     now_ts = dt_mod.datetime.now()
 
     # --- Case 1: Batch Actions ---
@@ -395,7 +395,7 @@ def handle_agent_confirmation_action(staff_agent: dict, body: str, twilio_messag
                             sr_id,
                             target_sr.get("confirmation_status") or "pending_agent_confirmation",
                             agent_name,
-                            f"Technician {agent_name} replied '{body.strip()}' via SMS. Assignment confirmed.",
+                            f"Agent {agent_name} replied '{body.strip()}' via SMS. Assignment confirmed.",
                             json.dumps({"agent_id": staff_agent.get("id"), "agent_name": agent_name, "reply": body.strip(), "phone": from_phone})
                         )
                     )
@@ -428,7 +428,7 @@ def handle_agent_confirmation_action(staff_agent: dict, body: str, twilio_messag
                             sr_id,
                             target_sr.get("confirmation_status") or "pending_agent_confirmation",
                             agent_name,
-                            f"Technician {agent_name} replied '{body.strip()}' via SMS. Assignment declined.",
+                            f"Agent {agent_name} replied '{body.strip()}' via SMS. Assignment declined.",
                             json.dumps({"agent_id": staff_agent.get("id"), "agent_name": agent_name, "reply": body.strip(), "phone": from_phone})
                         )
                     )
@@ -437,7 +437,7 @@ def handle_agent_confirmation_action(staff_agent: dict, body: str, twilio_messag
             pass
         try:
             from serviceBot.services.booking import reassign_declined_technician_segment
-            reassign_declined_technician_segment(sr_id, reason="Technician declined via SMS")
+            reassign_declined_technician_segment(sr_id, reason="Agent declined via SMS")
         except Exception:
             pass
         try:
@@ -457,7 +457,7 @@ def handle_agent_confirmation_action(staff_agent: dict, body: str, twilio_messag
 
 def process_inbound_sms(from_phone: str, body: str, twilio_message_sid: str = None) -> dict:
     """Processes an inbound SMS message through the classification pipeline."""
-    # Check if sender is a staff agent / technician
+    # Check if sender is a staff agent
     from serviceBot.db.queries import get_staff_agent_by_phone
     staff_agent = get_staff_agent_by_phone(from_phone)
     if staff_agent:

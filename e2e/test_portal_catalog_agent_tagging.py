@@ -85,7 +85,7 @@ def test_deactivated_staff_are_absent_from_catalog_tag_controls(page, live_serve
 def test_portal_catalog_agent_tagging_e2e(page: Page, live_server: str, api):
     """
     E2E Test for User Story 1:
-    Verifies that the Portal Services Catalog displays Assigned Technicians,
+    Verifies that the Portal Services Catalog displays Assigned Agents,
     allows tagging specific staff agents in the Add Service form,
     and reflects the tagged badges upon saving.
     """
@@ -105,10 +105,10 @@ def test_portal_catalog_agent_tagging_e2e(page: Page, live_server: str, api):
     page.locator('.nav-item[data-tab="services"]').click()
     expect(page.locator("#services-view")).to_be_visible()
 
-    # 3. Verify the catalog table renders the 'Assigned Technicians' header
+    # 3. Verify the catalog table renders the 'Assigned Agents' header
     expect(page.locator("#services-view table")).to_be_visible()
     expect(page.locator("#services-view table thead")).to_contain_text(
-        "Assigned Technicians"
+        "Assigned Agents"
     )
 
     # 4. Fill Add Service form with an assigned agent

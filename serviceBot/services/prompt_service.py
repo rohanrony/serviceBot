@@ -148,7 +148,7 @@ def generate_closing_boundary_block(sched: Dict[str, Any], indent: str = "  ") -
 
     return (
         f"{indent}4. **Business Hours Closing Boundary & Duration Constraints (MANDATORY):**\n"
-        f"{indent}   - Business hours are strictly {days_hyphen}, {start_str} – {end_str} {tz_code} ({closed_desc}). All in-shop appointments must fully conclude by {end_str}. Technicians and shop operations finish promptly at {end_str}.\n"
+        f"{indent}   - Business hours are strictly {days_hyphen}, {start_str} – {end_str} {tz_code} ({closed_desc}). All appointments must fully conclude by {end_str}. Agents and business operations finish promptly at {end_str}.\n"
         f"{indent}   - Calculate the **Latest Possible Start Time**: `Latest Start Time = {end_str} - Total Service Duration`.\n"
         f"{indent}     - 60-minute service: Latest possible start is {start_60} (concludes at {end_str}).\n"
         f"{indent}     - 90-minute (1.5-hour) service: Latest possible start is {start_90} (concludes at {end_str}).\n"
@@ -176,7 +176,8 @@ def update_prompt_business_hours(
         return prompt_text
 
     sched = format_business_schedule(start_hour, end_hour, business_days, timezone_str)
-    updated = prompt_text
+    updated = re.sub(r"(?m)^Business hours: .*\.$",
+        lambda _: f"Business hours: {sched['days_hyphen']} {sched['start_str']} - {sched['end_str']} {sched['tz_code']}.", prompt_text)
 
     # 1. FAQ & General Knowledge bullet
     # Example: - **FAQ & General Knowledge:** The caller has questions about business hours (Monday-Friday 7:00 AM - 6:00 PM, closed weekends), location...
@@ -226,7 +227,7 @@ def update_prompt_business_hours(
                 f"(e.g., 60m -> {sched['start_60']} max; 90m -> {sched['start_90']} max; 120m -> {sched['start_120']} max). "
                 f"NEVER offer or accept any appointment extending past {sched['end_str']}. "
                 f"If a caller asks for a time that would run past {sched['end_str']} (e.g. {sched['example_bad_start']} for 90m), "
-                f"immediately inform them that the shop closes at {sched['end_str']}, explain the latest start time is {sched['start_90']}, "
+                f"immediately inform them that the business closes at {sched['end_str']}, explain the latest start time is {sched['start_90']}, "
                 f"and offer {sched['start_90']} or an earlier slot."
             )
             updated = single_bullet_pattern.sub(single_block, updated)
@@ -266,7 +267,8 @@ def update_prompt_lead_time_buffers(
     appt_disp = int(appt_val) if appt_val.is_integer() else appt_val
     cb_disp = int(cb_val) if cb_val.is_integer() else cb_val
 
-    updated = prompt_text
+    updated = re.sub(r"Appointments require at least \d+(?:\.\d+)? hours advance notice; callbacks require \d+(?:\.\d+)? hours\.",
+        f"Appointments require at least {appt_disp} hours advance notice; callbacks require {cb_disp} hours.", prompt_text)
 
     # 1. Update Appointment Horizon header (e.g., 4-Hour Minimum Planning Horizon Restriction)
     updated = re.sub(
@@ -321,7 +323,7 @@ def update_prompt_lead_time_buffers(
         r"(?<!advisor )Callbacks require at least \d+(?:\.\d+)? hours advance notice[^.]*\.",
         re.IGNORECASE
     )
-    cb_statement = f"Callbacks require at least {cb_disp} hours advance notice during business hours so a service advisor can review their vehicle records."
+    cb_statement = f"Callbacks require at least {cb_disp} hours advance notice during business hours so an agent can review their service request."
 
     if cb_notice_pattern.search(updated):
         updated = cb_notice_pattern.sub(cb_statement, updated)
