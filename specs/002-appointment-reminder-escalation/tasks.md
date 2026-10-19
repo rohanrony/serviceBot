@@ -173,3 +173,23 @@ graph TD
 - **MVP Scope**: Phase 1 (Setup) + Phase 2 (Foundational) + Phase 3 (US1: 4-Hour Buffer) + Phase 4 (US2: Immediate Attempt 1 Dispatch).
 - Provides immediate protection against chaotic short-notice bookings and ensures both customer and agent receive immediate notifications on booking.
 - Phases 5, 6, and 7 incrementally add the two-way SMS confirmation state machine, supervisor escalation queue, and portal UI management.
+
+
+## Phase 9: US4 Normal Dropdown Recovery
+
+- [x] T035 [US4] Reproduce candidate eligibility mismatch and stale escalation/deadline; capture Red evidence in tests/test_escalated_assignment.py and e2e/test_escalated_assignment.py (FR-016–FR-019).
+- [x] T036 [US4] Align scheduled candidate eligibility with booking validation in serviceBot/db/queries.py and serviceBot/services/booking.py (FR-017).
+- [x] T037 [US4] Persist recovery/deadline atomically and return authoritative state for normal assignment in serviceBot/services/booking.py and serviceBot/db/queries.py (FR-016, FR-018, FR-019).
+- [x] T038 [US4] Refresh cached escalation, assignee and banner after normal dropdown success in serviceBot/static/app.js; preserve visible errors on rejection (FR-016, FR-018).
+- [x] T039 [US4] Run service/DB, HTTP, Chromium, booking, staffing and notification regression suites; review failure paths, grouped work and persisted effects (FR-016–FR-019).
+- [x] T040 [US4] Converge the scoped follow-up contracts against implementation and record results/limitations in quickstart.md.
+
+
+## Phase 10: Convergence
+
+- [x] T041 [US4] Preserve reassignment notification classification for previously unassigned scheduled requests in serviceBot/services/booking.py; retain the failing captured-provider dispatch/deadline test in e2e/test_escalated_assignment.py (FR-016, FR-019; partial).
+
+
+## Phase 11: Convergence
+
+- [x] T042 [US4] Preserve confirmed linked companions during same-time normal agent reassignment in serviceBot/services/booking.py, with a persisted-state regression in e2e/test_escalated_assignment.py (FR-018; partial).

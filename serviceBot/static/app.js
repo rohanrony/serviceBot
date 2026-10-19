@@ -670,6 +670,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (targetReq) {
         targetReq.staff_agent_id = parsedId;
         const updated = data.data || {};
+        Object.assign(targetReq, updated);
         targetReq.status = updated.status || 'pending';
         targetReq.confirmation_status = updated.confirmation_status || 'pending_agent_confirmation';
         targetReq.confirmed_at = updated.confirmed_at || null;

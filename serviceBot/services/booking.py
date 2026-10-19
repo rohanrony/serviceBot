@@ -557,7 +557,7 @@ class BookingService:
                     customer={"name": row.get("customer_name"), "phone": row.get("phone")},
                 )
 
-                if allow_replace and row.get("visit_group_id") and time_delta is not None:
+                if allow_replace and row.get("visit_group_id") and time_delta:
                     cursor.execute(
                         """
                         SELECT sr.id, sr.service_type, sr.booking_type, sr.duration_minutes,
@@ -1743,6 +1743,7 @@ class BookingService:
             """
             SELECT sr.id, sr.customer_id, sr.staff_agent_id, sr.status,
                    sr.service_type, sr.issue_description, sr.service_components, sr.duration_minutes,
+                   sr.escalation_status,
                    c.name AS customer_name, c.phone,
                    v.year, v.make, v.model
             FROM service_requests sr
@@ -1790,25 +1791,10 @@ class BookingService:
             old_segments = [segment for segment in old_segments if segment is not None]
             cursor.execute("DELETE FROM appointment_reservation_segments WHERE reservation_id = %s;", (existing["id"],))
 
-        qualified_agent_ids = None
         if request.get("service_components") is not None:
-            components = _validated_components(request)
             if duration_minutes != request["duration_minutes"] or service_type != request["service_type"]:
                 raise BookingValidationError("Use selected-service removal to change a grouped appointment duration.")
-            cursor.execute("SELECT id FROM staff_agents WHERE is_active IS NOT FALSE ORDER BY id")
-            eligible = {row["id"] for row in cursor.fetchall()}
-            for component in components:
-                cursor.execute("""SELECT m.staff_agent_id FROM service_staff_agents m JOIN services s ON s.id=m.service_id
-                    WHERE s.name=%s""", (component["name"],))
-                mapped = {row["staff_agent_id"] for row in cursor.fetchall()}
-                if mapped:
-                    eligible &= mapped
-            qualified_agent_ids = sorted(eligible)
-        elif service_type:
-            from serviceBot.db.queries import get_qualified_agent_ids
-            q = get_qualified_agent_ids(service_type)
-            if q:
-                qualified_agent_ids = q
+        qualified_agent_ids = self._qualified_agent_ids(cursor, request)
 
         candidate_ids = self._candidate_agent_ids(
             cursor,
@@ -1841,6 +1827,24 @@ class BookingService:
 
         self._release_old_slots(cursor, request_id, old_agent_id, old_segments, chosen_agent_id, segments)
         self._mark_reserved_slots(cursor, request_id, chosen_agent_id, segments)
+        staff_reassignment = (
+            triggered_by == "portal_staff_reassignment"
+            and request.get("staff_agent_id") != chosen_agent_id
+        )
+        escalation_status = "none"
+        reassignment_cutoff = None
+        if staff_reassignment:
+            from serviceBot.api.portal import load_config
+
+            window = int(load_config().get("reassignment_confirmation_window_minutes", 15))
+            reassignment_cutoff = timezone_service.now_in_business_tz().replace(tzinfo=None) + dt_mod.timedelta(minutes=window)
+            if request.get("escalation_status") in {"escalated", "reassigned"}:
+                escalation_status = "reassigned"
+            cursor.execute(
+                "UPDATE sms_reminders SET status = 'CANCELLED' "
+                "WHERE appointment_id = %s AND recipient_type = 'agent' AND status = 'PENDING';",
+                (request_id,),
+            )
         cursor.execute(
             """
             UPDATE service_requests
@@ -1854,8 +1858,9 @@ class BookingService:
                 status = 'pending',
                 calendar_integration_status = 'PENDING_CALENDAR',
                 confirmation_status = 'pending_agent_confirmation',
-                escalation_status = 'none',
+                escalation_status = %s,
                 escalation_reason = NULL,
+                confirmation_cutoff_at = CASE WHEN %s THEN %s ELSE confirmation_cutoff_at END,
                 confirmed_at = NULL,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = %s;
@@ -1868,6 +1873,9 @@ class BookingService:
                 duration_minutes,
                 chosen_agent_id,
                 service_type,
+                escalation_status,
+                staff_reassignment,
+                reassignment_cutoff,
                 request_id,
             ),
         )
@@ -1909,6 +1917,28 @@ class BookingService:
             starts_at=starts_at,
             ends_at=ends_at,
         )
+
+    @staticmethod
+    def _qualified_agent_ids(cursor, request) -> Optional[list[int]]:
+        """Share service eligibility between candidate listing and reservation writes."""
+        if request.get("service_components") is not None:
+            components = _validated_components(request)
+            cursor.execute("SELECT id FROM staff_agents WHERE is_active IS NOT FALSE ORDER BY id")
+            eligible = {row["id"] for row in cursor.fetchall()}
+            for component in components:
+                cursor.execute(
+                    "SELECT m.staff_agent_id FROM service_staff_agents m JOIN services s ON s.id=m.service_id WHERE s.name=%s",
+                    (component["name"],),
+                )
+                mapped = {row["staff_agent_id"] for row in cursor.fetchall()}
+                if mapped:
+                    eligible &= mapped
+            return sorted(eligible)
+        if request.get("service_type"):
+            from serviceBot.db.queries import get_qualified_agent_ids
+
+            return get_qualified_agent_ids(request["service_type"]) or None
+        return None
 
     @staticmethod
     def _candidate_agent_ids(
@@ -2139,6 +2169,10 @@ class BookingService:
                 notification_event = "RESCHEDULED"
             else:
                 notification_event = "BOOKING"
+        if triggered_by == "portal_staff_reassignment":
+            # Recovery of an unassigned request must not reuse BOOKING's dedup key
+            # or replace the reassignment deadline with a new-booking SLA.
+            notification_event = "REASSIGNED"
         calendar_event_id = f"servicebot{reservation_id}{starts_at.strftime('%Y%m%d%H%M')}"
         bypass_qh = triggered_by in ("voice_agent", "telephony_voice_assistant", "voice_tool", "customer")
         payload = {

@@ -101,3 +101,18 @@
   "auto_reassign_on_escalation": false
 }
 ```
+
+
+## 4. Normal Dropdown Recovery (`PATCH /service-requests/{id}/assign-agent`)
+
+Request: `{ "staff_agent_id": <replacement id> }`. The existing POST/PUT aliases remain.
+For a successful scheduled recovery, `data` includes staff_agent_id, staff_agent_name,
+status=pending, confirmation_status=pending_agent_confirmation, confirmed_at=null,
+escalation_status=reassigned, escalation_reason=null and confirmation_cutoff_at.
+The browser consumes the recorded fields immediately and after reload. This success
+records a local assignment and queued provider work, not an assertion of SMS delivery.
+
+Available-agent results mark unknown calendar state and missing service qualifications
+unavailable. Assignment still validates capacity and eligibility at submission. A 409
+preserves assignment, escalation, reservation segments, reminders, audit and outbox state.
+A same-agent no-op returns current escalation/confirmation state without resolving it.

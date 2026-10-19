@@ -150,3 +150,42 @@ To run all unit, contract, and integration tests:
 ```bash
 ./run_tests.sh
 ```
+
+
+## US4 Normal Dropdown Recovery Verification (2026-10-19)
+
+This follow-up was investigated and implemented locally. Render read-only logs confirm
+request 44 failed normal reassignment because agent 12 had no connected Google account;
+the 409 toast used a generic time-unavailable message. Calendar validation is retained.
+
+Requirement mapping and review:
+
+| Contract | Observable evidence |
+| --- | --- |
+| FR-016 | Service/database test with a custom 23-minute setting; assigned/unassigned HTTP and Chromium cases assert pending confirmation, reassigned state, cleared reason/confirmed_at, immediate banner removal and reload; cutoff boundary checked. |
+| FR-017 | Unknown calendar, inactive and unqualified agents; grouped-service intersection; final submission revalidation after capacity changes. |
+| FR-018 | Full persisted request/reservation/segment/outbox/audit/reminder/slot snapshots on rejection; same-agent no-op preserves escalation and deadline; browser error restores original assignee; confirmed linked companions remain unchanged. |
+| FR-019 | Real outbox worker with captured Twilio transport verifies replacement/former-agent recipients and previously unassigned dispatch; exact persisted cutoff checked after processing. |
+
+Validation commands and results after the final runtime change:
+
+- `./run_tests.sh --all --tb=short`: **2137 passed**, 15 existing deprecation warnings.
+- `./run_tests.sh --file e2e/test_escalated_assignment.py e2e/test_workflows.py e2e/test_booking_contracts.py e2e/test_staff_lifecycle_contracts.py e2e/test_portal_availability_loading.py e2e/test_portal_read_responsiveness.py e2e/test_notification_workflows.py e2e/test_reminder_contracts.py e2e/test_multiservice_contracts.py e2e/test_portal_recent_features.py e2e/test_appointments.py --tb=short -q`:
+  **205 passed**, including all **15** new HTTP/worker/Chromium cases.
+- Cached offline Ruff: new tests pass the configured lint rules; changed Python runtime
+  files pass E9/F63/F7/F82 checks. JavaScript syntax (`node --check`) and `git diff --check` pass.
+
+Analysis found no blocking inconsistencies in the four scoped follow-up requirements and
+eight implementation/verification tasks. Convergence found T041: unassigned recovery
+reused BOOKING's deduplication key and suppressed the new prompt. Its new regression failed,
+and the classification was repaired. Review then found T042: same-time staff changes reset
+confirmed companion segments. A new persisted-state regression failed, and companion updates
+were restricted to actual time changes. The third scoped convergence found no actionable
+gaps. Historical feature acceptance outside this follow-up was not re-audited.
+
+Local PostgreSQL/Chromium access required execution outside the restricted sandbox. All
+test databases were disposable and external providers were mocked/captured. These results
+do not establish live SMS delivery. Production was read-only; no assignment, Google account,
+notification, deployment, commit, or push was performed. A final read-only database check
+confirmed agent 12 is active and has no Google account row. That agent needs their Google
+Calendar reconnected before the normal scheduled-assignment path can use them.
