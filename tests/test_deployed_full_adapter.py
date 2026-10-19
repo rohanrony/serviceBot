@@ -784,3 +784,16 @@ def test_c47_absent_builtin_map_remains_safe_but_harmless_config_is_fingerprinte
     assert before != after
     agent['conversation_config']['agent']['prompt']['built_in_tools']['end_call']['description'] = 'Changed'
     assert negative.handoff_capability(adapter) != after
+
+
+@pytest.mark.parametrize("observed,accepted", [([7,12],True),([12,7],True),([7],False),([7,12,99],False),([7,7],False)])
+def test_catalog_binding_membership_is_exact_without_requiring_api_order(fixture,observed,accepted):
+    adapter,_,_,catalog,_=fixture
+    adapter.prepare_catalog()
+    adapter._mapping('oil',[7,12])
+    catalog[0]['assigned_agent_ids']=observed
+    if accepted:
+        adapter._catalog_readback()
+    else:
+        with pytest.raises(SimulationError,match='read-back differs'):
+            adapter._catalog_readback()

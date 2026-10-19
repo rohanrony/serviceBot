@@ -51,9 +51,13 @@ def owned_booking(monkeypatch):
         def cursor(conn):
             assert conn is connection
             class Cursor:
-                def execute(self, sql, params):
+                def execute(self, sql, params=None):
                     statement = " ".join(sql.split())
                     assert statement.startswith("SELECT ")
+                    if statement == "SELECT name FROM services;":
+                        assert params is None
+                        self.result = [{"name": service_type}]
+                        return
                     if "FROM services WHERE" in statement:
                         assert params == (service_type,)
                         self.result = [{"name": service_type}]

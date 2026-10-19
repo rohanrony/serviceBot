@@ -104,3 +104,36 @@ tests/
 |---|---|---|
 | Horizon-Adaptive Cutoff Formula | Differentiates advance bookings (>24h) from same-day bookings (<6h). | A fixed T-2 cutoff leaves multi-day advance bookings unconfirmed until the day of service, causing dispatcher crisis. |
 | Inbound SMS Routing Disambiguation | Allows technicians to confirm via simple SMS reply without web portal login. | Requiring mobile web portal login introduces high friction for technicians working in garage bays. |
+
+
+## US4 Follow-up Design (2026-10-19)
+
+Keep the normal `/assign-agent` path on BookingService's transactional reservation owner.
+Do not bypass calendar checks through the supervisor route. Align scheduled candidate
+eligibility with the reservation rules, including grouped-service qualification.
+Persist escalation recovery and its new deadline in the reservation transaction, and
+return those fields so the browser merges recorded state and refreshes the banner.
+Preserve existing same-agent no-op, rejected-operation rollback, and scheduled-time guards.
+No schema or provider policy changes are needed.
+
+Test first: service/DB regression in `tests/test_escalated_assignment.py`; real HTTP
+contracts and Chromium journeys in `e2e/test_escalated_assignment.py`. Freeze the business
+clock and stub only provider boundaries. Assert persisted effects and entire before/after
+snapshots on rejection; check the normal dropdown and reload rather than DOM submission
+alone. Run relevant complete booking, staff lifecycle, portal, and notification suites.
+Constitution check: one reservation authority, atomic mutations, offline providers,
+observable pending confirmation, and browser acceptance coverage are required.
+
+Propagate linked companion updates only when the appointment time changes. A same-time
+agent transfer must preserve confirmed companions and their queued work.
+
+
+## Follow-up Test Audit
+
+Extend coverage of FR-016–FR-019 without changing their intent: pure unit policy tables,
+synchronized concurrent PostgreSQL assignments, late outbox-insert failure rollback,
+HTTP schema/closed/past/unassignment guards and method aliases, provider exceptions and
+busy-interval boundaries, post-recovery retry idempotency, reminder ownership, disabled
+browser choices and recovery from an escalations-only filter. Keep all provider transport
+captured and all database faults restricted to disposable test databases. Run both full
+`tests/` and `e2e/` lifecycles separately and confirm automatic discovery/browser markers.

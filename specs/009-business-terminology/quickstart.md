@@ -1,0 +1,4 @@
+# Validation
+Run `./run_tests.sh --file tests/test_business_profile.py`; run relevant unit suite, then `./run_tests.sh --file e2e/test_business_profile.py` separately. Loopback PostgreSQL and installed Chromium required. Provider effects are isolated by test fixtures. Config > Business: change name/industry, disable automotive fields, add required text and number fields, save/reload; create and edit a request and verify values after reload. Review services, knowledge and custom notification templates when switching business.
+
+Release boundary: after merge, deploy through the normal release process and synchronize the configured provider tool definitions to include intake_data_json. Do not run the existing tool sync script against its default agent IDs without verifying the intended target. No deployment or live provider operation was included in this task.

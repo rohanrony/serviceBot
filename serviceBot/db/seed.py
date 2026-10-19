@@ -177,8 +177,8 @@ def seed_db(force: bool = False):
         # Insert Staff Agents
         agents = [
             (1, 'John Doe', 'Service Advisor', 'john.doe@example.com', '+14242704893'),
-            (2, 'Jane Smith', 'Technician', 'jane.smith@example.com', '+14242704893'),
-            (3, 'Bob Johnson', 'Technician', 'bob.johnson@example.com', '+14242704893')
+            (2, 'Jane Smith', 'Agent', 'jane.smith@example.com', '+14242704893'),
+            (3, 'Bob Johnson', 'Agent', 'bob.johnson@example.com', '+14242704893')
         ]
         cursor.executemany(
             "INSERT INTO staff_agents (id, name, role, email, phone_number) VALUES (%s, %s, %s, %s, %s);",

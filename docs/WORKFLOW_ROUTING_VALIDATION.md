@@ -1,8 +1,10 @@
 # Workflow routing change and validation
 
 Date: 2026-10-19. This is a workflow-instruction change, extending the previously published
-verification workflow at commit `959d381edd8df2131daa090d5944d95e7574f19b`. Application code,
-test fixtures, external permissions and runtime configuration are unchanged.
+verification workflow at commit `959d381edd8df2131daa090d5944d95e7574f19b`. The workflow patch changes no application code,
+test fixtures, external permissions or runtime configuration. Its publication candidate also
+integrates current main at `7b9bf4b3f7a613a0f6f7900987125e855d61935c`. The staff-calendar
+merge conflict preserves that target revision's complete test file and assertions.
 
 ## Acceptance and design
 

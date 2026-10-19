@@ -113,7 +113,7 @@ def test_browser_create_edit_staff_persists_after_reload(page, live_server, api)
     open_settings(page, live_server, "staff")
     expect(
         page.locator(f'#staff-agent-selector option[value="{agent_id}"]')
-    ).to_contain_text("Casey Updated (Technician)")
+    ).to_contain_text("Casey Updated (Agent)")
 
 
 def test_browser_deactivation_preserves_booking_and_exposes_escalation(

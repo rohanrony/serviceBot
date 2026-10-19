@@ -205,16 +205,16 @@ def test_customer_onboarding_records_role_without_claiming_whatsapp_connection(a
     )
 
 
-def test_gmail_config_round_trip_masks_password(api):
-    password = "e2e-fake-app-password"
+def test_gmail_config_round_trip_masks_google_secret(api):
+    secret = "e2e-fake-google-secret"
     response = api.post(
         f"{PORTAL}/gmail-config",
         json={
             "gmail_enabled": False,
-            "gmail_auth_type": "app_password",
+            "gmail_auth_type": "oauth2",
             "gmail_sender": "sender@example.test",
             "gmail_recipient": "admin@example.test",
-            "gmail_password": password,
+            "gmail_client_secret": secret,
             "enable_agent_selection": True,
         },
     )
@@ -223,5 +223,6 @@ def test_gmail_config_round_trip_masks_password(api):
     saved = response.json()
     assert saved["gmail_sender"] == "sender@example.test"
     assert saved["gmail_recipient"] == "admin@example.test"
-    assert saved["has_password"] is True
-    assert password not in response.text
+    assert saved["gmail_auth_type"] == "oauth2"
+    assert saved["has_client_secret"] is True
+    assert secret not in response.text

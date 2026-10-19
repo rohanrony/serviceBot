@@ -126,7 +126,23 @@ def test_get_service_requests_with_escalated_filter(client, setup_escalated_requ
     assert any(c["id"] == data["candidate_agent_id"] for c in target["candidate_agents"])
 
 
-def test_reassign_service_request_success(client, setup_escalated_request):
+def test_reassign_service_request_success(client, setup_escalated_request, monkeypatch):
+    from types import SimpleNamespace
+    from serviceBot.services import booking, timezone_service
+
+    # The fixture owns a fixed October 8 reservation; keep its clock fixed too.
+    current = dt.datetime(2026, 10, 7, 12, tzinfo=timezone_service.get_business_zoneinfo())
+    class DateTimeMeta(type):
+        def __instancecheck__(cls, value):
+            return isinstance(value, dt.datetime)
+    class FrozenDateTime(dt.datetime, metaclass=DateTimeMeta):
+        @classmethod
+        def now(cls, tz=None):
+            return current.astimezone(tz) if tz else current.replace(tzinfo=None)
+    clock = SimpleNamespace(**vars(dt))
+    clock.datetime = FrozenDateTime
+    monkeypatch.setattr(booking, "dt_mod", clock)
+    monkeypatch.setattr(timezone_service, "now_in_business_tz", lambda: current)
     data = setup_escalated_request
     req_id = data["request_id"]
     new_agent_id = data["candidate_agent_id"]

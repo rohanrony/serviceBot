@@ -158,6 +158,8 @@ def _create_service_request_legacy(
     Supports booking_type ('appointment', 'callback', 'appointment_and_callback'), booking_time, and uncataloged callbacks.
     For callbacks, enforces 15-minute duration and resolves ASAP times to the earliest available slot.
     """
+    from serviceBot.services.business_profile import get_business_profile, validate_intake_data
+    intake_data = validate_intake_data((vehicle_details or {}).get("intake_data"))
     import datetime as dt_mod
     # Try fuzzy catalog matching for service type
     fields = get_service_required_fields(service_type)
@@ -174,21 +176,23 @@ def _create_service_request_legacy(
 
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
-            # Check if vehicle exists
-            cursor.execute(
-                "SELECT id FROM vehicles WHERE customer_id = %s AND make = %s AND model = %s AND year = %s;",
-                (customer_id, vehicle_details.get("make"), vehicle_details.get("model"), vehicle_details.get("year"))
-            )
-            row = cursor.fetchone()
-            if row:
-                vehicle_id = row['id']
-            else:
+            vehicle_id = None
+            if get_business_profile()["collect_vehicle_details"]:
+                # Check if vehicle exists
                 cursor.execute(
-                    "INSERT INTO vehicles (customer_id, make, model, year) VALUES (%s, %s, %s, %s) RETURNING id;",
+                    "SELECT id FROM vehicles WHERE customer_id = %s AND make = %s AND model = %s AND year = %s;",
                     (customer_id, vehicle_details.get("make"), vehicle_details.get("model"), vehicle_details.get("year"))
                 )
-                vehicle_id = cursor.fetchone()['id']
-            
+                row = cursor.fetchone()
+                if row:
+                    vehicle_id = row['id']
+                else:
+                    cursor.execute(
+                        "INSERT INTO vehicles (customer_id, make, model, year) VALUES (%s, %s, %s, %s) RETURNING id;",
+                        (customer_id, vehicle_details.get("make"), vehicle_details.get("model"), vehicle_details.get("year"))
+                    )
+                    vehicle_id = cursor.fetchone()['id']
+
             # If staff_agent_id is not specified, assign default staff agent if available
             if not staff_agent_id:
                 cursor.execute("SELECT id FROM staff_agents WHERE is_active IS NOT FALSE ORDER BY id ASC LIMIT 1;")
@@ -208,6 +212,8 @@ def _create_service_request_legacy(
                 (customer_id, vehicle_id, matched_service_name, issue, "pending", time_slot, booking_type, booking_time, duration_minutes, staff_agent_id, is_uncataloged, linked_appointment_id, callback_priority, callback_number)
             )
             sr_id = cursor.fetchone()['id']
+            from serviceBot.services.booking import BookingService
+            BookingService._persist_intake(cursor, sr_id, intake_data)
 
 
 
@@ -681,6 +687,10 @@ def check_availability(service_type: str = None, preferred_date: str = None, boo
     iso_date_str, time_window, start_time = parse_preferred_date_and_time(preferred_date)
 
     is_callback = (booking_type == "callback") or (service_type and "callback" in str(service_type).lower())
+
+    if not services_list and service_type:
+        fields = get_service_required_fields(service_type, strict=True)
+        services_list = fields.get("service_names") if fields else None
 
     parsed_services = []
     if services_list and len(services_list) > 1:
@@ -1277,6 +1287,44 @@ def find_best_service_match(query_name: str, services_list: list) -> dict:
     return best_match
 
 
+def match_catalog_service_names(service_name: str, catalog_names: list[str]) -> list[str]:
+    """Resolve a complete sequence of catalogue labels before interpreting separators.
+
+    Punctuation belongs to a label until that whole label has matched. Requiring
+    complete consumption prevents free-text symptoms from becoming a partial order.
+    """
+    import re
+    from collections import Counter
+    from functools import lru_cache
+
+    if not isinstance(service_name, str) or not service_name.strip():
+        return []
+    text = service_name.strip()
+    patterns = [(name, re.compile(re.escape(name), re.IGNORECASE))
+                for name in sorted(catalog_names, key=len, reverse=True)]
+    separator = re.compile(r"(?:\s*(?:[,/+&]|\band\b)\s*)+", re.IGNORECASE)
+
+    @lru_cache(maxsize=None)
+    def match_from(position):
+        for name, pattern in patterns:
+            match = pattern.match(text, position)
+            if match is None:
+                continue
+            if match.end() == len(text):
+                return (name,)
+            boundary = separator.match(text, match.end())
+            if boundary is not None:
+                remaining = match_from(boundary.end())
+                if remaining:
+                    return (name, *remaining)
+        return ()
+
+    result = list(match_from(0))
+    counts = Counter(name.casefold() for name in catalog_names)
+    return result if all(counts[name.casefold()] == 1 for name in result) else []
+
+
+
 def get_service_required_fields(service_name: str, *, strict: bool = False) -> dict:
     """
     Looks up a service by name (fuzzy matching supported) in the services table
@@ -1315,10 +1363,12 @@ def get_service_required_fields(service_name: str, *, strict: bool = False) -> d
         if cleaned_query == clean_str(s["name"]):
             return s
 
-    # 2. Multi-service delimiter check
-    matched_services = []
+    # 2. Match whole canonical labels before the legacy fuzzy-name fallback.
+    canonical_names = match_catalog_service_names(service_name, [s["name"] for s in rows])
+    by_name = {s["name"]: s for s in rows}
+    matched_services = [by_name[name] for name in canonical_names]
     parts = [p.strip() for p in re.split(r'[,/+]|\band\b|&', service_name, flags=re.IGNORECASE) if p.strip()]
-    if len(parts) > 1:
+    if not canonical_names and len(parts) > 1:
         for part in parts:
             part_clean = clean_str(part)
             if not part_clean:
@@ -1347,6 +1397,7 @@ def get_service_required_fields(service_name: str, *, strict: bool = False) -> d
         price_str = ", ".join(prices) if prices else "Varies by service"
         return {
             "name": service_name,
+            "service_names": [s["name"] for s in matched_services],
             "description": f"Multiple services requested: {matched_names}",
             "price_range": price_str,
             "duration_minutes": total_duration,
@@ -1364,7 +1415,7 @@ def get_service_required_fields(service_name: str, *, strict: bool = False) -> d
 
     return {
         "name": service_name,
-        "description": "Vehicle service and repair",
+        "description": "Service request",
         "price_range": "Varies by service",
         "duration_minutes": 60,
         "req_customer_name": True,
@@ -1513,7 +1564,7 @@ def create_callback_request(customer_id: int, service_request_id: int = None, pr
 CUSTOMER_APPOINTMENTS_SELECT = """
     SELECT sr.id, sr.booking_time AS appointment_datetime, sr.booking_type, sr.service_type, sr.service_components,
            sr.issue_description, COALESCE(sr.duration_minutes, 60) AS duration_minutes,
-           sr.status, v.year, v.make, v.model,
+           sr.status, sr.intake_data, v.year, v.make, v.model,
            CASE WHEN sr.booking_type = 'appointment' THEN sr.visit_group_id END AS visit_group_id,
            linked.visit_start, linked.visit_anchor_id,
            COALESCE(linked.visit_member_ids, ARRAY[]::integer[]) AS visit_member_ids
@@ -2296,7 +2347,7 @@ def update_service_request_status(request_id: int, status: str, triggered_by: st
 
 def _assign_staff_agent_to_service_request_legacy(request_id: int, staff_agent_id: int = None) -> dict:
     """
-    Assigns or updates the assigned staff agent / technician for a service request.
+    Assigns or updates the assigned staff agent for a service request.
     Triggers slot booking changes in mock_calendar_slots, cancels the old agent's Google Calendar invite,
     sends a new Google Calendar invite & email to the new agent, and updates the Admin via email and calendar.
     """
@@ -2477,7 +2528,9 @@ def _get_available_agents_for_request_legacy(request_id: int) -> list:
     return agents
 
 
-def assign_staff_agent_to_service_request(request_id: int, staff_agent_id: int = None) -> dict:
+def assign_staff_agent_to_service_request(
+    request_id: int, staff_agent_id: int = None, *, reason: Optional[str] = None
+) -> dict:
     """Assign scheduled work by moving its durable local reservation atomically."""
     from serviceBot.services.booking import (
         BUSINESS_TZ,
@@ -2491,7 +2544,9 @@ def assign_staff_agent_to_service_request(request_id: int, staff_agent_id: int =
             cursor.execute(
                 """
                 SELECT sr.id, sr.status, sr.staff_agent_id, sr.booking_time, sr.time_slot,
-                       sr.updated_at, ar.id AS reservation_id,
+                       sr.updated_at, sr.confirmation_status, sr.confirmed_at,
+                       sr.escalation_status, sr.escalation_reason, sr.confirmation_cutoff_at,
+                       ar.id AS reservation_id,
                        ar.staff_agent_id AS reservation_agent_id,
                        ar.starts_at AS reservation_start
                 FROM service_requests sr
@@ -2540,6 +2595,11 @@ def assign_staff_agent_to_service_request(request_id: int, staff_agent_id: int =
                 "id": request_id,
                 "staff_agent_id": staff_agent_id,
                 "status": request.get("status"),
+                "confirmation_status": request.get("confirmation_status"),
+                "confirmed_at": request.get("confirmed_at"),
+                "escalation_status": request.get("escalation_status"),
+                "escalation_reason": request.get("escalation_reason"),
+                "confirmation_cutoff_at": request.get("confirmation_cutoff_at"),
                 "updated_at": request.get("updated_at"),
             }
         if starts_at is None:
@@ -2586,17 +2646,22 @@ def assign_staff_agent_to_service_request(request_id: int, staff_agent_id: int =
                         request_id,
                         request.get("status") or "pending",
                         evt_type,
-                        audit_note,
+                        f"{audit_note} ({reason})" if reason else audit_note,
                         json.dumps({
                             "old_agent_id": old_agent_id,
                             "old_agent_name": old_agent_name,
                             "new_agent_id": staff_agent_id,
                             "new_agent_name": new_agent_name,
+                            **({"reason": reason} if reason else {}),
                         }),
                     ),
                 )
                 cursor.execute(
-                    "SELECT id, staff_agent_id, status, confirmation_status, updated_at FROM service_requests WHERE id = %s;",
+                    """SELECT sr.id, sr.staff_agent_id, sr.status, sr.confirmation_status,
+                       sr.confirmed_at, sr.escalation_status, sr.escalation_reason,
+                       sr.confirmation_cutoff_at, sr.updated_at, sa.name AS staff_agent_name
+                       FROM service_requests sr LEFT JOIN staff_agents sa ON sa.id=sr.staff_agent_id
+                       WHERE sr.id = %s;""",
                     (request_id,),
                 )
                 updated_row = cursor.fetchone()
@@ -2660,12 +2725,13 @@ def assign_staff_agent_to_service_request(request_id: int, staff_agent_id: int =
                     request_id,
                     request.get("status") or "pending",
                     evt_type,
-                    audit_note,
+                    f"{audit_note} ({reason})" if reason else audit_note,
                     json.dumps({
                         "old_agent_id": old_agent_id,
                         "old_agent_name": old_agent_name,
                         "new_agent_id": staff_agent_id,
                         "new_agent_name": new_agent_name,
+                        **({"reason": reason} if reason else {}),
                     }),
                 ),
             )
@@ -2679,7 +2745,7 @@ def get_available_agents_for_request(request_id: int) -> list:
     Evaluates calendar availability across Google Calendar, appointment reservations,
     and service requests. Computes current schedule load and ranks candidates.
     """
-    from serviceBot.services.booking import normalize_reservation_duration, reservation_segments
+    from serviceBot.services.booking import BookingService, normalize_reservation_duration, reservation_segments
     from serviceBot.services.google_calendar import fetch_agent_events, parse_google_datetime
     from serviceBot.services.sms_reminders import parse_booking_datetime
     from serviceBot.services import timezone_service
@@ -2691,7 +2757,7 @@ def get_available_agents_for_request(request_id: int) -> list:
             cursor.execute(
                 """
                 SELECT id, booking_time, time_slot, duration_minutes, booking_start_at,
-                       booking_end_at, service_type, staff_agent_id
+                       booking_end_at, service_type, staff_agent_id, service_components
                 FROM service_requests
                 WHERE id = %s;
                 """,
@@ -2700,6 +2766,7 @@ def get_available_agents_for_request(request_id: int) -> list:
             request = cursor.fetchone()
             if not request:
                 raise ValueError(f"Service request with ID {request_id} was not found.")
+            qualified_agent_ids = BookingService._qualified_agent_ids(cursor, request)
             cursor.execute(
                 "SELECT id, name, role, email, phone_number FROM staff_agents WHERE is_active IS NOT FALSE ORDER BY id ASC;"
             )
@@ -2763,7 +2830,7 @@ def get_available_agents_for_request(request_id: int) -> list:
 
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
-            # 1. Active schedule load today per technician
+            # 1. Active schedule load today per agent
             cursor.execute(
                 """
                 SELECT staff_agent_id, COUNT(*) AS cnt
@@ -2826,10 +2893,7 @@ def get_available_agents_for_request(request_id: int) -> list:
             )
             overlapping_sr_agent_ids = {row["staff_agent_id"] for row in cursor.fetchall()}
 
-    # Check skills qualification if service has tagged technicians
-    service_type = request.get("service_type")
-    qualified_agent_ids = get_qualified_agent_ids(service_type) if service_type else []
-
+    # Check skills qualification if service has tagged agents
     provider_start = starts_at.replace(tzinfo=timezone)
     provider_end = ends_at.replace(tzinfo=timezone)
 
@@ -2838,7 +2902,13 @@ def get_available_agents_for_request(request_id: int) -> list:
         agent["agent_id"] = agent_id
         agent["agent_name"] = agent["name"]
         agent["current_job_count_today"] = job_counts.get(agent_id, 0)
-        agent["skills_match"] = (agent_id in qualified_agent_ids) if qualified_agent_ids else True
+        agent["skills_match"] = qualified_agent_ids is None or agent_id in qualified_agent_ids
+
+        if not agent["skills_match"]:
+            agent["is_available"] = False
+            agent["available"] = False
+            agent["reason"] = "Not qualified for this service"
+            continue
 
         if agent_id in locally_reserved:
             agent["is_available"] = False
@@ -2863,7 +2933,7 @@ def get_available_agents_for_request(request_id: int) -> list:
             calendar_error = True
             events = None
 
-        if calendar_error:
+        if calendar_error or events is None:
             agent["is_available"] = False
             agent["available"] = False
             agent["reason"] = "Calendar state unavailable"
@@ -2882,11 +2952,6 @@ def get_available_agents_for_request(request_id: int) -> list:
             agent["is_available"] = not is_busy
             agent["available"] = not is_busy
             agent["reason"] = "Busy in Google Calendar" if is_busy else "Available"
-        else:
-            # Not connected to Google Calendar -> fall back to local DB authority
-            agent["is_available"] = True
-            agent["available"] = True
-            agent["reason"] = "Available"
 
     # Candidates are ranked by calendar availability (available first),
     # skills match (qualified first),
@@ -3358,9 +3423,9 @@ def get_appointment_full_trace(appointment_id: int) -> Optional[dict]:
     sms_template_titles = {
         "booking": "Customer Confirmation Dispatched",
         "booking_confirmation": "Customer Confirmation Dispatched",
-        "agent_booking": "Technician Assignment Alert Dispatched",
-        "agent_reassigned": "Replacement Technician Alert Dispatched",
-        "unassignment": "Previous Technician Unassigned Notice",
+        "agent_booking": "Agent Assignment Alert Dispatched",
+        "agent_reassigned": "Replacement Agent Alert Dispatched",
+        "unassignment": "Previous Agent Unassigned Notice",
         "reschedule": "Reschedule Notice Dispatched",
         "cancellation": "Cancellation Notice Dispatched",
         "reminder_24h": "24h Pre-Appointment Reminder Dispatched",
@@ -3412,7 +3477,7 @@ def get_appointment_full_trace(appointment_id: int) -> Optional[dict]:
         created_str = str(a.get("created_at") or "")[:19]
         evt_type = a.get("event_type") or "STATUS_CHANGE"
         trig = (a.get("triggered_by") or "").lower()
-        actor = a.get("actor_name") or ("Portal Staff" if "portal" in trig or "admin" in trig else ("Voice AI Agent" if "voice" in trig or "elevenlabs" in trig else ("Technician" if "agent" in trig else ("Customer" if "customer" in trig else "System"))))
+        actor = a.get("actor_name") or ("Portal Staff" if "portal" in trig or "admin" in trig else ("Voice AI Agent" if "voice" in trig or "elevenlabs" in trig else ("Agent" if "agent" in trig else ("Customer" if "customer" in trig else "System"))))
         actor_type = "agent" if "agent" in trig else ("customer" if "customer" in trig else ("admin" if "staff" in trig or "admin" in trig or "supervisor" in trig else "system"))
 
         to_st = (a.get("to_status") or "").lower()
@@ -3429,15 +3494,15 @@ def get_appointment_full_trace(appointment_id: int) -> Optional[dict]:
             badge_color = "info"
         elif evt_type in ("AGENT_ASSIGNED", "AGENT_REASSIGNED") or "assigned" in notes.lower():
             category = "REASSIGNMENT" if "reassigned" in notes.lower() or evt_type == "AGENT_REASSIGNED" else "ASSIGNMENT"
-            title = "Technician Reassigned" if category == "REASSIGNMENT" else "Technician Assigned"
+            title = "Agent Reassigned" if category == "REASSIGNMENT" else "Agent Assigned"
             badge_color = "info"
         elif evt_type == "AGENT_CONFIRMED" or to_st == "confirmed" or "confirmation status changed to confirmed" in notes.lower():
             category = "CONFIRMATION"
-            title = "Technician Confirmed Assignment"
+            title = "Agent Confirmed Assignment"
             badge_color = "success"
         elif evt_type == "AGENT_DECLINED" or to_st == "declined" or "declined" in notes.lower():
             category = "DECLINE"
-            title = "Technician Declined Assignment"
+            title = "Agent Declined Assignment"
             badge_color = "danger"
         elif evt_type == "ESCALATION_TRIGGERED" or to_st == "escalated" or "escalated" in notes.lower():
             category = "ESCALATION"
@@ -3510,11 +3575,11 @@ def get_appointment_full_trace(appointment_id: int) -> Optional[dict]:
             "timestamp": str(app["created_at"])[:19],
             "category": "ASSIGNMENT",
             "event_type": "AGENT_ASSIGNED",
-            "title": "Technician Assigned",
+            "title": "Agent Assigned",
             "actor": "Dispatch System",
             "actor_type": "system",
             "badge_color": "info",
-            "description": f"Assigned to technician {assigned_name}.",
+            "description": f"Assigned to agent {assigned_name}.",
             "metadata": {
                 "staff_agent_id": app["staff_agent_id"],
                 "staff_agent_name": app.get("staff_agent_name"),
@@ -3525,14 +3590,14 @@ def get_appointment_full_trace(appointment_id: int) -> Optional[dict]:
     has_confirmation = any(ev.get("category") == "CONFIRMATION" or ev.get("event_type") == "AGENT_CONFIRMED" for ev in timeline)
     if app.get("staff_agent_id") and app.get("confirmation_status") == "confirmed" and not has_confirmation:
         conf_time = app.get("confirmed_at") or app.get("updated_at") or app.get("created_at")
-        tech_name = app.get("staff_agent_name") or "Technician"
+        tech_name = app.get("staff_agent_name") or "Agent"
         timeline.append({
             "id": f"synth-confirm-{appointment_id}",
             "raw_timestamp": conf_time,
             "timestamp": str(conf_time)[:19],
             "category": "CONFIRMATION",
             "event_type": "AGENT_CONFIRMED",
-            "title": "Technician Confirmed Assignment",
+            "title": "Agent Confirmed Assignment",
             "actor": tech_name,
             "actor_type": "agent",
             "badge_color": "success",
@@ -3971,9 +4036,9 @@ def consolidate_appointment_service(
                     components = [*prior_components, {"name": additional_service_type,
                         "duration_minutes": new_duration - existing_duration}]
             if components:
-                # Canonical components remain one technician's indivisible block.
+                # Canonical components remain one agent's indivisible block.
                 # Raw mappings distinguish mappingless services from tags whose
-                # only technicians have become inactive.
+                # only agents have become inactive.
                 assigned = sr.get("staff_agent_id")
                 cursor.execute("SELECT id FROM staff_agents WHERE id=%s AND is_active IS NOT FALSE", (assigned,))
                 active_staff = cursor.fetchone()
@@ -3985,7 +4050,7 @@ def consolidate_appointment_service(
                     mappings.setdefault(row["name"], set()).add(row["staff_agent_id"])
                 if (not active_staff or any(assigned not in mappings[component["name"]]
                         for component in components if component["name"] in mappings)):
-                    return {"success": False, "error": "Assigned technician is not active and qualified for every selected service."}
+                    return {"success": False, "error": "Assigned agent is not active and qualified for every selected service."}
                 new_service_type = ", ".join(component["name"] for component in components)
             # NULL makes unstructured legacy/additional work explicitly unselectable.
             start_dt = None
@@ -4038,7 +4103,7 @@ def consolidate_appointment_service(
                         "success": False,
                         "capacity_blocked": True,
                         "appointment_id": appointment_id,
-                        "message": "Technician schedule cannot accommodate the extra duration contiguous with this appointment."
+                        "message": "Agent schedule cannot accommodate the extra duration contiguous with this appointment."
                     }
 
                 cursor.execute(
@@ -4059,7 +4124,7 @@ def consolidate_appointment_service(
                         "success": False,
                         "capacity_blocked": True,
                         "appointment_id": appointment_id,
-                        "message": "Technician schedule cannot accommodate the extra duration contiguous with this appointment."
+                        "message": "Agent schedule cannot accommodate the extra duration contiguous with this appointment."
                     }
 
             cursor.execute(
@@ -4354,14 +4419,14 @@ def update_appointment_confirmation_status(
             cursor.execute(
                 """
                 INSERT INTO service_request_audit_log (request_id, from_status, to_status, triggered_by, actor_name, event_type, notes, metadata)
-                VALUES (%s, %s, %s, 'agent', 'Technician', %s, %s, %s);
+                VALUES (%s, %s, %s, 'agent', 'Agent', %s, %s, %s);
                 """,
                 (
                     request_id,
                     current.get("confirmation_status") or "pending_agent_confirmation",
                     confirmation_status,
                     evt_type,
-                    f"Technician confirmation status changed to {confirmation_status} (escalation: {escalation_status})",
+                    f"Agent confirmation status changed to {confirmation_status} (escalation: {escalation_status})",
                     json.dumps({
                         "confirmation_status": confirmation_status,
                         "escalation_status": escalation_status,
@@ -4422,7 +4487,7 @@ def escalate_service_request(
             )
             updated = dict(cursor.fetchone())
 
-            actor = "Technician" if triggered_by == "agent_sms" else ("SLA Monitor" if triggered_by in ("system", "system_poller") else triggered_by)
+            actor = "Agent" if triggered_by == "agent_sms" else ("SLA Monitor" if triggered_by in ("system", "system_poller") else triggered_by)
             cursor.execute(
                 """
                 INSERT INTO service_request_audit_log (request_id, from_status, to_status, triggered_by, actor_name, event_type, notes, metadata)
@@ -4461,7 +4526,7 @@ def get_breached_unconfirmed_appointments(
     WHERE sr.confirmation_status = 'pending_agent_confirmation'
       AND sr.confirmation_cutoff_at IS NOT NULL
       AND sr.confirmation_cutoff_at <= %s
-      AND sr.escalation_status = 'none'
+      AND sr.escalation_status IN ('none', 'reassigned')
       AND sr.status IN ('pending', 'in_progress')
     ORDER BY sr.confirmation_cutoff_at ASC;
     """

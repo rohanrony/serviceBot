@@ -291,7 +291,7 @@ def test_get_appointment_full_trace_synthetic_assignment_description(dummy_trace
     assert assign_event["id"] == f"synth-assign-{req_id}"
     assert assign_event["category"] == "ASSIGNMENT"
     # Tech Alpha is the assigned technician in dummy_trace_appointment fixture
-    assert "Assigned to technician Tech Alpha." in assign_event["description"]
+    assert "Assigned to agent Tech Alpha." in assign_event["description"]
 
 
 def test_get_appointment_full_trace_synthetic_assignment_fallback_id():
@@ -323,5 +323,5 @@ def test_get_appointment_full_trace_synthetic_assignment_fallback_id():
 
         assign_event = next((ev for ev in timeline if ev.get("event_type") == "AGENT_ASSIGNED"), None)
         assert assign_event is not None
-        assert assign_event["description"] == "Assigned to technician Agent #88."
+        assert assign_event["description"] == "Assigned to agent Agent #88."
 

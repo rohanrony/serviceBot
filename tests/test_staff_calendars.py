@@ -44,24 +44,24 @@ def test_get_staff_agents_endpoint():
 
 
 def test_db_queries_integration():
-    booking_time = _future_business_datetime(8)
+    target_time = _future_business_datetime(8)
     # Insert test slot
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("INSERT INTO staff_agents (id, name, role) VALUES (1, 'Agent 1', 'Advisor') ON CONFLICT (id) DO NOTHING;")
-        cursor.execute("DELETE FROM service_requests WHERE CAST(booking_time AS TEXT) = %s", (booking_time,))
+        cursor.execute("DELETE FROM service_requests WHERE booking_time = %s;", (target_time,))
         conn.commit()
 
     # Test check_availability returns standard business slots
-    avail = check_availability(preferred_date=booking_time)
-    # A future weekday keeps the same slot assertion valid across calendar dates.
-    assert booking_time in avail
+    avail = check_availability(preferred_date=target_time)
+    # A future business-day slot stays valid regardless of when the suite runs.
+    assert target_time in avail
     
     # Test book_appointment bookings
     appt_id = book_appointment(
         customer_id=1,
         service_request_id=1,
-        appointment_datetime=booking_time,
+        appointment_datetime=target_time,
         service_type="Oil Change"
     )
     assert appt_id is not None
@@ -72,7 +72,7 @@ def test_db_queries_integration():
         cursor.execute("SELECT booking_time, staff_agent_id FROM service_requests WHERE id = %s;", (appt_id,))
         row = cursor.fetchone()
         assert row is not None
-        assert str(row["booking_time"])[:19] == booking_time
+        assert str(row["booking_time"])[:19] == target_time
 
 
 def test_create_and_delete_staff_agent_endpoint():

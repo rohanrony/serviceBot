@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
   <!-- Stylesheets -->
-  <link rel="stylesheet" href="style.css?v=24">
+  <link rel="stylesheet" href="style.css?v=26">
   <!-- Chart.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
@@ -192,7 +192,7 @@
                     </th>
                     <th>
                       <div class="tooltip-container">
-                        <span>Asset</span>
+                        <span>Details</span>
                         <div class="tooltip-popup">Asset Details</div>
                       </div>
                     </th>
@@ -205,7 +205,7 @@
                     <th>
                       <div class="tooltip-container">
                         <span>Agent</span>
-                        <div class="tooltip-popup">Assigned Agent / Technician</div>
+                        <div class="tooltip-popup">Assigned Agent</div>
                       </div>
                     </th>
                     <th>
@@ -288,7 +288,7 @@
                     </th>
                     <th>
                       <div class="tooltip-container">
-                        <div class="th-text-clipped">Asset</div>
+                        <div class="th-text-clipped">Details</div>
                         <div class="tooltip-popup">Customer Asset</div>
                       </div>
                     </th>
@@ -343,7 +343,7 @@
                   <p class="text-muted">Current services and standard pricing database.</p>
                 </div>
                 <button type="button" class="btn btn-secondary btn-sm" id="seed-default-services-btn" style="white-space: nowrap;">
-                  <i class="fas fa-database"></i> Seed Default Catalog (33 Services)
+                  <i class="fas fa-database"></i> Load Automotive Example Catalog
                 </button>
               </div>
               
@@ -355,7 +355,7 @@
                       <th>Description</th>
                       <th>Price Range</th>
                       <th>Duration</th>
-                      <th>Assigned Technicians</th>
+                      <th>Assigned Agents</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
@@ -378,12 +378,12 @@
               <form id="add-service-form">
                 <div class="form-group">
                   <label for="new-service-name">Service Name</label>
-                  <input type="text" id="new-service-name" class="form-input" placeholder="e.g. Brake Pads Replacement" required>
+                  <input type="text" id="new-service-name" class="form-input" placeholder="e.g. Initial Consultation" required>
                 </div>
                 
                 <div class="form-group">
                   <label for="new-service-desc">Description</label>
-                  <textarea id="new-service-desc" rows="3" class="form-input" placeholder="e.g. Replacement of front rotors and pad calipers." required></textarea>
+                  <textarea id="new-service-desc" rows="3" class="form-input" placeholder="e.g. A consultation to understand your needs and discuss next steps." required></textarea>
                 </div>
                 
                 <div class="form-group">
@@ -397,7 +397,7 @@
                 </div>
                 
                 <div class="form-group">
-                  <label>Assigned Technicians / Agents</label>
+                  <label>Assigned Agents</label>
                   <p class="text-muted" style="font-size: 0.78rem; margin: 2px 0 6px 0;">Leave unselected to allow any qualified/available agent.</p>
                   <div id="new-service-agents-list" class="checkbox-group" style="display: flex; flex-direction: column; gap: 6px; max-height: 120px; overflow-y: auto; padding: 6px 8px; border: 1px solid var(--border-color, rgba(255,255,255,0.1)); border-radius: 6px; background: rgba(0,0,0,0.15);">
                     <span class="text-muted" style="font-size: 0.8rem;">Loading staff agents...</span>
@@ -417,7 +417,7 @@
                     </label>
                     <label class="checkbox-item">
                       <input type="checkbox" id="new-service-req-vehicle-details" checked>
-                      <span>Asset Details</span>
+                      <span>Automotive Details</span>
                     </label>
                     <label class="checkbox-item">
                       <input type="checkbox" id="new-service-req-issue-description" checked>
@@ -583,6 +583,7 @@
         <section id="config-view" class="view-section">
           <!-- Subtab Navigation Ribbon -->
           <div class="config-nav-ribbon">
+            <button type="button" class="config-ribbon-item" data-subtab="business"><span>Business</span></button>
             <button type="button" class="config-ribbon-item active" data-subtab="staff">
               <svg class="ribbon-icon" viewBox="0 0 24 24"><path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2z"/></svg>
               <span>Staff Calendar Config</span>
@@ -757,7 +758,7 @@
                   </div>
                   <div class="form-group mt-4">
                     <label for="new-agent-role">Role</label>
-                    <input type="text" id="new-agent-role" class="form-input" placeholder="e.g. Service Advisor" value="Service Advisor">
+                    <input type="text" id="new-agent-role" class="form-input" placeholder="e.g. Agent" value="Agent">
                   </div>
                   <div class="form-group mt-4">
                     <label for="new-agent-email">Email (Optional)</label>
@@ -796,6 +797,25 @@
           </div>
           </div>
 
+          <div id="business-view" class="config-subtab-pane" data-subtab-pane="business">
+            <div class="content-card">
+              <div class="card-header"><h3>Business &amp; Intake</h3><p class="text-muted">Set your business identity and the details customers provide when requesting a service.</p></div>
+              <form id="business-profile-form">
+                <div class="form-group"><label for="business-name">Business Name</label><input id="business-name" class="form-input" required maxlength="200"></div>
+                <div class="form-group mt-4"><label for="business-industry">Business Type</label><input id="business-industry" class="form-input" placeholder="e.g. Salon, Consulting, Home Services" required maxlength="100"></div>
+                <div class="form-group mt-4"><label for="business-portal-url">Portal URL (for notification links)</label><input id="business-portal-url" type="url" class="form-input" placeholder="https://your-app.example.com"><small class="text-muted">Leave blank to omit links from escalation notifications.</small></div>
+                <label class="checkbox-item mt-4"><input type="checkbox" id="business-collect-vehicle"><span>Collect automotive details (make, model, year and optional VIN)</span></label>
+                <h4 class="mt-4">Additional Intake Fields</h4>
+                <p class="text-muted">Add the details your business needs. Field labels can change; existing answers are kept.</p>
+                <div id="business-intake-fields"></div>
+                <button type="button" id="add-intake-field" class="btn btn-secondary mt-4">Add Intake Field</button>
+                <label class="checkbox-item mt-4"><input type="checkbox" id="business-regenerate-prompt"><span>Regenerate the AI greeting and instructions for this business</span></label>
+                <p class="text-muted">Regeneration replaces the current greeting and instructions. You can review and edit them in AI Agent Config. Review your services, knowledge documents and custom notification templates when switching businesses.</p>
+                <button type="submit" class="btn btn-primary mt-4">Save Business Settings</button>
+              </form>
+            </div>
+          </div>
+
           <!-- SUBTAB 2: ADMIN CONFIG -->
           <div id="gmail-view" class="config-subtab-pane" data-subtab-pane="gmail">
           <div class="layout-split">
@@ -822,34 +842,6 @@
                   </label>
                 </div>
 
-                <div class="form-group full-width">
-                  <label for="gmail-auth-type">Authentication Method</label>
-                  <select id="gmail-auth-type" class="form-input">
-                    <option value="app_password" selected>SMTP App Password (Legacy)</option>
-                    <option value="oauth2">Google OAuth2 Connection (New Age)</option>
-                  </select>
-                </div>
-
-                <div class="form-group" id="gmail-sender-group">
-                  <label for="gmail-sender">Sender Gmail Address</label>
-                  <input type="email" id="gmail-sender" class="form-input" placeholder="e.g. your-bot@gmail.com" required>
-                </div>
-                
-                <div class="form-group" id="gmail-smtp-pass-group">
-                  <label for="gmail-password">Gmail App Password</label>
-                  <input type="password" id="gmail-password" class="form-input" placeholder="••••••••••••••••">
-                </div>
-                
-                <div class="form-group" id="gmail-smtp-server-group">
-                  <label for="gmail-smtp-server">SMTP Server Host</label>
-                  <input type="text" id="gmail-smtp-server" class="form-input" value="smtp.gmail.com" placeholder="smtp.gmail.com">
-                </div>
-                
-                <div class="form-group" id="gmail-smtp-port-group">
-                  <label for="gmail-smtp-port">SMTP Server Port</label>
-                  <input type="number" id="gmail-smtp-port" class="form-input" value="587" placeholder="587">
-                </div>
-
                 <div class="form-group" id="gmail-oauth-id-group" style="display: none;">
                   <label for="gmail-client-id">Google Client ID</label>
                   <input type="text" id="gmail-client-id" class="form-input" placeholder="Enter Google Client ID">
@@ -860,8 +852,8 @@
                   <input type="password" id="gmail-client-secret" class="form-input" placeholder="Enter Google Client Secret">
                 </div>
 
-                <div class="form-group full-width" id="gmail-oauth-status-group" style="display: none;">
-                  <label>OAuth Authorization Status</label>
+                <div class="form-group full-width" id="gmail-oauth-status-group">
+                  <label>Google Account Connection</label>
                   <div style="display: flex; align-items: center; gap: 12px; margin-top: 4px;">
                     <span id="gmail-oauth-status-badge" class="badge danger">Disconnected</span>
                     <button type="button" class="btn btn-secondary" id="connect-gmail-btn" style="border-color: var(--color-primary); color: #fff;">
@@ -875,7 +867,7 @@
                 
                 <div class="form-group">
                   <label for="gmail-recipient">Admin Notification Email</label>
-                  <input type="text" id="gmail-recipient" class="form-input" placeholder="e.g. admin@yourshop.com — receives a copy of every booking" required>
+                  <input type="text" id="gmail-recipient" class="form-input" placeholder="e.g. admin@yourbusiness.com — receives a copy of every booking" required>
                 </div>
 
                 <div class="form-group">
@@ -926,18 +918,7 @@
                 <p class="text-muted">How to configure email notifications.</p>
               </div>
               
-              <div id="smtp-help-text" style="font-size: 13px; line-height: 1.6; color: var(--text-muted); display: flex; flex-direction: column; gap: 12px;">
-                <p><strong>App Password Setup:</strong></p>
-                <ol style="margin-left: 18px; display: flex; flex-direction: column; gap: 6px;">
-                  <li>Go to your <strong>Google Account</strong> settings.</li>
-                  <li>Select <strong>Security</strong>, turn on <strong>2-Step Verification</strong>.</li>
-                  <li>Click on <strong>App Passwords</strong>.</li>
-                  <li>Select <strong>Mail</strong> and generate a password.</li>
-                  <li>Copy the 16-character code and paste it here.</li>
-                </ol>
-              </div>
-
-              <div id="oauth-help-text" style="font-size: 13px; line-height: 1.6; color: var(--text-muted); display: none; flex-direction: column; gap: 12px;">
+              <div id="oauth-help-text" style="font-size: 13px; line-height: 1.6; color: var(--text-muted); display: flex; flex-direction: column; gap: 12px;">
                 <p><strong>Google OAuth2 Setup:</strong></p>
                 <ol style="margin-left: 18px; display: flex; flex-direction: column; gap: 6px;">
                   <li>Go to <strong>Google Cloud Console</strong>.</li>
@@ -971,7 +952,7 @@
               </div>
 
               <div class="form-group">
-                <label class="form-label" for="sms-config-shop-address">Shop Physical Address</label>
+                <label class="form-label" for="sms-config-shop-address">Business Address</label>
                 <input type="text" id="sms-config-shop-address" class="form-input" placeholder="e.g. 123 Main St, Springfield, NC 27513">
                 <small class="text-muted">Physical address sent in appointment reminders and confirmations to customers.</small>
               </div>
@@ -979,7 +960,7 @@
               <div class="form-group">
                 <label class="form-label" for="sms-config-maps-url">Google Maps Address / Link</label>
                 <input type="text" id="sms-config-maps-url" class="form-input" placeholder="e.g. https://maps.app.goo.gl/... or leave blank to auto-generate">
-                <small class="text-muted">Custom Google Maps link. If left blank, a navigation link is auto-generated from the shop address.</small>
+                <small class="text-muted">Custom Google Maps link. If left blank, a navigation link is auto-generated from the business address.</small>
               </div>
 
               <div class="form-group">
@@ -1025,7 +1006,7 @@
                     <span class="tag-chip">{customer_name}</span>
                   </div>
                 </div>
-                <textarea id="sms-config-auto-responder" class="form-input" rows="3" placeholder="Thank you for reaching out! Our shop is currently closed. For urgent assistance call {support_number}."></textarea>
+                <textarea id="sms-config-auto-responder" class="form-input" rows="3" placeholder="Thank you for reaching out! Our business is currently closed. For urgent assistance call {support_number}."></textarea>
               </div>
 
               <div class="form-actions full-width">
@@ -1040,14 +1021,14 @@
           <div class="content-card sms-config-card mb-6">
             <div class="card-header">
               <h3>Appointment Lead Time & Escalation SLAs</h3>
-              <p class="text-muted">Configure advance notice buffers, technician response SLAs, and supervisor escalation contacts.</p>
+              <p class="text-muted">Configure advance notice buffers, agent response SLAs, and supervisor escalation contacts.</p>
             </div>
 
             <form id="escalation-config-form" class="sms-config-form mt-4">
               <div class="form-group">
                 <label class="form-label" for="config-min-booking-buffer">Min Appointment Lead Time Buffer (Hours)</label>
                 <input type="number" id="config-min-booking-buffer" class="form-input" min="1" max="72" value="4">
-                <small class="text-muted">In-shop appointments cannot be booked earlier than current time + this buffer (default 4 hours).</small>
+                <small class="text-muted">Appointments cannot be booked earlier than current time + this buffer (default 4 hours).</small>
               </div>
 
               <div class="form-group">
@@ -1089,13 +1070,13 @@
               <div class="form-group">
                 <label class="form-label" for="config-morning-grace">Morning Opening Grace (Minutes)</label>
                 <input type="number" id="config-morning-grace" class="form-input" min="10" max="120" value="30">
-                <small class="text-muted">Grace window from shop opening for early morning appointments.</small>
+                <small class="text-muted">Grace window from business opening for early morning appointments.</small>
               </div>
 
               <div class="form-group">
                 <label class="form-label" for="config-reassign-window">Reassignment Confirmation Window (Minutes)</label>
                 <input type="number" id="config-reassign-window" class="form-input" min="5" max="60" value="15">
-                <small class="text-muted">Time allowed for newly reassigned technician to confirm.</small>
+                <small class="text-muted">Time allowed for newly reassigned agent to confirm.</small>
               </div>
 
               <div class="form-actions full-width">
@@ -1284,7 +1265,7 @@
             <form id="intent-config-form" class="form-grid">
               <div class="form-group full-width">
                 <label for="prompt-first-message">Agent Greeting (First Message / Intro spoken to caller)</label>
-                <textarea id="prompt-first-message" rows="2" class="form-input" placeholder="e.g. Hello! Thank you for calling Davidson Car Care..."></textarea>
+                <textarea id="prompt-first-message" rows="2" class="form-input" placeholder="e.g. Hello! Thank you for calling our business..."></textarea>
               </div>
 
               <div class="form-group full-width">
@@ -1428,7 +1409,7 @@
               </div>
 
               <div class="metric-card analytics-kpi-card">
-                <span class="metric-label">Avg Technician Response</span>
+                <span class="metric-label">Avg Agent Response</span>
                 <h3 class="metric-value text-accent-amber" id="kpi-avg-response">-- min</h3>
                 <div class="metric-badge"><span class="badge-dot info"></span>Confirmation latency</div>
               </div>
@@ -1452,7 +1433,7 @@
               </button>
               <button type="button" class="analytics-sub-btn" data-analytics-subtab="technicians">
                 <svg class="ribbon-icon" viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
-                <span>Technician Scorecard</span>
+                <span>Agent Scorecard</span>
               </button>
             </div>
 
@@ -1492,7 +1473,7 @@
                   <div class="card-header">
                     <div>
                       <h3>Escalation Resolution Funnel</h3>
-                      <p class="text-muted">Technician recovery vs. supervisor reassignment outcomes.</p>
+                      <p class="text-muted">Agent recovery vs. supervisor reassignment outcomes.</p>
                     </div>
                   </div>
                   <div class="chart-wrapper">
@@ -1531,16 +1512,16 @@
               <div class="content-card">
                 <div class="card-header card-header-split">
                   <div>
-                    <h3>Technician Performance Leaderboard</h3>
-                    <p class="text-muted">Individual technician confirmation latency, compliance rate, and reassignments.</p>
+                    <h3>Agent Performance Leaderboard</h3>
+                    <p class="text-muted">Individual agent confirmation latency, compliance rate, and reassignments.</p>
                   </div>
-                  <input type="text" id="tech-search-input" class="form-input filter-search" placeholder="Filter technicians...">
+                  <input type="text" id="tech-search-input" class="form-input filter-search" placeholder="Filter agents...">
                 </div>
                 <div class="table-container">
                   <table class="data-table" id="technician-scorecard-table">
                     <thead>
                       <tr>
-                        <th>Technician</th>
+                        <th>Agent</th>
                         <th>Role</th>
                         <th>Assigned</th>
                         <th>Confirmed</th>
@@ -1552,7 +1533,7 @@
                     </thead>
                     <tbody id="technician-scorecard-tbody">
                       <tr>
-                        <td colspan="8" class="text-center py-6 text-muted">Loading technician scorecard...</td>
+                        <td colspan="8" class="text-center py-6 text-muted">Loading agent scorecard...</td>
                       </tr>
                     </tbody>
                   </table>
@@ -1588,7 +1569,7 @@
         
         <div class="form-group mt-4">
           <label for="edit-agent-role">Role</label>
-          <input type="text" id="edit-agent-role" class="form-input" placeholder="e.g. Service Advisor">
+          <input type="text" id="edit-agent-role" class="form-input" placeholder="e.g. Agent">
         </div>
         
         <div class="form-group mt-4">
@@ -1671,7 +1652,7 @@
         </div>
 
         <div class="form-group mt-4">
-          <label>Assigned Technicians / Agents</label>
+          <label>Assigned Agents</label>
           <p class="text-muted" style="font-size: 0.78rem; margin: 2px 0 6px 0;">Leave unselected to allow any qualified/available agent.</p>
           <div id="edit-service-agents-list" class="checkbox-group" style="display: flex; flex-direction: column; gap: 6px; max-height: 120px; overflow-y: auto; padding: 6px 8px; border: 1px solid var(--border-color, rgba(255,255,255,0.1)); border-radius: 6px; background: rgba(0,0,0,0.15);">
             <span class="text-muted" style="font-size: 0.8rem;">Loading staff agents...</span>
@@ -1691,7 +1672,7 @@
             </label>
             <label class="checkbox-item">
               <input type="checkbox" id="edit-service-req-vehicle-details">
-              <span>Asset Details</span>
+              <span>Automotive Details</span>
             </label>
             <label class="checkbox-item">
               <input type="checkbox" id="edit-service-req-issue-description">
@@ -1781,7 +1762,7 @@
       <div id="tab-pane-trace" class="details-tab-pane active">
         <div class="trace-filter-chips" id="trace-filter-chips">
           <button type="button" class="trace-filter-chip active" data-filter="all">All Events</button>
-          <button type="button" class="trace-filter-chip" data-filter="agent">Assignments & Technicians</button>
+          <button type="button" class="trace-filter-chip" data-filter="agent">Assignments & Agents</button>
           <button type="button" class="trace-filter-chip" data-filter="escalation">Escalations & Alerts</button>
           <button type="button" class="trace-filter-chip" data-filter="status">Status & Cancellation</button>
         </div>
@@ -1902,8 +1883,8 @@
         </div>
       </div>
       
-      <div style="margin-bottom: 16px;">
-        <h4 style="margin-bottom: 8px; color: var(--text-muted); font-size: 12px; text-transform: uppercase;">Asset Details</h4>
+      <div id="sr-vehicle-section" style="margin-bottom: 16px;">
+        <h4 style="margin-bottom: 8px; color: var(--text-muted); font-size: 12px; text-transform: uppercase;">Automotive Details</h4>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px;">
           <div>
             <label>Make</label>
@@ -1926,20 +1907,13 @@
         </div>
       </div>
       
+      <div id="sr-intake-fields" class="form-group" style="margin-bottom: 16px;"></div>
       <div style="margin-bottom: 16px;">
         <h4 style="margin-bottom: 8px; color: var(--text-muted); font-size: 12px; text-transform: uppercase;">Service Request</h4>
         <div style="margin-bottom: 12px;">
           <label>Service Type</label>
           <select id="sr-service-type" class="form-input" required>
             <option value="">Select Service Type...</option>
-            <option value="Oil Change">Oil Change</option>
-            <option value="Brake Service">Brake Service</option>
-            <option value="Tire Rotation">Tire Rotation & Balancing</option>
-            <option value="Engine Diagnostic">Engine Diagnostic</option>
-            <option value="Battery Replacement">Battery Replacement</option>
-            <option value="Transmission Service">Transmission Service</option>
-            <option value="General Maintenance">General Maintenance</option>
-            <option value="Auto Repair Estimates">Auto Repair Estimates & Quotes</option>
           </select>
         </div>
         <div style="margin-bottom: 12px;">
@@ -1981,10 +1955,10 @@
 
   <!-- Reassign Escalated Appointment Modal -->
   <div class="drawer-overlay" id="reassign-modal-overlay"></div>
-  <div class="modal-card" id="reassign-modal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1200; max-width: 480px; width: 90%; background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 12px; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.6);">
+  <div class="modal-card" id="reassign-modal" role="dialog" aria-modal="true" aria-labelledby="reassign-modal-title" tabindex="-1" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1200; max-width: 480px; width: 90%; background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 12px; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.6);">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
       <div style="display: flex; align-items: center; gap: 8px;">
-        <span class="badge danger" style="font-size: 11px; padding: 2px 6px;">ESCALATED</span>
+        <span id="reassign-escalation-badge" class="badge danger" style="font-size: 11px; padding: 2px 6px;">ESCALATED</span>
         <h3 id="reassign-modal-title" style="margin: 0; font-size: 16px; color: #fff;">Reassign Service Appointment</h3>
       </div>
       <button class="btn-close" id="close-reassign-modal-btn">
@@ -2006,7 +1980,7 @@
         <span id="reassign-current-agent" style="color: #ef4444;">--</span>
       </div>
       <div style="display: flex; justify-content: space-between;">
-        <span class="text-muted">Escalation Reason:</span>
+        <span class="text-muted">Reassignment Reason:</span>
         <span id="reassign-reason-display" style="color: #f59e0b; font-weight: 500;">--</span>
       </div>
     </div>
@@ -2015,7 +1989,9 @@
       <input type="hidden" id="reassign-sr-id" value="">
       
       <div class="form-group mb-4">
-        <label for="reassign-agent-select" style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 6px;">Select Replacement Technician</label>
+        <label for="reassign-agent-select" style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 6px;">Select Replacement Agent</label>
+        <p id="reassign-availability-status" role="status" class="text-muted"></p>
+        <button id="reassign-availability-retry" type="button" class="btn btn-secondary btn-sm" hidden>Retry availability</button>
         <select id="reassign-agent-select" class="form-input" required style="width: 100%;">
           <option value="">Loading available candidates...</option>
         </select>
@@ -2024,7 +2000,7 @@
 
       <div class="form-group mb-4">
         <label for="reassign-reason-note" style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 6px;">Reassignment Notes (Optional)</label>
-        <input type="text" id="reassign-reason-note" class="form-input" placeholder="e.g. Technician called out sick / unreachable">
+        <input type="text" id="reassign-reason-note" class="form-input" placeholder="e.g. Agent called out sick / unreachable">
       </div>
 
       <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
@@ -2049,6 +2025,6 @@
   <div class="toast" id="app-toast">Action completed successfully</div>
 
   <!-- Javascript Logic -->
-  <script src="app.js?v=44"></script>
+  <script src="app.js?v=46"></script>
 </body>
 </html>

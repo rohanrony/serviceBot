@@ -282,12 +282,10 @@ def test_old_staff_confirmation_after_reassignment_cannot_confirm_new_staff(
     request_id, _ = ready_booking(
         api, scenario, provider_capture, freeze_business_clock
     )
-    assert (
-        api.post(
-            f"{PORTAL}/service-requests/{request_id}/reassign", json={"new_agent_id": 2}
-        ).status_code
-        == 200
+    response = api.post(
+        f"{PORTAL}/service-requests/{request_id}/reassign", json={"new_agent_id": 2}
     )
+    assert response.status_code == 200, response.text
     provider_capture.calls.clear()
     inbound(api, AGENT, "CONFIRM", "SM-late-after")
     row = request_by_id(api, request_id)
@@ -306,12 +304,10 @@ def test_reassignment_has_fifteen_minute_confirmation_window(
     request_id, booked = ready_booking(
         api, scenario, provider_capture, freeze_business_clock
     )
-    assert (
-        api.post(
-            f"{PORTAL}/service-requests/{request_id}/reassign", json={"new_agent_id": 2}
-        ).status_code
-        == 200
+    response = api.post(
+        f"{PORTAL}/service-requests/{request_id}/reassign", json={"new_agent_id": 2}
     )
+    assert response.status_code == 200, response.text
     cutoff = db(
         "SELECT confirmation_cutoff_at FROM service_requests WHERE id=%s", (request_id,)
     )[0]["confirmation_cutoff_at"]

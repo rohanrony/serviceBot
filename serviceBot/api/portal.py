@@ -4,9 +4,9 @@ import tempfile
 import httpx
 import datetime as dt_mod
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Literal
 from fastapi import APIRouter, HTTPException, UploadFile, File, Request, BackgroundTasks
-from pydantic import BaseModel, StrictBool, StrictStr, field_validator
+from pydantic import Field, BaseModel, StrictBool, StrictStr, field_validator
 from dotenv import load_dotenv
 from starlette.concurrency import run_in_threadpool
 
@@ -318,12 +318,9 @@ Speak the filler naturally as part of the conversation so the caller experiences
         "first_message": "Hello! Thank you for calling Davidson Car Care. I am Rachel, AI voice Assistant. Please note that this conversation will be recorded. How can I help you today?",
         "gmail_enabled": False,
         "gmail_sender": "",
-        "gmail_password": "",
         "gmail_recipient": "",
-        "gmail_smtp_server": "smtp.gmail.com",
         "enable_agent_selection": False,
-        "gmail_smtp_port": 587,
-        "gmail_auth_type": "app_password",
+        "gmail_auth_type": "oauth2",
         "gmail_client_id": "",
         "gmail_client_secret": "",
         "gmail_access_token": "",
@@ -375,6 +372,7 @@ Speak the filler naturally as part of the conversation so the caller experiences
         except Exception as e:
             print(f"Error loading system_prompt.txt: {e}")
 
+    data["business_profile"] = get_business_profile(data)
     return data
 
 def save_config(config_data):
@@ -446,7 +444,7 @@ async def sync_prompt_to_elevenlabs(prompt_text: str, first_message: str = None)
         
     headers = {"xi-api-key": api_key}
     el_payload = {
-        "name": "Davidson Car Care Service Agent",
+        "name": f"{load_config().get('business_name') or 'Business'} Service Agent",
         "conversation_config": {
             "agent": {
                 "prompt": {
@@ -482,7 +480,21 @@ async def sync_prompt_to_elevenlabs(prompt_text: str, first_message: str = None)
                     pass
                 print(f"Failed to sync prompt to ElevenLabs agent {target_id}: {str(e)}")
 
+from serviceBot.services.business_profile import (
+    BusinessProfile, build_business_prompt, get_business_profile, normalize_portal_base_url, validate_intake_data,
+)
+
+
 class ConfigUpdatePayload(BaseModel):
+    business_profile: Optional[BusinessProfile] = None
+    regenerate_business_prompt: bool = False
+    portal_base_url: Optional[str] = None
+
+    @field_validator("portal_base_url")
+    @classmethod
+    def validate_portal_url(cls, value):
+        return normalize_portal_base_url(value) if value is not None else None
+
     required_fields: Optional[dict] = None
     prompts: Optional[dict] = None
     system_prompt: Optional[str] = None
@@ -586,6 +598,13 @@ async def update_config(payload: ConfigUpdatePayload):
             raise HTTPException(status_code=400, detail=f"Invalid IANA timezone identifier: {tz_str}")
         config_data["business_timezone"] = tz_str
 
+    if payload.portal_base_url is not None:
+        config_data["portal_base_url"] = payload.portal_base_url
+    if payload.business_profile is not None:
+        config_data["business_profile"] = payload.business_profile.model_dump()
+    if payload.regenerate_business_prompt:
+        prompt_to_sync, config_data["first_message"] = build_business_prompt(config_data)
+
     # Ensure prompt has synchronized lead time buffers
     appt_buf = float(config_data.get("min_booking_buffer_hours", 4.0))
     cb_buf = float(config_data.get("min_callback_buffer_hours", 2.0))
@@ -602,7 +621,7 @@ async def update_config(payload: ConfigUpdatePayload):
 
     save_config(config_data)
     
-    await sync_prompt_to_elevenlabs(prompt_to_sync, payload.first_message)
+    await sync_prompt_to_elevenlabs(prompt_to_sync, config_data["first_message"] if payload.regenerate_business_prompt else payload.first_message)
     
     return {"success": True}
 
@@ -1223,12 +1242,14 @@ class VehicleDetails(BaseModel):
 
 class ServiceRequestCreate(BaseModel):
     customer: CustomerDetails
-    vehicle: VehicleDetails
+    vehicle: Optional[VehicleDetails] = None
+    intake_data: dict = Field(default_factory=dict)
     service_request: dict
 
 class ServiceRequestEdit(BaseModel):
     issue_description: str
-    vehicle_details: VehicleDetails
+    vehicle_details: Optional[VehicleDetails] = None
+    intake_data: Optional[dict] = None
     booking_time: Optional[str] = None
     booking_type: Optional[str] = None
     duration_minutes: Optional[int] = None
@@ -1394,7 +1415,7 @@ def _load_service_requests(
 
             query = f"""
                 SELECT sr.id, sr.service_type, sr.issue_description, sr.status, sr.time_slot, sr.created_at, sr.updated_at,
-                       sr.booking_type, sr.booking_time, sr.duration_minutes, sr.staff_agent_id, sr.service_components,
+                       sr.booking_type, sr.booking_time, sr.duration_minutes, sr.staff_agent_id, sr.service_components, sr.intake_data,
                        sr.notification_dispatched_at, sr.sla_expires_at, sr.calendar_integration_status,
                        (SELECT status FROM outbox_notifications WHERE request_id = sr.id
                         AND event_type = 'booking_notification' ORDER BY created_at DESC, id DESC LIMIT 1) AS notification_queue_status,
@@ -1499,191 +1520,52 @@ class ReassignRequestPayload(BaseModel):
 
 @router.post("/service-requests/{request_id}/reassign")
 async def reassign_service_request(request_id: int, payload: ReassignRequestPayload):
-    """
-    Reassigns an escalated service request to a new technician.
-    Updates staff_agent_id, binds calendar reservation to new technician,
-    and dispatches SMS alert to the new agent and notice to the old agent.
-    """
-    from serviceBot.db.connection import get_db_connection, dict_cursor
-    from serviceBot.services.twilio_sms import TwilioSMSClient
+    """Reassign through the same validated reservation owner as normal assignment."""
+    from serviceBot.db.connection import dict_cursor, get_db_connection
+    from serviceBot.db.queries import assign_staff_agent_to_service_request
+    from serviceBot.services.booking import BookingConflictError
 
-    with get_db_connection() as conn:
-        with dict_cursor(conn) as cursor:
-            # 1. Fetch service request
-            cursor.execute(
-                """
-                SELECT sr.id, sr.staff_agent_id, sr.status, sr.service_type, sr.booking_time,
-                       c.name AS customer_name, c.phone AS customer_phone,
-                       v.make, v.model, v.year,
-                       sa.name AS old_agent_name, sa.phone_number AS old_agent_phone
-                FROM service_requests sr
-                LEFT JOIN customers c ON c.id = sr.customer_id
-                LEFT JOIN vehicles v ON v.id = sr.vehicle_id
-                LEFT JOIN staff_agents sa ON sa.id = sr.staff_agent_id
-                WHERE sr.id = %s;
-                """,
-                (request_id,)
-            )
-            sr = cursor.fetchone()
-            if not sr:
-                raise HTTPException(status_code=404, detail=f"Service request {request_id} not found.")
-
-            if sr["status"] in ("completed", "done", "cancelled", "cancelled_by_customer"):
-                raise HTTPException(status_code=400, detail="Cannot reassign a closed or cancelled request.")
-
-            # 2. Fetch new agent
-            cursor.execute("SELECT id, name, phone_number, email, is_active FROM staff_agents WHERE id = %s;", (payload.new_agent_id,))
-            new_agent = cursor.fetchone()
-            if not new_agent:
-                raise HTTPException(status_code=404, detail=f"Staff agent {payload.new_agent_id} not found.")
-            if new_agent.get("is_active") is False:
-                raise HTTPException(status_code=400, detail=f"Cannot reassign to inactive staff agent {payload.new_agent_id}.")
-
-            old_agent_id = sr["staff_agent_id"]
-            old_agent_phone = sr.get("old_agent_phone")
-            new_agent_phone = new_agent.get("phone_number")
-
-            reassign_window = int(load_config().get("reassignment_confirmation_window_minutes", 15))
-            from serviceBot.services.sms_reminders import get_current_business_time
-            reassign_cutoff = get_current_business_time() + dt_mod.timedelta(minutes=reassign_window)
-
-            # 3. Update service_request
-            cursor.execute(
-                """
-                UPDATE service_requests
-                SET staff_agent_id = %s,
-                    status = 'pending',
-                    escalation_status = 'reassigned',
-                    confirmation_status = 'pending_agent_confirmation',
-                    confirmation_cutoff_at = %s,
-                    confirmed_at = NULL,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE id = %s;
-                """,
-                (payload.new_agent_id, reassign_cutoff, request_id)
-            )
-
-            # 4. Update appointment_reservations
-            cursor.execute(
-                """
-                UPDATE appointment_reservations
-                SET staff_agent_id = %s,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE service_request_id = %s;
-                """,
-                (payload.new_agent_id, request_id)
-            )
-
-            # Update appointment_reservation_segments
-            cursor.execute(
-                """
-                UPDATE appointment_reservation_segments
-                SET staff_agent_id = %s
-                WHERE reservation_id IN (
-                    SELECT id FROM appointment_reservations WHERE service_request_id = %s
-                );
-                """,
-                (payload.new_agent_id, request_id)
-            )
-
-            # 5. Rebind mock_calendar_slots if reservation exists
-            cursor.execute(
-                """
-                SELECT starts_at FROM appointment_reservations WHERE service_request_id = %s;
-                """,
-                (request_id,)
-            )
-            res_row = cursor.fetchone()
-            if res_row and res_row.get("starts_at"):
-                slot_dt = res_row["starts_at"]
-                if old_agent_id:
-                    cursor.execute(
-                        """
-                        UPDATE mock_calendar_slots
-                        SET is_booked = FALSE, reservation_status = 'AVAILABLE', service_request_id = NULL
-                        WHERE staff_agent_id = %s AND service_request_id = %s;
-                        """,
-                        (old_agent_id, request_id)
-                    )
-                cursor.execute(
-                    """
-                    INSERT INTO mock_calendar_slots (slot_datetime, is_booked, staff_agent_id, reservation_status, service_request_id)
-                    VALUES (%s, TRUE, %s, 'RESERVED', %s)
-                    ON CONFLICT (slot_datetime, staff_agent_id) DO UPDATE
-                    SET is_booked = TRUE, reservation_status = 'RESERVED', service_request_id = EXCLUDED.service_request_id;
-                    """,
-                    (slot_dt, payload.new_agent_id, request_id)
-                )
-
-            # 6. Audit log entry
-            cursor.execute(
-                """
-                INSERT INTO service_request_audit_log (request_id, triggered_by, from_status, to_status, notes, event_type, actor_name, metadata)
-                VALUES (%s, 'supervisor_reassign', %s, 'reassigned', %s, 'AGENT_REASSIGNED', 'Supervisor', %s);
-                """,
-                (
-                    request_id,
-                    sr.get("escalation_status") or "escalated",
-                    f"Reassigned from agent {old_agent_id} to {payload.new_agent_id} ({payload.reason})",
-                    json.dumps({
-                        "old_agent_id": old_agent_id,
-                        "new_agent_id": payload.new_agent_id,
-                        "reason": payload.reason
-                    })
-                )
-            )
-
-            # 7. Transactional Outbox Event: Atomically enqueue agent_reassignment
-            from serviceBot.services.outbox_worker import enqueue_outbox_event
-            c_name = sr.get("customer_name") or "Customer"
-            v_str = f"{sr.get('year') or ''} {sr.get('make') or ''} {sr.get('model') or ''}".strip() or "Vehicle"
-            s_type = sr.get("service_type") or "Service Request"
-            t_str = str(sr.get("booking_time") or "")
-
-            details = {
-                "customer_name": c_name,
-                "phone": sr.get("customer_phone") or "",
-                "vehicle": v_str,
-                "service_type": s_type,
-                "time": t_str[:19] if t_str else "",
-                "issue": sr.get("issue_description") or "",
-                "previous_agent_name": sr.get("old_agent_name") or "Unassigned",
-                "new_agent_name": new_agent.get("name") or "Unassigned"
-            }
-
-            outbox_payload = {
-                "old_agent_id": old_agent_id,
-                "old_agent_name": sr.get("old_agent_name"),
-                "new_agent_id": payload.new_agent_id,
-                "new_agent_name": new_agent.get("name"),
-                "new_agent_email": new_agent.get("email"),
-                "agent_phone": new_agent_phone,
-                "previous_agent_phone": old_agent_phone if old_agent_id != payload.new_agent_id else None,
-                "booking_time_str": t_str[:19] if t_str else None,
-                "details": details
-            }
-            enqueue_outbox_event(cursor, "agent_reassignment", request_id, outbox_payload)
-
-            conn.commit()
-
-    # Trigger immediate outbox batch processing for fast email, calendar & SMS/WhatsApp dispatch
+    # Preserve this endpoint's existing not-found and inactive-agent responses.
+    # The reservation owner rechecks eligibility and capacity before mutation.
+    with get_db_connection() as conn, dict_cursor(conn) as cursor:
+        cursor.execute("SELECT id,status FROM service_requests WHERE id=%s;", (request_id,))
+        request = cursor.fetchone()
+        if not request:
+            raise HTTPException(status_code=404, detail=f"Service request {request_id} not found.")
+        if request["status"] in ("completed", "done", "cancelled", "cancelled_by_customer"):
+            raise HTTPException(status_code=400, detail="Cannot reassign a closed or cancelled request.")
+        cursor.execute("SELECT id,is_active FROM staff_agents WHERE id=%s;", (payload.new_agent_id,))
+        agent = cursor.fetchone()
+        if not agent:
+            raise HTTPException(status_code=404, detail=f"Staff agent {payload.new_agent_id} not found.")
+        if agent.get("is_active") is False:
+            raise HTTPException(status_code=400, detail=f"Cannot reassign to inactive staff agent {payload.new_agent_id}.")
     try:
-        from serviceBot.services.outbox_worker import process_outbox_batch
-        process_outbox_batch()
-    except Exception as ob_err:
-        logger.warning(f"Immediate outbox processing triggered warning: {ob_err}")
-
+        updated = assign_staff_agent_to_service_request(
+            request_id, payload.new_agent_id, reason=payload.reason
+        )
+    except BookingConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {
         "success": True,
         "request_id": request_id,
         "new_agent_id": payload.new_agent_id,
-        "status": "pending",
-        "confirmation_status": "pending_agent_confirmation",
-        "escalation_status": "reassigned"
+        "status": updated["status"],
+        "confirmation_status": updated.get("confirmation_status"),
+        "escalation_status": updated.get("escalation_status"),
+        "data": updated,
     }
 
 @router.post("/service-requests", status_code=201)
 async def create_service_request_endpoint(payload: ServiceRequestCreate):
+    try:
+        intake_data = validate_intake_data(payload.intake_data)
+        if get_business_profile()["collect_vehicle_details"] and payload.vehicle is None:
+            raise ValueError("Automotive details are required for this business")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     from serviceBot.db.queries import normalize_e164_phone
     from serviceBot.api.telephony import clean_and_validate_phone
     from serviceBot.services.booking import (
@@ -1734,7 +1616,7 @@ async def create_service_request_endpoint(payload: ServiceRequestCreate):
         result = BookingService().create_portal_request(
             customer_name=payload.customer.name,
             phone=norm_phone,
-            vehicle_details=payload.vehicle.model_dump(),
+            vehicle_details={**(payload.vehicle.model_dump() if payload.vehicle else {}), "intake_data": intake_data},
             request_details=payload.service_request,
         )
     except BookingConflictError as exc:
@@ -1770,10 +1652,15 @@ async def edit_service_request_endpoint(request_id: int, payload: ServiceRequest
     )
 
     try:
+        intake_data = validate_intake_data(payload.intake_data) if payload.intake_data is not None else None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
         BookingService().apply_portal_edit(
             request_id=request_id,
             issue_description=payload.issue_description,
-            vehicle_details=payload.vehicle_details.model_dump(),
+            vehicle_details={**(payload.vehicle_details.model_dump() if payload.vehicle_details else {}), **({"intake_data": intake_data} if payload.intake_data is not None else {})},
             booking_time=payload.booking_time,
             booking_type=payload.booking_type,
             duration_minutes=payload.duration_minutes,
@@ -1945,7 +1832,7 @@ async def get_stats(timeframe: Optional[str] = "7d", calls_timeframe: Optional[s
 
 @router.get("/analytics/overview")
 async def get_portal_analytics_overview(timeframe: Optional[str] = "7d"):
-    """Returns top-level SLA, escalation, and technician response KPIs."""
+    """Returns top-level SLA, escalation, and agent response KPIs."""
     from serviceBot.services.analytics import get_analytics_overview
     return get_analytics_overview(timeframe=timeframe)
 
@@ -2056,15 +1943,14 @@ async def delete_kb_file(filename: str):
     return {"filename": filename, "success": True}
 
 class GmailConfigPayload(BaseModel):
+    model_config = {"extra": "forbid"}
+
     gmail_enabled: bool
     enable_agent_selection: Optional[bool] = False
-    gmail_auth_type: str
+    gmail_auth_type: Literal["oauth2"] = "oauth2"
     gmail_sender: str
-    gmail_password: Optional[str] = None
     gmail_recipient: str
     admin_phone_number: Optional[str] = None
-    gmail_smtp_server: Optional[str] = "smtp.gmail.com"
-    gmail_smtp_port: Optional[int] = 587
     gmail_client_id: Optional[str] = None
     gmail_client_secret: Optional[str] = None
 
@@ -2086,19 +1972,15 @@ async def get_gmail_config():
         client_id_decrypted = os.getenv("GOOGLE_CLIENT_ID") or os.getenv("GMAIL_CLIENT_ID") or ""
         
     has_client_secret = bool(config.get("gmail_client_secret")) or bool(os.getenv("GOOGLE_CLIENT_SECRET") or os.getenv("GMAIL_CLIENT_SECRET"))
-    has_password = bool(config.get("gmail_password"))
     is_connected = bool(config.get("gmail_refresh_token"))
     
     return {
         "gmail_enabled": config.get("gmail_enabled", False),
         "enable_agent_selection": config.get("enable_agent_selection", False),
-        "gmail_auth_type": config.get("gmail_auth_type", "app_password"),
+        "gmail_auth_type": "oauth2",
         "gmail_sender": config.get("gmail_sender", ""),
         "gmail_recipient": config.get("gmail_recipient", ""),
         "admin_phone_number": admin_phone,
-        "gmail_smtp_server": config.get("gmail_smtp_server", "smtp.gmail.com"),
-        "gmail_smtp_port": config.get("gmail_smtp_port", 587),
-        "has_password": has_password,
         "gmail_client_id": client_id_decrypted,
         "has_client_secret": has_client_secret,
         "is_connected": is_connected
@@ -2111,12 +1993,12 @@ async def update_gmail_config(payload: GmailConfigPayload):
     
     config["gmail_enabled"] = payload.gmail_enabled
     config["enable_agent_selection"] = payload.enable_agent_selection
-    config["gmail_auth_type"] = payload.gmail_auth_type
-    if payload.gmail_sender or payload.gmail_auth_type != "oauth2":
+    config["gmail_auth_type"] = "oauth2"
+    if payload.gmail_sender:
         config["gmail_sender"] = payload.gmail_sender
     config["gmail_recipient"] = payload.gmail_recipient
-    config["gmail_smtp_server"] = payload.gmail_smtp_server or "smtp.gmail.com"
-    config["gmail_smtp_port"] = payload.gmail_smtp_port or 587
+    for legacy_key in ("gmail_password", "gmail_smtp_server", "gmail_smtp_port"):
+        config.pop(legacy_key, None)
     
     if payload.admin_phone_number is not None:
         config["admin_phone_number"] = payload.admin_phone_number
@@ -2132,9 +2014,6 @@ async def update_gmail_config(payload: GmailConfigPayload):
                 )
         except Exception as e:
             logger.warning(f"Could not persist admin phone to database: {e}")
-        
-    if payload.gmail_password and payload.gmail_password != "••••••••••••••••":
-        config["gmail_password"] = encrypt_key(payload.gmail_password)
         
     if payload.gmail_client_id:
         config["gmail_client_id"] = encrypt_key(payload.gmail_client_id)
@@ -2420,8 +2299,7 @@ async def gmail_oauth_callback(request: Request, code: str = None, error: str = 
 
 @router.post("/gmail-config/test")
 async def test_gmail_config(payload: GmailConfigPayload):
-    from serviceBot.services.encryption import encrypt_key
-    from serviceBot.services.gmail import send_smtp_email, send_gmail_api_email
+    from serviceBot.services.gmail import send_gmail_api_email
     
     config = load_config()
     subject = "[BayFull] Gmail Integration Test Email"
@@ -2445,37 +2323,18 @@ async def test_gmail_config(payload: GmailConfigPayload):
     """
     
     try:
-        if payload.gmail_auth_type == "oauth2":
-            if not config.get("gmail_refresh_token"):
-                raise HTTPException(
-                    status_code=400,
-                    detail="Google Account is not connected. Please click 'Connect Gmail Account' first to authorize access."
-                )
-            success = send_gmail_api_email(
-                sender=payload.gmail_sender,
-                recipient=payload.gmail_recipient,
-                subject=subject,
-                html_body=html_body,
-                plain_body="Gmail integration OAuth2 test email."
+        if not config.get("gmail_refresh_token"):
+            raise HTTPException(
+                status_code=400,
+                detail="Google Account is not connected. Please click 'Connect Gmail Account' first to authorize access."
             )
-        else:
-            encrypted_password = config.get("gmail_password", "")
-            if payload.gmail_password and payload.gmail_password != "••••••••••••••••":
-                encrypted_password = encrypt_key(payload.gmail_password)
-                
-            if not encrypted_password:
-                raise HTTPException(status_code=400, detail="SMTP App Password is required to run connection test.")
-                
-            success = send_smtp_email(
-                sender=payload.gmail_sender,
-                encrypted_password=encrypted_password,
-                recipient=payload.gmail_recipient,
-                server=payload.gmail_smtp_server or "smtp.gmail.com",
-                port=payload.gmail_smtp_port or 587,
-                subject=subject,
-                html_body=html_body,
-                plain_body="Gmail integration SMTP test email."
-            )
+        success = send_gmail_api_email(
+            sender=payload.gmail_sender or config.get("gmail_sender", ""),
+            recipient=payload.gmail_recipient,
+            subject=subject,
+            html_body=html_body,
+            plain_body="Gmail integration OAuth2 test email."
+        )
             
         if not success:
             raise HTTPException(status_code=500, detail="Gmail connection test failed. Please verify configurations.")

@@ -28,67 +28,60 @@ def clean_gmail_config():
     save_config(original_config)
 
 def test_get_gmail_config():
-    """Verify that get_gmail_config returns the correct settings structure."""
+    """Settings expose Google status without obsolete SMTP configuration."""
     response = client.get("/api/v1/portal/gmail-config")
     assert response.status_code == 200
     data = response.json()
     assert "gmail_enabled" in data
     assert "gmail_sender" in data
     assert "gmail_recipient" in data
-    assert "gmail_smtp_server" in data
-    assert "gmail_smtp_port" in data
-    assert "has_password" in data
+    assert data["gmail_auth_type"] == "oauth2"
+    assert "is_connected" in data
+    assert not {"gmail_smtp_server", "gmail_smtp_port", "has_password"} & data.keys()
+
 
 def test_post_gmail_config():
-    """Verify that update_gmail_config updates settings and encrypts passwords."""
+    """Google client configuration remains encrypted on disk and masked on reads."""
     payload = {
         "gmail_enabled": True,
-        "gmail_auth_type": "app_password",
+        "gmail_auth_type": "oauth2",
         "gmail_sender": "test-sender@gmail.com",
-        "gmail_password": "test-app-password-1234",
         "gmail_recipient": "test-recipient@gmail.com",
-        "gmail_smtp_server": "smtp.gmail.com",
-        "gmail_smtp_port": 587
+        "gmail_client_id": "test-client-id",
+        "gmail_client_secret": "test-client-secret",
     }
     response = client.post("/api/v1/portal/gmail-config", json=payload)
     assert response.status_code == 200
-    
-    # Reload config to verify encryption occurred
     config = load_config()
     assert config["gmail_enabled"] is True
     assert config["gmail_sender"] == "test-sender@gmail.com"
     assert config["gmail_recipient"] == "test-recipient@gmail.com"
-    assert config["gmail_password"] != "test-app-password-1234"  # should be encrypted
-    
-    # Verify we can decrypt it back
+    assert config["gmail_client_secret"] != "test-client-secret"
     from serviceBot.services.encryption import decrypt_key
-    decrypted = decrypt_key(config["gmail_password"])
-    assert decrypted == "test-app-password-1234"
+    assert decrypt_key(config["gmail_client_secret"]) == "test-client-secret"
+    response = client.get("/api/v1/portal/gmail-config")
+    assert response.json()["has_client_secret"] is True
+    assert response.json()["gmail_client_id"] == "test-client-id"
+    assert "test-client-secret" not in response.text
 
-@patch("smtplib.SMTP")
-def test_gmail_connection_test_endpoint(mock_smtp):
-    """Verify SMTP connection test endpoint uses configured parameters and sends test email."""
-    mock_instance = MagicMock()
-    mock_smtp.return_value = mock_instance
-    
-    payload = {
+
+@patch("serviceBot.services.gmail.send_gmail_api_email", return_value=True)
+def test_gmail_connection_test_endpoint(mock_send):
+    """A connected system account sends the test through the Gmail API."""
+    config = load_config()
+    config["gmail_refresh_token"] = "synthetic-refresh-token"
+    save_config(config)
+    response = client.post("/api/v1/portal/gmail-config/test", json={
         "gmail_enabled": True,
-        "gmail_auth_type": "app_password",
+        "gmail_auth_type": "oauth2",
         "gmail_sender": "test-sender@gmail.com",
-        "gmail_password": "test-app-password-1234",
         "gmail_recipient": "test-recipient@gmail.com",
-        "gmail_smtp_server": "smtp.gmail.com",
-        "gmail_smtp_port": 587
-    }
-    
-    response = client.post("/api/v1/portal/gmail-config/test", json=payload)
+    })
     assert response.status_code == 200
     assert response.json() == {"success": True}
-    
-    # Verify smtplib methods were called
-    mock_smtp.assert_called_once_with("smtp.gmail.com", 587, timeout=10)
-    mock_instance.login.assert_called_once_with("test-sender@gmail.com", "test-app-password-1234")
-    assert mock_instance.sendmail.called
+    mock_send.assert_called_once()
+    assert mock_send.call_args.kwargs["sender"] == "test-sender@gmail.com"
+    assert mock_send.call_args.kwargs["recipient"] == "test-recipient@gmail.com"
 
 @patch("serviceBot.services.gmail.send_booking_notification")
 def test_appointment_booking_queues_email_notification(mock_send_email):

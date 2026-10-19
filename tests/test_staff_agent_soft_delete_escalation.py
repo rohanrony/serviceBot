@@ -183,55 +183,58 @@ def test_get_staff_agents_filters_out_inactive_agents(client):
 
 
 def test_reassign_endpoint_updates_reservation_segments(client):
-    """
-    Test that POST /api/v1/portal/service-requests/{request_id}/reassign
-    updates both appointment_reservations and appointment_reservation_segments to the new technician.
-    """
-    request_id = 301
-    sr_record = {
-        "id": request_id,
-        "staff_agent_id": 10,
-        "status": "pending",
-        "service_type": "Brake Service",
-        "booking_time": "2026-10-25 10:00:00",
-        "customer_name": "Test Customer",
-        "customer_phone": "+19195551234",
-        "old_agent_name": "Inactive Tech",
-        "old_agent_phone": "+19195550010",
-        "escalation_status": "escalated",
-    }
-    new_agent_record = {
-        "id": 12,
-        "name": "Active Tech",
-        "phone_number": "+19195550012",
-        "email": "active@example.com",
-    }
+    """A real reassignment moves the request, reservation and every segment."""
+    from serviceBot.db.connection import dict_cursor, get_db_connection
+    from serviceBot.services.booking import BookingService
 
-    mock_cursor = MagicMock()
-    # 1. Fetch SR, 2. Fetch new agent, 3. Select starts_at
-    mock_cursor.fetchone.side_effect = [
-        sr_record,
-        new_agent_record,
-        {"starts_at": dt_mod.datetime(2026, 10, 25, 10, 0)},
-    ]
-    mock_conn = MagicMock()
+    with get_db_connection() as conn, dict_cursor(conn) as cursor:
+        agents = []
+        for name in ("Reassignment Original", "Reassignment Replacement"):
+            cursor.execute("INSERT INTO staff_agents(name,role,is_active) VALUES(%s,'Technician',TRUE) RETURNING id", (name,))
+            agents.append(cursor.fetchone()["id"])
+        cursor.execute("INSERT INTO services(name,duration_minutes) VALUES('Reassignment Integration Service',60) RETURNING id")
+        service_id = cursor.fetchone()["id"]
+        for agent_id in agents:
+            cursor.execute("INSERT INTO service_staff_agents(service_id,staff_agent_id) VALUES(%s,%s)", (service_id,agent_id))
 
-    with patch("serviceBot.db.connection.get_db_connection") as mock_get_conn, \
-         patch("serviceBot.db.connection.dict_cursor") as mock_dict_cur, \
-         patch("serviceBot.services.twilio_sms.TwilioSMSClient.send_sms") as mock_send_sms:
-
-        mock_get_conn.return_value.__enter__.return_value = mock_conn
-        mock_dict_cur.return_value.__enter__.return_value = mock_cursor
-
-        payload = {"new_agent_id": 12, "reason": "Reassigned after tech deactivation"}
-        resp = client.post(f"/api/v1/portal/service-requests/{request_id}/reassign", json=payload)
-        assert resp.status_code == 200
-
-        executed_queries = [c[0][0] for c in mock_cursor.execute.call_args_list]
-
-        # Verify service_requests updated
-        assert any("UPDATE service_requests" in q for q in executed_queries)
-        # Verify appointment_reservations updated
-        assert any("UPDATE appointment_reservations" in q for q in executed_queries)
-        # Verify appointment_reservation_segments updated
-        assert any("UPDATE appointment_reservation_segments" in q for q in executed_queries)
+    target = dt_mod.date.today() + dt_mod.timedelta(days=28)
+    while target.weekday() > 4:
+        target += dt_mod.timedelta(days=1)
+    receipt = BookingService().create_portal_request(
+        customer_name="Reassignment Integration Customer", phone="+15550162001",
+        vehicle_details={"make":"Toyota","model":"Camry","year":2020},
+        request_details={"service_type":"Reassignment Integration Service",
+                         "booking_time":f"{target.isoformat()} 10:00:00",
+                         "duration_minutes":60,"staff_agent_id":agents[0]},
+    )
+    try:
+        with get_db_connection() as conn, dict_cursor(conn) as cursor:
+            cursor.execute("UPDATE staff_agents SET is_active=FALSE WHERE id=%s", (agents[0],))
+            cursor.execute("UPDATE service_requests SET escalation_status='escalated',escalation_reason='AGENT_DEACTIVATED' WHERE id=%s", (receipt.request_id,))
+        response = client.post(
+            f"/api/v1/portal/service-requests/{receipt.request_id}/reassign",
+            json={"new_agent_id":agents[1],"reason":"Reassigned after tech deactivation"},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["confirmation_status"] == "pending_agent_confirmation"
+        with get_db_connection() as conn, dict_cursor(conn) as cursor:
+            cursor.execute("SELECT staff_agent_id FROM service_requests WHERE id=%s", (receipt.request_id,))
+            assert cursor.fetchone()["staff_agent_id"] == agents[1]
+            cursor.execute("SELECT id,staff_agent_id FROM appointment_reservations WHERE service_request_id=%s", (receipt.request_id,))
+            reservation = cursor.fetchone()
+            assert reservation["id"] == receipt.reservation_id
+            assert reservation["staff_agent_id"] == agents[1]
+            cursor.execute("SELECT staff_agent_id FROM appointment_reservation_segments WHERE reservation_id=%s", (receipt.reservation_id,))
+            segments = cursor.fetchall()
+            assert len(segments) == 4
+            assert {segment["staff_agent_id"] for segment in segments} == {agents[1]}
+    finally:
+        with get_db_connection() as conn, dict_cursor(conn) as cursor:
+            cursor.execute("SELECT customer_id,vehicle_id FROM service_requests WHERE id=%s", (receipt.request_id,))
+            identities = cursor.fetchone()
+            cursor.execute("DELETE FROM outbox_notifications WHERE request_id=%s", (receipt.request_id,))
+            cursor.execute("DELETE FROM service_requests WHERE id=%s", (receipt.request_id,))
+            cursor.execute("DELETE FROM vehicles WHERE id=%s", (identities["vehicle_id"],))
+            cursor.execute("DELETE FROM customers WHERE id=%s", (identities["customer_id"],))
+            cursor.execute("DELETE FROM services WHERE id=%s", (service_id,))
+            cursor.execute("DELETE FROM staff_agents WHERE id=ANY(%s)", (agents,))

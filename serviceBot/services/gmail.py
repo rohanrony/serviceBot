@@ -1,6 +1,5 @@
 import os
 import sys
-import smtplib
 import traceback
 import time
 import base64
@@ -198,59 +197,11 @@ def send_gmail_via_api(agent_id: int, recipient: str, subject: str, html_body: s
         print(traceback.format_exc())
         return False
 
-def send_smtp_email(sender: str, encrypted_password: str, recipient: str, server: str, port: int, subject: str, html_body: str, plain_body: str = "") -> bool:
-    """
-    Sends an email using standard SMTP with STARTTLS. Decrypts the password securely before connecting.
-    """
-    if not sender or not encrypted_password or not recipient:
-        print("Gmail SMTP Notification Error: Missing sender, password, or recipient configurations.")
-        return False
-        
-    try:
-        decrypted_password = decrypt_key(encrypted_password)
-        if not decrypted_password:
-            print("Gmail SMTP Notification Error: Failed to decrypt email password.")
-            return False
-
-        # Clean and format recipients list (supports comma-separated emails)
-        recipients_list = [r.strip() for r in recipient.replace(';', ',').split(',') if r.strip()]
-        recipient_str = ", ".join(recipients_list)
-
-        msg = MIMEMultipart('alternative')
-        msg['Subject'] = subject
-        msg['From'] = f"serviceBot Notification <{sender}>"
-        msg['To'] = recipient_str
-
-        if plain_body:
-            msg.attach(MIMEText(plain_body, 'plain', 'utf-8'))
-        msg.attach(MIMEText(html_body, 'html', 'utf-8'))
-
-        print(f"Connecting to SMTP server {server}:{port}...")
-        smtp = smtplib.SMTP(server, port, timeout=10)
-        smtp.ehlo()
-        
-        if port == 587:
-            smtp.starttls()
-            smtp.ehlo()
-            
-        print("SMTP Connection established, authenticating...")
-        smtp.login(sender, decrypted_password)
-        
-        print("Sending email...")
-        smtp.sendmail(sender, recipients_list, msg.as_string())
-        smtp.quit()
-        print("SMTP email notification sent successfully!")
-        return True
-    except Exception as e:
-        print(f"SMTP Email Send Failed: {str(e)}")
-        print(traceback.format_exc())
-        return False
-
 def send_booking_notification(booking_type: str, details: dict, agent_email: Optional[str] = None) -> bool:
     """
     Constructs and sends a premium formatted HTML email for a booking event.
     Enforces direct Gmail REST API sending scoped to the connected agent's credentials first,
-    falling back to SMTP or system-level configuration if disconnected.
+    falling back to system-level Google credentials if disconnected.
     """
     config = load_config()
     if not config.get("gmail_enabled"):
@@ -379,7 +330,7 @@ def send_booking_notification(booking_type: str, details: dict, agent_email: Opt
                         <td>{details.get('phone', 'N/A')}</td>
                     </tr>
                     <tr>
-                        <th>Vehicle Details</th>
+                        <th>Service Details</th>
                         <td>{details.get('vehicle', 'N/A')}</td>
                     </tr>
                     <tr>
@@ -409,7 +360,7 @@ def send_booking_notification(booking_type: str, details: dict, agent_email: Opt
     === {type_title} ===
     Customer: {details.get('customer_name', 'N/A')}
     Phone: {details.get('phone', 'N/A')}
-    Vehicle: {details.get('vehicle', 'N/A')}
+    Details: {details.get('vehicle', 'N/A')}
     Service Type: {details.get('service_type', 'N/A')}
     Duration: {details.get('duration_minutes', 60)} mins
     {time_label}: {details.get('time', 'N/A')}
@@ -446,30 +397,14 @@ def send_booking_notification(booking_type: str, details: dict, agent_email: Opt
             return True
         print(f"Failed or missing credentials to send via agent {agent_id} Google account. Falling back to system settings...")
 
-    # 2. Fallback to system-level email sending
-    auth_type = config.get("gmail_auth_type", "app_password")
-    if auth_type == "oauth2":
-        return send_gmail_api_email(
-            sender=sender,
-            recipient=recipient,
-            subject=subject,
-            html_body=html_body,
-            plain_body=plain_body
-        )
-    else:
-        encrypted_pw = config.get("gmail_password", "")
-        server = config.get("gmail_smtp_server", "smtp.gmail.com")
-        port = int(config.get("gmail_smtp_port", 587))
-        return send_smtp_email(
-            sender=sender,
-            encrypted_password=encrypted_pw,
-            recipient=recipient,
-            server=server,
-            port=port,
+    # 2. Fallback to the system Google connection.
+    return send_gmail_api_email(
+        sender=sender,
+        recipient=recipient,
         subject=subject,
-            html_body=html_body,
-            plain_body=plain_body
-        )
+        html_body=html_body,
+        plain_body=plain_body
+    )
 
 def send_admin_notification(
     booking_type: str, 
@@ -531,7 +466,8 @@ def send_admin_notification(
         subject = f"[Admin Copy] {type_title} - {agent_name or 'Staff'}"
 
     appt_id = details.get("appointment_id")
-    reassign_url = f"https://davidson.carcare/portal/reassign/{appt_id}" if appt_id else "https://davidson.carcare/portal"
+    from serviceBot.services.business_profile import notification_portal_url
+    reassign_url = notification_portal_url(config)
     is_escalation = booking_type in ["escalation", "escalated", "sla_breach"]
     esc_reason = details.get("escalation_reason") or details.get("reason")
 
@@ -589,7 +525,7 @@ def send_admin_notification(
                     </tr>
                     {"<tr><th>Issue Description</th><td>" + details.get('issue') + "</td></tr>" if details.get('issue') else ""}
                 </table>
-                {"<div style=\"margin-top: 24px; text-align: center;\"><a href=\"" + reassign_url + "\" style=\"background-color: #dc2626; color: #ffffff; padding: 10px 22px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block;\">Review & Reassign in Portal</a></div>" if is_escalation else ""}
+                {"<div style=\"margin-top: 24px; text-align: center;\"><a href=\"" + reassign_url + "\" style=\"background-color: #dc2626; color: #ffffff; padding: 10px 22px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block;\">Review & Reassign in Portal</a></div>" if is_escalation and reassign_url else ""}
             </div>
             <div class="footer">
                 Admin Notification sent automatically by serviceBot.
@@ -605,42 +541,24 @@ def send_admin_notification(
     {"Escalation Reason: " + str(esc_reason) if esc_reason else ""}
     Customer: {details.get('customer_name', 'N/A')}
     Phone: {details.get('phone', 'N/A')}
-    Asset: {details.get('vehicle', 'N/A')}
+    Details: {details.get('vehicle', 'N/A')}
     Service Type: {details.get('service_type', 'N/A')}
     {time_label}: {details.get('time', 'N/A')}
     {"Issue: " + details.get('issue') if details.get('issue') else ""}
-    {"Portal Action: " + reassign_url if is_escalation else ""}
+    {"Portal Action: " + reassign_url if is_escalation and reassign_url else ""}
     """
 
-    auth_type = config.get("gmail_auth_type", "app_password")
-    if auth_type == "oauth2":
-        try:
-            return send_gmail_api_email(
-                sender=sender,
-                recipient=admin_recipient,
-                subject=subject,
-                html_body=html_body,
-                plain_body=plain_body
-            )
-        except Exception as e:
-            logger.warning(f"System Gmail API sending failed: {e}. Trying fallback mechanisms...")
-    else:
-        encrypted_pw = config.get("gmail_password", "")
-        if encrypted_pw:
-            server = config.get("gmail_smtp_server", "smtp.gmail.com")
-            port = int(config.get("gmail_smtp_port", 587))
-            smtp_success = send_smtp_email(
-                sender=sender,
-                encrypted_password=encrypted_pw,
-                recipient=admin_recipient,
-                server=server,
-                port=port,
-                subject=subject,
-                html_body=html_body,
-                plain_body=plain_body
-            )
-            if smtp_success:
-                return True
+    try:
+        if send_gmail_api_email(
+            sender=sender,
+            recipient=admin_recipient,
+            subject=subject,
+            html_body=html_body,
+            plain_body=plain_body
+        ):
+            return True
+    except Exception as e:
+        logger.warning(f"System Gmail API sending failed: {e}. Trying connected Google account...")
 
     # Resilient Fallback: If system email is unconfigured or failed, send via connected Google account in user_google_accounts
     try:
