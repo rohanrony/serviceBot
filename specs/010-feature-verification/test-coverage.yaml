@@ -1,0 +1,85 @@
+schema: 1
+feature: 010-feature-verification
+acceptance:
+  - id: AC1
+    behavior: Verify exact candidate and preserve unrelated workspace state
+    preconditions: [Committed sample feature, Installed dependencies, Isolated temporary repository]
+    success: [Receipt binds head/base and fresh collection/execution reports]
+    failure: [Reject wrong SHA or changed artifact]
+    invariants: [Dirty and staged files unchanged, Browser subset counted within E2E, Production credentials excluded]
+    tests:
+      - tests/verification/test_verification_gate.py::test_exact_commit_receipt_preserves_dirty_and_staged_work
+      - tests/verification/test_verification_gate.py::test_receipt_rejects_changed_head_base_and_tampered_artifact
+      - tests/verification/test_verification_gate.py::test_legacy_dotenv_readers_receive_only_synthetic_runtime_credentials
+      - tests/verification/test_verification_gate.py::test_external_dns_is_blocked_during_collection_before_application_fixtures
+      - tests/verification/test_verification_gate.py::test_database_preflight_rejects_nonlocal_or_incompatible_servers
+      - tests/verification/test_verification_gate.py::test_checkout_has_the_verified_git_revision_and_fixture_controls_test_mode
+    layer: [unit, composed]
+    live_acceptance: {status: not_required, reason: No provider behavior changed}
+  - id: AC2
+    behavior: Incomplete or nonpassing evidence blocks publication
+    preconditions: [Fault injection in a disposable candidate]
+    success: [Both suites execute and valid complete evidence passes]
+    failure: [Reject failures/errors/skips/xfail/xpass/filtering/missing JUnit/missing execution/missing browser]
+    invariants: [No usable passing receipt after an unsuccessful run]
+    tests:
+      - tests/verification/test_verification_gate.py::test_incomplete_or_nonpassing_suites_cannot_issue_valid_evidence
+      - tests/verification/test_verification_gate.py::test_both_suites_execute_when_unit_fails
+      - tests/verification/test_verification_gate.py::test_inherited_pytest_controls_are_rejected
+    layer: [unit, composed]
+    live_acceptance: {status: not_required, reason: Offline evidence only}
+  - id: AC3
+    behavior: Select and verify the outgoing feature SHA and commit explicit files only
+    preconditions: [Local bare remote, Existing committed candidate, Unrelated staged work]
+    success: [Verified feature SHA pushed after branch selection]
+    failure: [Bypass and implicit commit flags rejected]
+    invariants: [Main unchanged, Unrelated staged content preserved]
+    tests:
+      - tests/verification/test_verification_gate.py::test_helper_verifies_already_committed_work_and_preserves_main
+      - tests/verification/test_verification_gate.py::test_helper_and_installed_hook_share_the_selected_target
+      - tests/verification/test_verification_gate.py::test_helper_commits_only_selected_files_after_branch_selection
+      - tests/verification/test_verification_gate.py::test_bypass_flags_and_implicit_commit_selection_are_rejected
+    layer: [composed]
+    live_acceptance: {status: not_required, reason: Git remote is local and disposable}
+  - id: AC4
+    behavior: Hook validates every outgoing branch commit against current remote target
+    preconditions: [Installed local hook, Exact target ref available]
+    success: [Verified candidate accepted by local remote]
+    failure: [Missing evidence and direct main publication rejected]
+    invariants: [No rejected remote ref created, Main unchanged]
+    tests: [tests/verification/test_verification_gate.py::test_pre_push_blocks_missing_receipt_and_direct_main]
+    layer: [composed]
+    live_acceptance: {status: not_required, reason: Local transport only}
+  - id: AC5
+    behavior: Coverage obligations precede implementation and scaffolding fails clearly
+    preconditions: [Feature coverage matrix, Generated scaffold]
+    success: [Matrix validates and scaffold reports missing acceptance assertions]
+    failure: [Incomplete coverage rejected]
+    invariants: [No green placeholder or unexplained layer omission]
+    tests:
+      - tests/verification/test_verification_gate.py::test_template_fails_until_real_assertions_are_written
+      - tests/verification/test_verification_gate.py::test_behavior_changes_require_real_test_mapping
+    layer: [unit, composed]
+    live_acceptance: {status: not_required, reason: Workflow and generator only}
+  - id: AC6
+    behavior: CI requires complete evidence on the current integration candidate
+    preconditions: [Disposable PostgreSQL, Chromium, Synthetic credentials]
+    success: [Aggregate explicitly checks offline job and validated receipt]
+    failure: [Missing/skipped/failed jobs or reports block aggregate]
+    invariants: [No production secrets or live provider execution]
+    tests:
+      - tests/verification/test_verification_gate.py::test_ci_aggregate_requires_success_and_complete_exact_candidate_evidence
+    layer: [unit, composed]
+    live_acceptance: {status: not_required, reason: Hosted CI activation follows publication; provider proof unrelated}
+omitted_layers:
+  database: Workflow does not change persistence; complete existing database suites still mandatory
+  http: No application route changed; existing HTTP suites still mandatory
+  browser: No product journey changed; complete existing browser subset still mandatory
+  provider_contract: No provider request/response contract changed
+  migration: No schema change
+  targeted: No new product accessibility/performance/security property
+review:
+  red: Initial regression run failed because the verification entry point did not exist
+  green: Focused gate and adapter prerequisite checks passed before publication; the exact committed candidate must produce a complete receipt under scratch/verification before push
+  test_changes: New gate tests; existing product tests and assertions preserved
+  sufficiency: Test rejection paths and observable Git/evidence effects; no count-based sufficiency claim
