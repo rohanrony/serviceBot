@@ -43,7 +43,22 @@ def test_get_staff_agents_endpoint():
 
 
 
-def test_db_queries_integration():
+def test_db_queries_integration(monkeypatch):
+    # Freeze both application clock boundaries; availability and reservation
+    # must evaluate the same future appointment under the real lead-time rules.
+    from types import SimpleNamespace
+    from serviceBot.services import booking, timezone_service
+
+    current = dt_mod.datetime(2026, 10, 18, 12, tzinfo=timezone_service.get_business_zoneinfo())
+    class FrozenDateTime(dt_mod.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return current.astimezone(tz) if tz is not None else current.replace(tzinfo=None)
+
+    clock = SimpleNamespace(**vars(dt_mod))
+    clock.datetime = FrozenDateTime
+    monkeypatch.setattr(booking, "dt_mod", clock)
+    monkeypatch.setattr(timezone_service, "dt_mod", clock)
     # Insert test slot
     with get_db_connection() as conn:
         cursor = conn.cursor()

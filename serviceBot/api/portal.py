@@ -6,7 +6,7 @@ import datetime as dt_mod
 from datetime import datetime
 from typing import Optional, List
 from fastapi import APIRouter, HTTPException, UploadFile, File, Request, BackgroundTasks
-from pydantic import BaseModel, StrictBool, StrictStr, field_validator
+from pydantic import Field, BaseModel, StrictBool, StrictStr, field_validator
 from dotenv import load_dotenv
 from starlette.concurrency import run_in_threadpool
 
@@ -375,6 +375,7 @@ Speak the filler naturally as part of the conversation so the caller experiences
         except Exception as e:
             print(f"Error loading system_prompt.txt: {e}")
 
+    data["business_profile"] = get_business_profile(data)
     return data
 
 def save_config(config_data):
@@ -446,7 +447,7 @@ async def sync_prompt_to_elevenlabs(prompt_text: str, first_message: str = None)
         
     headers = {"xi-api-key": api_key}
     el_payload = {
-        "name": "Davidson Car Care Service Agent",
+        "name": f"{load_config().get('business_name') or 'Business'} Service Agent",
         "conversation_config": {
             "agent": {
                 "prompt": {
@@ -482,7 +483,21 @@ async def sync_prompt_to_elevenlabs(prompt_text: str, first_message: str = None)
                     pass
                 print(f"Failed to sync prompt to ElevenLabs agent {target_id}: {str(e)}")
 
+from serviceBot.services.business_profile import (
+    BusinessProfile, build_business_prompt, get_business_profile, normalize_portal_base_url, validate_intake_data,
+)
+
+
 class ConfigUpdatePayload(BaseModel):
+    business_profile: Optional[BusinessProfile] = None
+    regenerate_business_prompt: bool = False
+    portal_base_url: Optional[str] = None
+
+    @field_validator("portal_base_url")
+    @classmethod
+    def validate_portal_url(cls, value):
+        return normalize_portal_base_url(value) if value is not None else None
+
     required_fields: Optional[dict] = None
     prompts: Optional[dict] = None
     system_prompt: Optional[str] = None
@@ -586,6 +601,13 @@ async def update_config(payload: ConfigUpdatePayload):
             raise HTTPException(status_code=400, detail=f"Invalid IANA timezone identifier: {tz_str}")
         config_data["business_timezone"] = tz_str
 
+    if payload.portal_base_url is not None:
+        config_data["portal_base_url"] = payload.portal_base_url
+    if payload.business_profile is not None:
+        config_data["business_profile"] = payload.business_profile.model_dump()
+    if payload.regenerate_business_prompt:
+        prompt_to_sync, config_data["first_message"] = build_business_prompt(config_data)
+
     # Ensure prompt has synchronized lead time buffers
     appt_buf = float(config_data.get("min_booking_buffer_hours", 4.0))
     cb_buf = float(config_data.get("min_callback_buffer_hours", 2.0))
@@ -602,7 +624,7 @@ async def update_config(payload: ConfigUpdatePayload):
 
     save_config(config_data)
     
-    await sync_prompt_to_elevenlabs(prompt_to_sync, payload.first_message)
+    await sync_prompt_to_elevenlabs(prompt_to_sync, config_data["first_message"] if payload.regenerate_business_prompt else payload.first_message)
     
     return {"success": True}
 
@@ -1223,12 +1245,14 @@ class VehicleDetails(BaseModel):
 
 class ServiceRequestCreate(BaseModel):
     customer: CustomerDetails
-    vehicle: VehicleDetails
+    vehicle: Optional[VehicleDetails] = None
+    intake_data: dict = Field(default_factory=dict)
     service_request: dict
 
 class ServiceRequestEdit(BaseModel):
     issue_description: str
-    vehicle_details: VehicleDetails
+    vehicle_details: Optional[VehicleDetails] = None
+    intake_data: Optional[dict] = None
     booking_time: Optional[str] = None
     booking_type: Optional[str] = None
     duration_minutes: Optional[int] = None
@@ -1394,7 +1418,7 @@ def _load_service_requests(
 
             query = f"""
                 SELECT sr.id, sr.service_type, sr.issue_description, sr.status, sr.time_slot, sr.created_at, sr.updated_at,
-                       sr.booking_type, sr.booking_time, sr.duration_minutes, sr.staff_agent_id, sr.service_components,
+                       sr.booking_type, sr.booking_time, sr.duration_minutes, sr.staff_agent_id, sr.service_components, sr.intake_data,
                        sr.notification_dispatched_at, sr.sla_expires_at, sr.calendar_integration_status,
                        (SELECT status FROM outbox_notifications WHERE request_id = sr.id
                         AND event_type = 'booking_notification' ORDER BY created_at DESC, id DESC LIMIT 1) AS notification_queue_status,
@@ -1500,8 +1524,8 @@ class ReassignRequestPayload(BaseModel):
 @router.post("/service-requests/{request_id}/reassign")
 async def reassign_service_request(request_id: int, payload: ReassignRequestPayload):
     """
-    Reassigns an escalated service request to a new technician.
-    Updates staff_agent_id, binds calendar reservation to new technician,
+    Reassigns an escalated service request to a new agent.
+    Updates staff_agent_id, binds calendar reservation to new agent,
     and dispatches SMS alert to the new agent and notice to the old agent.
     """
     from serviceBot.db.connection import get_db_connection, dict_cursor
@@ -1684,6 +1708,12 @@ async def reassign_service_request(request_id: int, payload: ReassignRequestPayl
 
 @router.post("/service-requests", status_code=201)
 async def create_service_request_endpoint(payload: ServiceRequestCreate):
+    try:
+        intake_data = validate_intake_data(payload.intake_data)
+        if get_business_profile()["collect_vehicle_details"] and payload.vehicle is None:
+            raise ValueError("Automotive details are required for this business")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     from serviceBot.db.queries import normalize_e164_phone
     from serviceBot.api.telephony import clean_and_validate_phone
     from serviceBot.services.booking import (
@@ -1734,7 +1764,7 @@ async def create_service_request_endpoint(payload: ServiceRequestCreate):
         result = BookingService().create_portal_request(
             customer_name=payload.customer.name,
             phone=norm_phone,
-            vehicle_details=payload.vehicle.model_dump(),
+            vehicle_details={**(payload.vehicle.model_dump() if payload.vehicle else {}), "intake_data": intake_data},
             request_details=payload.service_request,
         )
     except BookingConflictError as exc:
@@ -1770,10 +1800,15 @@ async def edit_service_request_endpoint(request_id: int, payload: ServiceRequest
     )
 
     try:
+        intake_data = validate_intake_data(payload.intake_data) if payload.intake_data is not None else None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
         BookingService().apply_portal_edit(
             request_id=request_id,
             issue_description=payload.issue_description,
-            vehicle_details=payload.vehicle_details.model_dump(),
+            vehicle_details={**(payload.vehicle_details.model_dump() if payload.vehicle_details else {}), **({"intake_data": intake_data} if payload.intake_data is not None else {})},
             booking_time=payload.booking_time,
             booking_type=payload.booking_type,
             duration_minutes=payload.duration_minutes,
@@ -1945,7 +1980,7 @@ async def get_stats(timeframe: Optional[str] = "7d", calls_timeframe: Optional[s
 
 @router.get("/analytics/overview")
 async def get_portal_analytics_overview(timeframe: Optional[str] = "7d"):
-    """Returns top-level SLA, escalation, and technician response KPIs."""
+    """Returns top-level SLA, escalation, and agent response KPIs."""
     from serviceBot.services.analytics import get_analytics_overview
     return get_analytics_overview(timeframe=timeframe)
 

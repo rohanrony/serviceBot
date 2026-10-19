@@ -286,17 +286,23 @@ def _update_cached_session_booking(*, session_key, session, phone, requested_tim
             def normalized(value):
                 return " ".join(str(value).split()).casefold()
             target_vehicle = {key: target.get(key) for key in ("make", "model", "year")}
-            for key in ("make", "model"):
-                if not target_vehicle[key] or normalized(vehicle.get(key)) != normalized(target_vehicle[key]):
+            from serviceBot.services.business_profile import get_business_profile
+            if get_business_profile()["collect_vehicle_details"]:
+                for key in ("make", "model"):
+                    if not target_vehicle[key] or normalized(vehicle.get(key)) != normalized(target_vehicle[key]):
+                        raise ValueError("Vehicle change requires an explicit supported update")
+                def year(value):
+                    if type(value) is int and value > 0:
+                        return value
+                    if isinstance(value, str) and re.fullmatch(r"[1-9][0-9]*", value.strip()):
+                        return int(value.strip())
+                    raise ValueError("Vehicle year is not verified")
+                if year(vehicle.get("year")) != year(target_vehicle["year"]):
                     raise ValueError("Vehicle change requires an explicit supported update")
-            def year(value):
-                if type(value) is int and value > 0:
-                    return value
-                if isinstance(value, str) and re.fullmatch(r"[1-9][0-9]*", value.strip()):
-                    return int(value.strip())
-                raise ValueError("Vehicle year is not verified")
-            if year(vehicle.get("year")) != year(target_vehicle["year"]):
-                raise ValueError("Vehicle change requires an explicit supported update")
+            if "intake_data" in vehicle:
+                recorded_intake = target.get("intake_data") or {}
+                if any(recorded_intake.get(key) != value for key, value in vehicle["intake_data"].items()):
+                    raise ValueError("Intake changes require an explicit supported update")
             booked_names = set()
             for row in group:
                 components = row.get("service_components")
@@ -374,19 +380,9 @@ def generate_service_summary(transcript: str) -> str:
             
         llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.0, openai_api_key=openai_key)
         
-        system_prompt = (
-            "You are a service advisor call summarizer for Davidson Car Care.\n"
-            "Analyze the phone call transcript and write a concise, structured summary (3-4 bullet points) "
-            "specifically tailored to an automotive service intake.\n\n"
-            "Include the following details where mentioned:\n"
-            "- The customer's primary concern or vehicle issue (e.g. grinding brakes, AC blowing warm air).\n"
-            "- The vehicle/asset details (Make, Model, and Year) formatted as 'Vehicle details: <Year Make Model>' (or 'None' if not specified).\n"
-            "- Any scheduled appointments or booking times.\n"
-            "- Additional context (e.g., if shuttle was requested, warranty questions).\n\n"
-            "Format the summary as clean bullet points. Keep it professional and focused on the service intake details.\n\n"
-            "CRITICAL: If the call ended before completion, or if no service details, vehicle info, or booking details were gathered, simply output the exact sentence: 'Call ended before completion; no service details were gathered.' Do not list empty bullet points or repeat placeholder information."
-        )
-        
+        from serviceBot.services.business_profile import build_summary_prompt
+        system_prompt = build_summary_prompt(load_config())
+
         response = llm.invoke([
             SystemMessage(content=system_prompt),
             HumanMessage(content=f"Transcript:\n{transcript}")
@@ -413,7 +409,7 @@ def get_booking_details(customer_id: int, service_request_id: int = None) -> dic
             duration_minutes = 60
             if service_request_id:
                 cursor.execute("""
-                    SELECT sr.service_type, sr.issue_description, sr.duration_minutes, v.year, v.make, v.model 
+                    SELECT sr.service_type, sr.issue_description, sr.duration_minutes, sr.intake_data, v.year, v.make, v.model
                     FROM service_requests sr
                     LEFT JOIN vehicles v ON sr.vehicle_id = v.id
                     WHERE sr.id = %s;
@@ -423,8 +419,8 @@ def get_booking_details(customer_id: int, service_request_id: int = None) -> dic
                     service_type = row["service_type"] or "Repair"
                     issue_desc = row["issue_description"] or ""
                     duration_minutes = row["duration_minutes"] or 60
-                    if row["make"] or row["model"]:
-                        vehicle_str = f"{row['year'] or ''} {row['make'] or ''} {row['model'] or ''}".strip()
+                    from serviceBot.services.business_profile import format_service_details
+                    vehicle_str = format_service_details(row)
             else:
                 # Get last vehicle
                 cursor.execute("SELECT year, make, model FROM vehicles WHERE customer_id = %s ORDER BY id DESC LIMIT 1;", (customer_id,))
@@ -1021,6 +1017,17 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                 "message": "Could not verify appointment ownership. Please try again before making changes.",
             }}
 
+    from serviceBot.services.business_profile import get_business_profile, parse_voice_intake
+    business_profile = get_business_profile()
+    intake_data = None
+    if tool_name in {"create_service_request", "book_appointment", "request_callback"}:
+        try:
+            intake_data = parse_voice_intake(args, business_profile)
+        except ValueError as exc:
+            return {"tool_call_id": tool_call_id, "result": _with_notification_delivery_guidance(
+                tool_name, {"success": False, "message": str(exc)}
+            )}
+
     result = {"success": False, "message": f"Unknown tool called: {tool_name}"}
 
     try:
@@ -1238,7 +1245,7 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                                 earliest_str = earliest_allowed.strftime("%I:%M %p").lstrip("0")
                                 earliest_iso = earliest_allowed.strftime("%Y-%m-%dT%H:%M:%S")
                                 agent_inst = (
-                                    f"Politely inform the caller that callbacks require at least {min_buf_display} hours advance notice so a service advisor can review their vehicle records. "
+                                    f"Politely inform the caller that callbacks require at least {min_buf_display} hours advance notice so an agent can review their service request. "
                                     f"The earliest available callback time is around {earliest_str}. Offer the suggested times at or after {earliest_str}."
                                 )
                             else:
@@ -1247,7 +1254,7 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                                 earliest_str = earliest_allowed.strftime("%I:%M %p").lstrip("0")
                                 earliest_iso = earliest_allowed.strftime("%Y-%m-%dT%H:%M:%S")
                                 agent_inst = (
-                                    f"Politely inform the caller that our shop requires at least {min_buf_display} hours advance notice to prepare bays and parts. "
+                                    f"Politely inform the caller that our business requires at least {min_buf_display} hours advance notice to prepare for the appointment. "
                                     f"The earliest available time is around {earliest_str}. Offer the suggested slots at or after {earliest_str}."
                                 )
                             result = {
@@ -1341,6 +1348,10 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                 is_uncataloged = extra_kwargs.get("is_uncataloged", False)
 
                 vehicle_details = {"make": make, "model": model, "year": year}
+                if intake_data is not None and (intake_data or not business_profile["collect_vehicle_details"]):
+                    vehicle_details["intake_data"] = intake_data
+                    if not business_profile["collect_vehicle_details"]:
+                        vehicle_details = {"intake_data": intake_data}
                 session_key = (
                     args.get("call_sid")
                     or args.get("callSid")
@@ -1483,7 +1494,7 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                         earliest_str = earliest_allowed.strftime("%I:%M %p").lstrip("0")
                         earliest_iso = earliest_allowed.strftime("%Y-%m-%dT%H:%M:%S")
                         agent_inst = (
-                            f"Politely inform the caller that our shop requires at least {min_buf_display} hours advance notice to prepare bays and parts. "
+                            f"Politely inform the caller that our business requires at least {min_buf_display} hours advance notice to prepare for the appointment. "
                             f"The earliest available time is around {earliest_str}. Offer the suggested slots at or after {earliest_str}."
                         )
                         result = {
@@ -1593,6 +1604,10 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                             customer_id = cursor.fetchone()["id"]
 
                 vehicle_details = {"make": make, "model": model, "year": year}
+                if intake_data is not None and (intake_data or not business_profile["collect_vehicle_details"]):
+                    vehicle_details["intake_data"] = intake_data
+                    if not business_profile["collect_vehicle_details"]:
+                        vehicle_details = {"intake_data": intake_data}
                 session_key = args.get("call_sid") or args.get("callSid") or args.get("conversation_id") or args.get("session_id")
                 existing_session = get_session_booking(session_key) if session_key else None
 
@@ -1656,7 +1671,7 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                             if is_single_tech:
                                 custom_msg = f"Your appointment for {services_desc} is confirmed starting at {first_appt['booking_time']} (total duration: {total_duration} mins). {win_msg}"
                             else:
-                                custom_msg = f"Your back-to-back appointments for {services_desc} have been scheduled with our specialized technicians starting at {first_appt['booking_time']} (total duration: {total_duration} mins). {win_msg}"
+                                custom_msg = f"Your back-to-back appointments for {services_desc} have been scheduled with our specialized agents starting at {first_appt['booking_time']} (total duration: {total_duration} mins). {win_msg}"
 
                             result = {
                                 "success": True,
@@ -1781,6 +1796,10 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                         issue_description = args.get("issue_description") or args.get("issue") or "Not specified"
                         service_type = args.get("service_type") or args.get("serviceType") or "Repair"
                         vehicle_details = {"make": make, "model": model, "year": year}
+                        if intake_data is not None and (intake_data or not business_profile["collect_vehicle_details"]):
+                            vehicle_details["intake_data"] = intake_data
+                            if not business_profile["collect_vehicle_details"]:
+                                vehicle_details = {"intake_data": intake_data}
                         sr_id = create_service_request(
                             customer_id=customer_id,
                             vehicle_details=vehicle_details,
@@ -1803,7 +1822,7 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                                 earliest_str = earliest_allowed.strftime("%I:%M %p").lstrip("0")
                                 earliest_iso = earliest_allowed.strftime("%Y-%m-%dT%H:%M:%S")
                                 agent_inst = (
-                                    f"Politely inform the caller that callbacks require at least {min_buf_display} hours advance notice so a service advisor can review their vehicle records. "
+                                    f"Politely inform the caller that callbacks require at least {min_buf_display} hours advance notice so an agent can review their service request. "
                                     f"The earliest available callback time is around {earliest_str}. Offer the suggested times at or after {earliest_str}."
                                 )
                                 result = {
@@ -1822,6 +1841,10 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                                 return response_data
 
                         vehicle_details = {"make": make, "model": model, "year": year}
+                        if intake_data is not None and (intake_data or not business_profile["collect_vehicle_details"]):
+                            vehicle_details["intake_data"] = intake_data
+                            if not business_profile["collect_vehicle_details"]:
+                                vehicle_details = {"intake_data": intake_data}
                         cb_id = create_callback_request(
                             customer_id=customer_id,
                             service_request_id=sr_id,
@@ -1983,7 +2006,7 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                 for a in appts:
                     dt = a.get("appointment_datetime")
                     btype = "appointment" if a.get("booking_type") == "appointment" else "callback"
-                    a["kind"] = "in-shop appointment" if btype == "appointment" else "advisor callback"
+                    a["kind"] = "service appointment" if btype == "appointment" else "advisor callback"
                     if not dt:
                         unscheduled.append(a)
                     elif str(dt)[:10] >= today_str:
@@ -2009,7 +2032,7 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                     if upcoming:
                         parts.append(f"Found {len(upcoming)} upcoming scheduled request(s) on file {source_prefix}:".strip())
                         for idx, u in enumerate(upcoming, 1):
-                            kind_label = "In-shop Appointment" if u.get("booking_type") == "appointment" else "Advisor Callback"
+                            kind_label = "Service Appointment" if u.get("booking_type") == "appointment" else "Advisor Callback"
                             v_str = f"{u.get('year') or ''} {u.get('make') or ''} {u.get('model') or ''}".strip() or "Vehicle"
                             srv = u.get("service_type") or "Service"
                             issue = u.get("issue_description") or ""
@@ -2025,8 +2048,8 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                     msg = " ".join(parts)
                     summary_for_agent = (
                         f"Customer {phone} has {len(upcoming)} upcoming scheduled request(s) on file. "
-                        "Clearly inform the caller of both in-shop appointments and advisor callbacks, "
-                        "and do not claim there are only in-shop appointments if advisor callbacks are also scheduled. "
+                        "Clearly inform the caller of both service appointments and advisor callbacks, "
+                        "and do not claim there are only service appointments if advisor callbacks are also scheduled. "
                         "Important (Option A Policy): The scheduling system only accesses active and upcoming bookings. "
                         "If the caller asks about past completed appointments, work done earlier, or past invoices, "
                         "explicitly inform them that you do not have access to completed service records over the phone, "
@@ -2125,7 +2148,7 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                         "capacity_blocked": True,
                         "appointment_id": appt_id,
                         "message": (
-                            f"Technician schedule cannot accommodate the extra {additional_duration} minutes contiguous with this appointment. "
+                            f"Agent schedule cannot accommodate the extra {additional_duration} minutes contiguous with this appointment. "
                             f"Please offer the customer to either: 1) Move the combined {new_total_duration}-minute visit to an open slot, "
                             f"or 2) Book a separate appointment for {additional_issue or 'the additional service'}."
                         )
@@ -2354,6 +2377,11 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                     "message": f"Service '{service_name}' not found in catalog. Using default fields.",
                     "required_fields": default_fields
                 }
+
+        if tool_name in {"get_service_fields", "get_required_fields"}:
+            result["intake_fields"] = business_profile["intake_fields"]
+            if not business_profile["collect_vehicle_details"]:
+                result["required_fields"]["vehicle_details"] = False
 
     except Exception as e:
         result = {

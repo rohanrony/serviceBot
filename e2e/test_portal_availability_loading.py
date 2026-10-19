@@ -38,7 +38,7 @@ def test_render_is_readonly_and_requests_are_lazy_deduplicated_serial(page, live
     page.wait_for_timeout(100)
     assert len(held) == 2
     finish(held[1])
-    expect(second.locator('option[value="2"]')).to_have_text('Tech Two - Technician')
+    expect(second.locator('option[value="2"]')).to_have_text('Tech Two - Agent')
 
 
 def test_failure_preserves_assignment_retries_only_on_interaction_and_ignores_detached_row(page, live_server, grouped_visit):

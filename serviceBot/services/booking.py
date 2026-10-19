@@ -48,7 +48,7 @@ def _validated_components(request):
 
 
 def _appointment_blocks(items, plan):
-    """Group appointments by technician while keeping callbacks independent."""
+    """Group appointments by agent while keeping callbacks independent."""
     blocks = []
     grouped = {}
     for item, agent_id in zip(items, plan, strict=True):
@@ -319,6 +319,20 @@ class BookingService:
         self._connection_factory = connection_factory
         self._cursor_factory = cursor_factory
 
+    @staticmethod
+    def _intake_details(vehicle_details):
+        from serviceBot.services.business_profile import validate_intake_data
+        details = vehicle_details or {}
+        return validate_intake_data(details.get("intake_data"))
+
+    @staticmethod
+    def _persist_intake(cursor, request_id, intake_data):
+        from serviceBot.services.business_profile import get_business_profile
+        cursor.execute(
+            "UPDATE service_requests SET intake_data = (intake_data - %s::text[]) || %s::jsonb WHERE id = %s;",
+            ([field["key"] for field in get_business_profile()["intake_fields"]], json.dumps(intake_data), request_id),
+        )
+
     def create_portal_request(
         self,
         *,
@@ -328,6 +342,7 @@ class BookingService:
         request_details: dict[str, Any],
     ) -> BookingReceipt | dict[str, int]:
         """Create a portal request and any requested reservation in one transaction."""
+        intake_data = self._intake_details(vehicle_details)
         service_type = request_details.get("service_type") or "General Service"
         issue_description = request_details.get("issue_description") or ""
         booking_type = request_details.get("booking_type") or "appointment"
@@ -355,21 +370,24 @@ class BookingService:
                     (customer_name or "Valued Customer", phone),
                 )
                 customer = cursor.fetchone()
-                cursor.execute(
-                    """
-                    INSERT INTO vehicles (customer_id, make, model, year, vin)
-                    VALUES (%s, %s, %s, %s, %s)
-                    RETURNING id;
-                    """,
-                    (
-                        customer["id"],
-                        vehicle_details.get("make") or "Vehicle",
-                        vehicle_details.get("model") or "Standard",
-                        int(vehicle_details.get("year") or 2020),
-                        vehicle_details.get("vin"),
-                    ),
-                )
-                vehicle_id = cursor.fetchone()["id"]
+                from serviceBot.services.business_profile import get_business_profile
+                vehicle_id = None
+                if get_business_profile()["collect_vehicle_details"]:
+                    cursor.execute(
+                        """
+                        INSERT INTO vehicles (customer_id, make, model, year, vin)
+                        VALUES (%s, %s, %s, %s, %s)
+                        RETURNING id;
+                        """,
+                        (
+                            customer["id"],
+                            vehicle_details.get("make") or "Vehicle",
+                            vehicle_details.get("model") or "Standard",
+                            int(vehicle_details.get("year") or 2020),
+                            vehicle_details.get("vin"),
+                        ),
+                    )
+                    vehicle_id = cursor.fetchone()["id"]
                 cursor.execute(
                     """
                     INSERT INTO service_requests (
@@ -390,6 +408,7 @@ class BookingService:
                     ),
                 )
                 request_id = cursor.fetchone()["id"]
+                self._persist_intake(cursor, request_id, intake_data)
                 cursor.execute(
                     """
                     INSERT INTO service_request_audit_log
@@ -430,6 +449,7 @@ class BookingService:
         callback_number: Optional[str] = None,
     ) -> BookingReceipt:
         """Reserve capacity for an existing request or create the request atomically."""
+        intake_data = self._intake_details(vehicle_details)
         starts_at = parse_reservation_start(appointment_datetime)
         duration_minutes = normalize_reservation_duration(duration_minutes)
         with self._connection_factory() as conn:
@@ -444,6 +464,7 @@ class BookingService:
                     starts_at=starts_at,
                 )
                 if duplicate:
+                    self._persist_intake(cursor, duplicate["id"], intake_data)
                     self._merge_service_type(cursor, duplicate["id"], duplicate.get("service_type"), service_type)
                     return BookingReceipt(
                         request_id=duplicate["id"],
@@ -467,6 +488,7 @@ class BookingService:
                     callback_priority=callback_priority,
                     callback_number=callback_number,
                 )
+                self._persist_intake(cursor, request_id, intake_data)
                 return self._reserve_request(
                     cursor,
                     request_id=request_id,
@@ -627,6 +649,7 @@ class BookingService:
         if not services:
             raise ValueError("At least one service must be specified.")
 
+        intake_data = self._intake_details(vehicle_details)
         starts_at = parse_reservation_start(appointment_datetime)
         b_hours = get_configured_business_hours()
         b_days = get_configured_business_days()
@@ -700,7 +723,7 @@ class BookingService:
         for aid in common_agents:
             candidate_plans.append([aid] * len(service_items))
 
-        # Priority 2: Distinct multi-agent plans across qualified technicians using greedy grouping
+        # Priority 2: Distinct multi-agent plans across qualified agents using greedy grouping
         all_combos = list(itertools.product(*qualified_per_item))
         def plan_greedy_score(plan):
             distinct_count = len(set(plan))
@@ -711,7 +734,7 @@ class BookingService:
                     first_agent_run += 1
                 else:
                     break
-            # Prefer: fewer distinct technicians, fewer handoffs/transitions, longer first run
+            # Prefer: fewer distinct agents, fewer handoffs/transitions, longer first run
             return (-distinct_count, -transitions, first_agent_run)
 
         all_combos.sort(key=plan_greedy_score, reverse=True)
@@ -772,6 +795,7 @@ class BookingService:
                             ),
                         )
                         sr_id = cursor.fetchone()["id"]
+                        self._persist_intake(cursor, sr_id, intake_data)
 
                         res_id = self._try_reserve_candidate(
                             cursor,
@@ -827,8 +851,8 @@ class BookingService:
 
                 cursor.execute("SELECT name, phone FROM customers WHERE id = %s;", (customer_id,))
                 cust_row = cursor.fetchone() or {"name": "Valued Customer", "phone": None}
-                v_parts = [vehicle_details.get("year"), vehicle_details.get("make"), vehicle_details.get("model")] if vehicle_details else []
-                v_str = " ".join([str(p).strip() for p in v_parts if p and str(p).strip().upper() not in ("NONE", "NULL", "N/A")]).strip() or "N/A"
+                from serviceBot.services.business_profile import format_service_details
+                v_str = format_service_details({**(vehicle_details or {}), "intake_data": intake_data})
 
                 for req in created_requests:
                     self._enqueue_projection_events(
@@ -1023,11 +1047,11 @@ class BookingService:
     def reassign_declined_technician_segment(
         self,
         request_id: int,
-        reason: str = "Technician declined appointment via SMS",
+        reason: str = "Agent declined appointment via SMS",
     ) -> dict[str, Any]:
         """
-        Attempts to automatically reassign a declined appointment segment to another qualified technician
-        free at that exact time slot. If no other qualified technician is free, escalates to supervisor.
+        Attempts to automatically reassign a declined appointment segment to another qualified agent
+        free at that exact time slot. If no other qualified agent is free, escalates to supervisor.
         """
         from serviceBot.db.queries import get_qualified_agent_ids
 
@@ -1169,14 +1193,14 @@ class BookingService:
                         "success": True,
                         "reassigned": False,
                         "escalated": True,
-                        "message": f"No alternative technician available for #{request_id} at {b_dt}. Escalated to supervisor."
+                        "message": f"No alternative agent available for #{request_id} at {b_dt}. Escalated to supervisor."
                     }
 
     def remove_appointment_service(
         self, *, request_id: int, service_name: str, customer_consent_obtained: bool,
         triggered_by: str, reason: str | None = None,
     ) -> dict[str, Any]:
-        """Shrink only the selected technician block, under its existing row lock."""
+        """Shrink only the selected agent block, under its existing row lock."""
         if customer_consent_obtained is not True:
             raise BookingValidationError("Customer consent is required to remove a service.")
         if (type(request_id) is not int or request_id <= 0 or not isinstance(service_name, str)
@@ -1479,6 +1503,7 @@ class BookingService:
         customer_consent_obtained: bool,
     ) -> BookingReceipt | dict[str, int]:
         """Atomically apply a portal edit and any capacity-affecting reschedule."""
+        intake_data = self._intake_details(vehicle_details) if "intake_data" in vehicle_details else None
         with self._connection_factory() as conn:
             with self._cursor_factory(conn) as cursor:
                 cursor.execute(
@@ -1524,20 +1549,23 @@ class BookingService:
                     """,
                     (issue_description, next_type, next_duration, request_id),
                 )
-                cursor.execute(
-                    """
-                    UPDATE vehicles
-                    SET make = %s, model = %s, year = %s, vin = %s
-                    WHERE id = %s;
-                    """,
-                    (
-                        vehicle_details.get("make"),
-                        vehicle_details.get("model"),
-                        vehicle_details.get("year"),
-                        vehicle_details.get("vin"),
-                        request.get("vehicle_id"),
-                    ),
-                )
+                if intake_data is not None:
+                    self._persist_intake(cursor, request_id, intake_data)
+                if vehicle_details.get("make") and request.get("vehicle_id"):
+                    cursor.execute(
+                        """
+                        UPDATE vehicles
+                        SET make = %s, model = %s, year = %s, vin = %s
+                        WHERE id = %s;
+                        """,
+                        (
+                            vehicle_details.get("make"),
+                            vehicle_details.get("model"),
+                            vehicle_details.get("year"),
+                            vehicle_details.get("vin"),
+                            request.get("vehicle_id"),
+                        ),
+                    )
                 if request.get("issue_description") != issue_description:
                     cursor.execute(
                         """
@@ -1577,6 +1605,9 @@ class BookingService:
 
     @staticmethod
     def _resolve_vehicle(cursor, customer_id: int, vehicle_details: Optional[dict[str, Any]]) -> int:
+        from serviceBot.services.business_profile import get_business_profile
+        if not get_business_profile()["collect_vehicle_details"]:
+            return None
         details = vehicle_details or {}
         make = details.get("make")
         model = details.get("model")
@@ -1650,7 +1681,7 @@ class BookingService:
         cursor.execute(
             """
             SELECT id FROM service_requests
-            WHERE customer_id = %s AND vehicle_id = %s AND status = 'pending'
+            WHERE customer_id = %s AND vehicle_id IS NOT DISTINCT FROM %s AND status = 'pending'
               AND booking_type IS NULL
             ORDER BY id DESC LIMIT 1
             FOR UPDATE;
@@ -1691,7 +1722,7 @@ class BookingService:
             FROM service_requests sr
             JOIN appointment_reservations ar
               ON ar.service_request_id = sr.id AND ar.status = 'ACTIVE'
-            WHERE sr.customer_id = %s AND sr.vehicle_id = %s
+            WHERE sr.customer_id = %s AND sr.vehicle_id IS NOT DISTINCT FROM %s
               AND sr.booking_type = %s AND ar.starts_at = %s
               AND sr.status IN ('pending', 'in_progress')
             FOR UPDATE OF sr, ar;
@@ -1743,7 +1774,7 @@ class BookingService:
             """
             SELECT sr.id, sr.customer_id, sr.staff_agent_id, sr.status,
                    sr.service_type, sr.issue_description, sr.service_components, sr.duration_minutes,
-                   sr.escalation_status,
+                   sr.escalation_status, sr.intake_data,
                    c.name AS customer_name, c.phone,
                    v.year, v.make, v.model
             FROM service_requests sr
@@ -1760,8 +1791,8 @@ class BookingService:
         if not customer:
             customer = {"name": request.get("customer_name"), "phone": request.get("phone")}
 
-        veh_parts = [request.get("year"), request.get("make"), request.get("model")]
-        vehicle_str = " ".join([str(p).strip() for p in veh_parts if p and str(p).strip().upper() not in ("NONE", "NULL", "N/A")]).strip() or "N/A"
+        from serviceBot.services.business_profile import format_service_details
+        vehicle_str = format_service_details(request)
         issue_str = request.get("issue_description") or service_type
 
         existing = self._active_reservation(cursor, request_id)
