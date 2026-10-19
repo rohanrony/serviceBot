@@ -889,9 +889,9 @@ document.addEventListener('DOMContentLoaded', () => {
               <div class="agent-role-line">${initialAgentRole}</div>
               ${waDisconnectedNotice}
             </div>
-            <select class="agent-select-badge" data-id="${req.id}" ${isDone ? 'disabled title="Agent cannot be changed for completed or cancelled tasks"' : ''}>
-              <option value="" data-name="${initialAgentName}" data-role="${initialAgentRole}">${req.staff_agent_name || 'Select Agent'}</option>
-            </select>
+            <button type="button" class="agent-select-badge" data-id="${req.id}"
+              aria-label="Change assigned agent" aria-haspopup="dialog"
+              ${isDone ? 'disabled title="Agent cannot be changed for completed or cancelled tasks"' : ''}></button>
           </div>
         `;
 
@@ -992,75 +992,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const agentSelect = tr.querySelector('.agent-select-badge');
         if (agentSelect) {
-          let optionsLoaded = false;
-          let optionsLoading = false;
-          const loadAgentOptions = async () => {
-            if (isDone || agentSelect.disabled || optionsLoaded || optionsLoading || !agentSelect.isConnected) return;
-            optionsLoading = true;
-            agentSelect.setAttribute('aria-busy', 'true');
-            agentSelect.title = 'Checking availability…';
-            try {
-              const data = await requestAvailableAgents(req.id, () => agentSelect.isConnected && !agentSelect.disabled);
-              if (!data || !agentSelect.isConnected) return;
-              optionsLoaded = true;
-              agentSelect.title = '';
-              if (data.agents && data.agents.length > 0) {
-                let optionsHtml = `<option value="" data-name="Select Agent" data-role="Unassigned">Select Agent</option>`;
-                data.agents.forEach(a => {
-                  const currentAgentId = req.assigned_staff_id || req.staff_agent_id;
-                  const isSel = (currentAgentId && Number(currentAgentId) === Number(a.id)) || (req.staff_agent_name === a.name);
-                  const isUnavailable = a.is_available === false;
-                  const labelSuffix = isUnavailable ? ` (Unavailable - ${a.reason || 'Busy'})` : '';
-                  const waSuffix = a.whatsapp_connected === false ? ' (⚠️ WhatsApp Disconnected)' : '';
-                  const disabledAttr = (isUnavailable && !isSel) ? 'disabled' : '';
-                  optionsHtml += `<option value="${a.id}" data-name="${a.name}" data-role="${a.role || ''}" data-whatsapp-connected="${a.whatsapp_connected ? 'true' : 'false'}" ${isSel ? 'selected' : ''} ${disabledAttr}>${a.name} - ${a.role}${waSuffix}${labelSuffix}</option>`;
-                });
-                agentSelect.innerHTML = optionsHtml;
-                if (isDone) {
-                  agentSelect.disabled = true;
-                  agentSelect.title = "Agent cannot be changed for completed or cancelled tasks";
-                }
-
-                const selectedOpt = agentSelect.options[agentSelect.selectedIndex];
-                if (selectedOpt && selectedOpt.dataset.name) {
-                  const nameLine = tr.querySelector('.agent-name-line');
-                  const roleLine = tr.querySelector('.agent-role-line');
-                  if (nameLine) nameLine.textContent = selectedOpt.dataset.name;
-                  if (roleLine) roleLine.textContent = selectedOpt.dataset.role || '';
-                }
-              }
-            } catch (err) {
-              console.error('Failed to fetch available agents:', err);
-              if (agentSelect.isConnected) agentSelect.title = 'Could not load availability. Open again to retry.';
-            } finally {
-              optionsLoading = false;
-              if (agentSelect.isConnected) agentSelect.removeAttribute('aria-busy');
-            }
-          };
-
-          agentSelect.addEventListener('pointerdown', (event) => {
-            if (!optionsLoaded) event.preventDefault();
-            loadAgentOptions();
-          });
-          agentSelect.addEventListener('focus', loadAgentOptions);
-          agentSelect.addEventListener('keydown', (event) => {
-            if (['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(event.key)) {
-              if (!optionsLoaded) event.preventDefault();
-              loadAgentOptions();
-            }
-          });
-
-          agentSelect.addEventListener('change', (e) => {
-            const selectedOpt = agentSelect.options[agentSelect.selectedIndex];
-            const nameLine = tr.querySelector('.agent-name-line');
-            const roleLine = tr.querySelector('.agent-role-line');
-            if (selectedOpt) {
-              if (nameLine) nameLine.textContent = selectedOpt.dataset.name || selectedOpt.text.split(' - ')[0] || 'Select Agent';
-              if (roleLine) roleLine.textContent = selectedOpt.dataset.role || selectedOpt.text.split(' - ')[1] || '';
-            }
-            updateAssignedAgent(req.id, e.target.value).catch(() => {
-              applyServiceRequestsFilter();
-            });
+          agentSelect.addEventListener('click', () => {
+            if (!agentSelect.disabled) window.openReassignModal(req);
           });
         }
 
@@ -5475,50 +5408,64 @@ document.addEventListener('DOMContentLoaded', () => {
     modal.dataset.isCallback = isCallback ? 'true' : 'false';
 
     document.getElementById('reassign-current-agent').textContent = req.staff_agent_name || 'Unassigned';
-    document.getElementById('reassign-reason-display').textContent = req.escalation_reason || 'TIMEOUT_NO_RESPONSE';
+    document.getElementById('reassign-reason-display').textContent = req.escalation_reason || 'Manual reassignment';
     document.getElementById('reassign-reason-note').value = '';
 
     const agentSelect = document.getElementById('reassign-agent-select');
-    agentSelect.innerHTML = '<option value="">Checking live availability...</option>';
-
+    agentSelect.removeAttribute('aria-busy');
+    const status = document.getElementById('reassign-availability-status');
+    const retry = document.getElementById('reassign-availability-retry');
+    const submit = document.getElementById('reassign-submit-btn');
+    document.getElementById('reassign-escalation-badge').hidden = req.escalation_status !== 'escalated';
+    modal.returnFocus = document.activeElement;
     modal.style.display = 'block';
     overlay.style.display = 'block';
+    modal.focus();
 
     const invocation = Symbol('reassign availability');
     modal.availabilityInvocation = invocation;
     const isCurrent = () => modal.availabilityInvocation === invocation && modal.style.display !== 'none';
-    try {
-      // Query live availability only for the explicitly opened appointment.
-      const data = await requestAvailableAgents(req.id, isCurrent);
-      if (!data || !isCurrent()) return;
-      const candidates = data.agents || [];
-
-      if (candidates && candidates.length > 0) {
-        let opts = '<option value="">-- Choose Candidate Technician --</option>';
+    const loadCandidates = async () => {
+      if (!isCurrent() || agentSelect.getAttribute('aria-busy') === 'true') return;
+      agentSelect.setAttribute('aria-busy', 'true');
+      agentSelect.disabled = true;
+      submit.disabled = true;
+      retry.hidden = true;
+      agentSelect.replaceChildren(new Option('Checking live availability…', ''));
+      status.textContent = 'Checking live availability…';
+      try {
+        const data = await requestAvailableAgents(req.id, isCurrent);
+        if (!data || !isCurrent()) return;
+        if (!Array.isArray(data.agents)) throw new Error('Invalid availability response');
+        agentSelect.replaceChildren(new Option('-- Choose Replacement Agent --', ''));
         const currentId = req.assigned_staff_id || req.staff_agent_id;
-        candidates.forEach(c => {
-          const cId = c.agent_id || c.id;
-          const cName = c.agent_name || c.name;
-          if (Number(cId) === Number(currentId)) return;
-
-          const isAvail = c.is_available !== false && c.available !== false;
-          let badge = '✅ Available';
-          if (!isAvail) {
-            badge = `⚠️ Busy${c.reason && c.reason !== 'Busy' && c.reason !== 'Available' ? ` (${c.reason})` : ''}`;
-          }
-          const jobsText = c.current_job_count_today !== undefined ? ` • ${c.current_job_count_today} jobs today` : '';
-          const skillsText = c.skills_match === false ? ' • ⚠️ Skill Mismatch' : '';
-          opts += `<option value="${cId}">${cName} (${badge}${jobsText}${skillsText})</option>`;
+        let availableCount = 0;
+        data.agents.forEach(candidate => {
+          const id = candidate.agent_id || candidate.id;
+          if (Number(id) === Number(currentId)) return;
+          const available = candidate.is_available !== false && candidate.available !== false;
+          const availability = available ? 'Available' : `Unavailable (${candidate.reason || 'Not available'})`;
+          const option = new Option(`${candidate.agent_name || candidate.name} — ${availability}`, id);
+          option.disabled = !available;
+          agentSelect.append(option);
+          if (available) availableCount++;
         });
-        agentSelect.innerHTML = opts;
-      } else {
-        agentSelect.innerHTML = '<option value="">No alternative technicians found</option>';
+        agentSelect.disabled = false;
+        submit.disabled = availableCount === 0;
+        status.textContent = availableCount ? 'Choose an available replacement agent.' : 'No available replacement agents for this time.';
+        retry.hidden = availableCount > 0;
+        if (modal.contains(document.activeElement)) agentSelect.focus();
+      } catch (err) {
+        if (!isCurrent()) return;
+        agentSelect.replaceChildren(new Option('Availability could not be verified', ''));
+        status.textContent = 'Could not verify agent availability. Please retry.';
+        retry.hidden = false;
+      } finally {
+        if (isCurrent()) agentSelect.removeAttribute('aria-busy');
       }
-    } catch (err) {
-      console.error('Error fetching candidates for reassignment:', err);
-      if (!isCurrent()) return;
-      agentSelect.innerHTML = '<option value="">Failed to load candidates</option>';
-    }
+    };
+    retry.onclick = loadCandidates;
+    await loadCandidates();
   };
 
   function closeReassignModal() {
@@ -5526,7 +5473,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const overlay = document.getElementById('reassign-modal-overlay');
     if (modal) modal.style.display = 'none';
     if (overlay) overlay.style.display = 'none';
+    if (modal?.returnFocus?.isConnected) modal.returnFocus.focus();
   }
+
+  document.getElementById('reassign-modal')?.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeReassignModal();
+    }
+  });
 
   const closeReassignBtn = document.getElementById('close-reassign-modal-btn');
   if (closeReassignBtn) closeReassignBtn.addEventListener('click', closeReassignModal);
@@ -5572,7 +5527,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const typeLabel = isCallback ? 'Callback' : 'Appointment';
-        showToast(`${typeLabel} reassigned! New technician notified via SMS.`, 'success');
+        showToast(`${typeLabel} reassignment saved. Waiting for agent confirmation.`, 'success');
         closeReassignModal();
 
         // Refresh service requests

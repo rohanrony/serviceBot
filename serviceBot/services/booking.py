@@ -1838,8 +1838,7 @@ class BookingService:
 
             window = int(load_config().get("reassignment_confirmation_window_minutes", 15))
             reassignment_cutoff = timezone_service.now_in_business_tz().replace(tzinfo=None) + dt_mod.timedelta(minutes=window)
-            if request.get("escalation_status") in {"escalated", "reassigned"}:
-                escalation_status = "reassigned"
+            escalation_status = "reassigned"
             cursor.execute(
                 "UPDATE sms_reminders SET status = 'CANCELLED' "
                 "WHERE appointment_id = %s AND recipient_type = 'agent' AND status = 'PENDING';",

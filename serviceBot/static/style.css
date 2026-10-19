@@ -3399,3 +3399,13 @@ textarea.form-input {
   }
 }
 
+
+#reassign-availability-retry[hidden],
+#reassign-escalation-badge[hidden] {
+  display: none;
+}
+
+.agent-badge-wrapper:focus-within .agent-badge-display {
+  outline: 2px solid var(--primary, #60a5fa);
+  outline-offset: 2px;
+}

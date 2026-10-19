@@ -15,27 +15,9 @@ provider_capture = captured_provider_fixture
 
 
 @pytest.fixture
-def assignment_clock(freeze_business_clock, monkeypatch):
-    """Freeze now while recognizing real datetime values returned by psycopg2."""
-    from datetime import datetime
-
-    from serviceBot.services import booking
-
-    def freeze(value):
-        now = freeze_business_clock(value)
-        frozen = booking.dt_mod.datetime
-
-        class DateTimeMeta(type):
-            def __instancecheck__(cls, instance):
-                return isinstance(instance, datetime)
-
-        class FrozenDateTime(frozen, metaclass=DateTimeMeta):
-            pass
-
-        monkeypatch.setattr(booking.dt_mod, "datetime", FrozenDateTime)
-        return now
-
-    return freeze
+def assignment_clock(freeze_business_clock):
+    """Use the shared clock that recognizes database datetime values."""
+    return freeze_business_clock
 
 
 def escalate(db, request_id, now, *, unassigned=False):
@@ -303,15 +285,17 @@ def test_browser_normal_dropdown_removes_red_warning_and_survives_reload(
     with page.expect_response(
         lambda r: r.url.endswith(f"/{request_id}/available-agents")
     ):
-        select.focus()
-    expect(select.locator('option[value="2"]')).to_be_enabled()
+        select.click()
+    replacement = page.locator('#reassign-agent-select')
+    expect(replacement.locator('option[value="2"]')).to_be_enabled()
     with page.expect_response(
         lambda r: (
-            r.url.endswith(f"/{request_id}/assign-agent")
-            and r.request.method == "PATCH"
+            r.url.endswith(f"/{request_id}/reassign")
+            and r.request.method == "POST"
         )
     ) as saved:
-        select.select_option("2")
+        replacement.select_option("2")
+        page.locator("#reassign-submit-btn").click()
     assert saved.value.status == 200, saved.value.text()
     expect(row.locator(".sla-warning-badge")).to_contain_text("Reassigned")
     expect(row.locator(".agent-name-line")).to_have_text("Morgan E2E")
@@ -363,17 +347,19 @@ def test_browser_assignment_race_shows_error_and_preserves_escalation(
     with page.expect_response(
         lambda r: r.url.endswith(f"/{request_id}/available-agents")
     ):
-        select.focus()
-    expect(select.locator('option[value="2"]')).to_be_enabled()
+        select.click()
+    replacement = page.locator('#reassign-agent-select')
+    expect(replacement.locator('option[value="2"]')).to_be_enabled()
     book(api, scenario, phone="+15550100002", agent=2)
     before = state(db)
     with page.expect_response(
         lambda r: (
-            r.url.endswith(f"/{request_id}/assign-agent")
-            and r.request.method == "PATCH"
+            r.url.endswith(f"/{request_id}/reassign")
+            and r.request.method == "POST"
         )
     ) as saved:
-        select.select_option("2")
+        replacement.select_option("2")
+        page.locator("#reassign-submit-btn").click()
     assert saved.value.status == 409
     expect(page.locator(".toast").last).to_contain_text("no longer available")
     row = page.locator("tr").filter(has=select)

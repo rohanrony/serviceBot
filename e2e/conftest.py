@@ -389,7 +389,11 @@ def freeze_business_clock(scenario, monkeypatch):
             value.replace(tzinfo=booking.BUSINESS_TZ) if value.tzinfo is None else value
         )
 
-        class FrozenDateTime(datetime_module.datetime):
+        class DateTimeMeta(type):
+            def __instancecheck__(cls, value):
+                return isinstance(value, datetime_module.datetime)
+
+        class FrozenDateTime(datetime_module.datetime, metaclass=DateTimeMeta):
             @classmethod
             def now(cls, tz=None):
                 return (

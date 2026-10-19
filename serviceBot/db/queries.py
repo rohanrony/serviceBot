@@ -2477,7 +2477,9 @@ def _get_available_agents_for_request_legacy(request_id: int) -> list:
     return agents
 
 
-def assign_staff_agent_to_service_request(request_id: int, staff_agent_id: int = None) -> dict:
+def assign_staff_agent_to_service_request(
+    request_id: int, staff_agent_id: int = None, *, reason: Optional[str] = None
+) -> dict:
     """Assign scheduled work by moving its durable local reservation atomically."""
     from serviceBot.services.booking import (
         BUSINESS_TZ,
@@ -2593,12 +2595,13 @@ def assign_staff_agent_to_service_request(request_id: int, staff_agent_id: int =
                         request_id,
                         request.get("status") or "pending",
                         evt_type,
-                        audit_note,
+                        f"{audit_note} ({reason})" if reason else audit_note,
                         json.dumps({
                             "old_agent_id": old_agent_id,
                             "old_agent_name": old_agent_name,
                             "new_agent_id": staff_agent_id,
                             "new_agent_name": new_agent_name,
+                            **({"reason": reason} if reason else {}),
                         }),
                     ),
                 )
@@ -2671,12 +2674,13 @@ def assign_staff_agent_to_service_request(request_id: int, staff_agent_id: int =
                     request_id,
                     request.get("status") or "pending",
                     evt_type,
-                    audit_note,
+                    f"{audit_note} ({reason})" if reason else audit_note,
                     json.dumps({
                         "old_agent_id": old_agent_id,
                         "old_agent_name": old_agent_name,
                         "new_agent_id": staff_agent_id,
                         "new_agent_name": new_agent_name,
+                        **({"reason": reason} if reason else {}),
                     }),
                 ),
             )

@@ -1,0 +1,129 @@
+{
+  "schema": 1,
+  "feature": "011-validated-agent-reassignment",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "behavior": "One click opens reassignment with visible loading, explicit unavailable choices and recoverable lookup failures",
+      "preconditions": [
+        "An active request is rendered",
+        "Calendar response may be delayed or unavailable"
+      ],
+      "success": [
+        "Dialog opens before lookup completes",
+        "Available replacement is selectable",
+        "Escape restores trigger focus"
+      ],
+      "failure": [
+        "Unavailable alternatives are disabled",
+        "Failed or empty lookup exposes Retry",
+        "Stale lookup does not change a reopened dialog"
+      ],
+      "invariants": [
+        "Rendering performs no availability request",
+        "Requests remain serialized",
+        "Closed requests cannot be reassigned"
+      ],
+      "tests": [
+        "e2e/test_portal_availability_loading.py::test_one_click_opens_reassignment_dialog_before_calendar_response",
+        "e2e/test_portal_availability_loading.py::test_failed_or_empty_lookup_has_retry_and_cannot_submit",
+        "e2e/test_portal_availability_loading.py::test_unknown_calendar_is_visible_as_unavailable_and_cannot_be_selected",
+        "e2e/test_portal_availability_loading.py::test_keyboard_close_during_loading_does_not_reopen_and_can_retry",
+        "e2e/test_portal_availability_loading.py::test_closed_rows_do_not_open_or_fetch",
+        "e2e/test_portal_availability_loading.py::test_modal_lookups_share_serial_queue_and_discard_stale_results"
+      ],
+      "layer": [
+        "browser",
+        "http"
+      ],
+      "live_acceptance": {
+        "status": "pending",
+        "reason": "Verify the deployed portal in Safari and Chrome after separately authorized merge and deployment."
+      }
+    },
+    {
+      "id": "AC2",
+      "behavior": "Both assignment endpoints enforce the shared booking validator and preserve durable capacity on rejection",
+      "preconditions": [
+        "An active scheduled multi-service request",
+        "Replacement calendar is unknown, busy, or staff is unqualified"
+      ],
+      "success": [
+        "Verified reassignment moves every segment and keeps supervisor reason",
+        "Unscheduled intake keeps audit reason",
+        "A normal staff change is marked reassigned and the former agent cannot confirm the replacement assignment"
+      ],
+      "failure": [
+        "Both endpoints reject with HTTP 409"
+      ],
+      "invariants": [
+        "Rejected assignment changes no reservation or audit state",
+        "Successful reassignment queues effects transactionally"
+      ],
+      "tests": [
+        "e2e/test_manual_reassignment_guard.py::test_reassignment_rejection_preserves_all_booking_and_audit_state",
+        "e2e/test_manual_reassignment_guard.py::test_verified_manual_reassignment_moves_every_segment_and_preserves_reason",
+        "e2e/test_manual_reassignment_guard.py::test_manual_assignment_of_unscheduled_intake_preserves_supervisor_reason",
+        "e2e/test_escalated_assignment.py::test_browser_assignment_race_shows_error_and_preserves_escalation",
+        "tests/test_staff_agent_soft_delete_escalation.py::test_reassign_endpoint_updates_reservation_segments",
+        "tests/test_completed_task_escalation.py::test_reassign_completed_appointment_rejected",
+        "e2e/test_reminder_contracts.py::test_old_staff_confirmation_after_reassignment_cannot_confirm_new_staff",
+        "e2e/test_reminder_contracts.py::test_reassignment_has_fifteen_minute_confirmation_window"
+      ],
+      "layer": [
+        "database",
+        "http",
+        "browser",
+        "composed",
+        "unit"
+      ],
+      "live_acceptance": {
+        "status": "pending",
+        "reason": "A bounded provider-backed reassignment must verify actual calendar and notification effects after deployment; it requires separate live-effect authorization."
+      }
+    },
+    {
+      "id": "AC3",
+      "behavior": "A disconnected technician cannot produce a saved voice booking or permission to promise an appointment",
+      "preconditions": [
+        "Only the disconnected technician is qualified",
+        "No Google OAuth account binding exists"
+      ],
+      "success": [
+        "Tool returns explicit unconfirmed booking status and customer guidance"
+      ],
+      "failure": [
+        "Single-service and multi-service tools return no saved appointment ID"
+      ],
+      "invariants": [
+        "Durable capacity remains unchanged",
+        "Unknown calendar is not presented as proof of staff being busy",
+        "Prompt requires successful saved booking before confirmation"
+      ],
+      "tests": [
+        "e2e/test_booking_calendar_failures.py::test_disconnected_qualified_technician_rejects_booking_with_clear_caller_guidance",
+        "e2e/test_booking_calendar_failures.py::test_unknown_calendar_lookup_tells_voice_agent_not_to_promise_booking"
+      ],
+      "layer": [
+        "database",
+        "http",
+        "provider_contract",
+        "composed"
+      ],
+      "live_acceptance": {
+        "status": "pending",
+        "reason": "The original customer call has not been identified. Verify the deployed voice agent prompt and a consented disconnected-calendar conversation under a separately authorized live test budget."
+      }
+    }
+  ],
+  "omitted_layers": {
+    "migration": "No schema change.",
+    "targeted": "Keyboard and focus behavior are covered in the browser journey; no performance or security claim."
+  },
+  "review": {
+    "red": "Previous controlled probes reproduced the cancelled initial native-select click and legacy reassignment accepting unknown calendars.",
+    "green": "Focused regressions and full-suite outcomes are retained outside the source tree. Full exact-candidate verification is required before publication.",
+    "test_changes": "Native-select browser tests now use the dialog and retain database/reload assertions. The former SQL-string spy now verifies a real request, reservation identity and four segments. The shared frozen clock accepts PostgreSQL datetime values and replaces the duplicate clock wrapper. The calendar integration test uses a future weekday. Reminder assertions retain their former-agent rejection and deadline expectations.",
+    "sufficiency": "Assert observable HTTP responses, durable capacity, audits, outbox entries, browser focus and visible loading/errors."
+  }
+}
