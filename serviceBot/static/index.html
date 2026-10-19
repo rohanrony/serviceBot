@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
   <!-- Stylesheets -->
-  <link rel="stylesheet" href="style.css?v=24">
+  <link rel="stylesheet" href="style.css?v=26">
   <!-- Chart.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
@@ -1981,10 +1981,10 @@
 
   <!-- Reassign Escalated Appointment Modal -->
   <div class="drawer-overlay" id="reassign-modal-overlay"></div>
-  <div class="modal-card" id="reassign-modal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1200; max-width: 480px; width: 90%; background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 12px; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.6);">
+  <div class="modal-card" id="reassign-modal" role="dialog" aria-modal="true" aria-labelledby="reassign-modal-title" tabindex="-1" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1200; max-width: 480px; width: 90%; background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 12px; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.6);">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
       <div style="display: flex; align-items: center; gap: 8px;">
-        <span class="badge danger" style="font-size: 11px; padding: 2px 6px;">ESCALATED</span>
+        <span id="reassign-escalation-badge" class="badge danger" style="font-size: 11px; padding: 2px 6px;">ESCALATED</span>
         <h3 id="reassign-modal-title" style="margin: 0; font-size: 16px; color: #fff;">Reassign Service Appointment</h3>
       </div>
       <button class="btn-close" id="close-reassign-modal-btn">
@@ -2006,7 +2006,7 @@
         <span id="reassign-current-agent" style="color: #ef4444;">--</span>
       </div>
       <div style="display: flex; justify-content: space-between;">
-        <span class="text-muted">Escalation Reason:</span>
+        <span class="text-muted">Reassignment Reason:</span>
         <span id="reassign-reason-display" style="color: #f59e0b; font-weight: 500;">--</span>
       </div>
     </div>
@@ -2016,6 +2016,8 @@
       
       <div class="form-group mb-4">
         <label for="reassign-agent-select" style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 6px;">Select Replacement Technician</label>
+        <p id="reassign-availability-status" role="status" class="text-muted"></p>
+        <button id="reassign-availability-retry" type="button" class="btn btn-secondary btn-sm" hidden>Retry availability</button>
         <select id="reassign-agent-select" class="form-input" required style="width: 100%;">
           <option value="">Loading available candidates...</option>
         </select>
@@ -2049,6 +2051,6 @@
   <div class="toast" id="app-toast">Action completed successfully</div>
 
   <!-- Javascript Logic -->
-  <script src="app.js?v=44"></script>
+  <script src="app.js?v=46"></script>
 </body>
 </html>
