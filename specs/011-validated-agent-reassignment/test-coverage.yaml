@@ -112,7 +112,38 @@
       ],
       "live_acceptance": {
         "status": "pending",
-        "reason": "The original customer call has not been identified. Verify the deployed voice agent prompt and a consented disconnected-calendar conversation under a separately authorized live test budget."
+        "reason": "Read-only production evidence identified a saved booking with failed customer messages and a later disconnected-calendar reassignment. Verify the deployed voice prompt and a consented disconnected-calendar conversation under a separately authorized live test budget."
+      }
+    },
+    {
+      "id": "AC4",
+      "behavior": "Simulation catalog read-back compares exact staff membership independently of API ordering",
+      "preconditions": [
+        "The service API returns staff bindings ordered by display name"
+      ],
+      "success": [
+        "The same staff IDs in either order pass catalog read-back",
+        "Owned inactive staff remains hidden from the active API and retained in fixture state"
+      ],
+      "failure": [
+        "Missing, extra or duplicate staff bindings block the simulation"
+      ],
+      "invariants": [
+        "Service name, duration and price still require exact read-back"
+      ],
+      "tests": [
+        "tests/test_deployed_full_adapter.py::test_catalog_binding_membership_is_exact_without_requiring_api_order",
+        "e2e/test_deployed_full_fixtures.py::test_c27_real_owned_inactive_staff_is_hidden_from_active_api_and_retained"
+      ],
+      "layer": [
+        "unit",
+        "http",
+        "database",
+        "composed"
+      ],
+      "live_acceptance": {
+        "status": "pending",
+        "reason": "The offline fixture exercises real local API and database behavior; a live simulation is outside this publication scope."
       }
     }
   ],
@@ -123,7 +154,7 @@
   "review": {
     "red": "Previous controlled probes reproduced the cancelled initial native-select click and legacy reassignment accepting unknown calendars.",
     "green": "Focused regressions and full-suite outcomes are retained outside the source tree. Full exact-candidate verification is required before publication.",
-    "test_changes": "Native-select browser tests now use the dialog and retain database/reload assertions. The former SQL-string spy now verifies a real request, reservation identity and four segments. The shared frozen clock accepts PostgreSQL datetime values and replaces the duplicate clock wrapper. The calendar integration test uses a future weekday. Reminder assertions retain their former-agent rejection and deadline expectations.",
+    "test_changes": "Native-select browser tests now use the dialog and retain database/reload assertions. The former SQL-string spy now verifies a real request, reservation identity and four segments. The shared frozen clock accepts PostgreSQL datetime values and replaces the duplicate clock wrapper. The calendar integration test uses a future weekday. Reminder assertions retain their former-agent rejection and deadline expectations. A separate simulation prerequisite checks exact catalog staff membership without depending on API order; missing, extra and duplicate IDs remain failures.",
     "sufficiency": "Assert observable HTTP responses, durable capacity, audits, outbox entries, browser focus and visible loading/errors."
   }
 }
