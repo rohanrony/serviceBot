@@ -103,3 +103,29 @@ Extend `serviceBot/services/sms_classifier.py` and `serviceBot/api/telephony.py`
 
 ### Rationale
 - Deterministic state transitions protected by row-level locking (`SELECT FOR UPDATE`) prevent split-brain technician assignments.
+
+
+## US4 Recovery Investigation (2026-10-19)
+
+Render service `serviceBot` logged PATCH `/service-requests/44/assign-agent` returning
+409 at 18:11:10 UTC (request correlation `cac74c64`). The preceding error says the
+selected agent's Google account was not connected. Request 69 showed the same failure
+at 18:09:40 UTC. The stored `render_logs` table was empty; evidence came from Render's
+read-only log connector in the user-confirmed ADS workspace.
+
+Decision: preserve the reservation owner's fail-closed calendar checks. Candidate listing
+had interpreted a null provider result as available, while reservation rejected it. Align
+those decisions, including service qualifications, rather than bypassing checks through
+the supervisor endpoint. The browser also retained cached escalation state after success.
+
+Red tests exposed stale confirmation deadlines and missing recovery state. Convergence
+then exposed a previously unassigned recovery using BOOKING's notification deduplication
+key: captured provider transport received no new assignment prompt. Classify normal
+staff recovery as REASSIGNED so the existing worker uses its reassignment dispatch and
+confirmation window. No live assignment, notification, configuration or deployment was
+changed during investigation. The graph server denied indexing this checkout; all relevant
+implementation evidence was read from source.
+
+Final review also reproduced a same-time assignment resetting confirmed linked companions.
+The shared reservation service was propagating a zero time delta as a reschedule. Only actual
+time changes now propagate to companions, preserving their confirmation and queued work.

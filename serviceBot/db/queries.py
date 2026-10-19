@@ -2491,7 +2491,9 @@ def assign_staff_agent_to_service_request(request_id: int, staff_agent_id: int =
             cursor.execute(
                 """
                 SELECT sr.id, sr.status, sr.staff_agent_id, sr.booking_time, sr.time_slot,
-                       sr.updated_at, ar.id AS reservation_id,
+                       sr.updated_at, sr.confirmation_status, sr.confirmed_at,
+                       sr.escalation_status, sr.escalation_reason, sr.confirmation_cutoff_at,
+                       ar.id AS reservation_id,
                        ar.staff_agent_id AS reservation_agent_id,
                        ar.starts_at AS reservation_start
                 FROM service_requests sr
@@ -2540,6 +2542,11 @@ def assign_staff_agent_to_service_request(request_id: int, staff_agent_id: int =
                 "id": request_id,
                 "staff_agent_id": staff_agent_id,
                 "status": request.get("status"),
+                "confirmation_status": request.get("confirmation_status"),
+                "confirmed_at": request.get("confirmed_at"),
+                "escalation_status": request.get("escalation_status"),
+                "escalation_reason": request.get("escalation_reason"),
+                "confirmation_cutoff_at": request.get("confirmation_cutoff_at"),
                 "updated_at": request.get("updated_at"),
             }
         if starts_at is None:
@@ -2596,7 +2603,11 @@ def assign_staff_agent_to_service_request(request_id: int, staff_agent_id: int =
                     ),
                 )
                 cursor.execute(
-                    "SELECT id, staff_agent_id, status, confirmation_status, updated_at FROM service_requests WHERE id = %s;",
+                    """SELECT sr.id, sr.staff_agent_id, sr.status, sr.confirmation_status,
+                       sr.confirmed_at, sr.escalation_status, sr.escalation_reason,
+                       sr.confirmation_cutoff_at, sr.updated_at, sa.name AS staff_agent_name
+                       FROM service_requests sr LEFT JOIN staff_agents sa ON sa.id=sr.staff_agent_id
+                       WHERE sr.id = %s;""",
                     (request_id,),
                 )
                 updated_row = cursor.fetchone()
@@ -2679,7 +2690,7 @@ def get_available_agents_for_request(request_id: int) -> list:
     Evaluates calendar availability across Google Calendar, appointment reservations,
     and service requests. Computes current schedule load and ranks candidates.
     """
-    from serviceBot.services.booking import normalize_reservation_duration, reservation_segments
+    from serviceBot.services.booking import BookingService, normalize_reservation_duration, reservation_segments
     from serviceBot.services.google_calendar import fetch_agent_events, parse_google_datetime
     from serviceBot.services.sms_reminders import parse_booking_datetime
     from serviceBot.services import timezone_service
@@ -2691,7 +2702,7 @@ def get_available_agents_for_request(request_id: int) -> list:
             cursor.execute(
                 """
                 SELECT id, booking_time, time_slot, duration_minutes, booking_start_at,
-                       booking_end_at, service_type, staff_agent_id
+                       booking_end_at, service_type, staff_agent_id, service_components
                 FROM service_requests
                 WHERE id = %s;
                 """,
@@ -2700,6 +2711,7 @@ def get_available_agents_for_request(request_id: int) -> list:
             request = cursor.fetchone()
             if not request:
                 raise ValueError(f"Service request with ID {request_id} was not found.")
+            qualified_agent_ids = BookingService._qualified_agent_ids(cursor, request)
             cursor.execute(
                 "SELECT id, name, role, email, phone_number FROM staff_agents WHERE is_active IS NOT FALSE ORDER BY id ASC;"
             )
@@ -2827,9 +2839,6 @@ def get_available_agents_for_request(request_id: int) -> list:
             overlapping_sr_agent_ids = {row["staff_agent_id"] for row in cursor.fetchall()}
 
     # Check skills qualification if service has tagged technicians
-    service_type = request.get("service_type")
-    qualified_agent_ids = get_qualified_agent_ids(service_type) if service_type else []
-
     provider_start = starts_at.replace(tzinfo=timezone)
     provider_end = ends_at.replace(tzinfo=timezone)
 
@@ -2838,7 +2847,13 @@ def get_available_agents_for_request(request_id: int) -> list:
         agent["agent_id"] = agent_id
         agent["agent_name"] = agent["name"]
         agent["current_job_count_today"] = job_counts.get(agent_id, 0)
-        agent["skills_match"] = (agent_id in qualified_agent_ids) if qualified_agent_ids else True
+        agent["skills_match"] = qualified_agent_ids is None or agent_id in qualified_agent_ids
+
+        if not agent["skills_match"]:
+            agent["is_available"] = False
+            agent["available"] = False
+            agent["reason"] = "Not qualified for this service"
+            continue
 
         if agent_id in locally_reserved:
             agent["is_available"] = False
@@ -2863,7 +2878,7 @@ def get_available_agents_for_request(request_id: int) -> list:
             calendar_error = True
             events = None
 
-        if calendar_error:
+        if calendar_error or events is None:
             agent["is_available"] = False
             agent["available"] = False
             agent["reason"] = "Calendar state unavailable"
@@ -2882,11 +2897,6 @@ def get_available_agents_for_request(request_id: int) -> list:
             agent["is_available"] = not is_busy
             agent["available"] = not is_busy
             agent["reason"] = "Busy in Google Calendar" if is_busy else "Available"
-        else:
-            # Not connected to Google Calendar -> fall back to local DB authority
-            agent["is_available"] = True
-            agent["available"] = True
-            agent["reason"] = "Available"
 
     # Candidates are ranked by calendar availability (available first),
     # skills match (qualified first),
@@ -4461,7 +4471,7 @@ def get_breached_unconfirmed_appointments(
     WHERE sr.confirmation_status = 'pending_agent_confirmation'
       AND sr.confirmation_cutoff_at IS NOT NULL
       AND sr.confirmation_cutoff_at <= %s
-      AND sr.escalation_status = 'none'
+      AND sr.escalation_status IN ('none', 'reassigned')
       AND sr.status IN ('pending', 'in_progress')
     ORDER BY sr.confirmation_cutoff_at ASC;
     """

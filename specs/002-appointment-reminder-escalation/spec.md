@@ -336,3 +336,32 @@ When an appointment transitions to `escalated`:
 - The assigned agent has a valid mobile phone number capable of receiving SMS messages and sending short keyword replies.
 - Telephony and messaging services support status callbacks or delivery tracking with automatic retries for transient carrier errors.
 - Supervisors have portal access to review the escalation queue and perform one-click technician reassignments.
+
+
+## Follow-up: Normal Agent Dropdown Recovery (2026-10-19)
+
+This is a repair of US4/FR-013. A normal agent dropdown assignment of a scheduled
+escalated request must perform the same recovery transition as supervisor reassignment.
+
+- **FR-016**: A successful assignment to a different eligible agent clears the red
+  escalation warning immediately and after reload, records `reassigned`, clears the
+  obsolete reason, and leaves confirmation pending. This includes previously unassigned
+  requests. The replacement receives a fresh configured reassignment confirmation window.
+- **FR-017**: Scheduled candidate lists must not offer agents with unknown calendar state
+  or missing service qualifications as available. A stale selection must still fail safely
+  if eligibility or capacity changes before submission.
+- **FR-018**: Rejected assignments preserve request, reservation, occupied segments,
+  reminders, audit and outbox state. Selecting the existing assignee is a no-op and does
+  not resolve an escalation or extend its deadline. Closed and past scheduled bookings
+  retain their existing rejection rules.
+- **FR-019**: Successful recovery retains durable calendar/notification work for the new
+  technician and any former technician. Queued work is not proof of provider delivery.
+
+Acceptance: exercise the actual normal dropdown against HTTP and disposable PostgreSQL;
+verify the badge and banner before/after/reload, pending confirmation, exact deadline,
+full capacity transfer, and queued recipients. Cover unknown provider state, unqualified
+or inactive candidates, a capacity race, no-op assignment, and unscheduled existing behavior.
+The reported popup was correlated to a Render 409 caused by a disconnected Google account; source defects are reproduced offline.
+
+FR-018 also preserves linked companion appointments when only the selected segment's
+agent changes; changing an assignee must not reset another segment's confirmation.
