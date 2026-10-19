@@ -126,3 +126,14 @@ observable pending confirmation, and browser acceptance coverage are required.
 
 Propagate linked companion updates only when the appointment time changes. A same-time
 agent transfer must preserve confirmed companions and their queued work.
+
+
+## Follow-up Test Audit
+
+Extend coverage of FR-016–FR-019 without changing their intent: pure unit policy tables,
+synchronized concurrent PostgreSQL assignments, late outbox-insert failure rollback,
+HTTP schema/closed/past/unassignment guards and method aliases, provider exceptions and
+busy-interval boundaries, post-recovery retry idempotency, reminder ownership, disabled
+browser choices and recovery from an escalations-only filter. Keep all provider transport
+captured and all database faults restricted to disposable test databases. Run both full
+`tests/` and `e2e/` lifecycles separately and confirm automatic discovery/browser markers.

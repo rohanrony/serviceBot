@@ -193,3 +193,17 @@ graph TD
 ## Phase 11: Convergence
 
 - [x] T042 [US4] Preserve confirmed linked companions during same-time normal agent reassignment in serviceBot/services/booking.py, with a persisted-state regression in e2e/test_escalated_assignment.py (FR-018; partial).
+
+
+## Phase 12: Test Coverage Audit
+
+- [x] T043 [US4] Add isolated unit decision-table coverage for grouped qualification and strict staff selection in tests/test_escalated_assignment_unit.py (FR-017).
+- [x] T044 [US4] Add concurrent database assignment coverage with a synchronized provider boundary in tests/test_escalated_assignment.py (FR-018).
+- [x] T045 [US4] Add real HTTP boundary, provider-error, retry, and mid-transaction database-failure contracts in e2e/test_escalated_assignment_boundaries.py (FR-016–FR-019).
+- [x] T046 [US4] Add Chromium coverage for disabled unavailable candidates and recovery while filtering escalations in e2e/test_escalated_assignment_boundaries.py (FR-016, FR-017).
+- [x] T047 [US4] Verify discovery, run complete offline unit/integration and E2E suites, record baseline failures, check lint and requirement coverage; update quickstart.md and record scoped convergence.
+
+
+## Phase 13: Test Harness Convergence
+
+- [x] T048 [US4] Correct the pre-existing calendar integration fixture's hard-coded past booking in tests/test_staff_calendars.py; preserve its availability and durable-booking assertions (Constitution IV; partial).
