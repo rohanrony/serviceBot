@@ -36,7 +36,7 @@ def test_cba_webbook_elevenlabs_alternate_keys(mock_handoff, mock_lookup, mock_h
     """
     Case from call 14697341833:
     ElevenLabs invokes cba_webbook with 'phone_number' and 'summary_text' flat keys.
-    Must be detected as cba_webhook handoff and return success + transfer_phone_number.
+    Must detect handoff, preserve its summary, and report unavailable without claiming transfer.
     """
     mock_hours.return_value = True
     mock_lookup.return_value = {"customer_id": 99, "name": "Swapnil Dangi", "phone": "4697341833"}
@@ -49,9 +49,12 @@ def test_cba_webbook_elevenlabs_alternate_keys(mock_handoff, mock_lookup, mock_h
     response = client.post("/api/v1/voice/tools", json=payload)
     assert response.status_code == 200
     data = response.json()
-    assert data["result"]["success"] is True
-    assert "transferred" in data["result"]["message"].lower()
-    assert "transfer_phone_number" in data["result"]
+    assert data["result"]["success"] is False
+    assert data["result"]["handoff_status"] == "unavailable"
+    assert data["result"]["transfer_completed"] is False
+    assert "transferred" not in data["result"]["message"].lower()
+    assert "transfer_phone_number" not in data["result"]
+    assert data["result"]["summary"]
 
 
 @patch("serviceBot.api.telephony.lookup_customer_by_phone")

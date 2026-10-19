@@ -179,8 +179,11 @@ def test_voice_tools_handoff(mock_lookup, mock_hours):
     assert response.status_code == 200
     data = response.json()
     assert data["tool_call_id"] == "call_xyz"
-    assert data["result"]["success"] is True
-    assert "transferred" in data["result"]["message"].lower()
+    assert data["result"]["success"] is False
+    assert data["result"]["handoff_status"] == "unavailable"
+    assert data["result"]["transfer_completed"] is False
+    assert "transferred" not in data["result"]["message"].lower()
+    assert data["result"]["summary"]
 
 
 @patch("serviceBot.api.telephony.is_within_business_hours")

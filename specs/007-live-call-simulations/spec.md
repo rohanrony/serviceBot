@@ -510,3 +510,96 @@ were stopped before any test creation, keeping total settled spend2019.
 - **FR-066**: Support explicitly removing one canonical service from a selected owned appointment after consent. The owner's final correction supersedes the earlier per-service-time choice: keep the affected appointment's start time, reduce its ending time by the removed snapshotted duration, and leave every other technician's appointment start/end unchanged. Remove only that component, compact its remaining components from the unchanged appointment start, update labels/duration/reservation segments/calendar projection atomically, and release the trailing capacity. If its last service is removed, cancel only that selected appointment and retire its projection while preserving companions. Keep the existing explicit whole-visit cancellation behavior when no service is selected. Reject foreign IDs, unknown/ambiguous service names, callbacks, missing consent, stale/malformed component snapshots or unsupported legacy composite records with no mutation/effects. Expose the operation in voice and the portal with exact read-back, truthful notification state, and meaningful browser coverage. No production tool/prompt/schema/deployment change until a concrete tested proposal receives explicit approval.
 
 - **FR-067**: Under the owner's warning about the deployed512MiB memory limit, remove eager agent-availability queries from portal booking-list rendering, pagination, filtering and refresh. Fetch options only after explicit pointer or keyboard interaction with an enabled assignment control, deduplicate in-flight requests and serialize availability fetches through a bounded scheduler. Preserve exact options, qualification/unavailability explanations, current assignment and existing assignment mutation semantics. Ignore detached or superseded controls; failed availability reads must not mutate assignments or automatically retry. Test actual browser request counts/concurrency, stale responses, explicit retry and exact chosen-agent mutation. Revalidate the complete suite and review the bounded release amendment before deploying the already approved functional repair. Record actual native startup/browser memory and server-failure evidence; a local profile or sampled idle memory is not proof that Render cannot exceed its limit.
+
+### Truthful unknown availability and unavailable voice handoff (T130/T133)
+
+Under FR-062, an unknown relevant calendar must not become a successful empty
+availability result. Verified complete slot plans keep the existing list result;
+known impossible plans remain empty lists. If no verified complete plan exists
+and a relevant possible plan cannot be verified, expose `AVAILABILITY_UNKNOWN`
+with `success=false`, `availability_status=unknown`, empty `available_slots` and
+`retryable=true`. Failed authoritative local capacity reads are also unknown.
+Graph tools preserve this distinction; lead-time rejection retains its known
+boundary without inventing available slot suggestions after an observation error.
+
+Voice human-handoff aliases currently have a context-summary owner, not a
+confirmed provider transfer owner. Preserve that summary and return honest
+`handoff_status=unavailable`, `transfer_completed=false`, `success=false`; do not
+return an automatic transfer destination or claim that a call transferred. Keep
+closed-hours guidance and do not create a callback without separate consent.
+This correction introduces no real-transfer provider, messaging settings change,
+Gmail work or new paid authority. Offline contracts do not admit C23/C47 native
+execution or complete T130/T133's remaining mechanisms.
+
+The same unknown contract applies when qualification or authoritative portal
+capacity cannot be read. Successful mappingless or uncataloged policy remains
+unchanged; a failed qualification lookup cannot expand the eligible staff pool.
+Portal slot queries return typed unknown as retryableHTTP503. Their browser
+consumer must clear stale availability-derived choices/time/consent on current
+unknown/network failure, retain verified outcomes, and ignore stale form/modal
+responses without automatic mutation or parallel calendar lookup fan-out.
+
+### C48 interruption controller boundary (T134 partial source component)
+
+C48 preparation must begin from an already journaled exact run/case/attempt,
+agent/test/invocation binding. A pre-invocation native PostgreSQL customer baseline
+(with no active booking and captured request/reservation IDs) must be bound to the
+common usage ledger before the invocation. It cannot be reconstructed from a seeded
+booking. The cancellation controller may observe and cancel that invocation only;
+it must not create an agent, test, paid preparation or paid recovery invocation.
+
+Before one cancellation POST, observe the exact invocation still pending and a new
+native Oil Change appointment with its active reservation and four15-minute capacity
+segments, disjoint from the recorded baseline. Persist an exclusive, fsynced intent
+before the write. Any ambiguous write/crash/timeout resumes with GET on the same
+handle, never another cancellation POST. A cancellation ACK or disconnected client
+is not interruption proof. The exact test run must be terminal `cancelled`, have
+fresh known actual credits, and retain a paired executed real HTTP
+`book_appointment` call/result whose returned appointment/reservation matches the
+preserved native rows. Missing provider tool provenance remains blocked.
+
+This controller's synthetic unit tests establish source behavior only. Its output
+can establish bounded interruption/booking prerequisites when supplied genuine
+native observations; it cannot establish independent application call-history
+provenance, delivery, Google projection, recovery conversation or full C48 support.
+The full adapter/CLI remains unsupported for C48. Both paid preparation and paid
+recovery must be reserved under a separately approved measured budget before any
+future preparation; the historical905-credit single invocation means900 is not a
+proven per-invocation ceiling. No new native calls or credits are authorized here.
+
+C48 external provider/native-observer failures must retain only a fixed safe error,
+including callbacks that themselves raise `SimulationError`. Expected/native
+customer, staff, request, reservation and segment foreign keys, provider-returned
+appointment IDs and attempt identity must retain exact JSON types: positive integer
+native IDs cannot accept booleans, floats or numeric strings through equality or
+coercion. Failure must preserve booking footprints and forbid interruption proof.
+
+### Truthful repeated in-flight booking outcomes (FR-068)
+
+- **FR-068**: In both `create_service_request` and `book_appointment`, a cached
+  in-flight request is a hint, not ownership or mutation-success evidence. Verify
+  its exact active appointment against the current complete customer phone and
+  authoritative reservation before using it. Reject foreign, inactive or stale
+  bindings safely. An exact same-time repeat must read back the existing booking
+  without creating another request, moving capacity or queuing duplicate calendar
+  or notification effects. A requested move succeeds only after the existing
+  domain owner confirms it and an authoritative owned read-back verifies the
+  requested time and persisted duration. Failed, false, malformed or uncertain
+  outcomes must not claim success, advance the cache or fall back to creating a
+  new appointment. Suppress private diagnostics. If a commit may have succeeded
+  but verification fails, tell the caller that its status is unknown and to check
+  the existing appointment before retrying; do not claim it remained unchanged.
+  Preserve grouped appointment duration even when current catalog duration differs.
+  Verify the requested service and vehicle context as well: a new service or
+  different vehicle cannot be silently ignored while reporting a completed repeat
+  or move. Compatible canonical services already present in a grouped booking
+  remain supported. Unsupported context changes fail before scheduling or cache
+  writes and require the existing appropriate change flow. Never cache vehicle
+  details that the authoritative booking did not save.
+
+Full-delta cost previews under FR-062 must include C48's interrupted initial
+invocation and its separate recovery invocation (at least35 paid invocations for
+34 cases). Require an explicit positive recovery-phase estimate in addition to
+per-case estimates. Missing or invalid recovery estimates leave the full total,
+reserved ceiling and full shortfall unavailable; label any34-case subtotal as
+partial. Numeric projections remain unmeasured and cannot authorize live work.

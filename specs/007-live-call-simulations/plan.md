@@ -614,3 +614,125 @@ role/database configuration were untouched. Subsequent worker-error checks found
 no further read-only failures in the observed interval. Further native inspections
 use explicit BEGIN READ ONLY/ROLLBACK and close connections; they never alter the
 session transaction default. Retain the incident and recovery receipt.
+
+## Isolated truthful-outcome repair under T130/T133
+
+Prepare against published base `6b8aca5` while the primary release remains frozen.
+Keep normal availability callers compatible with verified `list[str]` results and
+known-empty lists. A dedicated safe exception represents relevant unresolved
+calendar/capacity observation; the voice and graph adapters expose its explicit
+unknown result. Determine multi-service uncertainty from complete possible plans,
+so an unknown calendar cannot override a different known-impossible required
+component. Remove fabricated lead-time slot suggestions after observation errors.
+
+Retain the existing handoff summary owner and report live transfer unavailable;
+implement no transfer provider or implicit callback. Regress every handoff alias,
+closed-hours behavior, no booking/outbox effects, verified/unknown/mixed calendar
+plans, and real HTTP/PostgreSQL behavior for a new unconnected owned calendar.
+The fixture uses the real missing credential lookup, not a dropped gateway response.
+Native full adapter support, publication and paid admission remain separate work.
+
+### Related portal and qualification uncertainty
+
+Use strict qualification lookup only in the availability owner: successful
+unknown/mappingless catalog services retain unrestricted active-staff policy,
+whereas failed catalog/service-ID/membership observations raise explicit unknown.
+Raw inactive-only tags must not be mistaken for mappingless service policy.
+The portal slot owner also fails closed on unreadable local capacity and reports
+unknown only when an otherwise locally possible candidate cannot be verified.
+Compare normalized textual booking times (SPACE/T forms, with explicit text cast
+for schema compatibility) to textual date bounds; never cast arbitrary legacy
+booking labels blindly to timestamps or skip capacity-query errors.
+
+Portal HTTP represents typed unknown with a safe retryable503 detail. The browser
+clears stale slot choices/time/consent, requires explicit retry, and serializes
+manual slot lookups through the existing availability queue. Capture form/modal
+generation and inputs so an old response, failure or finally block cannot alter
+a newer form or enable its pending button. Preserve selective-removal lifetime
+guards and the on-demand agent scheduler. Type/duration controls are absent from
+the current HTML; optional JS guards alone are not proof of user-facing controls.
+
+When optional booking controls are absent, retain the selected record's booking
+type, duration and assigned staff in form metadata for availability and edit Save.
+Capture that metadata in the lookup lifetime; new forms explicitly reset defaults.
+Actual browser contracts verify90-minute grouped and15-minute callback lookup
+URLs, exact preserved PUT fields and unchanged reservation/assignment state.
+
+T146's native completion is separately recorded in tasks.md with the immutable
+completion receipt. The new truthful-outcome patch remains isolated until root
+applies it and runs the next complete gate; bounded native memory observations
+do not establish a sustained stability or model-memory bound.
+
+### T134 partial: owned interrupted-invocation controller
+
+`live_simulations/deployed_full_interruption.py` owns `Binding` and `advance`.
+This is an unwired source component, not another service or queue. `advance` reuses
+`runner.campaign_lock`, `ElevenLabs.credits`, `core.number` and `core.private_json`
+with the common ledger's terminal `credits`/`unsettled` semantics. No generic shared
+settlement function exists; its narrow ledger update preserves all unrelated
+entries and rejects conflicting previously settled charges.
+
+Future reviewed integration must create immutable
+`C48-{attempt}-pre-invocation.json` before paid preparation. Its schema1 binds the
+known run/case/attempt/agent/test fields, a native source/customer baseline timestamp
+and complete prior request/reservation IDs, empty active request IDs, exact expected
+customer/service/staff/start/end/duration, native booking webhook URL, native test
+definition with `none`/`call_real_tool`/empty mocked-tool configuration, and the
+single-test/repeat1 invocation request without overrides. The common usage entry
+must bind this fingerprint durably before submission. Once the provider returns
+its generated invocation handle, integration records the exact six-field binding,
+pre-invocation fingerprint and submission time in
+`C48-{attempt}-interruption-journal.json`, then binds that journal fingerprint in
+the same owned charge. The controller requires both artifacts and both digests;
+ordinary current ledger entries lack them and are rejected. It cannot prove an
+operator-created backdated file genuine; reviewed native capture/journaling must
+establish this temporal provenance before integration is supported.
+Manifest ownership must identify the same run, copied agent, test and invocation.
+Native observer input contains complete active customer requests, active
+reservations and capacity segments, not a `ready` boolean. Integration must supply
+an authenticated native reader and authoritative pre-invocation timestamps.
+
+States are blocked, awaiting_terminal, failed_interruption and
+verified_interruption; the exclusive cancellation intent is the irreversible
+write guard. Reconciliation reads the same handle, settles one actual charge and
+retains redacted terminal receipts under their original-response fingerprint.
+Repeated settlement replaces no estimate, cannot add a second charge, and cannot
+change a conflicting settled amount. Unknown charge/effect stops further work.
+`recovery_started`, `recovery_prerequisites_verified` and `full_case_supported`
+remain false: reviewed integration, approved preparation+recovery budget, native
+calendar/delivery evidence and the actual recovery conversation remain pending.
+Existing global admission and C48 unsupported coverage are unchanged.
+
+C48 review hardening uses `_external` around both provider GET and native observer
+callbacks; their exception classes do not authorize persisting diagnostic text.
+Only curated internal precondition messages are retained. `_positive_id` requires
+`type(value) is int and value > 0` at each expected/native/provider-result relation,
+and `_same_binding` compares exact field types in journal, ledger and intent rather
+than JSON/Python equality that would treat `True` or `1.0` as attempt1. No ID is
+coerced. Synthetic regressions use genuine integer1 as the positive control and
+reject boolean/float/string/zero/negative variants at every native relation.
+
+### Repeated in-flight booking and complete-phase cost preview
+
+Reuse the existing telephony boundary, full-phone ownership read and booking
+owner for FR-068. Both cached-session tool branches share the same bounded helper
+so exceptions and false domain results cannot bypass read-back or advance cache.
+Read the actual active request/reservation for time, type and grouped duration;
+exact-time repeats are read-only. Validate canonical booked service components and
+persisted vehicle context before treating a request as a repeat or time-only move;
+unsupported context changes must not be ignored or written only to the cache.
+Never replace an uncertain mutation with a new
+create. Deterministic unit and native-boundary HTTP/PostgreSQL regressions must
+assert response truthfulness, cache preservation and request/reservation/segment/
+calendar-outbox/audit footprints, including postcommit observation uncertainty.
+
+The existing pure/read-only full preflight owns the cost correction: retain the
+34-case subtotal and per-case overrides, separately validate
+`budget.c48_recovery_upper_estimate`, and expose a full estimate only after adding
+that phase. Keep the20percent reserve, minimum35 paid invocations, unmeasured
+estimate label and all current native/full live blocks. No new campaign, ledger
+claim, fixture, provider call or spending authority comes from the preview.
+
+Keep the prior28-file v9 package immutable until this independently reviewed
+follow-up is applied and a complete source-frozen gate is recorded. Any expanded
+publication/deployment proposal must supersede that old scope explicitly.

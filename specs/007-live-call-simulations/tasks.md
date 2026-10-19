@@ -507,7 +507,7 @@ remains held for the bounded availability-request repair below. The complete
 the forthcoming amendment or native memory safety.
 
 - [x] T145 Regress and repair eager portal agent-availability requests with on-demand pointer/keyboard loading, in-flight deduplication, serialized requests, preserved option/assignment behavior, stale-control safety and explicit failure retry. Add actual held-request browser contracts and retain selective-removal coverage; rerun complete validation and prepare/publish the exact reviewed technical amendment under the approved functional-release scope (FR-067).
-- [ ] T146 Deploy the approved functional repair plus reviewed memory amendment once; verify terminal live commit, additive schema, preserved business data/KB/configuration, current derived catalog/index, native startup duration and sampled memory/failure history before primary tool/prompt changes. Retain ambiguous-write stops and full paid-stage prerequisites (FR-063–067, native portion of T137).
+- [x] T146 Deploy the approved functional repair plus reviewed memory amendment once; verify terminal live commit, additive schema, preserved business data/KB/configuration, current derived catalog/index, native startup duration and sampled memory/failure history before primary tool/prompt changes. Retain ambiguous-write stops and full paid-stage prerequisites (FR-063–067, native portion of T137).
 
 Predeployment inspection incident: a private metadata helper changed a pooled
 session's default to read-only. A held transaction observed backend597204 with
@@ -529,3 +529,115 @@ bounded source review found no actionable finding. The exact five-file amendment
 is retained in `scratch/full-delta-20261019/review-amendment-v7/` and continues the
 owner-approved functional release and explicit memory-repair continuation. Native
 deployment, observed memory and primary tool/prompt completion remain T146.
+
+### T130/T133 isolated truthful-outcome preparation (base6b8aca5)
+
+- [x] Regress explicit unknown calendar/capacity outcomes, preserve verified slots
+  and known impossible plans, propagate safe unknown results through voice/graph,
+  and remove invented lead-time suggestions after observation failure.
+- [x] Regress all voice handoff aliases and preserve summaries while returning
+  honest live-transfer unavailability without implicit callback/provider effects.
+- [x] Complete isolated focused acceptance:57 unit contracts and46 real local
+  PostgreSQL/HTTP contracts pass. New19 unit/5 HTTP tests cover truthful outcomes;
+  red/green logs are retained in the isolated snapshot scratch/truthful-repair/.
+- [ ] Independent source review and root-controlled application after the primary
+  release freeze. These local repairs do not complete native C23/C47 admission,
+  T130's recovery mechanisms or T133's remaining fixture/evidence work;
+  production messaging/Gmail stay deferred.
+
+### Verified native release completion (T146 / native portion of T137)
+
+Root verified commit `6b8aca5c5b71b0d72ef4323abb52bfb828df2317` live in
+`dep-dbapiis9v7es739eic60`, schema0007, the46-service derived catalog/index,
+preserved business/configuration/authored KB, and the primary agent's owned
+`tool_3901m596epasejm9cpnrydybye2a` and promptSHA256
+`c6f23f3ec6872e473d00cf53b8ad546a74746cae1f349540203b76c2ebd23267`.
+Exact completion evidence is `scratch/full-delta-20261019/native-release-v7-completion.json`
+(SHA256 `e879e893e8ac134187d609b53c0c18ba4129bbb63a1b1aca87169562a7173af9`);
+final GET-only verification exited0, all301 source hashes were preserved, and
+unrelated provider behavior and the original source tool were preserved. This
+completes the native publication/restoration/primary-promotion portion of T137;
+remaining full-stage acceptance and prerequisites are not completed by deployment.
+The original native-release-v6 receipt remains immutable historical evidence.
+
+Observed memory was462299140bytes (about441MiB) in the04:23:30UTC snapshot.
+Root's later read-only calendar checks for technicians7/11 succeeded at04:35UTC;
+a04:37UTC sample peaked468983800bytes (about447MiB). No `server_failed` events
+were observed through04:31:10UTC. These bounded observations establish neither a
+sustained stability claim nor a model RSS bound. All34 C17–C50 cases remain unrun,
+with zero new paid submissions/credits; production messaging/system Gmail remain
+deferred and T127–T135/T144 prerequisites remain open.
+
+### Expanded isolated C23 portal/qualification acceptance (v2)
+
+- [x] Fail closed on strict catalog/service-ID/membership lookup errors while
+  preserving successful mappingless/uncataloged contracts and inactive-only tags.
+- [x] Regress and repair portal capacity-query failure and unknown-provider
+  outcomes, normalized SPACE/T VARCHAR capacity comparisons and synthetic
+  TIMESTAMP compatibility. No arbitrary legacy text-to-timestamp cast is used.
+- [x] Clear current stale choices/time/consent on unknown/network failure and
+  ignore late form/modal responses, errors and finally blocks. Manual slot checks
+  share T145's existing single calendar queue and preserve record metadata when
+  optional type/duration/agent controls are absent from the actual HTML.
+- [x] Focused isolated acceptance passes87 unit contracts +53 HTTP/PostgreSQL
+  contracts +31 browser contracts. New tests comprise35 unit,12 HTTP and10 browser
+  cases. A legacy closing-hours fixture now supplies explicit qualifications and
+  empty capacity rows; all original90-minute/closing/no17:00 assertions remain.
+- [ ] Fresh independent v2 source review and root-controlled application/full gate.
+
+The v1 patch/manifest and genuine failure logs remain retained. These truthful
+outcome changes exist only in the isolated snapshot, not in the verified6b8aca5
+native deployment. They grant no native C23/C47 acceptance or paid authority.
+
+### T134 partial source component: C48 cancellation lifecycle
+
+- [x] Add an unwired controller for an already journaled C48 invocation; require
+  exact run/case/attempt/agent/test/invocation, immutable baseline fingerprint and
+  new native booking/reservation/capacity evidence before cancellation.
+- [x] Persist exclusive/fsynced one-way intent before a single cancel POST; resume
+  with bounded GETs only, including ambiguous cancellation, crash and timeout.
+- [x] Require actual terminal cancelled run, known provider credits, preserved
+  native booking and paired executed HTTP booking/result with exact returned
+  appointment/reservation. Preserve common ledger ownership and actual settlement.
+- [x] Add CI-discovered deterministic synthetic unit contracts for ownership,
+  seeded/unrelated effects, races, fsync/observation failure, concurrency,
+  no-retry reconciliation, receipt provenance and actual-credit uncertainty.
+  Standard pytest passes166 new controller contracts plus22 unchanged full-stage
+  contracts (188 total); Ruff passes for both new Python files. All data is synthetic.
+- [x] Reproduce and repair external `SimulationError` diagnostic retention and
+  boolean/float equality across all18 native ID positions; retain genuine Red logs,
+  positive integer1 control, exact attempt identity and unchanged booking footprints.
+- [ ] Wire a reviewed native observer/preparation journal and runner integration;
+  retain C48 unsupported until this exists. No capability flags may bypass it.
+- [ ] Separately approve and reserve measured preparation+recovery cost before
+  paid preparation, then obtain genuine interrupted and recovery conversation,
+  Google/delivery/no-duplicate evidence. All34 full-native cases remain unrun.
+
+T134 remains open, including C50 provenance. This isolated source component made
+zero native/provider requests and incurred zero credits. It does not change the
+frozen main26-file proposal or deferred production messaging/system Gmail scope.
+
+### Bounded convergence: repeat-booking truthfulness and cost phases
+
+- [x] T147 Reproduce and repair both cached-session booking branches under FR-068;
+  require current full-phone ownership and active native reservation read-back,
+  safe false/exception/unknown outcomes, no create fallback, preserved cache,
+  actual grouped duration and no duplicate effects for exact-time repeats.
+- [x] T148 Correct the full read-only cost preview for C48's additional recovery
+  phase, reject invalid/missing recovery estimates without inventing a full total,
+  retain overrides/reserve and native blocks. Genuine14-red/10-green baseline
+  became28 focused passes plus22 existing full contracts. Independent bounded
+  source review found no actionable finding; main remained unchanged at that point.
+- [x] T149 Independently review the exact follow-up, apply only reviewed files,
+  rerun one complete offline unit/integration/API/browser gate, preserve all
+  failures and prepare an immutable expanded review package.
+- [ ] T150 Publish/deploy the exact expanded package only after scoped approval;
+  verify served code, preserved business/configuration state and bounded Render
+  memory/failure evidence. Keep T127-T135 native full execution and its separate
+  affordable paid-stage approval open; do not replay prior minimal/medium cases.
+
+### Root combined verification of the expanded follow-up
+
+T147-T149 local implementation, bounded reviews and source-frozen verification are complete. The final root gate passed 1815 unit/integration + 543 API/browser tests with zero failures, errors or skips. Prior v11 retained four unit fixture failures and 543 passing API/browser tests; the two legacy fixture files now preserve all six original tests/assertions while providing owned state and isolated per-test session caches. No production guard was relaxed.
+
+The expanded 34-file immutable proposal is review-proposal-v10/manifest.json. T150 remains pending scoped publication/deployment approval. All34 native full cases remain unrun; no new credits were spent and T127-T135/paid prerequisites remain open. Offline counts do not establish native acceptance.

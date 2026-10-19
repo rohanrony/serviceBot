@@ -1746,10 +1746,15 @@ async def create_service_request_endpoint(payload: ServiceRequestCreate):
 
 @router.get("/available-slots")
 async def get_available_slots_endpoint(date: str, duration_minutes: Optional[int] = 60, staff_agent_id: Optional[int] = None):
-    from serviceBot.db.queries import get_available_slots_for_date
+    from serviceBot.db.queries import (
+        AvailabilityUnknownError,
+        get_available_slots_for_date,
+    )
     try:
         slots = get_available_slots_for_date(date, duration_minutes=duration_minutes or 60, staff_agent_id=staff_agent_id)
         return {"success": True, "date": date, "available_slots": slots}
+    except AvailabilityUnknownError as exc:
+        raise HTTPException(status_code=503, detail=exc.as_result()) from None
     except ValueError as val_err:
         raise HTTPException(status_code=400, detail=str(val_err))
     except Exception as exc:

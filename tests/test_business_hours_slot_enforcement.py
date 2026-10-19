@@ -109,11 +109,12 @@ def test_check_availability_with_target_time_never_returns_overrunning_slots():
     with patch("serviceBot.api.portal.load_config", return_value=fake_config), \
          patch("serviceBot.db.queries.get_db_connection") as mock_conn, \
          patch("serviceBot.db.queries.dict_cursor") as mock_cur_factory, \
-         patch("serviceBot.db.queries.get_service_required_fields", return_value={"duration_minutes": 90}), \
+         patch("serviceBot.db.queries.get_service_required_fields", return_value={"name": "Routine Maintenance, Inspection", "duration_minutes": 90}), \
+         patch("serviceBot.db.queries.get_qualified_agent_ids", return_value=[1]), \
          patch("serviceBot.services.google_calendar.fetch_agent_events", return_value=[]):
 
         mock_cur = MagicMock()
-        mock_cur.fetchall.return_value = mock_db_agents
+        mock_cur.fetchall.side_effect = [mock_db_agents, [], []]
         mock_cur_factory.return_value.__enter__.return_value = mock_cur
 
         slots = check_availability(service_type="Routine Maintenance, Inspection", preferred_date="tomorrow at 5 PM")

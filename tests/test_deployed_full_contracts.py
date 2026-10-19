@@ -60,6 +60,9 @@ def test_implementation_support_is_source_owned_and_does_not_prove_native_readin
     assert report['cases']['C25']['implementation_status'] == 'implemented_offline'
     assert report['cases']['C30']['implementation_status'] == 'implemented_offline'
     assert report['cases']['C31']['implementation_status'] == 'implemented_offline'
+    assert report['cases']['C23']['implementation_status'] == 'partial_blocked'
+    assert 'C23' in report['unsupported_case_ids']
+    assert report['cases']['C47']['implementation_status'] == 'implemented_offline'
     assert report['cases']['C38']['implementation_status'] == 'missing'
     assert report['ready'] is False
     assert report['blocked_case_ids'] == list(FULL_IDS)
@@ -88,3 +91,13 @@ def test_unenrolled_case_requires_real_provider_failure_without_false_delivery()
     assert contract.expected_effects == ('actual unenrolled-provider rejection or failure persisted',)
     assert 'false delivery claim' in contract.forbidden_effects
     assert any('actual provider unenrolled state' in prerequisite for prerequisite in contract.prerequisites)
+
+
+def test_unknown_calendar_is_disconnected_dependency_and_handoff_needs_actual_absence(cases):
+    assert 'external Google outage' in ' '.join(CASE_CONTRACTS['C23'].prerequisites)
+    assert 'unconnected' in ' '.join(CASE_CONTRACTS['C23'].mechanisms)
+    assert 'business-window' in ' '.join(CASE_CONTRACTS['C47'].prerequisites)
+    assert 'capability absence' in ' '.join(CASE_CONTRACTS['C47'].prerequisites)
+    report = readiness({}, cases)
+    assert report['cases']['C23']['status'] == report['cases']['C47']['status'] == 'blocked'
+    assert report['cases']['C23']['native_setup_allowed'] is False

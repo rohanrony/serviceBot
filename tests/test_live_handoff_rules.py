@@ -54,7 +54,7 @@ def test_sms_handoff_blocked_outside_business_hours(mock_biz_hours):
 
 @patch("serviceBot.api.telephony.is_within_business_hours")
 def test_voice_tools_handoff_business_hours_enforcement(mock_biz_hours):
-    """Assert voice tool handoff returns failure message outside business hours and success during business hours."""
+    """Assert business-hour checks never claim an unimplemented transfer completed."""
     # Outside business hours
     mock_biz_hours.return_value = False
     payload = {
@@ -78,7 +78,13 @@ def test_voice_tools_handoff_business_hours_enforcement(mock_biz_hours):
     response_in = client.post("/api/v1/voice/tools", json=payload_in)
     assert response_in.status_code == 200
     res_data_in = response_in.json()["result"]
-    assert res_data_in["success"] is True
+    assert res_data_in["success"] is False
+    assert res_data_in["handoff_status"] == "unavailable"
+    assert res_data_in["transfer_completed"] is False
+    assert res_data_in["summary"]
+    assert "transfer_phone_number" not in res_data_in
+    assert res_data["handoff_status"] == "unavailable"
+    assert res_data["transfer_completed"] is False
 
 
 @patch("serviceBot.api.telephony.is_within_business_hours")

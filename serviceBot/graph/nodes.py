@@ -8,6 +8,16 @@ from serviceBot.graph.state import AgentState
 from serviceBot.api.portal import load_config
 from serviceBot.logger import get_logger
 
+def _availability_tool_result(**kwargs):
+    """Preserve verified slot lists while making uncertainty visible to the agent."""
+    from serviceBot.db.queries import AvailabilityUnknownError, check_availability
+
+    try:
+        return check_availability(**kwargs)
+    except AvailabilityUnknownError as exc:
+        return exc.as_result()
+
+
 def is_within_business_hours() -> bool:
     from serviceBot.api.telephony import is_within_business_hours as _func
     return _func()
@@ -166,7 +176,7 @@ def service_request_node(state: AgentState) -> Dict[str, Any]:
 
 
 def appointment_booking_node(state: AgentState) -> Dict[str, Any]:
-    from serviceBot.db.queries import check_availability, book_appointment
+    from serviceBot.db.queries import book_appointment
     from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
     from langchain_core.tools import tool
     import json
@@ -189,7 +199,7 @@ def appointment_booking_node(state: AgentState) -> Dict[str, Any]:
                 service_type = row["service_type"]
 
     @tool
-    def check_availability_tool(preferred_date: str, service_type: str = None, booking_type: str = "appointment", preferred_time: str = None) -> list:
+    def check_availability_tool(preferred_date: str, service_type: str = None, booking_type: str = "appointment", preferred_time: str = None) -> list | dict:
         """
         Checks unbooked slots on or after preferred_date.
         Args:
@@ -198,7 +208,7 @@ def appointment_booking_node(state: AgentState) -> Dict[str, Any]:
             booking_type: Optional booking type ("appointment" or "callback").
             preferred_time: Optional specific time or time window to check (e.g. "9:00 AM", "morning").
         """
-        return check_availability(service_type=service_type, preferred_date=preferred_date, booking_type=booking_type, preferred_time=preferred_time)
+        return _availability_tool_result(service_type=service_type, preferred_date=preferred_date, booking_type=booking_type, preferred_time=preferred_time)
 
     @tool
     def book_appointment_tool(appointment_datetime: str) -> str:
@@ -402,6 +412,8 @@ def handoff_node(state: AgentState) -> Dict[str, Any]:
 
     return {
         "handoff_summary": summary,
+        "handoff_status": "summary_prepared",
+        "transfer_completed": False,
         "is_business_hours": within_hours
     }
 

@@ -90,12 +90,29 @@ def test_window_validation_rejects_past_bookings_before_availability_checks():
 
 @patch("serviceBot.services.google_calendar.fetch_agent_events", side_effect=RuntimeError("provider unavailable"))
 def test_check_availability_fails_closed_when_no_provider_state_can_be_loaded(_fetch_events):
+    def mutation_state():
+        with queries.get_db_connection() as conn, queries.dict_cursor(conn) as cursor:
+            cursor.execute("""
+                SELECT jsonb_build_object(
+                    'requests', (SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM service_requests r),
+                    'reservations', (SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM appointment_reservations r),
+                    'segments', (SELECT jsonb_agg(to_jsonb(r) ORDER BY reservation_id, segment_start) FROM appointment_reservation_segments r),
+                    'outbox', (SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM outbox_notifications r)
+                ) AS state
+            """)
+            return cursor.fetchone()["state"]
+    before = mutation_state()
     candidate = dt_mod.date.today() + dt_mod.timedelta(days=1)
     while candidate.weekday() > 4:
         candidate += dt_mod.timedelta(days=1)
 
-    slots = queries.check_availability(preferred_date=candidate.isoformat())
-    assert isinstance(slots, list)
+    with pytest.raises(queries.AvailabilityUnknownError) as unknown:
+        queries.check_availability(preferred_date=candidate.isoformat())
+    assert unknown.value.as_result()["available_slots"] == []
+    assert unknown.value.as_result()["availability_status"] == "unknown"
+    assert "provider unavailable" not in str(unknown.value)
+    _fetch_events.assert_called()
+    assert mutation_state() == before
 
 
 def test_portal_edit_checks_consent_before_any_mutation():

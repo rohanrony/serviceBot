@@ -290,10 +290,8 @@ def validate_appointment_lead_time(
             pref_date_str = earliest_allowed.strftime("%Y-%m-%d %H:%M:%S")
             suggested_slots = check_availability(preferred_date=pref_date_str, booking_type=booking_type)
         except Exception:
-            suggested_slots = [
-                earliest_allowed.strftime("%Y-%m-%d %H:%M:%S"),
-                (earliest_allowed + dt_mod.timedelta(hours=1.5)).strftime("%Y-%m-%d %H:%M:%S"),
-            ]
+            # The lead-time boundary is known; provider-free capacity is not.
+            suggested_slots = []
         return False, earliest_allowed, suggested_slots
 
     return True, earliest_allowed, []

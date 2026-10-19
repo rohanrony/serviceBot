@@ -1492,18 +1492,37 @@ def _full_delta_preflight(config, *, live, check, requested, repeat):
         report['native_readiness_checked'] = True
         if 'remaining' in state:
             remaining = state['remaining']
+    report.update(estimated_credits=None, proposed_credit_ceiling=None,
+                  credit_shortfall_to_estimate=None, partial_case_estimate_credits=None,
+                  c48_recovery_upper_estimate=None, minimum_paid_invocations=len(cases) + 1,
+                  missing_budget_estimates=[], credit_units_verified=budget.get('verified_credit_units') is True,
+                  estimate_is_measured_bound=False)
+    report['notes'].append('The partial 34-case subtotal excludes the additional paid C48 recovery invocation; both C48 phases require budget')
+    allowance = estimate = recovery = None
+    try:
+        allowance = number(remaining)
+        report['remaining_credits'] = str(allowance)
+    except SimulationError:
+        report['problems'].append('Full-delta remaining allowance is unverified')
     try:
         estimate = sum(estimates(config, cases))
-        allowance = number(remaining)
-        report.update(estimated_credits=str(estimate), remaining_credits=str(allowance),
-                      proposed_credit_ceiling=format(estimate / number('.8', positive=True), 'f'),
-                      credit_shortfall_to_estimate=str(max(number(0), estimate - allowance)),
-                      credit_units_verified=budget.get('verified_credit_units') is True,
-                      estimate_is_measured_bound=False)
-        if estimate > allowance:
-            report['problems'].append('Verified allowance is below the conservative full-delta estimate')
+        report['partial_case_estimate_credits'] = str(estimate)
     except SimulationError:
-        report['problems'].append('Full-delta budget or conservative case estimates are unverified')
+        report['problems'].append('Full-delta conservative case estimates are unverified')
+    try:
+        recovery = number(budget.get('c48_recovery_upper_estimate'), positive=True)
+        report['c48_recovery_upper_estimate'] = str(recovery)
+    except SimulationError:
+        report['missing_budget_estimates'].append('c48_recovery_upper_estimate')
+        report['problems'].append('A positive budget.c48_recovery_upper_estimate is required; the 34-case subtotal is not the total full estimate')
+    if estimate is not None and recovery is not None:
+        total = estimate + recovery
+        report.update(estimated_credits=str(total),
+                      proposed_credit_ceiling=format(total / number('.8', positive=True), 'f'))
+        if allowance is not None:
+            report['credit_shortfall_to_estimate'] = str(max(number(0), total - allowance))
+            if total > allowance:
+                report['problems'].append('Verified allowance is below the unmeasured full-delta estimate including both C48 phases')
     return report
 
 

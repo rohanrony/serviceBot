@@ -9,6 +9,18 @@ from serviceBot.services.google_calendar import fetch_agent_events, parse_google
 logger = get_logger("db.queries")
 
 
+class AvailabilityUnknownError(RuntimeError):
+    """Relevant calendar uncertainty prevents a trustworthy availability answer."""
+
+    def __init__(self):
+        super().__init__("Calendar availability could not be verified. Please try again later.")
+
+    def as_result(self):
+        return {"success": False, "error_code": "AVAILABILITY_UNKNOWN",
+                "availability_status": "unknown", "available_slots": [],
+                "retryable": True, "message": str(self)}
+
+
 def normalize_e164_phone(phone: str) -> str:
     """Normalizes phone number string to E.164 format (+1XXXXXXXXXX)."""
     import re
@@ -674,11 +686,11 @@ def check_availability(service_type: str = None, preferred_date: str = None, boo
     if services_list and len(services_list) > 1:
         accum_offset = 0
         for s_name in services_list:
-            s_fields = get_service_required_fields(s_name)
+            s_fields = get_service_required_fields(s_name, strict=True)
             s_name_clean = (s_fields.get("name") if (s_fields and isinstance(s_fields, dict)) else None) or s_name
             s_dur = 15 if is_callback else int((s_fields.get("duration_minutes") if (s_fields and isinstance(s_fields, dict)) else None) or 60)
             s_dur = normalize_reservation_duration(s_dur)
-            s_q = get_qualified_agent_ids(s_name_clean)
+            s_q = get_qualified_agent_ids(s_name_clean, strict=True)
             parsed_services.append({
                 "name": s_name_clean,
                 "duration": s_dur,
@@ -693,16 +705,18 @@ def check_availability(service_type: str = None, preferred_date: str = None, boo
         else:
             duration_minutes = 60
             if service_type:
-                fields = get_service_required_fields(service_type)
+                fields = get_service_required_fields(service_type, strict=True)
                 if fields and fields.get("duration_minutes"):
                     duration_minutes = fields["duration_minutes"]
         duration_minutes = normalize_reservation_duration(duration_minutes)
 
     # --- Get all agents and filter by qualified agents tagged to service ---
-    with get_db_connection() as conn:
-        with dict_cursor(conn) as cursor:
+    try:
+        with get_db_connection() as conn, dict_cursor(conn) as cursor:
             cursor.execute("SELECT id FROM staff_agents WHERE is_active IS NOT FALSE;")
             all_agent_ids = [r["id"] for r in cursor.fetchall()]
+    except Exception:  # noqa: BLE001 - failed staff observations cannot establish availability.
+        raise AvailabilityUnknownError() from None
 
     if parsed_services:
         eval_set = set()
@@ -713,14 +727,14 @@ def check_availability(service_type: str = None, preferred_date: str = None, boo
                 eval_set.update(all_agent_ids)
         active_eval_agent_ids = [aid for aid in eval_set if aid in all_agent_ids]
     else:
-        qualified_agent_ids = get_qualified_agent_ids(service_type) if service_type else []
+        qualified_agent_ids = get_qualified_agent_ids(service_type, strict=True) if service_type else []
         if qualified_agent_ids:
             active_eval_agent_ids = [aid for aid in qualified_agent_ids if aid in all_agent_ids]
         else:
             active_eval_agent_ids = all_agent_ids
 
     if not active_eval_agent_ids:
-        active_eval_agent_ids = all_agent_ids
+        return []
 
     from serviceBot.services import timezone_service
     tz = timezone_service.get_business_zoneinfo()
@@ -788,13 +802,13 @@ def check_availability(service_type: str = None, preferred_date: str = None, boo
                     s_dt = r["segment_start"]
                     dt_str = s_dt.strftime("%Y-%m-%d %H:%M:%S") if hasattr(s_dt, "strftime") else str(s_dt)[:19]
                     reserved_segments.add((r["staff_agent_id"], dt_str))
-    except Exception as db_err:
-        pass
+    except Exception:
+        raise AvailabilityUnknownError() from None
 
     valid_business_hours = set(get_configured_business_hours())
     valid_business_days = set(get_configured_business_days())
 
-    def is_agent_free_live(agent_id: int, slot_dt_str: str, check_duration: int = None) -> bool:
+    def is_agent_free_live(agent_id: int, slot_dt_str: str, check_duration: int = None) -> bool | None:
         """Returns True if agent has no Google Calendar or local DB conflict for the slot and slot fits business hours."""
         slot_dt_naive = datetime.strptime(slot_dt_str, "%Y-%m-%d %H:%M:%S")
         eff_dur = check_duration if check_duration is not None else duration_minutes
@@ -804,9 +818,14 @@ def check_availability(service_type: str = None, preferred_date: str = None, boo
             if seg_time.weekday() not in valid_business_days or seg_time.hour not in valid_business_hours:
                 return False
 
-        if agent_id in agent_events_map and agent_events_map[agent_id] is None:
-            # Unknown provider availability must not be offered as free capacity
-            return False
+        # Known local conflicts rule this plan out even if the provider is unknown.
+        for seg_offset in range(0, eff_dur, 15):
+            seg_time = slot_dt_naive + timedelta(minutes=seg_offset)
+            seg_str = seg_time.strftime("%Y-%m-%d %H:%M:%S")
+            if (agent_id, seg_str) in blocked_mock_slots or (agent_id, seg_str) in reserved_segments:
+                return False
+        if agent_events_map.get(agent_id) is None:
+            return None
 
         # Check Google Calendar events if connected and available
         if agent_id in agent_events_map and agent_events_map[agent_id] is not None:
@@ -819,34 +838,37 @@ def check_availability(service_type: str = None, preferred_date: str = None, boo
                     if slot_start < evt_end and slot_end > evt_start:
                         return False
 
-        # Check local DB blocks & reservations across all 15-minute segments of the slot
-        for seg_offset in range(0, eff_dur, 15):
-            seg_time = slot_dt_naive + timedelta(minutes=seg_offset)
-            seg_str = seg_time.strftime("%Y-%m-%d %H:%M:%S")
-            if (agent_id, seg_str) in blocked_mock_slots or (agent_id, seg_str) in reserved_segments:
-                return False
-
         return True
 
     all_free_slots = []
+    uncertain_plan = False
     for slot_dt_str in candidate_slots:
         if parsed_services:
             slot_dt_naive = datetime.strptime(slot_dt_str, "%Y-%m-%d %H:%M:%S")
-            all_staffable = True
+            plan_verified = True
+            plan_possible = True
             for ps in parsed_services:
                 s_start = slot_dt_naive + timedelta(minutes=ps["offset"])
                 s_start_str = s_start.strftime("%Y-%m-%d %H:%M:%S")
                 cand_pool = ps["qualified_agent_ids"] or all_agent_ids
-                if not any(is_agent_free_live(aid, s_start_str, check_duration=ps["duration"]) for aid in cand_pool if aid in all_agent_ids):
-                    all_staffable = False
-                    break
-            if all_staffable:
+                states = [is_agent_free_live(aid, s_start_str, check_duration=ps["duration"])
+                          for aid in cand_pool if aid in all_agent_ids]
+                plan_verified = plan_verified and any(value is True for value in states)
+                plan_possible = plan_possible and any(value is not False for value in states)
+            if plan_verified:
                 all_free_slots.append(slot_dt_str)
+            elif plan_possible:
+                uncertain_plan = True
         else:
-            if any(is_agent_free_live(aid, slot_dt_str) for aid in active_eval_agent_ids):
+            states = [is_agent_free_live(aid, slot_dt_str) for aid in active_eval_agent_ids]
+            if any(value is True for value in states):
                 all_free_slots.append(slot_dt_str)
+            elif any(value is None for value in states):
+                uncertain_plan = True
 
     if not all_free_slots:
+        if uncertain_plan:
+            raise AvailabilityUnknownError()
         return []
 
     target_date_str = all_free_slots[0][:10]
@@ -1255,7 +1277,7 @@ def find_best_service_match(query_name: str, services_list: list) -> dict:
     return best_match
 
 
-def get_service_required_fields(service_name: str) -> dict:
+def get_service_required_fields(service_name: str, *, strict: bool = False) -> dict:
     """
     Looks up a service by name (fuzzy matching supported) in the services table
     and returns its details along with the required fields mapping.
@@ -1277,6 +1299,8 @@ def get_service_required_fields(service_name: str) -> dict:
                 cursor.execute(query)
                 rows = [dict(row) for row in cursor.fetchall()]
     except Exception as e:
+        if strict:
+            raise AvailabilityUnknownError() from None
         logger.warning(f"Could not query services table in get_service_required_fields: {e}")
         rows = []
         
@@ -1351,25 +1375,28 @@ def get_service_required_fields(service_name: str) -> dict:
     }
 
 
-def get_service_agent_ids(service_id: int) -> list[int]:
+def get_service_agent_ids(service_id: int, *, strict: bool = False) -> list[int]:
     """Returns the list of staff_agent IDs tagged to a catalog service."""
     if not service_id:
         return []
     try:
         with get_db_connection() as conn:
             with dict_cursor(conn) as cursor:
-                cursor.execute(
-                    """
+                statement = """
                     SELECT ssa.staff_agent_id
                     FROM service_staff_agents ssa
                     JOIN staff_agents sa ON sa.id = ssa.staff_agent_id
                     WHERE ssa.service_id = %s AND sa.is_active IS NOT FALSE
                     ORDER BY ssa.staff_agent_id ASC;
-                    """,
-                    (service_id,)
-                )
+                    """
+                if strict:
+                    # Preserve raw membership so inactive-only tags do not look mappingless.
+                    statement = statement.replace("AND sa.is_active IS NOT FALSE", "")
+                cursor.execute(statement, (service_id,))
                 return [row["staff_agent_id"] for row in cursor.fetchall()]
     except Exception as e:
+        if strict:
+            raise AvailabilityUnknownError() from None
         logger.warning(f"Error fetching tagged agents for service {service_id}: {e}")
         return []
 
@@ -1390,7 +1417,7 @@ def set_service_agents(service_id: int, agent_ids: list[int]) -> None:
             conn.commit()
 
 
-def get_qualified_agent_ids(service_name_or_id) -> list[int]:
+def get_qualified_agent_ids(service_name_or_id, *, strict: bool = False) -> list[int]:
     """
     Returns the list of agent IDs qualified for a service.
     If the service has no tagged agents, returns [] (meaning open to any active agent).
@@ -1401,7 +1428,8 @@ def get_qualified_agent_ids(service_name_or_id) -> list[int]:
     if isinstance(service_name_or_id, int):
         service_id = service_name_or_id
     else:
-        fields = get_service_required_fields(str(service_name_or_id))
+        fields = (get_service_required_fields(str(service_name_or_id), strict=True) if strict
+                  else get_service_required_fields(str(service_name_or_id)))
         if fields:
             try:
                 with get_db_connection() as conn:
@@ -1411,10 +1439,12 @@ def get_qualified_agent_ids(service_name_or_id) -> list[int]:
                         if row:
                             service_id = row["id"]
             except Exception as e:
+                if strict:
+                    raise AvailabilityUnknownError() from None
                 logger.warning(f"Error resolving service ID for {service_name_or_id}: {e}")
     if not service_id:
         return []
-    return get_service_agent_ids(service_id)
+    return get_service_agent_ids(service_id, strict=True) if strict else get_service_agent_ids(service_id)
 
 
 def create_crm_note(call_id: str, customer_id: int, summary: str, transcript: str) -> int:
@@ -1598,115 +1628,189 @@ def get_available_slots_for_date(target_date_str: str, duration_minutes: int = 6
 
     available_slots = []
     
-    with get_db_connection() as conn:
-        with dict_cursor(conn) as cursor:
-            if staff_agent_id:
-                cursor.execute("SELECT id, name FROM staff_agents WHERE id = %s AND is_active IS NOT FALSE;", (staff_agent_id,))
-            else:
-                cursor.execute("SELECT id, name FROM staff_agents WHERE is_active IS NOT FALSE;")
-            agents = cursor.fetchall()
+    try:
+        with get_db_connection() as conn:
+            with dict_cursor(conn) as cursor:
+                if staff_agent_id:
+                    cursor.execute("SELECT id, name FROM staff_agents WHERE id = %s AND is_active IS NOT FALSE;", (staff_agent_id,))
+                else:
+                    cursor.execute("SELECT id, name FROM staff_agents WHERE is_active IS NOT FALSE;")
+                agents = cursor.fetchall()
             
-            if not agents:
-                return []
+                if not agents:
+                    return []
 
-            from serviceBot.services.calendar_sync import get_configured_business_hours, get_configured_business_days
-            valid_business_hours = set(get_configured_business_hours())
-            valid_business_days = set(get_configured_business_days())
-            norm_dur = max(15, ((int(duration_minutes or 60) + 14) // 15) * 15)
+                from serviceBot.services.calendar_sync import get_configured_business_hours, get_configured_business_days
+                valid_business_hours = set(get_configured_business_hours())
+                valid_business_days = set(get_configured_business_days())
+                norm_dur = max(15, ((int(duration_minutes or 60) + 14) // 15) * 15)
 
-            def _fits_hours(s_dt: dt_mod.datetime) -> bool:
-                for off in range(0, norm_dur, 15):
-                    seg = s_dt + dt_mod.timedelta(minutes=off)
-                    if seg.weekday() not in valid_business_days or seg.hour not in valid_business_hours:
-                        return False
-                return True
+                def _fits_hours(s_dt: dt_mod.datetime) -> bool:
+                    for off in range(0, norm_dur, 15):
+                        seg = s_dt + dt_mod.timedelta(minutes=off)
+                        if seg.weekday() not in valid_business_days or seg.hour not in valid_business_hours:
+                            return False
+                    return True
 
-            from serviceBot.services import timezone_service
-            tz = timezone_service.get_business_zoneinfo()
+                from serviceBot.services import timezone_service
+                tz = timezone_service.get_business_zoneinfo()
 
-            day_start_dt = dt_mod.datetime.combine(target_date, dt_mod.time(0, 0, 0)).replace(tzinfo=tz)
-            day_end_dt = dt_mod.datetime.combine(target_date, dt_mod.time(23, 59, 59)).replace(tzinfo=tz)
-            start_iso = day_start_dt.isoformat()
-            end_iso = day_end_dt.isoformat()
+                day_start_dt = dt_mod.datetime.combine(target_date, dt_mod.time(0, 0, 0)).replace(tzinfo=tz)
+                day_end_dt = dt_mod.datetime.combine(target_date, dt_mod.time(23, 59, 59)).replace(tzinfo=tz)
+                start_iso = day_start_dt.isoformat()
+                end_iso = day_end_dt.isoformat()
 
-            blocked_mock_slots = set()
-            reserved_segments = set()
-            try:
-                cursor.execute(
-                    """
-                    SELECT staff_agent_id, slot_datetime
-                    FROM mock_calendar_slots
-                    WHERE (reservation_status IN ('RESERVED', 'BLOCKED') OR is_booked = TRUE)
-                      AND slot_datetime >= %s AND slot_datetime <= %s;
-                    """,
-                    (day_start_dt.replace(tzinfo=None), day_end_dt.replace(tzinfo=None)),
-                )
-                for r in cursor.fetchall():
-                    s_dt = r["slot_datetime"]
-                    dt_str = s_dt.strftime("%Y-%m-%d %H:%M:%S") if hasattr(s_dt, "strftime") else str(s_dt)[:19]
-                    blocked_mock_slots.add((r["staff_agent_id"], dt_str))
+                blocked_mock_slots = set()
+                reserved_segments = set()
+                try:
+                    cursor.execute(
+                        """
+                        SELECT staff_agent_id, slot_datetime
+                        FROM mock_calendar_slots
+                        WHERE (reservation_status IN ('RESERVED', 'BLOCKED') OR is_booked = TRUE)
+                          AND slot_datetime >= %s AND slot_datetime <= %s;
+                        """,
+                        (day_start_dt.replace(tzinfo=None), day_end_dt.replace(tzinfo=None)),
+                    )
+                    for r in cursor.fetchall():
+                        s_dt = r["slot_datetime"]
+                        dt_str = s_dt.strftime("%Y-%m-%d %H:%M:%S") if hasattr(s_dt, "strftime") else str(s_dt)[:19]
+                        blocked_mock_slots.add((r["staff_agent_id"], dt_str))
 
-                cursor.execute(
-                    """
-                    SELECT staff_agent_id, segment_start
-                    FROM appointment_reservation_segments
-                    WHERE segment_start >= %s AND segment_start <= %s;
-                    """,
-                    (day_start_dt.replace(tzinfo=None), day_end_dt.replace(tzinfo=None)),
-                )
-                for r in cursor.fetchall():
-                    s_dt = r["segment_start"]
-                    dt_str = s_dt.strftime("%Y-%m-%d %H:%M:%S") if hasattr(s_dt, "strftime") else str(s_dt)[:19]
-                    reserved_segments.add((r["staff_agent_id"], dt_str))
+                    cursor.execute(
+                        """
+                        SELECT staff_agent_id, segment_start
+                        FROM appointment_reservation_segments
+                        WHERE segment_start >= %s AND segment_start <= %s;
+                        """,
+                        (day_start_dt.replace(tzinfo=None), day_end_dt.replace(tzinfo=None)),
+                    )
+                    for r in cursor.fetchall():
+                        s_dt = r["segment_start"]
+                        dt_str = s_dt.strftime("%Y-%m-%d %H:%M:%S") if hasattr(s_dt, "strftime") else str(s_dt)[:19]
+                        reserved_segments.add((r["staff_agent_id"], dt_str))
 
-                cursor.execute(
-                    """
-                    SELECT staff_agent_id, booking_time, duration_minutes
-                    FROM service_requests
-                    WHERE status NOT IN ('cancelled', 'cancelled_by_customer', 'cancelled_by_admin')
-                      AND booking_type = 'appointment'
-                      AND staff_agent_id IS NOT NULL
-                      AND booking_time >= %s AND booking_time <= %s;
-                    """,
-                    (day_start_dt.replace(tzinfo=None), day_end_dt.replace(tzinfo=None)),
-                )
-                for r in cursor.fetchall():
-                    b_time = r["booking_time"]
-                    if isinstance(b_time, str):
-                        try:
-                            b_dt = dt_mod.datetime.strptime(b_time[:19].replace("T", " "), "%Y-%m-%d %H:%M:%S")
-                        except Exception:
+                    cursor.execute(
+                        """
+                        SELECT staff_agent_id, booking_time, duration_minutes
+                        FROM service_requests
+                        WHERE status NOT IN ('cancelled', 'cancelled_by_customer', 'cancelled_by_admin')
+                          AND booking_type = 'appointment'
+                          AND staff_agent_id IS NOT NULL
+                          AND REPLACE(booking_time::text, 'T', ' ') >= %s AND REPLACE(booking_time::text, 'T', ' ') <= %s;
+                        """,
+                        (day_start_dt.strftime("%Y-%m-%d %H:%M:%S"), day_end_dt.strftime("%Y-%m-%d %H:%M:%S")),
+                    )
+                    for r in cursor.fetchall():
+                        b_time = r["booking_time"]
+                        if isinstance(b_time, str):
+                            try:
+                                b_dt = dt_mod.datetime.strptime(b_time[:19].replace("T", " "), "%Y-%m-%d %H:%M:%S")
+                            except Exception:
+                                continue
+                        else:
+                            b_dt = b_time
+                        dur = r.get("duration_minutes") or 60
+                        norm_d = max(15, ((int(dur) + 14) // 15) * 15)
+                        for off in range(0, norm_d, 15):
+                            seg_dt = b_dt + dt_mod.timedelta(minutes=off)
+                            reserved_segments.add((r["staff_agent_id"], seg_dt.strftime("%Y-%m-%d %H:%M:%S")))
+                except Exception:
+                    raise AvailabilityUnknownError() from None
+
+                # If is_agent_free is explicitly mocked (e.g., in unit tests), use standard fallback loop
+                if isinstance(is_agent_free, Mock):
+                    current_slot_dt = dt_mod.datetime.combine(target_date, dt_mod.time(7, 0))
+                    end_of_day = dt_mod.datetime.combine(target_date, dt_mod.time(17, 0))
+                    while current_slot_dt <= end_of_day:
+                        if not _fits_hours(current_slot_dt):
+                            current_slot_dt += dt_mod.timedelta(minutes=30)
                             continue
-                    else:
-                        b_dt = b_time
-                    dur = r.get("duration_minutes") or 60
-                    norm_d = max(15, ((int(dur) + 14) // 15) * 15)
-                    for off in range(0, norm_d, 15):
-                        seg_dt = b_dt + dt_mod.timedelta(minutes=off)
-                        reserved_segments.add((r["staff_agent_id"], seg_dt.strftime("%Y-%m-%d %H:%M:%S")))
-            except Exception as db_err:
-                pass
+                        slot_str = current_slot_dt.strftime("%Y-%m-%d %H:%M:%S")
+                        free_count = 0
+                        for agent in agents:
+                            aid = agent["id"]
+                            is_local_blocked = False
+                            for off in range(0, norm_dur, 15):
+                                seg_str = (current_slot_dt + dt_mod.timedelta(minutes=off)).strftime("%Y-%m-%d %H:%M:%S")
+                                if (aid, seg_str) in blocked_mock_slots or (aid, seg_str) in reserved_segments:
+                                    is_local_blocked = True
+                                    break
+                            if not is_local_blocked and is_agent_free(aid, slot_str, duration_minutes=duration_minutes):
+                                free_count += 1
+                        if free_count > 0:
+                            end_slot_dt = current_slot_dt + dt_mod.timedelta(minutes=duration_minutes)
+                            available_slots.append({
+                                "start_time": slot_str,
+                                "end_time": end_slot_dt.strftime("%Y-%m-%d %H:%M:%S"),
+                                "available_agents_count": free_count
+                            })
+                        current_slot_dt += dt_mod.timedelta(minutes=30)
+                    return available_slots
 
-            # If is_agent_free is explicitly mocked (e.g., in unit tests), use standard fallback loop
-            if isinstance(is_agent_free, Mock):
+                agent_busy_ranges = {}
+
+                def _load_agent_busy(agent_id):
+                    events = fetch_agent_events(agent_id, start_iso, end_iso)
+                    if events is None:
+                        return None
+                    ranges = []
+                    for ev in events:
+                        s_dt = parse_google_datetime(ev.get("start"), tz)
+                        e_dt = parse_google_datetime(ev.get("end"), tz)
+                        if s_dt and e_dt:
+                            ranges.append((s_dt, e_dt))
+                    return ranges
+
+                with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(agents), 10)) as executor:
+                    future_map = {
+                        executor.submit(_load_agent_busy, agent["id"]): agent["id"]
+                        for agent in agents
+                    }
+                    for future in concurrent.futures.as_completed(future_map):
+                        aid = future_map[future]
+                        try:
+                            agent_busy_ranges[aid] = future.result()
+                        except Exception:
+                            agent_busy_ranges[aid] = None
+
+                uncertain_candidate = False
                 current_slot_dt = dt_mod.datetime.combine(target_date, dt_mod.time(7, 0))
                 end_of_day = dt_mod.datetime.combine(target_date, dt_mod.time(17, 0))
+
                 while current_slot_dt <= end_of_day:
                     if not _fits_hours(current_slot_dt):
                         current_slot_dt += dt_mod.timedelta(minutes=30)
                         continue
                     slot_str = current_slot_dt.strftime("%Y-%m-%d %H:%M:%S")
+                    slot_start_localized = current_slot_dt.replace(tzinfo=tz)
+                    slot_end_localized = (current_slot_dt + dt_mod.timedelta(minutes=duration_minutes)).replace(tzinfo=tz)
                     free_count = 0
+
                     for agent in agents:
                         aid = agent["id"]
+                        busy_ranges = agent_busy_ranges.get(aid)
+                        # Check local DB blocks & reservations across all 15-minute segments of the slot
                         is_local_blocked = False
                         for off in range(0, norm_dur, 15):
                             seg_str = (current_slot_dt + dt_mod.timedelta(minutes=off)).strftime("%Y-%m-%d %H:%M:%S")
                             if (aid, seg_str) in blocked_mock_slots or (aid, seg_str) in reserved_segments:
                                 is_local_blocked = True
                                 break
-                        if not is_local_blocked and is_agent_free(aid, slot_str, duration_minutes=duration_minutes):
+                        if is_local_blocked:
+                            continue
+                        if busy_ranges is None:
+                            uncertain_candidate = True
+                            continue
+
+                        is_busy = False
+                        for b_start, b_end in busy_ranges:
+                            if slot_start_localized < b_end and slot_end_localized > b_start:
+                                is_busy = True
+                                break
+                        if not is_busy:
                             free_count += 1
+
                     if free_count > 0:
                         end_slot_dt = current_slot_dt + dt_mod.timedelta(minutes=duration_minutes)
                         available_slots.append({
@@ -1714,81 +1818,16 @@ def get_available_slots_for_date(target_date_str: str, duration_minutes: int = 6
                             "end_time": end_slot_dt.strftime("%Y-%m-%d %H:%M:%S"),
                             "available_agents_count": free_count
                         })
+
                     current_slot_dt += dt_mod.timedelta(minutes=30)
-                return available_slots
-
-            agent_busy_ranges = {}
-
-            def _load_agent_busy(agent_id):
-                events = fetch_agent_events(agent_id, start_iso, end_iso)
-                if events is None:
-                    return None
-                ranges = []
-                for ev in events:
-                    s_dt = parse_google_datetime(ev.get("start"), tz)
-                    e_dt = parse_google_datetime(ev.get("end"), tz)
-                    if s_dt and e_dt:
-                        ranges.append((s_dt, e_dt))
-                return ranges
-
-            with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(agents), 10)) as executor:
-                future_map = {
-                    executor.submit(_load_agent_busy, agent["id"]): agent["id"]
-                    for agent in agents
-                }
-                for future in concurrent.futures.as_completed(future_map):
-                    aid = future_map[future]
-                    try:
-                        agent_busy_ranges[aid] = future.result()
-                    except Exception:
-                        agent_busy_ranges[aid] = None
-
-            current_slot_dt = dt_mod.datetime.combine(target_date, dt_mod.time(7, 0))
-            end_of_day = dt_mod.datetime.combine(target_date, dt_mod.time(17, 0))
-            
-            while current_slot_dt <= end_of_day:
-                if not _fits_hours(current_slot_dt):
-                    current_slot_dt += dt_mod.timedelta(minutes=30)
-                    continue
-                slot_str = current_slot_dt.strftime("%Y-%m-%d %H:%M:%S")
-                slot_start_localized = current_slot_dt.replace(tzinfo=tz)
-                slot_end_localized = (current_slot_dt + dt_mod.timedelta(minutes=duration_minutes)).replace(tzinfo=tz)
-                free_count = 0
                 
-                for agent in agents:
-                    aid = agent["id"]
-                    busy_ranges = agent_busy_ranges.get(aid)
-                    if busy_ranges is None:
-                        continue
+    except AvailabilityUnknownError:
+        raise
+    except Exception:  # noqa: BLE001 - sanitize every failed availability observation.
+        raise AvailabilityUnknownError() from None
 
-                    # Check local DB blocks & reservations across all 15-minute segments of the slot
-                    is_local_blocked = False
-                    for off in range(0, norm_dur, 15):
-                        seg_str = (current_slot_dt + dt_mod.timedelta(minutes=off)).strftime("%Y-%m-%d %H:%M:%S")
-                        if (aid, seg_str) in blocked_mock_slots or (aid, seg_str) in reserved_segments:
-                            is_local_blocked = True
-                            break
-                    if is_local_blocked:
-                        continue
-
-                    is_busy = False
-                    for b_start, b_end in busy_ranges:
-                        if slot_start_localized < b_end and slot_end_localized > b_start:
-                            is_busy = True
-                            break
-                    if not is_busy:
-                        free_count += 1
-                
-                if free_count > 0:
-                    end_slot_dt = current_slot_dt + dt_mod.timedelta(minutes=duration_minutes)
-                    available_slots.append({
-                        "start_time": slot_str,
-                        "end_time": end_slot_dt.strftime("%Y-%m-%d %H:%M:%S"),
-                        "available_agents_count": free_count
-                    })
-                
-                current_slot_dt += dt_mod.timedelta(minutes=30)
-                
+    if not available_slots and uncertain_candidate:
+        raise AvailabilityUnknownError()
     return available_slots
 
 

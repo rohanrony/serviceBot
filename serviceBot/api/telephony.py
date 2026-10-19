@@ -193,6 +193,168 @@ def _owned_mutation_arguments(args):
     return resolved
 
 
+
+def _session_capacity_evidence(request_ids):
+    """Read existing request/reservation/segment authority without changing it."""
+    with get_db_connection() as conn, dict_cursor(conn) as cursor:
+        cursor.execute("""
+            SELECT sr.id, sr.staff_agent_id AS request_staff, sr.duration_minutes,
+                   sr.booking_time, sr.status AS request_status, c.phone,
+                   ar.id AS reservation_id, ar.service_request_id,
+                   ar.staff_agent_id, ar.starts_at, ar.ends_at, ar.status,
+                   COALESCE((SELECT json_agg(json_build_object(
+                       'reservation_id', seg.reservation_id,
+                       'staff_agent_id', seg.staff_agent_id,
+                       'segment_start', seg.segment_start) ORDER BY seg.segment_start)
+                       FROM appointment_reservation_segments seg
+                       WHERE seg.reservation_id=ar.id), '[]'::json) AS segments
+            FROM service_requests sr
+            JOIN customers c ON c.id=sr.customer_id
+            LEFT JOIN appointment_reservations ar ON ar.service_request_id=sr.id
+            WHERE sr.id=ANY(%s)
+            ORDER BY sr.id
+        """, (request_ids,))
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def _update_cached_session_booking(*, session_key, session, phone, requested_time,
+                                   vehicle, service_type, services, price_range, id_key, extra=None):
+    """Treat the session as a hint; report only an owned, persisted move."""
+    failure = {"success": False, "error_code": "SESSION_BOOKING_UPDATE_UNVERIFIED",
+               "message": "The booking update could not be verified. Check the existing appointment before trying again. Use the appropriate service or vehicle change tool for context changes."}
+    try:
+        from serviceBot.services.booking import (
+            parse_reservation_start,
+            reservation_segments,
+        )
+
+        if clean_and_validate_phone(session.get("phone")) != clean_and_validate_phone(phone):
+            return failure
+        owned = _owned_mutation_arguments({"phone": phone, "appointment_id": session.get("service_request_id")})
+        identifier = owned["appointment_id"]
+
+        def snapshot():
+            rows = get_customer_appointments(owned["phone"])
+            selected = [row for row in rows if type(row.get("id")) is int and row["id"] == identifier]
+            if len(selected) != 1 or selected[0].get("booking_type") != "appointment":
+                raise ValueError("Cached appointment is not active and owned")
+            target = selected[0]
+            members = target.get("visit_member_ids") or [identifier]
+            if (any(type(value) is not int or value <= 0 for value in members)
+                    or len(set(members)) != len(members) or identifier not in members
+                    or (target.get("visit_group_id") and target.get("visit_anchor_id") != identifier)):
+                raise ValueError("Cached appointment is not an exact visit anchor")
+            group = [row for row in rows if type(row.get("id")) is int and row["id"] in members]
+            if len(group) != len(members):
+                raise ValueError("Owned visit readback is incomplete")
+            result = {}
+            for row in group:
+                duration = row.get("duration_minutes")
+                if (row.get("booking_type") != "appointment" or type(duration) is not int or duration <= 0
+                        or row.get("visit_group_id") != target.get("visit_group_id")):
+                    raise ValueError("Owned visit readback is invalid")
+                result[row["id"]] = (parse_reservation_start(row["appointment_datetime"]), duration,
+                                     row.get("service_type"), row.get("service_components"))
+            evidence = _session_capacity_evidence(list(result))
+            if len(evidence) != len(result) or {row.get("id") for row in evidence} != set(result):
+                raise ValueError("Native capacity readback is incomplete")
+            for row in evidence:
+                start, duration, _, _ = result[row["id"]]
+                if (any(type(row.get(key)) is not int or row[key] <= 0
+                        for key in ("id", "request_staff", "reservation_id", "service_request_id", "staff_agent_id"))
+                        or row["id"] != row["service_request_id"]
+                        or row["request_staff"] != row["staff_agent_id"]
+                        or row.get("status") != "ACTIVE"
+                        or row.get("request_status") not in {"pending", "confirmed", "in_progress"}
+                        or clean_and_validate_phone(row.get("phone")) != owned["phone"]
+                        or type(row.get("duration_minutes")) is not int or row["duration_minutes"] != duration
+                        or parse_reservation_start(row["booking_time"]) != start
+                        or parse_reservation_start(str(row["starts_at"])) != start
+                        or parse_reservation_start(str(row["ends_at"])) != start + timedelta(minutes=duration)):
+                    raise ValueError("Native reservation does not match booked request")
+                segments = row.get("segments")
+                if (not isinstance(segments, list) or len(segments) != len(reservation_segments(start, duration))
+                        or any(not isinstance(seg, dict)
+                               or type(seg.get("reservation_id")) is not int
+                               or seg["reservation_id"] != row["reservation_id"]
+                               or type(seg.get("staff_agent_id")) is not int
+                               or seg["staff_agent_id"] != row["staff_agent_id"] for seg in segments)
+                        or {parse_reservation_start(seg["segment_start"]) for seg in segments}
+                           != set(reservation_segments(start, duration))):
+                    raise ValueError("Native capacity segments do not match booked request")
+            # Only the persisted booking context may be reported as applied.
+            def normalized(value):
+                return " ".join(str(value).split()).casefold()
+            target_vehicle = {key: target.get(key) for key in ("make", "model", "year")}
+            for key in ("make", "model"):
+                if not target_vehicle[key] or normalized(vehicle.get(key)) != normalized(target_vehicle[key]):
+                    raise ValueError("Vehicle change requires an explicit supported update")
+            def year(value):
+                if type(value) is int and value > 0:
+                    return value
+                if isinstance(value, str) and re.fullmatch(r"[1-9][0-9]*", value.strip()):
+                    return int(value.strip())
+                raise ValueError("Vehicle year is not verified")
+            if year(vehicle.get("year")) != year(target_vehicle["year"]):
+                raise ValueError("Vehicle change requires an explicit supported update")
+            booked_names = set()
+            for row in group:
+                components = row.get("service_components")
+                if components is None:
+                    booked_names.add(normalized(row["service_type"]))
+                else:
+                    from serviceBot.services.booking import _validated_components
+                    booked_names.update(normalized(item["name"]) for item in _validated_components(row))
+            requested_names = []
+            if not isinstance(service_type, str) or not service_type.strip():
+                raise ValueError("Requested service is not verified")
+            if normalized(service_type) in booked_names:
+                requested_names.append(service_type)
+            else:
+                requested_names.extend(re.split(r'[,/+]|\band\b|&', service_type, flags=re.IGNORECASE))
+            if services is not None:
+                if not isinstance(services, list) or not services:
+                    raise ValueError("Requested service list is invalid")
+                requested_names.extend(services)
+            if any(not isinstance(name, str) or normalized(name) not in booked_names for name in requested_names):
+                raise ValueError("Service change requires an explicit supported update")
+            return result, target_vehicle
+
+        before, native_vehicle = snapshot()
+        requested = parse_reservation_start(requested_time)
+        changed = requested != before[identifier][0]
+        if changed:
+            outcome = reschedule_appointment(appointment_id=identifier, new_datetime=requested_time,
+                customer_consent_obtained=True, triggered_by="telephony_voice_assistant")
+            if outcome is not True:
+                return failure
+        after, after_vehicle = snapshot()
+        delta = requested - before[identifier][0]
+        if (after_vehicle != native_vehicle or set(after) != set(before) or any(after[key][0] != before[key][0] + delta
+                or after[key][1:] != before[key][1:] for key in before)):
+            return failure
+        start = after[identifier][0]
+        end = max(row[0] + timedelta(minutes=row[1]) for row in after.values())
+        duration = int((end - start).total_seconds() / 60)
+        if duration <= 0:
+            return failure
+        saved_time = start.isoformat()
+        end_time, message = format_appointment_window_message(saved_time, duration, price_range,
+            is_update=True, previous_booking_time=session.get("booking_time"))
+        if changed:
+            message = (f"Saved appointment updated to {saved_time}. "
+                       "Calendar projection and notifications are queued; delivery is unverified.")
+            track_session_booking(session_key=session_key, service_request_id=identifier,
+                booking_time=saved_time, duration_minutes=duration, phone=owned["phone"], vehicle=after_vehicle)
+        else:
+            message = "Existing appointment verified. No new booking or scheduling update was made."
+        return {"success": True, id_key: identifier, "is_update": changed,
+                "booking_time": saved_time, "duration_minutes": duration,
+                "expected_end_time": end_time, "message": message, **(extra or {})}
+    except Exception:  # noqa: BLE001 - uncertain writes/readbacks must not expose private diagnostics
+        return failure
+
+
 def generate_service_summary(transcript: str) -> str:
     """
     Generates a structured, service-oriented summary for Davidson Car Care
@@ -890,7 +1052,11 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
             }
             if services_list:
                 check_kwargs["services_list"] = services_list
-            slots = check_availability(**check_kwargs)
+            from serviceBot.db.queries import AvailabilityUnknownError
+            try:
+                slots = check_availability(**check_kwargs)
+            except AvailabilityUnknownError as exc:
+                return {"tool_call_id": tool_call_id, "result": exc.as_result()}
 
             from serviceBot.db.queries import parse_specific_time, parse_preferred_date_and_time
             iso_date_target, _, _ = parse_preferred_date_and_time(preferred_date)
@@ -937,6 +1103,7 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
             result = {
                 "success": True,
                 "available_slots": slots,
+                "availability_status": "available" if slots else "unavailable",
                 "message": msg
             }
 
@@ -946,10 +1113,12 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                 b_desc, closing_str = get_business_hours_display()
                 result = {
                     "success": False,
+                    "handoff_status": "unavailable",
+                    "transfer_completed": False,
                     "message": f"Handoff to a human agent is only available during our business hours, which are {b_desc}. Currently we are closed. Please let the caller know that we are currently closed, and offer to schedule an appointment or arrange a callback instead."
                 }
             else:
-                # Perform handoff node simulation
+                # Prepare context; this route has no confirmed live-transfer mechanism.
                 phone = args.get("phone") or args.get("phone_number") or args.get("phoneNumber") or args.get("caller_phone") or args.get("caller_id")
                 customer_name = args.get("customer_name") or args.get("name") or args.get("claimed_name") or "Unknown Customer"
                 issue_description = args.get("issue_description") or args.get("summary_text") or args.get("summaryText") or args.get("summary") or args.get("reason") or "Not specified"
@@ -973,14 +1142,13 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                     "appointment_id": args.get("appointment_id")
                 }
                 handoff_result = handoff_node(state)
-                summary = handoff_result.get("handoff_summary", "Handoff initiated.")
-                config = load_config()
-                handoff_number = config.get("handoff_phone_number", "+14242704893")
+                summary = handoff_result.get("handoff_summary", "")
                 result = {
-                    "success": True,
-                    "message": "Call transferred to human customer service representative successfully.",
+                    "success": False,
+                    "handoff_status": "unavailable",
+                    "transfer_completed": False,
+                    "message": "A live transfer is unavailable. I can help here or arrange a callback if you want.",
                     "summary": summary,
-                    "transfer_phone_number": handoff_number
                 }
 
         elif tool_name == "create_service_request":
@@ -1200,46 +1368,14 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                     if len(parts) > 1:
                         services_list = parts
 
-                if booking_type == "appointment" and existing_session and existing_session.get("service_request_id"):
-                    # Existing in-flight booking in this call session -> update rather than duplicate!
-                    existing_sr_id = existing_session["service_request_id"]
-                    prev_time = existing_session.get("booking_time")
-                    try:
-                        reschedule_appointment(
-                            appointment_id=existing_sr_id,
-                            new_datetime=booking_time,
-                            customer_consent_obtained=True,
-                            triggered_by="telephony_voice_assistant",
-                        )
-                    except Exception as resch_err:
-                        logger.warning(f"Error rescheduling session booking #{existing_sr_id}: {resch_err}")
-
-                    track_session_booking(
-                        session_key=session_key,
-                        service_request_id=existing_sr_id,
-                        booking_time=booking_time,
-                        duration_minutes=duration_minutes,
-                        phone=phone,
-                        vehicle=vehicle_details,
+                if booking_type == "appointment" and existing_session is not None:
+                    result = _update_cached_session_booking(
+                        session_key=session_key, session=existing_session, phone=phone,
+                        requested_time=booking_time, vehicle=vehicle_details, service_type=service_type,
+                        services=args.get("services", args.get("service_types")), price_range=price_range,
+                        id_key="service_request_id",
+                        extra={"booking_type": "appointment", "is_uncataloged": is_uncataloged},
                     )
-                    end_dt_str, win_msg = format_appointment_window_message(
-                        booking_time=booking_time,
-                        duration_minutes=duration_minutes,
-                        price_range=price_range,
-                        is_update=True,
-                        previous_booking_time=prev_time,
-                    )
-                    result = {
-                        "success": True,
-                        "service_request_id": existing_sr_id,
-                        "is_update": True,
-                        "booking_type": "appointment",
-                        "booking_time": booking_time,
-                        "duration_minutes": duration_minutes,
-                        "expected_end_time": end_dt_str,
-                        "is_uncataloged": is_uncataloged,
-                        "message": win_msg,
-                    }
                 elif services_list and len(services_list) > 1 and booking_time:
                     from serviceBot.services.booking import reserve_multi_service_appointment, BookingConflictError
                     try:
@@ -1470,43 +1606,12 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                 except Exception:
                     pass
 
-                if existing_session and existing_session.get("service_request_id"):
-                    existing_appt_id = existing_session["service_request_id"]
-                    prev_time = existing_session.get("booking_time")
-                    try:
-                        reschedule_appointment(
-                            appointment_id=existing_appt_id,
-                            new_datetime=appointment_datetime,
-                            customer_consent_obtained=True,
-                            triggered_by="telephony_voice_assistant",
-                        )
-                    except Exception as resch_err:
-                        logger.warning(f"Error rescheduling session appointment #{existing_appt_id}: {resch_err}")
-
-                    track_session_booking(
-                        session_key=session_key,
-                        service_request_id=existing_appt_id,
-                        booking_time=appointment_datetime,
-                        duration_minutes=duration_minutes,
-                        phone=phone,
-                        vehicle=vehicle_details,
+                if existing_session is not None:
+                    result = _update_cached_session_booking(
+                        session_key=session_key, session=existing_session, phone=phone,
+                        requested_time=appointment_datetime, vehicle=vehicle_details, service_type=service_type,
+                        services=args.get("services", args.get("service_types")), price_range=price_range, id_key="appointment_id",
                     )
-                    end_dt_str, win_msg = format_appointment_window_message(
-                        booking_time=appointment_datetime,
-                        duration_minutes=duration_minutes,
-                        price_range=price_range,
-                        is_update=True,
-                        previous_booking_time=prev_time,
-                    )
-                    result = {
-                        "success": True,
-                        "appointment_id": existing_appt_id,
-                        "is_update": True,
-                        "booking_time": appointment_datetime,
-                        "duration_minutes": duration_minutes,
-                        "expected_end_time": end_dt_str,
-                        "message": win_msg,
-                    }
                 else:
                     # Check for multi-service scheduling request
                     services_list = args.get("services") or args.get("service_types")

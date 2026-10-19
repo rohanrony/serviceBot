@@ -4,6 +4,8 @@ import datetime as dt_mod
 import uuid
 from unittest.mock import patch
 
+import pytest
+
 import serviceBot.db.queries as queries
 from serviceBot.db.connection import dict_cursor, get_db_connection
 from serviceBot.services.booking import BookingService
@@ -118,10 +120,28 @@ def test_reassignment_moves_the_local_reservation_and_fails_closed_on_provider_e
     assert notification["notification_event"] == "REASSIGNED"
 
 def test_date_slot_lookup_fails_closed_on_provider_error():
+    def mutation_state():
+        with queries.get_db_connection() as conn, queries.dict_cursor(conn) as cursor:
+            cursor.execute("""
+                SELECT jsonb_build_object(
+                    'requests', (SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM service_requests r),
+                    'reservations', (SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM appointment_reservations r),
+                    'segments', (SELECT jsonb_agg(to_jsonb(r) ORDER BY reservation_id, segment_start) FROM appointment_reservation_segments r),
+                    'outbox', (SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM outbox_notifications r)
+                ) AS state
+            """)
+            return cursor.fetchone()["state"]
+    before = mutation_state()
     target_date = _future_business_time().split()[0]
 
     with patch(
         "serviceBot.services.google_calendar.fetch_agent_events",
         side_effect=RuntimeError("provider unavailable"),
-    ):
-        assert queries.get_available_slots_for_date(target_date) == []
+    ) as fetch_events:
+        with pytest.raises(queries.AvailabilityUnknownError) as unknown:
+            queries.get_available_slots_for_date(target_date)
+        assert unknown.value.as_result()["available_slots"] == []
+        assert unknown.value.as_result()["availability_status"] == "unknown"
+        assert "provider unavailable" not in str(unknown.value)
+        fetch_events.assert_called()
+    assert mutation_state() == before

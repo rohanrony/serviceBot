@@ -4753,6 +4753,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let serviceRequestModalVersion = 0;
   function closeSRModal() {
+    invalidateStaffSlotLookup();
     serviceRequestModalVersion += 1;
     if (srModal) srModal.style.display = 'none';
     if (srModalOverlay) srModalOverlay.style.display = 'none';
@@ -4820,50 +4821,105 @@ document.addEventListener('DOMContentLoaded', () => {
     return `${y}-${m}-${day}`;
   }
 
-  async function checkStaffSlots(targetDate) {
-    if (!targetDate) return;
-    try {
-      if (checkSlotsBtn) checkSlotsBtn.textContent = 'Checking...';
-      
-      const bType = srBookingTypeSelect ? srBookingTypeSelect.value : 'appointment';
-      const durVal = srDurationSelect ? parseInt(srDurationSelect.value) : 60;
-      const durationMinutes = (bType === 'callback') ? 15 : (durVal || 60);
+  let staffSlotLookupVersion = 0;
+  function clearStaffSlotChoices(message) {
+    const selected = slotsDropdown?.value;
+    const timeInput = document.getElementById('sr-booking-time');
+    if (selected && timeInput && timeInput.value.replace('T', ' ').slice(0, 16) === selected.slice(0, 16)) {
+      timeInput.value = '';
+    }
+    if (slotsDropdown) {
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = message;
+      slotsDropdown.replaceChildren(option);
+      slotsDropdown.value = '';
+    }
+    if (consentCheck) consentCheck.checked = false;
+    if (consentWrapper) consentWrapper.style.display = 'none';
+  }
 
-      let url = `/api/v1/portal/available-slots?date=${targetDate}&duration_minutes=${durationMinutes}`;
-      const agentSelect = document.getElementById('sr-agent-select');
-      if (agentSelect && agentSelect.value) {
-        url += `&staff_agent_id=${agentSelect.value}`;
-      }
-      
-      const res = await fetch(url);
-      if (res.ok) {
-        const data = await res.json();
-        const slots = data.available_slots || [];
-        slotsDropdown.innerHTML = '<option value="">Select an available slot...</option>';
-        if (slots.length === 0) {
-          const opt = document.createElement('option');
-          opt.value = '';
-          opt.textContent = `No free slots on ${targetDate} (Weekend or All Busy)`;
-          slotsDropdown.appendChild(opt);
-        } else {
-          slots.forEach(s => {
-            const opt = document.createElement('option');
-            opt.value = s.start_time;
-            opt.textContent = `${s.start_time.substring(11, 16)} - ${s.end_time.substring(11, 16)} (${s.available_agents_count} agent free)`;
-            slotsDropdown.appendChild(opt);
-          });
-        }
-        if (slotsContainer) slotsContainer.style.display = 'block';
-        if (datePickerEl) datePickerEl.value = targetDate;
-      } else {
-        showToast('Failed to check available slots.', 'danger');
-      }
-    } catch (err) {
-      showToast('Error checking slot availability.', 'danger');
-    } finally {
-      if (checkSlotsBtn) checkSlotsBtn.textContent = 'Check Availability';
+  function invalidateStaffSlotLookup() {
+    staffSlotLookupVersion += 1;
+    clearStaffSlotChoices('Check availability for the current form...');
+    if (checkSlotsBtn) {
+      checkSlotsBtn.disabled = false;
+      checkSlotsBtn.textContent = 'Check Availability';
     }
   }
+
+  function currentBookingMetadata() {
+    const bookingType = srBookingTypeSelect?.value || srForm?.dataset.bookingType || 'appointment';
+    return {
+      bookingType,
+      durationMinutes: bookingType === 'callback' ? 15 : (parseInt(srDurationSelect?.value || srForm?.dataset.durationMinutes) || 60),
+      staffAgentId: document.getElementById('sr-agent-select')?.value ?? srForm?.dataset.staffAgentId ?? ''
+    };
+  }
+
+  async function checkStaffSlots(targetDate) {
+    if (!targetDate) return;
+    const invocation = ++staffSlotLookupVersion;
+    const modalVersion = serviceRequestModalVersion;
+    clearStaffSlotChoices('Checking live availability...');
+    if (slotsContainer) slotsContainer.style.display = 'block';
+    if (datePickerEl) datePickerEl.value = targetDate;
+    const agentSelect = document.getElementById('sr-agent-select');
+    const timeInput = document.getElementById('sr-booking-time');
+    const formState = () => JSON.stringify([document.getElementById('sr-form-id')?.value,
+      datePickerEl?.value, srBookingTypeSelect?.value, srDurationSelect?.value,
+      agentSelect?.value, timeInput?.value, srForm?.dataset.bookingType,
+      srForm?.dataset.durationMinutes, srForm?.dataset.staffAgentId]);
+    const capturedState = formState();
+    const isCurrent = () => invocation === staffSlotLookupVersion && modalVersion === serviceRequestModalVersion &&
+      srModal?.style.display !== 'none' && formState() === capturedState;
+    if (checkSlotsBtn) {
+      checkSlotsBtn.disabled = true;
+      checkSlotsBtn.textContent = 'Checking...';
+    }
+    try {
+      const metadata = currentBookingMetadata();
+      let url = `/api/v1/portal/available-slots?date=${encodeURIComponent(targetDate)}&duration_minutes=${metadata.durationMinutes}`;
+      if (metadata.staffAgentId) url += `&staff_agent_id=${encodeURIComponent(metadata.staffAgentId)}`;
+      // Share the existing portal calendar queue: one real lookup across all flows.
+      const operation = availabilityTail.catch(() => {}).then(async () => {
+        if (!isCurrent()) return null;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Availability unverified');
+        const data = await response.json();
+        if (data.success !== true || !Array.isArray(data.available_slots)) throw new Error('Availability unverified');
+        return data;
+      });
+      availabilityTail = operation.catch(() => {});
+      const data = await operation;
+      if (!data || !isCurrent()) return;
+      clearStaffSlotChoices('Select an available slot...');
+      const slots = data.available_slots;
+      if (!slots.length) {
+        slotsDropdown.options[0].textContent = `No available slots on ${targetDate}`;
+      } else {
+        slots.forEach(slot => {
+          const option = document.createElement('option');
+          option.value = slot.start_time;
+          option.textContent = `${slot.start_time.substring(11, 16)} - ${slot.end_time.substring(11, 16)} (${slot.available_agents_count} agent free)`;
+          slotsDropdown.appendChild(option);
+        });
+      }
+    } catch {
+      if (!isCurrent()) return;
+      clearStaffSlotChoices('Calendar availability could not be verified. Check again to retry.');
+      showToast('Calendar availability could not be verified. Please retry.', 'danger');
+    } finally {
+      if (isCurrent() && checkSlotsBtn) {
+        checkSlotsBtn.disabled = false;
+        checkSlotsBtn.textContent = 'Check Availability';
+      }
+    }
+  }
+
+  [srBookingTypeSelect, srDurationSelect, document.getElementById('sr-agent-select')].forEach(control => {
+    control?.addEventListener('change', invalidateStaffSlotLookup);
+  });
 
   if (checkSlotsBtn) {
     checkSlotsBtn.addEventListener('click', async () => {
@@ -4921,7 +4977,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const bookingTimeInput = document.getElementById('sr-booking-time');
   if (bookingTimeInput) {
-    bookingTimeInput.addEventListener('change', () => triggerConsentCheckIfNeeded());
+    bookingTimeInput.addEventListener('change', () => {
+      invalidateStaffSlotLookup();
+      triggerConsentCheckIfNeeded();
+    });
   }
 
   function triggerConsentCheckIfNeeded() {
@@ -5097,12 +5156,18 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   window.openSREditModal = (req) => {
+    invalidateStaffSlotLookup();
     serviceRequestModalVersion += 1;
     const saveButton = document.getElementById('sr-save-btn');
     if (saveButton) saveButton.disabled = serviceRemovalNeedsReload.has(req.id);
     document.getElementById('sr-modal-title').textContent = 'Edit Service Request';
     document.getElementById('sr-form-id').value = req.id;
-    
+    if (srForm) {
+      srForm.dataset.bookingType = req.booking_type || 'appointment';
+      srForm.dataset.durationMinutes = String(req.duration_minutes || (req.booking_type === 'callback' ? 15 : 60));
+      srForm.dataset.staffAgentId = req.staff_agent_id == null ? '' : String(req.staff_agent_id);
+    }
+
     // Store original booking time for consent diffing
     let origBt = req.booking_time || req.time_slot || '';
     if (origBt && origBt.length >= 16) {
@@ -5174,13 +5239,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnNewRequest = document.getElementById('btn-new-request');
   if (btnNewRequest) {
     btnNewRequest.addEventListener('click', async () => {
+      invalidateStaffSlotLookup();
       serviceRequestModalVersion += 1;
       document.getElementById('sr-service-removal')?.remove();
       const saveButton = document.getElementById('sr-save-btn');
       if (saveButton) saveButton.disabled = false;
       document.getElementById('sr-modal-title').textContent = 'New Service Request';
       document.getElementById('sr-form-id').value = '';
-      if (srForm) srForm.dataset.originalBookingTime = '';
+      if (srForm) {
+        srForm.dataset.originalBookingTime = '';
+        srForm.dataset.bookingType = 'appointment';
+        srForm.dataset.durationMinutes = '60';
+        srForm.dataset.staffAgentId = '';
+      }
       
       if (slotsContainer) slotsContainer.style.display = 'none';
       if (consentCheck) consentCheck.checked = false;
@@ -5297,8 +5368,9 @@ document.addEventListener('DOMContentLoaded', () => {
           submitBtn.textContent = 'Saving...';
         }
         try {
-          const selectedBookingType = srBookingTypeSelect ? srBookingTypeSelect.value : 'appointment';
-          const selectedDurationMinutes = selectedBookingType === 'callback' ? 15 : (srDurationSelect ? parseInt(srDurationSelect.value) || 60 : 60);
+          const metadata = currentBookingMetadata();
+          const selectedBookingType = metadata.bookingType;
+          const selectedDurationMinutes = metadata.durationMinutes;
 
           const payload = {
             vehicle_details: {

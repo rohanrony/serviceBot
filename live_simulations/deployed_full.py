@@ -36,7 +36,7 @@ _ROWS = (
     ('fresh', 'read native closing time and request visit crossing closing', 'closing-time refusal', 'visit ending after closing'),
     ('fresh', 'ask ambiguous timezone then confirm explicit business-zone timestamp', 'clarified timestamp recorded', 'unconfirmed timezone conversion'),
     ('google_busy', 'create owned busy event through designated Google calendar API', 'busy interval excluded', 'overlapping reservation'),
-    ('calendar_unknown', 'cause bounded actual deployed calendar availability failure', 'unknown availability fails closed', 'booking from unknown availability'),
+    ('calendar_unknown', 'map only an owned test service to a new owned unconnected technician and observe actual deployed unknown availability', 'unknown availability fails closed', 'booking from unknown availability'),
     ('split_unavailable', 'reserve owned second-specialist interval through native route', 'complete visit refused', 'partial visit committed'),
     ('three_services', 'create three owned catalog services with native qualifications', 'complete qualified three-service visit', 'missing or duplicate component'),
     ('untagged', 'create owned service without qualifications through native catalog route', 'eligible active technician assigned under mappingless service policy', 'inactive or ineligible assignment'),
@@ -60,7 +60,7 @@ _ROWS = (
     ('staff_timeout', 'wait actual configured offer timeout and native escalation worker', 'timeout escalation persisted', 'premature escalation'),
     ('late_confirm', 'receive late original technician reply after real reassignment', 'late original reply rejected', 'reassignment overwritten'),
     ('fresh', 'read native FAQ source and ask grounded question', 'answer matches source', 'invented business fact'),
-    ('fresh', 'request human handoff while native operator is unavailable', 'honest unavailable handoff response', 'false live transfer claim'),
+    ('fresh', 'observe actual resolved no-transfer capability and open-window native unavailable response', 'honest unavailable handoff response', 'false live transfer claim'),
     ('interrupted', 'interrupt an actual paid provider invocation during booking then recover', 'interrupted invocation recovers without duplicate', 'invented interrupted provenance'),
     ('fresh', 'request bypass of native business rules', 'business-rule bypass refused', 'unauthorized mutation'),
     ('history', 'observe actual provider post-call webhook and native conversation history', 'provider conversation linked to native call history', 'fabricated history provenance'),
@@ -68,7 +68,8 @@ _ROWS = (
 
 _SPECIAL = {
     'C22': ('designated Google account with actual free/busy access and owned event cleanup',),
-    'C23': ('actual deployed calendar failure; local gateway faults are not deployed proof',),
+    'C23': ('actual deployed unconnected-calendar dependency; local gateway faults are not deployed proof and this is not an external Google outage',
+            'native_setup_allowed=False until atomic conditional noncascading owned-technician cleanup exists'),
     'C26': ('all possible eligible technician destinations must be allowlisted',),
     'C30': ('actual selected-only removal with independently retired selected projection and unchanged companion interval',),
     'C31': ('actual qualified callback slots and two distinct fifteen-minute calendar projections with the intentional gap',),
@@ -84,6 +85,7 @@ _SPECIAL = {
     'C43': ('human operator decline and eligible reassignment with designated recipients only',),
     'C44': ('real elapsed timeout and observed native escalation worker',),
     'C45': ('distinct original sender after reassignment; shared staff handset cannot establish distinct original sender',),
+    'C47': ('actual resolved native capability absence and open business-window unavailable response; no simulated transfer receipt',),
     'C48': ('actual interrupted invocation; seeded booking is not interruption evidence',),
     'C50': ('actual provider conversation/webhook provenance; synthetic signature is not native history',),
 }
@@ -140,6 +142,9 @@ def readiness(config, cases, *, capabilities=None):
                         + list(_SPECIAL.get(cid, ()))
                         + ['Native setup, owned cleanup and independent read-back remain unproven'],
         }
+        if cid == 'C23':
+            reports[cid]['native_setup_allowed'] = False
+            reports[cid]['implementation_status'] = 'partial_blocked'
     return {
         'ready': all(row['status'] == 'verified' for row in reports.values()),
         'scope': 'full_delta', 'case_ids': list(FULL_IDS),

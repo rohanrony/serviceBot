@@ -4,7 +4,7 @@ Only disposable E2E fixture setup/corruption uses SQL writes. Adapter observatio
 uses its unmodified read-only helper; provider writes are captured at transport.
 """
 from copy import deepcopy
-from datetime import timedelta
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -13,6 +13,9 @@ from e2e.test_voice_and_reporting import voice
 from live_simulations import deployed_medium as medium
 from live_simulations.core import load_catalog
 from live_simulations.deployed_full_adapter import Adapter
+from serviceBot.services.google_calendar import (
+    fetch_agent_events as native_fetch_agent_events,
+)
 
 CASES = {c['id']: c for c in load_catalog()}
 
@@ -103,6 +106,157 @@ def cleanup(native):
     native.adapter.cleanup_catalog()
     assert not native.db('SELECT id FROM services WHERE name LIKE %s', ('full-native-e2e-owner %',))
     assert native.events == {}
+
+
+def test_c23_quarantined_unconnected_component_preserves_originals_and_refuses_unsafe_cleanup(native_full, monkeypatch):
+    from live_simulations import deployed_full_negative as negative
+    from serviceBot.services import google_calendar
+    n = native_full
+    # Restore the genuine application fetch captured before the fixture
+    # generic empty-provider override. The new staff
+    # member has no OAuth row, so this path never sends a Google HTTP request.
+    native_fetch = native_fetch_agent_events
+    assert native_fetch.__name__ == 'fetch_agent_events'
+    observed_agents = []
+    def fetch(agent_id, *args, **kwargs):
+        observed_agents.append(agent_id)
+        return native_fetch(agent_id, *args, **kwargs)
+    monkeypatch.setenv('GOOGLE_CLIENT_ID', 'captured-client-not-used-for-http')
+    monkeypatch.setenv('GOOGLE_CLIENT_SECRET', 'captured-secret-not-used-for-http')
+    monkeypatch.setattr(google_calendar, 'fetch_agent_events', fetch)
+    original_catalog = n.db('SELECT * FROM services ORDER BY id')
+    original_mappings = n.db('SELECT * FROM service_staff_agents WHERE service_id=1 ORDER BY staff_agent_id')
+    before = negative.footprint(n.adapter)
+    # This is an offline component prototype, not an admitted full case. Only
+    # the disposable test can bypass the source-hard-false lifecycle guard.
+    monkeypatch.setattr(negative, 'native_setup_allowed', lambda: True)
+    n.adapter.current_case = 'C23'
+    negative.arrange(n.adapter, 'C23', n.values)
+    staff = n.adapter.state['full_unconnected_staff']
+    assert staff['id'] not in (1, 2)
+    assert n.adapter.state['full_negative_cases']['C23']['arguments']['service_type'] == n.adapter.state['services']['oil']['name']
+    assert set(observed_agents) == {staff['id']}
+    assert not n.db('SELECT agent_id FROM user_google_accounts WHERE agent_id=%s', (staff['id'],))
+    assert n.db('SELECT * FROM service_staff_agents WHERE service_id=1 ORDER BY staff_agent_id') == original_mappings
+    checks = negative.checks(n.adapter, 'C23')
+    assert [c['name'] for c in checks if not c['passed']] == [
+        'C23 native setup and safe cleanup remain blocked', 'actual conversation tool call and result correlation remains unverified']
+    assert negative.footprint(n.adapter) == before
+    assert not n.events and not n.effects
+    from live_simulations.core import SimulationError
+    operation_count = len(n.adapter.state['operations'])
+    with pytest.raises(SimulationError, match='noncascading'): n.adapter.cleanup_case()
+    assert len(n.adapter.state['operations']) == operation_count
+    assert n.db('SELECT is_active FROM staff_agents WHERE id=%s', (staff['id'],)) == [{'is_active': True}]
+    assert negative.footprint(n.adapter) == before
+    # Catalog facts outside the exact owned oil mapping never changed.
+    assert n.db('SELECT * FROM services WHERE id=1') == [row for row in original_catalog if row['id'] == 1]
+
+
+@pytest.mark.parametrize('defect', ['oauth_added', 'foreign_request', 'original_catalog_changed'])
+def test_c23_external_change_refuses_cleanup_before_mapping_or_staff_writes(native_full, monkeypatch, defect):
+    from live_simulations import deployed_full_negative as negative
+    from live_simulations.core import SimulationError
+    from serviceBot.services import google_calendar
+    n = native_full
+    # Captured provider uncertainty; actual HTTP, owned staff and read-only
+    # PostgreSQL footprint still run through their ordinary implementations.
+    monkeypatch.setattr(google_calendar, 'fetch_agent_events', lambda *args: None)
+    monkeypatch.setattr(negative, 'native_setup_allowed', lambda: True)
+    n.adapter.current_case = 'C23'
+    negative.arrange(n.adapter, 'C23', n.values)
+    staff = n.adapter.state['full_unconnected_staff']
+    if defect == 'oauth_added':
+        n.db("INSERT INTO user_google_accounts(agent_id,email) VALUES(%s,'externally-added@example.test')", (staff['id'],))
+    elif defect == 'foreign_request':
+        n.db("INSERT INTO service_requests(customer_id,service_type,status) VALUES(2,'External work','pending')")
+    else:
+        n.db("UPDATE services SET description='External catalog edit' WHERE id=1")
+    operation_count = len(n.adapter.state['operations'])
+    with pytest.raises(SimulationError): n.adapter.cleanup_case()
+    assert len(n.adapter.state['operations']) == operation_count
+    assert n.db('SELECT is_active FROM staff_agents WHERE id=%s', (staff['id'],)) == [{'is_active': True}]
+    assert n.db('SELECT staff_agent_id FROM service_staff_agents WHERE service_id=%s',
+                (n.adapter.state['services']['oil']['id'],)) == [{'staff_agent_id': staff['id']}]
+
+
+def test_c23_public_adapter_rejects_unsafe_lifecycle_before_all_native_setup(native_full):
+    from live_simulations import deployed_full_negative as negative
+    from live_simulations.core import SimulationError
+    n = native_full
+    before = negative.footprint(n.adapter)
+    operation_count = len(n.adapter.state['operations'])
+    with pytest.raises(SimulationError, match='noncascading'): n.adapter.arrange(CASES['C23'], n.values)
+    assert len(n.adapter.state['operations']) == operation_count
+    assert not n.adapter.state.get('full_unconnected_staff')
+    assert negative.footprint(n.adapter) == before
+
+
+def captured_handoff_agent(native, monkeypatch, *, transfer=False):
+    import httpx
+
+    from live_simulations import deployed_full_negative as negative
+    native.adapter.config['agent_id'] = 'captured-handoff-agent'
+    tool = {'name': 'cba_webhook', 'type': 'webhook', 'api_schema': {'method': 'POST',
+        'url': native.adapter.config['deployed_url'] + '/api/v1/voice/tools?name=cba_webhook'}}
+    tools = [{'type': 'system', 'name': 'transfer', 'params': {'system_tool_type': 'transfer_to_number'}}] if transfer else []
+    agent = {'agent_id': 'captured-handoff-agent', 'workflow': {}, 'conversation_config': {'agent': {
+        'subagent_config': {'agents': [], 'self_subagent': None}, 'prompt': {'tools': tools, 'tool_ids': ['captured-handoff-tool']}}}}
+    calls = []
+    def transport(request):
+        calls.append((request.method, request.url.path))
+        return httpx.Response(200, json=agent if '/agents/' in request.url.path else {'id': 'captured-handoff-tool', 'tool_config': tool})
+    monkeypatch.setattr(negative, 'secret', lambda *args: 'captured-provider-no-native-credentials')
+    # Use the in-memory transport directly under the existing E2E external-host
+    # guard; never permit a real provider HTTP connection.
+    class CapturedClient(httpx.Client):
+        def _send_single_request(self, request):
+            response = transport(request)
+            response.request = request
+            return response
+    native.adapter.provider_client = CapturedClient(transport=httpx.MockTransport(transport))
+    return calls
+
+
+def test_c47_real_open_window_http_unavailable_preserves_all_business_state(native_full, freeze_business_clock, monkeypatch):
+    from live_simulations import deployed_full_negative as negative
+    n = native_full
+    freeze_business_clock(datetime.fromisoformat(n.values['appointment_time']))
+    calls = captured_handoff_agent(n, monkeypatch)
+    before = negative.footprint(n.adapter)
+    adapted, ids = n.adapter.arrange(CASES['C47'], n.values)
+    assert ids == [] and adapted['expected_tools'] == ['cba_webhook']
+    checks = n.adapter.checks(CASES['C47'], n.values, [], n.rows())
+    assert [c['name'] for c in checks if not c['passed']] == ['actual conversation tool call and result correlation remains unverified']
+    assert negative.footprint(n.adapter) == before
+    assert calls and all(method == 'GET' for method, _ in calls)
+    assert not n.effects and not n.events
+    n.adapter.cleanup_case()
+    assert negative.footprint(n.adapter) == before
+    n.adapter.cleanup_catalog()
+
+
+def test_c47_actual_transfer_capability_blocks_before_native_tool_or_fixture_write(native_full, monkeypatch):
+    from live_simulations.core import SimulationError
+    n = native_full
+    captured_handoff_agent(n, monkeypatch, transfer=True)
+    operation_count = len(n.adapter.state['operations'])
+    with pytest.raises(SimulationError, match='transfer'): n.adapter.arrange(CASES['C47'], n.values)
+    assert len(n.adapter.state['operations']) == operation_count
+    assert not n.adapter.state['full_negative_cases']['C47'].get('observations')
+
+
+@pytest.mark.browser
+def test_c47_reloaded_browser_preserves_actual_original_rows_without_claiming_conversation_pass(native_full, freeze_business_clock, monkeypatch):
+    n = native_full
+    freeze_business_clock(datetime.fromisoformat(n.values['appointment_time']))
+    captured_handoff_agent(n, monkeypatch)
+    n.adapter.config['deployed_medium']['browser_readback'] = True
+    n.adapter.arrange(CASES['C47'], n.values)
+    checks = n.adapter.final_checks(CASES['C47'], n.values, n.rows())
+    assert [c['name'] for c in checks if not c['passed']] == ['actual conversation tool call and result correlation remains unverified']
+    assert any(c['name'] == 'reloaded browser owned row 1' and c['passed'] for c in checks)
+    assert any(c['name'] == 'browser owned row persisted status 1' and c['passed'] for c in checks)
 
 
 def test_c25_native_two_technician_blocks_reject_gap_and_duplicate(native_full):
@@ -310,3 +464,20 @@ def test_c31_real_two_specialist_callbacks_keep_the_gap_and_cleanup_both(native_
     assert len({r['reservation_id'] for r in rows})==len({r['calendar_event_id'] for r in rows})==2
     assert len(n.events)==2
     cleanup(n)
+
+
+def test_c47_real_closed_window_http_cannot_admit_unavailable_case(native_full, freeze_business_clock, monkeypatch):
+    from live_simulations import deployed_full_negative as negative
+    from live_simulations.core import SimulationError
+    n = native_full
+    freeze_business_clock(datetime.fromisoformat(n.values['appointment_time']).replace(hour=0, minute=0))
+    captured_handoff_agent(n, monkeypatch)
+    before = negative.footprint(n.adapter)
+    with pytest.raises(SimulationError, match='Exact structured'):
+        n.adapter.arrange(CASES['C47'], n.values)
+    observations = n.adapter.state['full_negative_cases']['C47']['observations']
+    assert len(observations) == 1
+    assert observations[0]['exact_negative_result'] is False
+    assert observations[0]['no_business_effects'] is True
+    assert negative.footprint(n.adapter) == before
+    assert not n.effects and not n.events

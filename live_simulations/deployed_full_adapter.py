@@ -12,14 +12,15 @@ import re
 from datetime import timedelta
 from zoneinfo import ZoneInfo
 
+from . import deployed_full_negative as negative
 from . import deployed_full_visits as visits
 from . import deployed_medium as medium
 from .core import SimulationError
 from .evidence import check
 
 SUPPORTED_CASE_IDS = frozenset({'C17', 'C18', 'C19', 'C20', 'C21', 'C22', 'C24', 'C25',
-                                'C26', 'C27', 'C28', 'C29', 'C30', 'C31', 'C32', 'C34', 'C46', 'C49'})
-_NEGATIVE = frozenset({'C17', 'C18', 'C19', 'C20', 'C22', 'C24', 'C46', 'C49'})
+                                'C26', 'C27', 'C28', 'C29', 'C30', 'C31', 'C32', 'C34', 'C46', 'C47', 'C49'})
+_NEGATIVE = frozenset({'C17', 'C18', 'C19', 'C20', 'C22', 'C24', 'C46', 'C47', 'C49'})
 _FIELDS = ('id', 'status', 'service_type', 'booking_type', 'booking_time',
            'duration_minutes', 'staff_agent_id', 'customer_id', 'reservation_id')
 
@@ -282,6 +283,8 @@ class Adapter(medium.Adapter):
     def arrange(self, case, values):
         self._guard()
         cid = case['id']
+        if cid == 'C23':
+            raise SimulationError(negative.C23_SETUP_BLOCKER)
         if cid not in SUPPORTED_CASE_IDS:
             raise SimulationError('Full-native case is unsupported: ' + cid)
         if (not self.state.get('full_adapter') or set(self.state['services']) != set(medium.KEYS)
@@ -317,6 +320,11 @@ class Adapter(medium.Adapter):
         adapted['success_conditions'].append('Use only actual native catalog facts: ' + '; '.join(
             f"{s['name']}: {s['price_range']}, {s['duration_minutes']} minutes" for s in self.state['services'].values()))
         adapted['scenario'] += ' Use only these exact test service names: ' + '; '.join(names.values()) + '. Never modify a pre-existing booking.'
+        if cid == 'C47':
+            negative.arrange(self, cid, values)
+            tool = self.state['full_negative_cases'][cid]['capability']['tool_name']
+            adapted['expected_tools'] = list(dict.fromkeys([*adapted['expected_tools'], tool]))
+            adapted['success_conditions'].append('The actual native handoff response is unavailable, no transfer completed, and callback remains declined.')
         if cid in {'C17','C18','C19','C20','C21','C46','C49'}:
             policy = self._policy()
             now = medium._dt(medium._now(self.config), self.config)
@@ -416,7 +424,8 @@ class Adapter(medium.Adapter):
         baseline = medium._serial(medium._request_rows(self.config, self.original_ids))
         checks = [check('original native bookings preserved', baseline == self.state['full_baseline'])]
         if cid in _NEGATIVE:
-            return checks + [check('zero new native requests or reservations', not rows and not ids)]
+            return checks + [check('zero new native requests or reservations', not rows and not ids)] + (
+                negative.checks(self, cid) if cid == 'C47' else [])
         active = [r for r in rows if r['status'] != 'cancelled']
         if cid == 'C30':
             return checks + self._selective_removal_checks(values, rows)
@@ -540,9 +549,30 @@ class Adapter(medium.Adapter):
                     and companion['calendar_event_id'] == original[split]['calendar_event_id'])]
 
     def final_checks(self, case, values, after):
+        if case['id'] == 'C47':
+            checks = self.checks(case, values, [], after)
+            if self.config.get('deployed_medium', {}).get('browser_readback'):
+                # A negative case has no new owned rows. Read back the actual
+                # original baseline rows rather than passing an empty-row oracle.
+                checks.extend(self._browser_checks(case, self.state['full_baseline']))
+            return checks
         return self.checks(case, values, [], after) + super().final_checks(case, values, after)
 
+    def _browser_checks_owned(self, case, rows):
+        if case['id'] != 'C47':
+            return super()._browser_checks_owned(case, rows)
+        # The portal table displays issue_description, not service_type. Keep
+        # actual baseline IDs/statuses and compare the actual visible field.
+        if not rows or any(not isinstance(row.get('issue_description'), str)
+                           or not row['issue_description'].strip() for row in rows):
+            return [check('C47 nonempty original browser row descriptions', False)]
+        visible_rows = copy.deepcopy(rows)
+        for row in visible_rows:
+            row['service_type'] = row['issue_description']
+        return super()._browser_checks_owned(case, visible_rows)
+
     def cleanup_case(self):
+        negative.before_cleanup(self)
         super().cleanup_case()
         if self.state.get('full_google_busy'):
             from .deployed_full_google import GoogleBusy
@@ -553,6 +583,7 @@ class Adapter(medium.Adapter):
             self._mapping(restore['key'], restore['agents'])
             self.state.pop('mapping_restore')
             self._save()
+        negative.cleanup(self)
         staff = self.state.get('full_inactive_staff')
         if staff:
             self._verify_staff(staff['id'], staff['name'], False)
@@ -560,6 +591,8 @@ class Adapter(medium.Adapter):
             self._save()
 
     def cleanup_catalog(self):
+        if self.state.get('full_unconnected_staff') and not self.state['full_unconnected_staff']['cleanup_complete']:
+            raise SimulationError('Owned unconnected technician must be cleaned before catalog deletion')
         if self.state.get('mapping_restore'):
             raise SimulationError('Full catalog mapping must be restored before deletion')
         if self.state.get('full_google_busy', {}).get('status') not in (None, 'deleted'):

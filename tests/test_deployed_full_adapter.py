@@ -64,7 +64,7 @@ def test_full_catalog_owns_exact_durations_and_uses_native_transport(fixture):
     assert all(o['status']=='observed' for o in adapter.state['operations'])
 
 
-@pytest.mark.parametrize('cid', ['C23','C33','C35','C47'])
+@pytest.mark.parametrize('cid', ['C33','C35'])
 def test_unsupported_never_arranges_or_mutates(fixture, cid):
     adapter, values, calls, _, _ = fixture
     with pytest.raises(SimulationError, match='unsupported'):
@@ -508,3 +508,279 @@ def test_c31_missing_real_callback_prerequisite_blocks_before_any_owned_booking(
     assert not adapter.current_ids and not adapter.owned_ids
     assert all(method=='GET' for method,_,_ in calls)
     assert policy['min_callback_buffer_hours']==2
+
+
+@pytest.mark.parametrize('cid', ['C47'])
+def test_negative_dependency_cases_are_source_supported_without_native_admission(cid):
+    assert cid in full.SUPPORTED_CASE_IDS
+    assert cid in full._NEGATIVE
+
+
+@pytest.mark.parametrize('defect', ['none', 'success', 'status', 'code', 'slots', 'retryable'])
+def test_c23_structured_unknown_is_positive_evidence_not_empty_success(defect):
+    from live_simulations import deployed_full_negative as negative
+    value = {'success': False, 'error_code': 'AVAILABILITY_UNKNOWN', 'availability_status': 'unknown',
+             'available_slots': [], 'retryable': True}
+    if defect == 'success': value['success'] = True
+    elif defect == 'status': value['availability_status'] = 'unavailable'
+    elif defect == 'code': value['error_code'] = 'OTHER'
+    elif defect == 'slots': value['available_slots'] = ['2026-11-10T10:00:00']
+    elif defect == 'retryable': value['retryable'] = False
+    assert negative.unknown(value) is (defect == 'none')
+
+
+@pytest.mark.parametrize('defect', ['none', 'success', 'completed', 'status', 'closed', 'missing_summary'])
+def test_c47_requires_actual_open_branch_and_explicit_unavailable(defect):
+    from live_simulations import deployed_full_negative as negative
+    value = {'success': False, 'handoff_status': 'unavailable', 'transfer_completed': False,
+             'summary': '- Business Hours Status: OPEN'}
+    if defect == 'success': value['success'] = True
+    elif defect == 'completed': value['transfer_completed'] = True
+    elif defect == 'status': value['handoff_status'] = 'summary_prepared'
+    elif defect == 'closed': value['summary'] = '- Business Hours Status: CLOSED'
+    elif defect == 'missing_summary': value.pop('summary')
+    assert negative.unavailable(value) is (defect == 'none')
+
+
+@pytest.fixture
+def negative_native(native_case, monkeypatch):
+    import json
+
+    from live_simulations import deployed_full_negative as negative
+    adapter, values, _requests, _slots, staff = native_case
+    original = adapter.client
+    business = {'version': 'unchanged'}
+    response = {'success': False, 'error_code': 'AVAILABILITY_UNKNOWN', 'availability_status': 'unknown',
+                'available_slots': [], 'retryable': True}
+    requests_seen = []
+    capability = {'agent_id': 'observed', 'agent_fingerprint': 'fixed', 'resolved_fingerprint': 'fixed', 'tool_name': 'cba_webhook'}
+    monkeypatch.setattr(negative, 'footprint', lambda adapter: deepcopy(business))
+    # Exercise only a disposable captured fixture prototype. The real adapter
+    # hard-blocks C23 setup until conditional safe staff cleanup exists.
+    monkeypatch.setattr(negative, 'native_setup_allowed', lambda: True)
+    monkeypatch.setattr(negative, 'handoff_capability', lambda adapter: deepcopy(capability))
+    def transport(request):
+        body = json.loads(request.content) if request.content else {}
+        requests_seen.append((request.method, request.url.path, deepcopy(body)))
+        if request.url.path.endswith('/voice/tools'):
+            if body['name'] == 'check_availability': return httpx.Response(200, json={'result': response})
+            return httpx.Response(200, json={'result': {'success': False, 'handoff_status': 'unavailable',
+                'transfer_completed': False, 'summary': '- Business Hours Status: OPEN'}})
+        if request.method != 'GET':
+            assert adapter.state['operations'][-1]['status'] == 'intent'
+        result = original.request(request.method, str(request.url), json=body if request.content else None)
+        if request.method == 'POST' and request.url.path.endswith('/agents'):
+            staff.update(reservations=0, oauth_states=0, slots=0, mappings=[])
+        if request.method == 'PUT': staff['mappings'] = [int(request.url.path.split('/')[-1])] if 88 in body['agent_ids'] else []
+        return result
+    adapter.client = httpx.Client(transport=httpx.MockTransport(transport))
+    return adapter, values, staff, business, response, requests_seen, capability
+
+
+def test_c23_offline_prototype_owns_exact_unconnected_service_but_cannot_claim_cleanup(negative_native):
+    from live_simulations import deployed_full_negative as negative
+    adapter, values, staff, _, _, calls, _ = negative_native
+    # Deliberately invoke the quarantined component only in the disposable fake;
+    # the public full adapter rejects C23 before any setup mutation.
+    adapter.current_case = 'C23'
+    negative.arrange(adapter, 'C23', values)
+    assert staff['oauth'] == staff['requests'] == 0
+    assert adapter.state['services']['oil']['assigned_agent_ids'] == [88]
+    actual = next(body for _, path, body in calls if path.endswith('/voice/tools'))
+    assert actual['arguments']['service_type'] == adapter.state['services']['oil']['name']
+    checks = negative.checks(adapter, 'C23')
+    assert [c['name'] for c in checks if not c['passed']] == [
+        'C23 native setup and safe cleanup remain blocked', 'actual conversation tool call and result correlation remains unverified']
+    calls.clear()
+    with pytest.raises(SimulationError, match='noncascading'): adapter.cleanup_case()
+    assert staff['is_active'] is True and not adapter.state['full_unconnected_staff']['cleanup_complete']
+    assert all(method == 'GET' for method, _, _ in calls)
+
+
+@pytest.mark.parametrize('defect', ['oauth', 'requests', 'slots', 'name', 'mapping', 'business'])
+def test_c23_unexplained_external_change_stops_before_any_cleanup_mutation(negative_native, defect):
+    from live_simulations import deployed_full_negative as negative
+    adapter, values, staff, business, _, calls, _ = negative_native
+    adapter.current_case = 'C23'
+    negative.arrange(adapter, 'C23', values)
+    if defect == 'name': staff['name'] = 'someone else'
+    elif defect == 'mapping': staff['mappings'] = [999]
+    elif defect == 'business': business['version'] = 'changed'
+    else: staff[defect] = 1
+    calls.clear()
+    with pytest.raises(SimulationError): adapter.cleanup_case()
+    assert all(method == 'GET' for method, _, _ in calls)
+    assert adapter.state['blocked'] is True
+    assert staff['is_active'] is True
+
+
+def test_c23_empty_success_is_not_an_unknown_failure_fixture(negative_native):
+    from live_simulations import deployed_full_negative as negative
+    adapter, values, _, _, response, _, _ = negative_native
+    response.update(success=True, availability_status='unavailable')
+    adapter.current_case = 'C23'
+    with pytest.raises(SimulationError, match='Exact structured'): negative.arrange(adapter, 'C23', values)
+    with pytest.raises(SimulationError, match='noncascading'): adapter.cleanup_case()
+    assert not adapter.state['full_unconnected_staff']['cleanup_complete']
+
+
+def test_c23_native_setup_hard_block_precedes_every_fixture_mutation(fixture):
+    adapter, values, calls, _, _ = fixture
+    adapter.prepare_catalog(); calls.clear()
+    with pytest.raises(SimulationError, match='noncascading'): adapter.arrange(case('C23'), values)
+    assert all(method == 'GET' for method, _, _ in calls)
+    assert not adapter.state.get('full_unconnected_staff')
+    assert 'C23' not in full.SUPPORTED_CASE_IDS
+
+
+def test_c47_readonly_observation_requires_repeated_actual_capability(negative_native):
+    adapter, values, _, _, _, calls, capability = negative_native
+    adapted, ids = adapter.arrange(case('C47'), values)
+    assert ids == [] and adapted['expected_tools'] == ['cba_webhook']
+    checks = adapter.checks(case('C47'), values, [], [])
+    assert [c['name'] for c in checks if not c['passed']] == ['actual conversation tool call and result correlation remains unverified']
+    assert all(method == 'GET' or path.endswith('/voice/tools') for method, path, _ in calls)
+    capability['agent_fingerprint'] = 'changed'
+    with pytest.raises(SimulationError, match='capability changed'): adapter.checks(case('C47'), values, [], [])
+
+
+def test_c47_browser_readback_receives_original_baseline_not_empty_case_rows(negative_native, monkeypatch):
+    from live_simulations.evidence import check
+    adapter, values, _, _, _, _, _ = negative_native
+    adapter.arrange(case('C47'), values)
+    adapter.state['full_baseline'] = [{'id': 17, 'service_type': 'original'}]
+    adapter.config['deployed_medium']['browser_readback'] = True
+    observed = []
+    monkeypatch.setattr(medium, '_request_rows', lambda config, ids: adapter.state['full_baseline'] if ids else [])
+    adapter.original_ids = {17}
+    monkeypatch.setattr(adapter, '_browser_checks', lambda case, rows: observed.append(deepcopy(rows)) or [check('browser original', True)])
+    checks = adapter.final_checks(case('C47'), values, [])
+    assert observed == [adapter.state['full_baseline']]
+    assert [c['name'] for c in checks if not c['passed']] == ['actual conversation tool call and result correlation remains unverified']
+
+
+@pytest.mark.parametrize('defect', ['none', 'transfer', 'external', 'workflow', 'subagent', 'missing', 'shared_changed', 'mocked_tool', 'unknown_native'])
+def test_c47_reads_actual_shared_capabilities_and_rejects_unknown_transfer_paths(fixture, monkeypatch, defect):
+    from live_simulations import deployed_full_negative as negative
+    adapter, _, _, _, _ = fixture
+    adapter.config['agent_id'] = 'observed-agent'
+    tool = {'name': 'cba_webhook', 'type': 'webhook', 'api_schema': {'method': 'POST',
+            'url': adapter.config['deployed_url'] + '/api/v1/voice/tools?name=cba_webhook'}}
+    agent = {'agent_id': 'observed-agent', 'workflow': {}, 'conversation_config': {'agent': {
+        'subagent_config': {'agents': [], 'self_subagent': None}, 'prompt': {'tools': [], 'tool_ids': ['tool-handoff']}}}}
+    if defect == 'transfer': agent['conversation_config']['agent']['prompt']['tools'].append(
+        {'name': 'transfer', 'type': 'system', 'params': {'system_tool_type': 'transfer_to_number'}})
+    elif defect == 'external': tool['api_schema']['url'] = 'https://other.test/transfer'
+    elif defect == 'workflow': agent['workflow'] = {'nodes': {'transfer': {'type': 'transfer'}}, 'edges': [1]}
+    elif defect == 'subagent': agent['conversation_config']['agent']['subagent_config']['agents'] = [{'id': 'other'}]
+    elif defect == 'missing': agent['conversation_config']['agent']['prompt']['tool_ids'] = []
+    elif defect == 'shared_changed': agent['conversation_config']['agent']['prompt']['tools'] = [dict(tool, description='stale')]
+    elif defect == 'unknown_native': agent['conversation_config']['agent']['prompt']['tools'].append(
+        {'name': 'unknown_transfer', 'type': 'webhook', 'api_schema': {'method': 'POST',
+        'url': adapter.config['deployed_url'] + '/api/v1/voice/tools?name=unknown_transfer'}})
+    calls = []
+    def transport(request):
+        assert request.url.host == 'api.elevenlabs.io'
+        assert request.headers['xi-api-key'] == 'captured-only-key'
+        calls.append(request.method)
+        return httpx.Response(200, json=agent if '/agents/' in request.url.path else {
+            'id': 'tool-handoff', 'tool_config': tool, 'response_mocks': [{}] if defect == 'mocked_tool' else []})
+    monkeypatch.setattr(negative, 'secret', lambda *args: 'captured-only-key')
+    adapter.provider_client = httpx.Client(transport=httpx.MockTransport(transport))
+    if defect == 'none':
+        assert negative.handoff_capability(adapter)['tool_name'] == 'cba_webhook'
+    else:
+        with pytest.raises(SimulationError): negative.handoff_capability(adapter)
+    assert calls and set(calls) == {'GET'}
+
+
+@pytest.mark.parametrize('change', ['metadata', 'prompt', 'platform', 'workflow', 'name', 'tool', 'auth', 'subagent', 'identity'])
+def test_c47_capability_fingerprints_behavior_not_provider_operation_metadata(fixture, monkeypatch, change):
+    from live_simulations import deployed_full_negative as negative
+    adapter, *_ = fixture
+    agent = {'agent_id': 'observed-agent', 'name': 'Primary', 'workflow': {}, 'platform_settings': {},
+             'conversation_config': {'agent': {'subagent_config': {'agents': [], 'self_subagent': None},
+                'prompt': {'prompt': 'Original', 'tools': [{'name': 'cba_webhook', 'type': 'webhook',
+                    'api_schema': {'method': 'POST', 'url': adapter.config['deployed_url'] + '/api/v1/voice/tools'}}]}}}}
+    monkeypatch.setattr(negative, '_resolved_handoff', lambda _: (agent['agent_id'], deepcopy(agent), deepcopy(agent)))
+    before = negative.handoff_capability(adapter)
+    if change == 'metadata': agent.update(metadata={'last_called': 'later'}, usage={'calls': 1}, updated_at='later')
+    elif change == 'prompt': agent['conversation_config']['agent']['prompt']['prompt'] = 'Changed'
+    elif change == 'platform': agent['platform_settings']['privacy'] = {'record_voice': True}
+    elif change == 'workflow': agent['workflow'] = {'nodes': ['changed']}
+    elif change == 'name': agent['name'] = 'Changed'
+    elif change == 'identity': agent['agent_id'] = 'other-agent'
+    elif change == 'subagent': agent['conversation_config']['agent']['subagent_config']['agents'] = [{'id': 'other'}]
+    elif change == 'auth': agent['conversation_config']['agent']['prompt']['tools'][0]['api_schema']['request_headers'] = {'Authorization': 'changed'}
+    else: agent['conversation_config']['agent']['prompt']['tools'][0]['description'] = 'Changed'
+    if change == 'subagent':
+        with pytest.raises(SimulationError): negative.handoff_capability(adapter)
+    else:
+        after = negative.handoff_capability(adapter)
+        assert (after == before) is (change == 'metadata')
+
+
+def test_c47_browser_uses_visible_original_description_and_preserves_id_status(fixture, monkeypatch):
+    adapter, *_ = fixture
+    rows = [{'id': 17, 'service_type': 'Oil Change', 'issue_description': 'Routine oil change', 'status': 'cancelled'}]
+    captured = []
+    monkeypatch.setattr(medium.Adapter, '_browser_checks_owned',
+                        lambda self, case, rows: captured.append(deepcopy(rows)) or [])
+    assert adapter._browser_checks_owned(case('C47'), rows) == []
+    assert captured == [[dict(rows[0], service_type='Routine oil change')]]
+    assert rows[0]['service_type'] == 'Oil Change'
+    for invalid in ([], [dict(rows[0], issue_description='')], [dict(rows[0], issue_description=None)]):
+        assert adapter._browser_checks_owned(case('C47'), invalid) == [
+            {'name': 'C47 nonempty original browser row descriptions', 'passed': False, 'observed': None}]
+    assert len(captured) == 1
+
+
+@pytest.mark.parametrize('builtins,allowed', [
+    (None, True), ({}, True),
+    ({'transfer_to_number': None, 'transfer_to_agent': None}, True),
+    *[({name: {'type': 'system', 'name': name, 'params': {'system_tool_type': name}}}, True)
+      for name in ('end_call', 'skip_turn', 'language_detection')],
+    *[({name: value}, False) for name in ('transfer_to_number', 'transfer_to_agent')
+      for value in ({}, False, {'type': 'system', 'params': {'system_tool_type': 'end_call'}})],
+    ([], False), ('enabled', False), (False, False),
+    ({'unknown_capability': {}}, False),
+    ({'end_call': {'type': 'webhook', 'params': {'system_tool_type': 'end_call'}}}, False),
+    ({'end_call': {'type': 'system', 'params': {'system_tool_type': 'transfer_to_number'}}}, False),
+    ({'skip_turn': {'type': 'system', 'params': {'system_tool_type': 'end_call'}}}, False),
+    ({'language_detection': {'type': 'system', 'params': None}}, False),
+    ({'end_call': False}, False),
+])
+def test_c47_separate_builtin_map_blocks_transfer_before_native_http(fixture, monkeypatch, builtins, allowed):
+    from live_simulations import deployed_full_negative as negative
+    adapter, values, calls, *_ = fixture
+    adapter.prepare_catalog()
+    calls.clear()
+    agent = {'agent_id': 'observed', 'conversation_config': {'agent': {'prompt': {
+        'built_in_tools': builtins, 'tools': [{'name': 'cba_webhook', 'type': 'webhook',
+            'api_schema': {'method': 'POST', 'url': adapter.config['deployed_url'] + '/api/v1/voice/tools'}}]}}}}
+    monkeypatch.setattr(negative, '_resolved_handoff', lambda _: ('observed', deepcopy(agent), deepcopy(agent)))
+    monkeypatch.setattr(negative, 'footprint', lambda _: {'unchanged': True})
+    if allowed:
+        assert negative.handoff_capability(adapter)['tool_name'] == 'cba_webhook'
+    else:
+        before = deepcopy(adapter.state['operations'])
+        with pytest.raises(SimulationError, match='built-in'):
+            adapter.arrange(case('C47'), values)
+        assert adapter.state['operations'] == before
+        assert not adapter.state['full_negative_cases']['C47'].get('observations')
+    assert not any(method != 'GET' for method, _, _ in calls)
+
+
+def test_c47_absent_builtin_map_remains_safe_but_harmless_config_is_fingerprinted(fixture, monkeypatch):
+    from live_simulations import deployed_full_negative as negative
+    adapter, *_ = fixture
+    agent = {'conversation_config': {'agent': {'prompt': {'tools': [{'name': 'cba_webhook', 'type': 'webhook',
+        'api_schema': {'method': 'POST', 'url': adapter.config['deployed_url'] + '/api/v1/voice/tools'}}]}}}}
+    monkeypatch.setattr(negative, '_resolved_handoff', lambda _: ('observed', deepcopy(agent), deepcopy(agent)))
+    before = negative.handoff_capability(adapter)
+    agent['conversation_config']['agent']['prompt']['built_in_tools'] = {
+        'end_call': {'type': 'system', 'params': {'system_tool_type': 'end_call'}, 'description': 'Finish'}}
+    after = negative.handoff_capability(adapter)
+    assert before != after
+    agent['conversation_config']['agent']['prompt']['built_in_tools']['end_call']['description'] = 'Changed'
+    assert negative.handoff_capability(adapter) != after

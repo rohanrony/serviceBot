@@ -94,7 +94,15 @@ class TestTimeSlotChecking(unittest.TestCase):
             mock_conn = MagicMock()
             mock_cursor = MagicMock()
             mock_get_conn.return_value.__enter__.return_value = mock_conn
-            mock_cursor.fetchall.return_value = [{"id": 1}]
+            def available_rows():
+                statement = mock_cursor.execute.call_args.args[0]
+                self.assertTrue(statement.lstrip().upper().startswith("SELECT"))
+                if "FROM staff_agents" in statement:
+                    return [{"id": 1}]
+                if "FROM mock_calendar_slots" in statement or "FROM appointment_reservation_segments" in statement:
+                    return []
+                self.fail(f"Unexpected availability read: {statement}")
+            mock_cursor.fetchall.side_effect = available_rows
 
             with patch("serviceBot.db.queries.dict_cursor") as mock_dict_cursor:
                 mock_dict_cursor.return_value.__enter__.return_value = mock_cursor
@@ -123,7 +131,15 @@ class TestTimeSlotChecking(unittest.TestCase):
             mock_conn = MagicMock()
             mock_cursor = MagicMock()
             mock_get_conn.return_value.__enter__.return_value = mock_conn
-            mock_cursor.fetchall.return_value = [{"id": 1}]
+            def available_rows():
+                statement = mock_cursor.execute.call_args.args[0]
+                self.assertTrue(statement.lstrip().upper().startswith("SELECT"))
+                if "FROM staff_agents" in statement:
+                    return [{"id": 1}]
+                if "FROM mock_calendar_slots" in statement or "FROM appointment_reservation_segments" in statement:
+                    return []
+                self.fail(f"Unexpected availability read: {statement}")
+            mock_cursor.fetchall.side_effect = available_rows
 
             with patch("serviceBot.db.queries.dict_cursor") as mock_dict_cursor:
                 mock_dict_cursor.return_value.__enter__.return_value = mock_cursor
@@ -218,7 +234,15 @@ class TestTimeSlotChecking(unittest.TestCase):
             mock_conn = MagicMock()
             mock_cursor = MagicMock()
             mock_get_conn.return_value.__enter__.return_value = mock_conn
-            mock_cursor.fetchall.return_value = [{"id": 1}]
+            def available_rows():
+                statement = mock_cursor.execute.call_args.args[0]
+                self.assertTrue(statement.lstrip().upper().startswith("SELECT"))
+                if "FROM staff_agents" in statement:
+                    return [{"id": 1}]
+                if "FROM mock_calendar_slots" in statement or "FROM appointment_reservation_segments" in statement:
+                    return []
+                self.fail(f"Unexpected availability read: {statement}")
+            mock_cursor.fetchall.side_effect = available_rows
 
             with patch("serviceBot.db.queries.dict_cursor") as mock_dict_cursor:
                 mock_dict_cursor.return_value.__enter__.return_value = mock_cursor
