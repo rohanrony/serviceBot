@@ -257,7 +257,7 @@ T082/T084 local setup is retained as history and superseded for live execution.
 - [x] T088 Regress and implement native test-owned deployed fixture setup, case-specific scoped request/reservation checks, ambiguity stops and owned cleanup; never expose isolated reset actions to deployment.
 - [x] T089 Prepare the designated deployed Davidson connection and unique catalog definitions; verify both calendars, all reachable recipients, existing customer identity and whole-stage setup without paid submissions. Native catalog creation belongs to locked T091 execution after the one-use authorization claim.
 - [x] T090 Analyze/converge the deployed medium changes; run focused and full offline/browser verification and retain exact evidence.
-- [ ] T091 Execute only C07–C16 against the deployed app within the approved ceiling, settle charges, inspect native/browser effects and clean owned test resources. Retain manual inbox as unverified and prepare only the later full delta without paid replay.
+- [x] T091 Execute only C07–C16 against the deployed app within the approved ceiling, settle charges, inspect native/browser effects and clean owned test resources. Retain manual inbox as unverified and prepare only the later full delta without paid replay.
 
 T087–T089 current evidence: 164 deployed/stage contracts, 42 deployed fixture
 unit contracts and six native PostgreSQL/API/browser contracts passed. Captured
@@ -279,7 +279,7 @@ overwritten. Final evidence: `deployed-full-v2-offline.log`, copied XML and
 - [x] T092 Analyze FR-042 same-run unpaid continuation, then regress and implement explicit admission, immutable prior-attempt evidence, resource reuse and all unsafe-state rejections. No replacement authorization or additional capacity is permitted.
 - [x] T093 Regress and implement FR-043/044: serialize shared embedding/catalog publication, retain the prior index on replacement failure, offload blocking list work and omit past-start candidate provider lookups. Preserve future behavior, row/filter contracts and messaging settings; include native API/browser responsiveness tests.
 - [x] T094 Converge and run focused plus complete offline/browser validation for recovery and app fixes; after explicit publication approval, publish only the necessary validated repair and read back native behavior. Earlier no-push/no-deploy instructions remain in force while approval is pending.
-- [ ] T095 Continue the original C07–C16 execution only after every FR-042 proof and fresh readiness/budget gate passes; preserve the blocked zero-credit original attempt and settle/clean all owned effects.
+- [x] T095 Continue the original C07–C16 execution only after every FR-042 proof and fresh readiness/budget gate passes; preserve the blocked zero-credit original attempt and settle/clean all owned effects.
 
 T092/T093 red/green evidence: the initial unpaid-continuation contracts failed
 eight intended checks, then all 363 harness tests and 40 focused continuation
@@ -340,7 +340,7 @@ T101 local gate passed **976 unit/integration +348 E2E**, zero failures/errors/s
 - [x] T102 Analyze FR049/050 and retain C08 paid failure; reconcile only request51 with exact provider/native identity proof and restore journaled calendar blocks, verifying preservation and settled effects.
 - [x] T103 Regress and implement exact opening service binding for deployed medium C08/C11 and consistent literal vocabulary without changing lifecycle/ownership predicates.
 - [x] T104 Regress and implement an explicit same-run never-submitted C09–C16 continuation after the settled prefix, aggregate spending/reserve and immutable numbered attempt evidence; no paid replay or replacement claim/resources.
-- [ ] T105 Converge, run focused/full offline/API/browser gates and continue only the original eight unused cases after all native prerequisites revalidate. Retain C08 failure and operator inbox gap.
+- [x] T105 Converge, run focused/full offline/API/browser gates and continue only the original eight unused cases after all native prerequisites revalidate. Retain C08 failure and operator inbox gap.
 
 T094/T099/T101 native gate is complete: c4b8ad9 deployed live as dep-dbaj8np42hec73dml1b0; all six preserved documents indexed with exact byte hashes. Catalog upload15.23seconds, current-instance sampled peak250,621,950bytes under512MiB, no new server_failed event. Health/list1.37/1.71seconds; effective config hash and every original business-row hash match. Exact retained clone/catalog, zero-submission proof, quota28325/reserve and designated WhatsApp window all pass. T095 begins only the original ten-case continuation under the same11250ceiling.
 
@@ -353,7 +353,7 @@ T105 full local gate passed **1016 unit/integration +348 E2E**, zero failures/er
 - [x] T106 Analyze FR051/052; reconcile request52's observed completed cancellation and preserve unknown-operation/attempt3 evidence, native positive calendar witness and original rows.
 - [x] T107 Regress and implement a deterministic owned-clone-only canonical-service/prebooking-quote policy revision, prompt-only preservation/idempotence and safe observed update; protected agent unchanged.
 - [x] T108 Regress and implement untouched C10–C16 recovery after the longer settled prefix, revision/receipt/archive proofs and aggregate2019spend, preserving failures and no-replay safeguards; add sanitized mutation diagnostics.
-- [ ] T109 Converge, run full offline/API/browser validation, verify the owned policy revision and resume only untouched C10–C16 within original11250ceiling. Retain C08/C09 failures and pending native inbox verification.
+- [x] T109 Converge, run full offline/API/browser validation, verify the owned policy revision and resume only untouched C10–C16 within original11250ceiling. Retain C08/C09 failures and pending native inbox verification.
 
 T106 reconciliation settled with zero native mutations: exact owned request52, cancelled native state, released reservations, delivered projections, Google event deleted, hashed attempt3 archive and receipt. Original rows unchanged; native delivery audit verifies 14 signed WhatsApp receipts. C09 paid quote failure retained. T107 pure policy/diagnostics focused gate passed63; owned update awaits fresh complete gate.
 
@@ -364,7 +364,7 @@ T109 complete offline gate passed1049unit/integration+348E2E, zero failures/erro
 - [x] T110 Analyze FR053–055 and reconcile C10's unknown cancellation using native row/calendar proof, preserving attempt4 and original failed receipt.
 - [x] T111 Regress and scope quote criteria to new appointment conversations; add bounded native mutation timeout and elapsed diagnostics with unknown-write stops.
 - [x] T112 Regress and implement monotonic untouched-suffix continuation after the four-charge prefix and full native/admission/revision proof, without paid replay or a replacement claim.
-- [ ] T113 Converge, run full offline/API/browser gate, then execute only C11–C16 within the original11250ceiling; retain prior provider failures and inbox gap.
+- [x] T113 Converge, run full offline/API/browser gate, then execute only C11–C16 within the original11250ceiling; retain prior provider failures and inbox gap.
 
 T110 reconciliation settled: immutable attempt4 archive and canonical hashes prove both native fixture creates53/54. Native54 cancellation confirmed without retry; normalcleanupcancelled53once. Both reservations/projections settled, Googledeleted, originalAPIbaselineunchanged. ProviderC10failed481 and originalcriterion remainpreserved. T111 meaningfulRed13fail/7pass;83focusedcontractsGreen/Ruffclean. No remaining paid cases submitted.
 
@@ -403,4 +403,11 @@ findings. C12's separate deployed read-only browser check passed on retained
 cancelled request56, with the original paid evidence/PNG hashes unchanged and
 no replay (`c12-repaired-native-browser-receipt.json`).
 
-- [ ] T120 Obtain scoped approval, publish/deploy the frozen reviewed backend/harness repair, verify preserved KB/configuration and deployed linked metadata, apply/read back the second owned-clone policy revision, then execute only C15 sample2 and C16 sample1 under the original11250 aggregate ceiling. Preserve all historical failures and verify native settlement/cleanup; no uncertain write or charge retry.
+- [x] T120 Obtain scoped approval, publish/deploy the frozen reviewed backend/harness repair, verify preserved KB/configuration and deployed linked metadata, apply/read back the second owned-clone policy revision, then execute only C15 sample2 and C16 sample1 under the original11250 aggregate ceiling. Preserve all historical failures and verify native settlement/cleanup; no uncertain write or charge retry.
+
+T120: d3b298b is deployed live as dep-dbalm8flk1mc73d0uph0. All6KB documents restored/indexed exactly; configuration and original business hashes match. Owned linked policy19b6b658... observed; protected reference unchanged. C15sample2 passed503credits and C16sample1 passed521credits, each with one anchor mutation and two lookups. Additional1024; medium aggregate6421; no unsettled charges. Native audit confirms all16owned requests cancelled, all recorded Google events deleted/absent, all recorded Twilio delivered and98signed callbacks. The catalog listing timeout was read-only; archived before normal owned cleanup removed47–49 without paid replay. All11provider test definitions and owned clone are removed. Original C15 receipt/evidence/PNG remain byte-identical to attempt5 archive. Raw stage remains incomplete/failed history; native receiving inbox remains unverified under the operator choice.
+
+- [x] T121 Prepare the consistent production prompt/settings proposal under FR-061 with fixed-point/policy-preservation regressions, exact tracked candidate, full gate and before/after hashes. No production mutation or paid conversation.
+- [ ] T122 Only after explicit scoped approval, publish the reviewed production prompt with [skip render], apply one normal-settings prompt update to the verified primary target, and read back exact prompt/config/behavior preservation. Retain intent/failure evidence and do not retry an ambiguous update.
+
+T121: The frozen final gate passed **1,212 unit/integration +353 E2E**, with zero failures, errors or skips; all 309 frozen source hashes match. Five focused regressions and Ruff passed. Separate bounded review found no actionable finding. Candidate SHA256 `204af40283c4290426b3252d09da207654ceb3f535379790f96f7619c581fffd` preserves both exact tested policies and the tracked recording/callback safeguards; native/alternate formatting and return to native are stable. The complete combined prompt is not claimed paid-tested. Fresh read-only preparation verified the primary target alone, all 47 existing config keys and unchanged source behavior. Exact prompt-only settings payload and before/after hashes are retained in `production-policy-proposal/settings-proposal.json`. Production promotion is unapproved, no write intent exists, and no additional paid conversation was run.
