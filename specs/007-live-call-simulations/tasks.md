@@ -495,3 +495,37 @@ No native write or paid submission occurred in this phase; ledger hash and mediu
 All34 native full cases and receiving-inbox verification remain unverified.
 T127–T137's unfinished native work and T144 remain open; the full draft30,600-credit
 estimate/38,250 reserve ceiling is an unapproved assumption above current balance.
+
+## Phase 28: Memory warning and approved release amendment
+
+The owner explicitly approved the48-file functional deployment package, published
+as ec46e20 with skip-render. Before a deployment trigger they warned about the
+Free service's memory limit. The latest observed Render OOM was22:49:30UTC on the
+prior instance, while current sampled idle use is about185MiB/512MiB. Deployment
+remains held for the bounded availability-request repair below. The complete
+1458+440 v6 gate remains historical proof for that published source, not proof of
+the forthcoming amendment or native memory safety.
+
+- [x] T145 Regress and repair eager portal agent-availability requests with on-demand pointer/keyboard loading, in-flight deduplication, serialized requests, preserved option/assignment behavior, stale-control safety and explicit failure retry. Add actual held-request browser contracts and retain selective-removal coverage; rerun complete validation and prepare/publish the exact reviewed technical amendment under the approved functional-release scope (FR-067).
+- [ ] T146 Deploy the approved functional repair plus reviewed memory amendment once; verify terminal live commit, additive schema, preserved business data/KB/configuration, current derived catalog/index, native startup duration and sampled memory/failure history before primary tool/prompt changes. Retain ambiguous-write stops and full paid-stage prerequisites (FR-063–067, native portion of T137).
+
+Predeployment inspection incident: a private metadata helper changed a pooled
+session's default to read-only. A held transaction observed backend597204 with
+default on/source session/configured reset off, restored only that default with
+RESET and verified off on the same backend. No business rows or role/database
+settings changed. Observed worker-error checks after02:39:57UTC found no further
+read-only failures; retain `readonly-session-recovery-v6.json`. Native inspectors
+now use explicit BEGIN READ ONLY/ROLLBACK and close, without session-default changes.
+
+The bounded load amendment passed29 focused browser tests and the complete frozen
+v7 gate: **1458 unit/integration +447 E2E**, zero failures/errors/skips. All301
+source hashes remain unchanged. Seven added browser contracts prove zero eager
+availability calls, shared maximum-one fetch, deduplication with live subscribers,
+closed/stale control safety, explicit retry and exact chosen-agent PATCH. A minimal
+static select reproduces headless Chromium's keyboard-popup commit limitation;
+focus/key loading and no automatic mutation are verified, while OS popup commit
+is not claimed. Ruff, JavaScript syntax and whitespace checks pass; independent
+bounded source review found no actionable finding. The exact five-file amendment
+is retained in `scratch/full-delta-20261019/review-amendment-v7/` and continues the
+owner-approved functional release and explicit memory-repair continuation. Native
+deployment, observed memory and primary tool/prompt completion remain T146.

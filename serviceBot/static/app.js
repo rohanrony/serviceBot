@@ -8,6 +8,32 @@ document.addEventListener('DOMContentLoaded', () => {
   let callsCurrentPage = 1;
   let callsPageSize = 10;
 
+  // Availability can contact calendars: serialize explicit requests across portal flows.
+  let availabilityTail = Promise.resolve();
+  const availabilityInFlight = new Map();
+  function requestAvailableAgents(requestId, isCurrent = () => true) {
+    const key = String(requestId);
+    const existing = availabilityInFlight.get(key);
+    if (existing) {
+      existing.consumers.push(isCurrent);
+      return existing.operation;
+    }
+    const entry = { consumers: [isCurrent], operation: null };
+    const operation = availabilityTail.catch(() => {}).then(async () => {
+      if (!entry.consumers.some(current => current())) return null;
+      const response = await fetch(`/api/v1/portal/service-requests/${requestId}/available-agents`);
+      if (!response.ok) throw new Error('Could not load live agent availability');
+      return response.json();
+    });
+    entry.operation = operation;
+    availabilityInFlight.set(key, entry);
+    availabilityTail = operation.catch(() => {});
+    operation.finally(() => {
+      if (availabilityInFlight.get(key) === entry) availabilityInFlight.delete(key);
+    }).catch(() => {});
+    return operation;
+  }
+
   // Business Timezone State & Badges
   let activeBusinessTimezone = 'America/New_York';
 
@@ -965,15 +991,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const agentSelect = tr.querySelector('.agent-select-badge');
         if (agentSelect) {
+          let optionsLoaded = false;
+          let optionsLoading = false;
           const loadAgentOptions = async () => {
+            if (isDone || agentSelect.disabled || optionsLoaded || optionsLoading || !agentSelect.isConnected) return;
+            optionsLoading = true;
+            agentSelect.setAttribute('aria-busy', 'true');
+            agentSelect.title = 'Checking availability…';
             try {
-              const res = await fetch(`/api/v1/portal/service-requests/${req.id}/available-agents`);
-              if (!res.ok) return;
-              const data = await res.json();
+              const data = await requestAvailableAgents(req.id, () => agentSelect.isConnected && !agentSelect.disabled);
+              if (!data || !agentSelect.isConnected) return;
+              optionsLoaded = true;
+              agentSelect.title = '';
               if (data.agents && data.agents.length > 0) {
                 let optionsHtml = `<option value="" data-name="Select Agent" data-role="Unassigned">Select Agent</option>`;
                 data.agents.forEach(a => {
-                  const isSel = (req.assigned_staff_id && Number(req.assigned_staff_id) === Number(a.id)) || (req.staff_agent_name === a.name);
+                  const currentAgentId = req.assigned_staff_id || req.staff_agent_id;
+                  const isSel = (currentAgentId && Number(currentAgentId) === Number(a.id)) || (req.staff_agent_name === a.name);
                   const isUnavailable = a.is_available === false;
                   const labelSuffix = isUnavailable ? ` (Unavailable - ${a.reason || 'Busy'})` : '';
                   const waSuffix = a.whatsapp_connected === false ? ' (⚠️ WhatsApp Disconnected)' : '';
@@ -996,10 +1030,24 @@ document.addEventListener('DOMContentLoaded', () => {
               }
             } catch (err) {
               console.error('Failed to fetch available agents:', err);
+              if (agentSelect.isConnected) agentSelect.title = 'Could not load availability. Open again to retry.';
+            } finally {
+              optionsLoading = false;
+              if (agentSelect.isConnected) agentSelect.removeAttribute('aria-busy');
             }
           };
 
-          loadAgentOptions();
+          agentSelect.addEventListener('pointerdown', (event) => {
+            if (!optionsLoaded) event.preventDefault();
+            loadAgentOptions();
+          });
+          agentSelect.addEventListener('focus', loadAgentOptions);
+          agentSelect.addEventListener('keydown', (event) => {
+            if (['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(event.key)) {
+              if (!optionsLoaded) event.preventDefault();
+              loadAgentOptions();
+            }
+          });
 
           agentSelect.addEventListener('change', (e) => {
             const selectedOpt = agentSelect.options[agentSelect.selectedIndex];
@@ -3897,7 +3945,8 @@ document.addEventListener('DOMContentLoaded', () => {
               reassignSelect.disabled = true;
               reassignSelect.title = "Cannot reassign agent for completed or cancelled tasks";
             } else {
-              fetch(`/api/v1/portal/service-requests/${apptId}/available-agents`).then(r => r.json()).then(data => {
+              requestAvailableAgents(apptId, () => reassignSelect.isConnected).then(data => {
+                if (!data || !reassignSelect.isConnected) return;
                 const agents = data.agents || [];
                 let opts = '<option value="">👤 Reassign Staff Agent...</option>';
                 agents.forEach(a => {
@@ -5362,16 +5411,14 @@ document.addEventListener('DOMContentLoaded', () => {
     modal.style.display = 'block';
     overlay.style.display = 'block';
 
+    const invocation = Symbol('reassign availability');
+    modal.availabilityInvocation = invocation;
+    const isCurrent = () => modal.availabilityInvocation === invocation && modal.style.display !== 'none';
     try {
-      // Query live availability endpoint for actual calendar state
-      const res = await fetch(`/api/v1/portal/service-requests/${req.id}/available-agents`);
-      let candidates = [];
-      if (res.ok) {
-        const data = await res.json();
-        candidates = data.agents || [];
-      } else if (req.candidate_agents && req.candidate_agents.length > 0) {
-        candidates = req.candidate_agents;
-      }
+      // Query live availability only for the explicitly opened appointment.
+      const data = await requestAvailableAgents(req.id, isCurrent);
+      if (!data || !isCurrent()) return;
+      const candidates = data.agents || [];
 
       if (candidates && candidates.length > 0) {
         let opts = '<option value="">-- Choose Candidate Technician --</option>';
@@ -5396,6 +5443,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch (err) {
       console.error('Error fetching candidates for reassignment:', err);
+      if (!isCurrent()) return;
       agentSelect.innerHTML = '<option value="">Failed to load candidates</option>';
     }
   };

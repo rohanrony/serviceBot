@@ -583,3 +583,34 @@ Keep C40/C45 blocked where a shared staff/customer phone cannot establish the
 required identity. Existing voice/customer booking notifications bypass quiet
 hours through the outbox, so C41 requires a policy/flow decision as well as real
 time and worker evidence. Production messaging and Gmail changes remain deferred.
+
+## Memory warning and on-demand portal availability (FR-067)
+
+The owner warned about the Free service's memory limit after approving the
+functional release. Publication ec46e20 completed with the skip-render marker;
+deployment is held for this bounded load repair. Render's failure-event API records
+the latest actual512MiB memory kill at2026-10-18T22:49:30Z, before the current
+backend deployment. Current sampled idle memory is about185MiB, which does not
+bound startup or provider-request peaks. A network-blocked local real-embedding
+profile peaked369.42MiB using the existing singleton encoder; native Linux fit
+still requires observation after deployment.
+
+The booking list currently starts availability requests for each rendered row,
+including disabled closed bookings, and repeats them on rerender. Each native
+request may check several Google calendars. This proves avoidable request
+amplification; it does not prove the OOM's cause. Keep the domain/API owners and
+qualification rules. Load only on explicit enabled-control interaction, deduplicate
+and serialize requests, preserve current options/assignment and reject stale UI
+continuations. Keep failure honest and require new explicit interaction for retry.
+Use held-request browser tests before implementation, then rerun the full gate.
+Publish the reviewed technical amendment under the approved functional-release
+scope and monitor actual startup/catalog/index/memory before enabling new tools.
+
+During predeployment inspection a private metadata helper set an autocommit
+read-only session default through the external PostgreSQL pool. A held transaction
+observed that session default on with configured reset off and restored only that
+setting using RESET, then verified off on the same backend. Business rows and
+role/database configuration were untouched. Subsequent worker-error checks found
+no further read-only failures in the observed interval. Further native inspections
+use explicit BEGIN READ ONLY/ROLLBACK and close connections; they never alter the
+session transaction default. Retain the incident and recovery receipt.
