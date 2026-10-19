@@ -1122,3 +1122,4864 @@ document.addEventListener('DOMContentLoaded', () => {
         if (agentSelect) {
           agentSelect.addEventListener('click', () => {
             if (!agentSelect.disabled) window.openReassignModal(req);
+          });
+        }
+
+        const statusSelect = tr.querySelector('.status-select-badge');
+        if (statusSelect) {
+          let previousStatus = statusSelect.value;
+          statusSelect.addEventListener('change', (e) => {
+            const newStatus = e.target.value;
+            const customerName = req.customer_name || 'Customer';
+            
+            if (!window.confirm(`Are you sure you want to change the status of ${customerName}'s booking from '${previousStatus}' to '${newStatus}'?`)) {
+              statusSelect.value = previousStatus;
+              return;
+            }
+            
+            let badgeClass = 'neutral';
+            if (newStatus === 'pending' || newStatus === 'rescheduled') badgeClass = 'warning';
+            else if (newStatus === 'cancelled' || newStatus === 'cancelled_by_customer') badgeClass = 'danger';
+            else badgeClass = 'neutral';
+            statusSelect.className = `status-select-badge ${badgeClass}`;
+
+            if (agentSelect) {
+              const isNowDone = ['completed', 'done', 'cancelled', 'cancelled_by_customer'].includes(newStatus);
+              agentSelect.disabled = isNowDone;
+              agentSelect.title = isNowDone ? "Agent cannot be changed for completed or cancelled tasks" : "";
+              const agentWrapper = tr.querySelector('.agent-badge-wrapper');
+              if (agentWrapper) {
+                if (isNowDone) agentWrapper.classList.add('disabled');
+                else agentWrapper.classList.remove('disabled');
+              }
+            }
+
+            updateRequestStatus(req.id, newStatus).then(() => {
+              previousStatus = newStatus;
+            }).catch(() => {
+              applyServiceRequestsFilter();
+            });
+          });
+        }
+
+        requestsListBody.appendChild(tr);
+      });
+    }
+  }
+
+  function isDateInTimeframe(dateStr, timeframe) {
+    if (!timeframe || timeframe === 'all') return true;
+    if (!dateStr) return false;
+    let cleanStr = String(dateStr).trim();
+    if (cleanStr.includes(' ') && !cleanStr.includes('T')) cleanStr = cleanStr.replace(' ', 'T');
+    if (!cleanStr.endsWith('Z') && !/[+-]\d{2}:?\d{2}$/.test(cleanStr)) cleanStr += 'Z';
+    const d = new Date(cleanStr);
+    if (isNaN(d.getTime())) return true;
+
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    if (diffMs < 0) return true;
+
+    if (timeframe === '24h' || timeframe === '1d') {
+      return diffMs <= 24 * 60 * 60 * 1000;
+    } else if (timeframe === '7d') {
+      return diffMs <= 7 * 24 * 60 * 60 * 1000;
+    } else if (timeframe === '30d') {
+      return diffMs <= 30 * 24 * 60 * 60 * 1000;
+    }
+    return true;
+  }
+
+  function applyServiceRequestsFilter() {
+    const query = (document.getElementById('filter-sr-search')?.value || '').toLowerCase().trim();
+    const type = document.getElementById('filter-sr-type')?.value || 'all';
+    const status = document.getElementById('filter-sr-status')?.value || 'all';
+    
+    const filtered = allRequests.filter(req => {
+      const isCancelled = ['cancelled', 'cancelled_by_customer'].includes(req.status);
+      const isClosed = isCancelled || ['completed', 'done'].includes(req.status);
+
+      // Operational requests (pending, confirmed, in_progress, escalated) should NEVER
+      // be hidden by timeframe unless specifically filtered by status or search.
+      // For closed/historical records, match against updated_at, created_at, or booking_time.
+      let matchesTime = true;
+      if (currentCallsTimeframe && currentCallsTimeframe !== 'all') {
+        if (isClosed) {
+          const bookingTime = req.booking_start_time || req.booking_time || req.time_slot;
+          matchesTime = isDateInTimeframe(req.updated_at, currentCallsTimeframe) ||
+                        isDateInTimeframe(req.created_at, currentCallsTimeframe) ||
+                        (bookingTime ? isDateInTimeframe(bookingTime, currentCallsTimeframe) : false);
+        } else {
+          matchesTime = true;
+        }
+      }
+
+      const matchesText = !query || 
+        (req.customer_name || '').toLowerCase().includes(query) ||
+        (req.phone || '').toLowerCase().includes(query) ||
+        (req.make || '').toLowerCase().includes(query) ||
+        (req.model || '').toLowerCase().includes(query) ||
+        (req.service_type || '').toLowerCase().includes(query) ||
+        (req.issue_description || '').toLowerCase().includes(query);
+        
+      const matchesType = type === 'all' || req.booking_type === type;
+      const matchesStatus = status === 'all' || 
+        (status === 'escalated' ? (req.escalation_status === 'escalated' && !isClosed) : (req.status === status || (status === 'completed' && req.status === 'done')));
+      
+      return matchesTime && matchesText && matchesType && matchesStatus;
+    });
+    
+    renderServiceRequests(filtered);
+
+    // Update Escalation Alert Banner
+    const banner = document.getElementById('escalation-alert-banner');
+    if (banner) {
+      const escalatedCount = allRequests.filter(r => 
+        r.escalation_status === 'escalated' && 
+        !['cancelled', 'cancelled_by_customer', 'completed', 'done'].includes(r.status)
+      ).length;
+      if (escalatedCount > 0) {
+        banner.style.display = 'flex';
+        const titleEl = document.getElementById('escalation-banner-title');
+        if (titleEl) {
+          titleEl.textContent = `${escalatedCount} Escalated Appointment${escalatedCount > 1 ? 's' : ''} Require Attention`;
+        }
+      } else {
+        banner.style.display = 'none';
+      }
+    }
+  }
+
+  function applyCallsFilter() {
+    const query = (document.getElementById('filter-calls-search')?.value || '').toLowerCase().trim();
+    
+    const filtered = allCalls.filter(call => {
+      const matchesTime = isDateInTimeframe(call.created_at || call.timestamp, currentCallsTimeframe);
+      const matchesText = !query || 
+        (call.customer_name || '').toLowerCase().includes(query) ||
+        (call.phone || '').toLowerCase().includes(query) ||
+        (call.vehicle || '').toLowerCase().includes(query) ||
+        (call.summary || '').toLowerCase().includes(query);
+      return matchesTime && matchesText;
+    });
+    
+    renderCallLogs(filtered);
+  }
+
+  // Bind filter listeners once
+  const srSearch = document.getElementById('filter-sr-search');
+  if (srSearch && !srSearch.dataset.listenerBound) {
+    srSearch.dataset.listenerBound = 'true';
+    srSearch.addEventListener('input', () => {
+      srCurrentPage = 1;
+      applyServiceRequestsFilter();
+    });
+  }
+  const srType = document.getElementById('filter-sr-type');
+  if (srType && !srType.dataset.listenerBound) {
+    srType.dataset.listenerBound = 'true';
+    srType.addEventListener('change', () => {
+      srCurrentPage = 1;
+      applyServiceRequestsFilter();
+    });
+  }
+  const srStatus = document.getElementById('filter-sr-status');
+  if (srStatus && !srStatus.dataset.listenerBound) {
+    srStatus.dataset.listenerBound = 'true';
+    srStatus.addEventListener('change', () => {
+      srCurrentPage = 1;
+      applyServiceRequestsFilter();
+    });
+  }
+
+  const bannerFilterBtn = document.getElementById('escalation-banner-filter-btn');
+  if (bannerFilterBtn && !bannerFilterBtn.dataset.listenerBound) {
+    bannerFilterBtn.dataset.listenerBound = 'true';
+    bannerFilterBtn.addEventListener('click', () => {
+      const statusSelect = document.getElementById('filter-sr-status');
+      if (statusSelect) {
+        statusSelect.value = 'escalated';
+        srCurrentPage = 1;
+        applyServiceRequestsFilter();
+      }
+    });
+  }
+
+  const srPageSizeEl = document.getElementById('sr-page-size');
+  if (srPageSizeEl && !srPageSizeEl.dataset.listenerBound) {
+    srPageSizeEl.dataset.listenerBound = 'true';
+    srPageSizeEl.addEventListener('change', () => {
+      srPageSize = parseInt(srPageSizeEl.value) || 10;
+      srCurrentPage = 1;
+      applyServiceRequestsFilter();
+    });
+  }
+
+  const srPrevBtn = document.getElementById('sr-prev-page');
+  if (srPrevBtn && !srPrevBtn.dataset.listenerBound) {
+    srPrevBtn.dataset.listenerBound = 'true';
+    srPrevBtn.addEventListener('click', () => {
+      if (srCurrentPage > 1) {
+        srCurrentPage--;
+        applyServiceRequestsFilter();
+      }
+    });
+  }
+
+  const srNextBtn = document.getElementById('sr-next-page');
+  if (srNextBtn && !srNextBtn.dataset.listenerBound) {
+    srNextBtn.dataset.listenerBound = 'true';
+    srNextBtn.addEventListener('click', () => {
+      srCurrentPage++;
+      applyServiceRequestsFilter();
+    });
+  }
+
+  // Bind Calls filters & pagination
+  const callsSearch = document.getElementById('filter-calls-search');
+  if (callsSearch && !callsSearch.dataset.listenerBound) {
+    callsSearch.dataset.listenerBound = 'true';
+    callsSearch.addEventListener('input', () => {
+      callsCurrentPage = 1;
+      applyCallsFilter();
+    });
+  }
+
+  const callsPageSizeEl = document.getElementById('calls-page-size');
+  if (callsPageSizeEl && !callsPageSizeEl.dataset.listenerBound) {
+    callsPageSizeEl.dataset.listenerBound = 'true';
+    callsPageSizeEl.addEventListener('change', () => {
+      callsPageSize = parseInt(callsPageSizeEl.value) || 10;
+      callsCurrentPage = 1;
+      applyCallsFilter();
+    });
+  }
+
+  const callsPrevBtn = document.getElementById('calls-prev-page');
+  if (callsPrevBtn && !callsPrevBtn.dataset.listenerBound) {
+    callsPrevBtn.dataset.listenerBound = 'true';
+    callsPrevBtn.addEventListener('click', () => {
+      if (callsCurrentPage > 1) {
+        callsCurrentPage--;
+        applyCallsFilter();
+      }
+    });
+  }
+
+  const callsNextBtn = document.getElementById('calls-next-page');
+  if (callsNextBtn && !callsNextBtn.dataset.listenerBound) {
+    callsNextBtn.dataset.listenerBound = 'true';
+    callsNextBtn.addEventListener('click', () => {
+      callsCurrentPage++;
+      applyCallsFilter();
+    });
+  }
+
+  let currentCallsTimeframe = '7d';
+  const callsTimeframeSelect = document.getElementById('calls-timeframe-select');
+  if (callsTimeframeSelect) {
+    callsTimeframeSelect.addEventListener('change', (e) => {
+      currentCallsTimeframe = e.target.value;
+      loadDashboardData();
+    });
+  }
+
+
+  async function loadDashboardData() {
+    // 1. Fetch stats
+    try {
+      const statsResponse = await fetch(`/api/v1/portal/stats?calls_timeframe=${currentCallsTimeframe}`);
+      if (statsResponse.ok) {
+        const stats = await statsResponse.json();
+        
+        const totalCallsEl = document.getElementById('stat-total-calls');
+        if (totalCallsEl) totalCallsEl.textContent = stats.total_calls;
+        
+        const callsBadgeEl = document.getElementById('stat-calls-badge');
+        if (callsBadgeEl) {
+          const labels = {
+            '24h': 'Past 24 hours',
+            '7d': 'Past 7 days',
+            '30d': 'Past 30 days',
+            'all': 'All time'
+          };
+          const labelText = labels[currentCallsTimeframe] || 'Past 7 days';
+          callsBadgeEl.innerHTML = `<span class="badge-dot success"></span>${labelText} • 100% answer rate`;
+          callsBadgeEl.className = 'metric-badge';
+        }
+        
+        const callbacksStatEl = document.getElementById('stat-callbacks');
+        if (callbacksStatEl) callbacksStatEl.textContent = stats.total_callbacks;
+        
+        const apptsStatEl = document.getElementById('stat-appointments');
+        if (apptsStatEl) apptsStatEl.textContent = stats.total_appointments;
+        
+        const reqsStatEl = document.getElementById('stat-requests');
+        if (reqsStatEl) reqsStatEl.textContent = stats.total_requests;
+        const reqsBadgeEl = document.getElementById('stat-requests-badge');
+        if (reqsBadgeEl && stats.pending_requests !== undefined) {
+          const dotClass = stats.pending_requests === 0 ? 'success' : 'warning';
+          reqsBadgeEl.innerHTML = `<span class="badge-dot ${dotClass}"></span>${stats.pending_requests} pending triage`;
+          reqsBadgeEl.className = 'metric-badge';
+        }
+        
+        const calFreeEl = document.getElementById('stat-calendar-free');
+        if (calFreeEl) {
+          calFreeEl.innerHTML = `<span class="badge-dot neutral"></span>${stats.open_slots} slots open`;
+          calFreeEl.className = 'metric-badge';
+        }
+      }
+    } catch (statsErr) {
+      console.error('Error fetching stats:', statsErr);
+    }
+
+    // 2. Fetch calls
+    try {
+      const callsResponse = await fetch('/api/v1/portal/calls');
+      if (callsResponse.ok) {
+        allCalls = await callsResponse.json();
+        applyCallsFilter();
+      }
+    } catch (callsErr) {
+      console.error('Error fetching calls:', callsErr);
+    }
+
+    // 3. Fetch service requests
+    try {
+      const reqsResponse = await fetch('/api/v1/portal/service-requests');
+      if (!reqsResponse.ok) throw new Error('Failed to fetch service requests');
+      allRequests = await reqsResponse.json();
+      applyServiceRequestsFilter();
+    } catch (reqsErr) {
+      console.error('Error fetching service requests:', reqsErr);
+      const requestsListBody = document.getElementById('service-requests-list');
+      if (requestsListBody) {
+        requestsListBody.innerHTML = `<tr><td colspan="10" class="text-center py-6 text-muted">Failed to load service requests. Please refresh.</td></tr>`;
+      }
+    }
+  }
+
+  // --- CALL DETAILS DRAWER / TRANSCRIPT MODAL ---
+  const drawer = document.getElementById('transcript-drawer');
+  const overlay = document.getElementById('transcript-drawer-overlay');
+  const closeBtn = document.getElementById('close-drawer-btn');
+
+  function openCallDrawer(call) {
+    document.getElementById('drawer-customer-name').textContent = call.customer_name || 'Customer Call Details';
+    document.getElementById('drawer-call-meta').textContent = `Call ID: ${call.call_id} • Phone: ${call.phone || '--'}`;
+    document.getElementById('drawer-summary-box').textContent = call.summary;
+    
+    const timeline = document.getElementById('drawer-transcript-timeline');
+    timeline.innerHTML = '';
+    
+    // Check if transcript is defined, parse split strings
+    if (call.transcript) {
+      const turns = call.transcript.split('\n');
+      turns.forEach(turn => {
+        if (!turn.trim()) return;
+        
+        const bubble = document.createElement('div');
+        const isAgent = turn.startsWith('AI:') || turn.startsWith('Agent:');
+        const sender = isAgent ? 'Agent' : 'Customer';
+        const cleanText = turn.replace(/^(AI:|Agent:|Customer:|Caller:)\s*/i, '');
+        
+        bubble.className = `speech-bubble ${isAgent ? 'agent' : 'customer'}`;
+        bubble.innerHTML = `
+          <span class="bubble-sender ${isAgent ? 'agent-label' : ''}">${sender}</span>
+          <span class="bubble-text">${cleanText}</span>
+        `;
+        timeline.appendChild(bubble);
+      });
+    } else {
+      timeline.innerHTML = '<p class="text-muted text-center py-4">No full transcript available for this call.</p>';
+    }
+    
+    drawer.classList.add('active');
+    overlay.classList.add('active');
+  }
+
+  function closeDrawer() {
+    if (drawer) drawer.classList.remove('active');
+    if (overlay) overlay.classList.remove('active');
+  }
+
+  if (closeBtn) closeBtn.addEventListener('click', closeDrawer);
+  if (overlay) overlay.addEventListener('click', closeDrawer);
+
+  // --- VIEW 3: SERVICES RETRIEVAL & ADDITIONS ---
+  let cachedStaffAgents = [];
+
+  async function fetchStaffAgentsForCatalog() {
+    try {
+      const res = await fetch('/api/v1/portal/agents');
+      if (res.ok) {
+        cachedStaffAgents = await res.json();
+      }
+    } catch (e) {
+      console.warn('Failed to prefetch staff agents for catalog:', e);
+    }
+    return cachedStaffAgents;
+  }
+
+  function renderStaffAgentCheckboxes(containerId, selectedIds = []) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    if (!cachedStaffAgents || cachedStaffAgents.length === 0) {
+      container.innerHTML = '<span class="text-muted" style="font-size: 0.8rem;">No staff agents available.</span>';
+      return;
+    }
+    container.innerHTML = '';
+    const selectedSet = new Set((selectedIds || []).map(id => Number(id)));
+    cachedStaffAgents.forEach(agent => {
+      const label = document.createElement('label');
+      label.className = 'checkbox-item';
+      label.style.display = 'inline-flex';
+      label.style.alignItems = 'center';
+      label.style.gap = '6px';
+      label.style.fontSize = '0.825rem';
+      label.style.cursor = 'pointer';
+
+      const isChecked = selectedSet.has(Number(agent.id));
+      label.innerHTML = `
+        <input type="checkbox" value="${agent.id}" ${isChecked ? 'checked' : ''} style="cursor: pointer;">
+        <span>${agent.name} <small class="text-muted">(${agentRole(agent.role) || 'Advisor'})</small></span>
+      `;
+      container.appendChild(label);
+    });
+  }
+
+  async function loadServicesData() {
+    try {
+      if (!cachedStaffAgents || cachedStaffAgents.length === 0) {
+        await fetchStaffAgentsForCatalog();
+      }
+      renderStaffAgentCheckboxes('new-service-agents-list', []);
+
+      const response = await fetch('/api/v1/portal/services');
+      if (!response.ok) throw new Error('Failed to fetch services');
+      const services = await response.json();
+      
+      const body = document.getElementById('services-list-body');
+      if (body) {
+        body.innerHTML = '';
+        
+        services.forEach(svc => {
+          let agentBadges = '';
+          if (svc.assigned_agent_names && svc.assigned_agent_names.length > 0) {
+            agentBadges = svc.assigned_agent_names.map(name => 
+              `<span class="badge info" style="font-size: 0.72rem; padding: 2px 6px; margin: 1px 2px; display: inline-block;">${name}</span>`
+            ).join('');
+          } else {
+            agentBadges = '<span class="badge" style="background: rgba(148, 163, 184, 0.15); color: var(--text-muted); font-size: 0.72rem; padding: 2px 6px;">Any Available</span>';
+          }
+
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td><strong>${svc.name}</strong></td>
+            <td><div class="desc-cell" title="${svc.description || ''}">${svc.description || '--'}</div></td>
+            <td><span class="badge success">${svc.price_range || '--'}</span></td>
+            <td>${svc.duration_minutes ? svc.duration_minutes + ' mins' : '--'}</td>
+            <td><div style="display: flex; flex-wrap: wrap; gap: 4px; max-width: 220px;">${agentBadges}</div></td>
+            <td>
+              <div class="actions-cell" style="display: flex; gap: 8px; align-items: center; white-space: nowrap;">
+                <button class="btn btn-secondary btn-sm edit-service-btn" data-id="${svc.id}">
+                  Edit
+                </button>
+                <button class="btn btn-secondary btn-sm delete-service-btn" data-id="${svc.id}" style="border-color: var(--color-danger); color: var(--color-danger);">
+                  Delete
+                </button>
+              </div>
+            </td>
+          `;
+          
+          tr.querySelector('.edit-service-btn').addEventListener('click', () => {
+            openEditDrawer(svc);
+          });
+
+        tr.querySelector('.delete-service-btn').addEventListener('click', async () => {
+          if (!confirm(`Are you sure you want to delete the service "${svc.name}"?`)) return;
+          try {
+            const res = await fetch(`/api/v1/portal/services/${svc.id}`, {
+              method: 'DELETE'
+            });
+            if (!res.ok) throw new Error('Failed to delete service');
+            showToast('Service deleted successfully!');
+            loadServicesData();
+          } catch (err) {
+            console.error(err);
+            showToast('Error deleting service: ' + err.message, 'error');
+          }
+        });
+        
+        body.appendChild(tr);
+      });
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Error loading services: ' + err.message, 'error');
+    }
+  }
+
+  // Seed Default Services Button
+  const seedDefaultServicesBtn = document.getElementById('seed-default-services-btn');
+  if (seedDefaultServicesBtn) {
+    seedDefaultServicesBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      seedDefaultServicesBtn.disabled = true;
+      const originalContent = seedDefaultServicesBtn.innerHTML;
+      seedDefaultServicesBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Seeding...';
+
+      try {
+        const res = await fetch('/api/v1/portal/services/seed-defaults', { method: 'POST' });
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({}));
+          throw new Error(errBody.detail || 'Failed to seed default catalog');
+        }
+        const data = await res.json();
+        showToast(`Catalog updated! Added ${data.inserted_count} missing default services. Total catalog: ${data.total_defaults} services.`, 'success');
+        await loadServicesData();
+      } catch (err) {
+        console.error(err);
+        showToast('Error seeding default catalog: ' + err.message, 'error');
+      } finally {
+        seedDefaultServicesBtn.disabled = false;
+        seedDefaultServicesBtn.innerHTML = originalContent;
+      }
+    });
+  }
+
+  // Edit Service Drawer Actions
+  function openEditDrawer(svc) {
+    if (!editDrawer) return;
+    document.getElementById('edit-service-id').value = svc.id;
+    document.getElementById('edit-service-name').value = svc.name;
+    document.getElementById('edit-service-desc').value = svc.description || '';
+    document.getElementById('edit-service-price').value = svc.price_range || '';
+    document.getElementById('edit-service-duration').value = svc.duration_minutes || '';
+    
+    document.getElementById('edit-service-req-customer-name').checked = svc.req_customer_name !== undefined ? !!svc.req_customer_name : true;
+    document.getElementById('edit-service-req-phone-number').checked = svc.req_phone_number !== undefined ? !!svc.req_phone_number : true;
+    document.getElementById('edit-service-req-vehicle-details').checked = svc.req_vehicle_details !== undefined ? !!svc.req_vehicle_details : true;
+    document.getElementById('edit-service-req-issue-description').checked = svc.req_issue_description !== undefined ? !!svc.req_issue_description : true;
+    document.getElementById('edit-service-req-location').checked = svc.req_location !== undefined ? !!svc.req_location : true;
+    
+    renderStaffAgentCheckboxes('edit-service-agents-list', svc.assigned_agent_ids || []);
+
+    if (editDrawer) editDrawer.classList.add('active');
+    if (editDrawerOverlay) editDrawerOverlay.classList.add('active');
+  }
+
+  function closeEditDrawer() {
+    if (editDrawer) editDrawer.classList.remove('active');
+    if (editDrawerOverlay) editDrawerOverlay.classList.remove('active');
+  }
+
+  if (closeEditDrawerBtn) closeEditDrawerBtn.addEventListener('click', closeEditDrawer);
+  if (cancelEditBtn) cancelEditBtn.addEventListener('click', closeEditDrawer);
+  if (editDrawerOverlay) editDrawerOverlay.addEventListener('click', closeEditDrawer);
+
+  if (editServiceForm) {
+    editServiceForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const submitBtn = editServiceForm.querySelector('button[type="submit"]');
+      if (submitBtn && submitBtn.disabled) return;
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.dataset.origText = submitBtn.textContent;
+        submitBtn.textContent = 'Saving...';
+      }
+
+      const id = document.getElementById('edit-service-id').value;
+      const selectedAgentIds = Array.from(document.querySelectorAll('#edit-service-agents-list input[type="checkbox"]:checked'))
+        .map(cb => parseInt(cb.value, 10));
+
+      const durationVal = parseInt(document.getElementById('edit-service-duration').value, 10);
+      const payload = {
+        name: document.getElementById('edit-service-name').value,
+        description: document.getElementById('edit-service-desc').value,
+        price_range: document.getElementById('edit-service-price').value,
+        duration_minutes: isNaN(durationVal) ? null : durationVal,
+        req_customer_name: document.getElementById('edit-service-req-customer-name').checked,
+        req_phone_number: document.getElementById('edit-service-req-phone-number').checked,
+        req_vehicle_details: document.getElementById('edit-service-req-vehicle-details').checked,
+        req_issue_description: document.getElementById('edit-service-req-issue-description').checked,
+        req_location: document.getElementById('edit-service-req-location').checked,
+        agent_ids: selectedAgentIds
+      };
+      
+      try {
+        const response = await fetch(`/api/v1/portal/services/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error(errData.detail || 'Failed to update service');
+        }
+        
+        showToast('Service updated successfully!');
+        closeEditDrawer();
+        loadServicesData();
+      } catch (err) {
+        console.error(err);
+        showToast('Error updating service: ' + err.message, 'error');
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = submitBtn.dataset.origText || 'Save Changes';
+        }
+      }
+    });
+  }
+
+  const addServiceForm = document.getElementById('add-service-form');
+  if (addServiceForm) {
+    addServiceForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const submitBtn = addServiceForm.querySelector('button[type="submit"]');
+      if (submitBtn && submitBtn.disabled) return;
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.dataset.origText = submitBtn.textContent;
+        submitBtn.textContent = 'Creating...';
+      }
+      
+      const selectedAgentIds = Array.from(document.querySelectorAll('#new-service-agents-list input[type="checkbox"]:checked'))
+        .map(cb => parseInt(cb.value, 10));
+
+      const payload = {
+        name: document.getElementById('new-service-name').value,
+        description: document.getElementById('new-service-desc').value,
+        price_range: document.getElementById('new-service-price').value,
+        duration_minutes: parseInt(document.getElementById('new-service-duration').value, 10),
+        req_customer_name: document.getElementById('new-service-req-customer-name').checked,
+        req_phone_number: document.getElementById('new-service-req-phone-number').checked,
+        req_vehicle_details: document.getElementById('new-service-req-vehicle-details').checked,
+        req_issue_description: document.getElementById('new-service-req-issue-description').checked,
+        req_location: document.getElementById('new-service-req-location').checked,
+        agent_ids: selectedAgentIds
+      };
+      
+      try {
+        const response = await fetch('/api/v1/portal/services', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        
+        if (!response.ok) throw new Error('Failed to add service');
+        
+        showToast('Service created successfully!');
+        addServiceForm.reset();
+        renderStaffAgentCheckboxes('new-service-agents-list', []);
+        loadServicesData();
+      } catch (err) {
+        console.error(err);
+        showToast('Error creating service: ' + err.message, 'error');
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = submitBtn.dataset.origText || 'Create Service';
+        }
+      }
+    });
+  }
+
+  // --- VIEW 4: FILE DRAG AND DROP (RAG) ---
+  const dropZone = document.getElementById('kb-drop-zone');
+  const fileInput = document.getElementById('kb-file-input');
+  const progressContainer = document.getElementById('upload-progress-container');
+  const progressFill = document.getElementById('upload-progress-fill');
+  const progressPercent = document.getElementById('upload-percent');
+  const progressText = document.getElementById('upload-status-text');
+
+  if (dropZone) {
+    // Trigger file browsing on click
+    dropZone.addEventListener('click', () => fileInput && fileInput.click());
+
+    // Prevent default drag behaviors
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+      dropZone.addEventListener(eventName, preventDefaults, false);
+    });
+    function preventDefaults(e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    // Handle active states on hover
+    ['dragenter', 'dragover'].forEach(eventName => {
+      dropZone.addEventListener(eventName, () => dropZone.classList.add('active'), false);
+    });
+    ['dragleave', 'drop'].forEach(eventName => {
+      dropZone.addEventListener(eventName, () => dropZone.classList.remove('active'), false);
+    });
+
+    // Handle dropped files
+    dropZone.addEventListener('drop', (e) => {
+      const dt = e.dataTransfer;
+      const files = dt.files;
+      if (files.length > 0) {
+        uploadKBFile(files[0]);
+      }
+    });
+  }
+
+  // Handle file selection
+  if (fileInput) {
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files.length > 0) {
+        uploadKBFile(fileInput.files[0]);
+      }
+    });
+  }
+
+  async function uploadKBFile(file) {
+    if (!file.name.endsWith('.txt') && !file.name.endsWith('.md')) {
+      showToast('Only .txt or .md files are supported', 'error');
+      return;
+    }
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    // Show progress loading indicators
+    if (progressContainer) progressContainer.classList.remove('hidden');
+    if (progressFill) progressFill.style.width = '30%';
+    if (progressPercent) progressPercent.textContent = '30%';
+    if (progressText) progressText.textContent = 'Uploading file...';
+    
+    try {
+      const response = await fetch('/api/v1/portal/kb/upload', {
+        method: 'POST',
+        body: formData
+      });
+      
+      if (!response.ok) throw new Error('File upload failure');
+      const data = await response.json();
+      
+      if (progressFill) progressFill.style.width = '100%';
+      if (progressPercent) progressPercent.textContent = '100%';
+      if (progressText) progressText.textContent = 'Completed!';
+      
+      showToast(`Successfully indexed ${data.chunk_count} chunks into local ChromaDB!`);
+      loadKBData();
+      
+      setTimeout(() => {
+        if (progressContainer) progressContainer.classList.add('hidden');
+      }, 3000);
+      
+    } catch (err) {
+      console.error(err);
+      if (progressContainer) progressContainer.classList.add('hidden');
+      showToast('Ingestion failed: ' + err.message, 'error');
+    }
+  }
+
+  // --- VIEW 5: VOICE ROUTING AND KEYS ---
+  async function loadVoiceData() {
+    try {
+      const configRes = await fetch('/api/v1/portal/config');
+      if (configRes.ok) {
+        const config = await configRes.json();
+        const handoffPhoneInput = document.getElementById('agent-handoff-phone');
+        if (handoffPhoneInput) {
+          handoffPhoneInput.value = config.handoff_phone_number || '';
+        }
+        const modelSelect = document.getElementById('agent-llm-model');
+        if (modelSelect && config.agent_llm_model) {
+          modelSelect.value = config.agent_llm_model;
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to fetch config for handoff phone:', err);
+    }
+
+    try {
+      const response = await fetch('/api/v1/portal/elevenlabs/voices');
+      if (!response.ok) throw new Error('ElevenLabs credentials offline or missing');
+      const data = await response.json();
+      
+      const select = document.getElementById('agent-voice-selection');
+      if (select) {
+        select.innerHTML = '';
+        if (data.voices && data.voices.length > 0) {
+          data.voices.forEach(voice => {
+            const opt = document.createElement('option');
+            opt.value = voice.voice_id;
+            opt.textContent = `${voice.name} (${voice.category})`;
+            select.appendChild(opt);
+          });
+        } else {
+          select.innerHTML = '<option value="default">No custom voices found</option>';
+        }
+      }
+    } catch (err) {
+      console.warn(err);
+      const select = document.getElementById('agent-voice-selection');
+      if (select) {
+        select.innerHTML = '<option value="default_mock">Mock Rachel (Default ElevenLabs)</option>' +
+                           '<option value="default_mock2">Mock Clyde (Default ElevenLabs)</option>';
+      }
+    }
+
+    // Also load secret status and placeholders
+    await loadSecretsData();
+  }
+
+  // Fetch secrets status and display badges/placeholders
+  async function loadSecretsData() {
+    const fields = [
+      { id: 'openai', inputId: 'key-openai', badgeId: 'badge-openai', label: 'OpenAI' },
+      { id: 'gemini', inputId: 'key-gemini', badgeId: 'badge-gemini', label: 'Gemini' },
+      { id: 'anthropic', inputId: 'key-anthropic', badgeId: 'badge-anthropic', label: 'Anthropic' },
+      { id: 'elevenlabs_key', inputId: 'key-elevenlabs', badgeId: 'badge-elevenlabs-key', label: 'ElevenLabs' },
+      { id: 'elevenlabs_agent', inputId: 'key-elevenlabs-agent', badgeId: 'badge-elevenlabs-agent', label: 'Agent ID' },
+      { id: 'twilio', inputId: 'key-twilio', badgeId: 'badge-twilio', label: 'Twilio' }
+    ];
+
+    try {
+      const res = await fetch('/api/v1/portal/secrets');
+      if (!res.ok) throw new Error('Failed to load secrets info');
+      const secrets = await res.json();
+
+      fields.forEach(f => {
+        const info = secrets[f.id] || { has_key: false, source: 'none', masked: '', display_value: null };
+        const input = document.getElementById(f.inputId);
+        const badge = document.getElementById(f.badgeId);
+
+        if (badge) {
+          badge.className = 'secret-status-badge';
+          if (info.source === 'custom') {
+            badge.classList.add('badge-custom');
+            badge.innerHTML = `<i class="fas fa-shield-alt"></i> Custom Encrypted (${info.masked || 'Active'})`;
+          } else if (info.source === 'env') {
+            badge.classList.add('badge-env');
+            badge.innerHTML = `<i class="fas fa-file-alt"></i> Default (.env)`;
+          } else {
+            badge.classList.add('badge-none');
+            badge.innerHTML = `<i class="fas fa-times-circle"></i> Not Set`;
+          }
+        }
+
+        if (input) {
+          input.value = ''; // Clear typed text so placeholder shows
+          if (f.id === 'elevenlabs_agent' && info.display_value) {
+            input.value = info.display_value;
+          } else if (info.has_key) {
+            input.placeholder = `${info.masked} (${info.source === 'custom' ? 'Encrypted Override' : 'System Default'})`;
+          } else {
+            input.placeholder = `Not configured (Enter to set)`;
+          }
+        }
+      });
+    } catch (err) {
+      console.warn('Error loading secrets data:', err);
+    }
+  }
+
+  // Refresh secrets button
+  const refreshSecretsBtn = document.getElementById('btn-refresh-secrets');
+  if (refreshSecretsBtn) {
+    refreshSecretsBtn.addEventListener('click', async () => {
+      refreshSecretsBtn.disabled = true;
+      refreshSecretsBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing...';
+      await loadSecretsData();
+      showToast('Secrets status refreshed', 'info');
+      refreshSecretsBtn.disabled = false;
+      refreshSecretsBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh';
+    });
+  }
+
+  // Form Submit updates Voice routing Agent ID
+  const voiceRoutingForm = document.getElementById('voice-routing-form');
+  if (voiceRoutingForm) {
+    voiceRoutingForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const model = document.getElementById('agent-llm-model').value;
+      const voiceId = document.getElementById('agent-voice-selection').value;
+      const handoffPhone = document.getElementById('agent-handoff-phone').value;
+      
+      try {
+        const response = await fetch('/api/v1/portal/elevenlabs/agent', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: model, voice_id: voiceId })
+        });
+        
+        if (!response.ok) throw new Error('Dynamic ElevenLabs configuration update failed');
+        showToast('Agent model and voice configurations updated live!');
+      } catch (err) {
+        console.warn(err);
+        showToast('Saved settings locally (Mock status: ElevenLabs ID not found)', 'success');
+      }
+
+      try {
+        const configRes = await fetch('/api/v1/portal/config');
+        if (configRes.ok) {
+          const config = await configRes.json();
+          config.handoff_phone_number = handoffPhone;
+          config.agent_llm_model = model;
+          
+          const updateRes = await fetch('/api/v1/portal/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config)
+          });
+          if (!updateRes.ok) throw new Error('Failed to save configuration');
+        }
+      } catch (err) {
+        console.error(err);
+        showToast('Error saving handoff phone: ' + err.message, 'error');
+      }
+    });
+  }
+
+  // Secrets Encrypt Form
+  const saveKeysForm = document.getElementById('save-api-keys-form');
+  if (saveKeysForm) {
+    saveKeysForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const submitBtn = document.getElementById('save-secrets-btn');
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Encrypting...';
+      }
+
+      const openaiVal = document.getElementById('key-openai')?.value.trim();
+      const geminiVal = document.getElementById('key-gemini')?.value.trim();
+      const anthropicVal = document.getElementById('key-anthropic')?.value.trim();
+      const elKeyVal = document.getElementById('key-elevenlabs')?.value.trim();
+      const elAgentVal = document.getElementById('key-elevenlabs-agent')?.value.trim();
+      const twilioVal = document.getElementById('key-twilio')?.value.trim();
+
+      const payload = {};
+      if (openaiVal) payload.openai_api_key = openaiVal;
+      if (geminiVal) payload.gemini_api_key = geminiVal;
+      if (anthropicVal) payload.anthropic_api_key = anthropicVal;
+      if (elKeyVal) payload.elevenlabs_api_key = elKeyVal;
+      if (elAgentVal) payload.elevenlabs_agent_id = elAgentVal;
+      if (twilioVal) payload.twilio_auth_token = twilioVal;
+
+      if (Object.keys(payload).length === 0) {
+        showToast('No new keys entered to save. Leave blank to keep existing defaults.', 'info');
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = 'Encrypt & Store Keys';
+        }
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/v1/portal/secrets', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || 'Failed to encrypt and store system secrets');
+        }
+
+        showToast('API credentials encrypted and securely saved at rest!', 'success');
+        await loadSecretsData();
+      } catch (err) {
+        console.error('Failed to save secrets:', err);
+        showToast('Error saving secrets: ' + err.message, 'error');
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = 'Encrypt & Store Keys';
+        }
+      }
+    });
+  }
+
+  // --- VIEW 2: CONFIGURATION MANAGER ---
+  async function loadConfigData() {
+    try {
+      const response = await fetch('/api/v1/portal/config');
+      if (!response.ok) throw new Error('Failed to fetch configurations');
+      const config = await response.json() || {};
+      
+      // Populate textareas and inputs
+      const firstMsgEl = document.getElementById('prompt-first-message');
+      const sysPromptEl = document.getElementById('prompt-system');
+      if (firstMsgEl) firstMsgEl.value = config.first_message || '';
+      if (sysPromptEl) sysPromptEl.value = config.system_prompt || '';
+      
+      // Populate checkboxes
+      const reqCustomerName = document.getElementById('req-customer-name');
+      const reqPhoneNumber = document.getElementById('req-phone-number');
+      const reqVehicleDetails = document.getElementById('req-vehicle-details');
+      const reqIssueDescription = document.getElementById('req-issue-description');
+      
+      const reqFields = config.required_fields || {};
+      if (reqCustomerName) reqCustomerName.checked = !!reqFields.customer_name;
+      if (reqPhoneNumber) reqPhoneNumber.checked = !!reqFields.phone_number;
+      if (reqVehicleDetails) reqVehicleDetails.checked = !!reqFields.vehicle_details;
+      if (reqIssueDescription) reqIssueDescription.checked = !!reqFields.issue_description;
+      
+    } catch (err) {
+      console.error(err);
+      showToast('Error loading configuration: ' + err.message, 'error');
+    }
+  }
+
+  // Core router intents form
+  const intentForm = document.getElementById('intent-config-form');
+  if (intentForm) {
+    intentForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const reqCustomerName = document.getElementById('req-customer-name');
+      const reqPhoneNumber = document.getElementById('req-phone-number');
+      const reqVehicleDetails = document.getElementById('req-vehicle-details');
+      const reqIssueDescription = document.getElementById('req-issue-description');
+      
+      const sysPromptEl = document.getElementById('prompt-system');
+      const firstMsgEl = document.getElementById('prompt-first-message');
+
+      const payload = {
+        required_fields: {
+          customer_name: reqCustomerName ? reqCustomerName.checked : true,
+          phone_number: reqPhoneNumber ? reqPhoneNumber.checked : true,
+          vehicle_details: reqVehicleDetails ? reqVehicleDetails.checked : true,
+          issue_description: reqIssueDescription ? reqIssueDescription.checked : true
+        },
+        system_prompt: sysPromptEl ? sysPromptEl.value : '',
+        first_message: firstMsgEl ? firstMsgEl.value : ''
+      };
+      
+      try {
+        const response = await fetch('/api/v1/portal/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!response.ok) throw new Error('Failed to save configurations');
+        showToast('Agent prompts and intake fields updated successfully!');
+      } catch (err) {
+        console.error(err);
+        showToast('Error saving configuration: ' + err.message, 'error');
+      }
+    });
+  }
+
+  // --- VIEW 4: KNOWLEDGE BASE RETRIEVAL & MANAGEMENT ---
+  async function loadKBData() {
+    try {
+      const response = await fetch('/api/v1/portal/kb');
+      if (!response.ok) throw new Error('Failed to fetch KB documents');
+      const files = await response.json();
+      
+      const filesList = document.getElementById('kb-files-list');
+      filesList.innerHTML = '';
+      
+      if (files.length === 0) {
+        filesList.innerHTML = '<p class="text-muted text-center py-6">No documents indexed in local database.</p>';
+        return;
+      }
+      
+      files.forEach(file => {
+        const item = document.createElement('div');
+        item.className = 'kb-file-item';
+        
+        const sizeKB = (file.size_bytes / 1024).toFixed(1);
+        
+        item.innerHTML = `
+          <div class="file-info">
+            <svg class="file-icon" viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+            <div>
+              <span class="file-name">${file.filename}</span>
+              <span class="file-meta">File Size: ${sizeKB} KB</span>
+            </div>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <button class="btn btn-secondary btn-sm view-kb-btn">
+              View
+            </button>
+            <button class="btn btn-secondary btn-sm download-kb-btn">
+              Download
+            </button>
+            <button class="btn btn-secondary btn-sm delete-kb-btn" style="border-color: var(--color-danger); color: var(--color-danger);">
+              Delete
+            </button>
+          </div>
+        `;
+        
+        // Bind View
+        item.querySelector('.view-kb-btn').addEventListener('click', async () => {
+          try {
+            const res = await fetch(`/api/v1/portal/kb/view/${encodeURIComponent(file.filename)}`);
+            if (!res.ok) throw new Error('Failed to load file content');
+            const data = await res.json();
+            
+            document.getElementById('document-drawer-title').textContent = file.filename;
+            document.getElementById('document-drawer-meta').textContent = `File Size: ${sizeKB} KB`;
+            document.getElementById('document-drawer-body').textContent = data.content;
+            
+            documentDrawer.classList.add('active');
+            documentDrawerOverlay.classList.add('active');
+          } catch (err) {
+            console.error(err);
+            showToast('Error opening file: ' + err.message, 'error');
+          }
+        });
+        
+        // Bind Download
+        item.querySelector('.download-kb-btn').addEventListener('click', () => {
+          window.location.href = `/api/v1/portal/kb/download/${encodeURIComponent(file.filename)}`;
+        });
+        
+        // Bind Delete
+        item.querySelector('.delete-kb-btn').addEventListener('click', async () => {
+          if (!confirm(`Are you sure you want to delete "${file.filename}" from the Knowledge Base?`)) return;
+          try {
+            const res = await fetch(`/api/v1/portal/kb/${encodeURIComponent(file.filename)}`, {
+              method: 'DELETE'
+            });
+            if (!res.ok) throw new Error('Failed to delete KB file');
+            
+            showToast('Document deleted and unindexed from RAG collection.');
+            loadKBData();
+          } catch (err) {
+            console.error(err);
+            showToast('Error deleting file: ' + err.message, 'error');
+          }
+        });
+        
+        filesList.appendChild(item);
+      });
+    } catch (err) {
+      console.error(err);
+      showToast('Error loading KB documents: ' + err.message, 'error');
+    }
+  }
+
+  // --- VIEW 6: STAFF CALENDARS & SCHEDULES ---
+  let isStaffListenerAttached = false;
+
+  // Sync Calendar button — fires immediately on click
+  const syncCalendarBtn = document.getElementById('sync-calendar-btn');
+  if (syncCalendarBtn) {
+    syncCalendarBtn.addEventListener('click', async () => {
+      const originalText = syncCalendarBtn.innerHTML;
+      syncCalendarBtn.disabled = true;
+      syncCalendarBtn.innerHTML = `<svg viewBox="0 0 24 24" style="width:13px;height:13px;fill:currentColor;animation:spin 1s linear infinite"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg> Syncing...`;
+      try {
+        const res = await fetch('/api/v1/portal/calendar/sync-all', { method: 'POST' });
+        if (!res.ok) throw new Error('Sync request failed');
+        const data = await res.json();
+        const newSlots = data.total_new_slots || 0;
+        showToast(`Calendar synced! ${newSlots} new slot(s) created from live Google Calendar.`);
+        // Reload slot view for the currently selected agent
+        const agentId = staffAgentSelector.value;
+        if (agentId) loadAgentCalendar(agentId);
+      } catch (err) {
+        console.error(err);
+        showToast('Calendar sync failed: ' + err.message, 'error');
+      } finally {
+        syncCalendarBtn.disabled = false;
+        syncCalendarBtn.innerHTML = originalText;
+      }
+    });
+  }
+
+
+  async function updateAgentConnectionUI() {
+    const selectedAgentId = staffAgentSelector.value;
+    const calendarBadge = document.getElementById('agent-calendar-status-badge');
+    const connectCalendarBtn = document.getElementById('connect-agent-calendar-btn');
+    const gmailBadge = document.getElementById('agent-gmail-status-badge');
+    const connectGmailBtn = document.getElementById('connect-agent-gmail-btn');
+    const agentEmailDisplay = document.getElementById('agent-email-status-display');
+    const whatsappBadge = document.getElementById('agent-whatsapp-status-badge');
+    const connectWhatsappBtn = document.getElementById('connect-agent-whatsapp-btn');
+    const whatsappWarning = document.getElementById('agent-whatsapp-warning');
+    
+    if (!calendarBadge || !connectCalendarBtn || !gmailBadge || !connectGmailBtn) return;
+    
+    const selectedOpt = Array.from(staffAgentSelector.options || []).find(opt => opt.value == selectedAgentId);
+    const fallbackEmail = selectedOpt ? selectedOpt.dataset.email : '';
+    const agentPhone = selectedOpt ? selectedOpt.dataset.phone : '';
+
+    if (!selectedAgentId) {
+      calendarBadge.className = 'badge danger';
+      calendarBadge.textContent = 'Disconnected';
+      connectCalendarBtn.textContent = 'Connect';
+      connectCalendarBtn.classList.add('btn-secondary');
+      connectCalendarBtn.style.borderColor = 'var(--color-primary)';
+      connectCalendarBtn.style.color = '#fff';
+      connectCalendarBtn.dataset.isConnected = 'false';
+      connectCalendarBtn.disabled = true;
+      
+      gmailBadge.className = 'badge danger';
+      gmailBadge.textContent = 'Disconnected';
+      connectGmailBtn.textContent = 'Connect';
+      connectGmailBtn.classList.add('btn-secondary');
+      connectGmailBtn.style.borderColor = 'var(--color-primary)';
+      connectGmailBtn.style.color = '#fff';
+      connectGmailBtn.dataset.isConnected = 'false';
+      connectGmailBtn.disabled = true;
+
+      if (whatsappBadge) {
+        whatsappBadge.className = 'badge danger';
+        whatsappBadge.textContent = 'Disconnected';
+      }
+      if (connectWhatsappBtn) {
+        connectWhatsappBtn.textContent = 'Connect';
+        connectWhatsappBtn.disabled = true;
+      }
+      if (whatsappWarning) whatsappWarning.style.display = 'none';
+      
+      if (deleteAgentProfileBtn) deleteAgentProfileBtn.disabled = true;
+      if (agentEmailDisplay) agentEmailDisplay.textContent = 'No agent selected';
+      return;
+    }
+    
+    // Enable buttons
+    connectCalendarBtn.disabled = false;
+    connectGmailBtn.disabled = false;
+    if (deleteAgentProfileBtn) deleteAgentProfileBtn.disabled = false;
+    
+    try {
+      const response = await fetch(`/api/v1/portal/agents/${selectedAgentId}/google/status`);
+      if (!response.ok) throw new Error('Failed to fetch status');
+      const status = await response.json();
+      
+      const calendarConnected = status.is_connected && status.scopes.includes('https://www.googleapis.com/auth/calendar.events');
+      const gmailConnected = status.is_connected && status.scopes.includes('https://www.googleapis.com/auth/gmail.send');
+      
+      if (agentEmailDisplay) {
+        const activeEmail = status.email || fallbackEmail;
+        if (activeEmail) {
+          agentEmailDisplay.textContent = activeEmail;
+        } else if (calendarConnected || gmailConnected || status.is_connected) {
+          agentEmailDisplay.textContent = 'Connected (Google Account)';
+        } else {
+          agentEmailDisplay.textContent = 'No email configured';
+        }
+      }
+      
+      if (calendarConnected) {
+        if (status.is_expired) {
+          calendarBadge.className = 'badge warning';
+          calendarBadge.textContent = 'Expired';
+          connectCalendarBtn.textContent = 'Reconnect';
+          connectCalendarBtn.classList.add('btn-secondary');
+          connectCalendarBtn.style.borderColor = 'var(--color-primary)';
+          connectCalendarBtn.style.color = '#fff';
+          connectCalendarBtn.dataset.isConnected = 'false';
+        } else {
+          calendarBadge.className = 'badge success';
+          calendarBadge.textContent = 'Connected';
+          connectCalendarBtn.textContent = 'Disconnect';
+          connectCalendarBtn.classList.add('btn-secondary');
+          connectCalendarBtn.style.borderColor = 'var(--color-danger)';
+          connectCalendarBtn.style.color = 'var(--color-danger)';
+          connectCalendarBtn.dataset.isConnected = 'true';
+        }
+      } else {
+        calendarBadge.className = 'badge danger';
+        calendarBadge.textContent = 'Disconnected';
+        connectCalendarBtn.textContent = 'Connect';
+        connectCalendarBtn.classList.add('btn-secondary');
+        connectCalendarBtn.style.borderColor = 'var(--color-primary)';
+        connectCalendarBtn.style.color = '#fff';
+        connectCalendarBtn.dataset.isConnected = 'false';
+      }
+      
+      if (gmailConnected) {
+        if (status.is_expired) {
+          gmailBadge.className = 'badge warning';
+          gmailBadge.textContent = 'Expired';
+          connectGmailBtn.textContent = 'Reconnect';
+          connectGmailBtn.classList.add('btn-secondary');
+          connectGmailBtn.style.borderColor = 'var(--color-primary)';
+          connectGmailBtn.style.color = '#fff';
+          connectGmailBtn.dataset.isConnected = 'false';
+        } else {
+          gmailBadge.className = 'badge success';
+          gmailBadge.textContent = 'Connected';
+          connectGmailBtn.textContent = 'Disconnect';
+          connectGmailBtn.classList.add('btn-secondary');
+          connectGmailBtn.style.borderColor = 'var(--color-danger)';
+          connectGmailBtn.style.color = 'var(--color-danger)';
+          connectGmailBtn.dataset.isConnected = 'true';
+        }
+      } else {
+        gmailBadge.className = 'badge danger';
+        gmailBadge.textContent = 'Disconnected';
+        connectGmailBtn.textContent = 'Connect';
+        connectGmailBtn.classList.add('btn-secondary');
+        connectGmailBtn.style.borderColor = 'var(--color-primary)';
+        connectGmailBtn.style.color = '#fff';
+        connectGmailBtn.dataset.isConnected = 'false';
+      }
+
+      // WhatsApp Connection UI
+      const hasPhone = Boolean(status.has_phone !== undefined ? status.has_phone : agentPhone);
+      const whatsappConnected = Boolean(status.whatsapp_connected);
+
+      if (whatsappBadge) {
+        if (!hasPhone) {
+          whatsappBadge.className = 'badge danger';
+          whatsappBadge.textContent = 'No Phone';
+          whatsappBadge.title = 'No phone number configured for this agent';
+        } else if (whatsappConnected) {
+          whatsappBadge.className = 'badge success';
+          whatsappBadge.textContent = 'Connected';
+          whatsappBadge.title = 'Agent WhatsApp is verified and onboarded';
+        } else {
+          whatsappBadge.className = 'badge danger';
+          whatsappBadge.textContent = 'Disconnected';
+          whatsappBadge.title = 'Agent phone not onboarded to WhatsApp';
+        }
+      }
+
+      if (connectWhatsappBtn) {
+        connectWhatsappBtn.disabled = false;
+        if (!hasPhone) {
+          connectWhatsappBtn.textContent = 'Add Phone';
+          connectWhatsappBtn.classList.add('btn-secondary');
+          connectWhatsappBtn.style.borderColor = 'var(--color-primary)';
+          connectWhatsappBtn.style.color = '#fff';
+          connectWhatsappBtn.dataset.isConnected = 'false';
+          connectWhatsappBtn.dataset.action = 'add_phone';
+        } else if (whatsappConnected) {
+          connectWhatsappBtn.textContent = 'Disconnect';
+          connectWhatsappBtn.classList.add('btn-secondary');
+          connectWhatsappBtn.style.borderColor = 'var(--color-danger)';
+          connectWhatsappBtn.style.color = 'var(--color-danger)';
+          connectWhatsappBtn.dataset.isConnected = 'true';
+          connectWhatsappBtn.dataset.action = 'disconnect';
+        } else {
+          connectWhatsappBtn.textContent = 'Connect';
+          connectWhatsappBtn.classList.add('btn-secondary');
+          connectWhatsappBtn.style.borderColor = '#25D366';
+          connectWhatsappBtn.style.color = '#25D366';
+          connectWhatsappBtn.dataset.isConnected = 'false';
+          connectWhatsappBtn.dataset.action = 'connect';
+        }
+      }
+
+      if (whatsappWarning) {
+        if (!hasPhone) {
+          whatsappWarning.style.display = 'block';
+          whatsappWarning.textContent = '⚠️ Agent has no phone configured. WhatsApp notifications cannot be sent.';
+        } else if (!whatsappConnected) {
+          whatsappWarning.style.display = 'block';
+          whatsappWarning.textContent = '⚠️ Agent WhatsApp not connected. Booking & assignment alerts will fail delivery.';
+        } else {
+          whatsappWarning.style.display = 'none';
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching Google connection status:', err);
+      if (agentEmailDisplay) {
+        agentEmailDisplay.textContent = fallbackEmail || 'No email configured';
+      }
+    }
+  }
+
+  async function loadStaffView(selectedId = null) {
+    if (!staffAgentSelector) return;
+    try {
+      const response = await fetch('/api/v1/portal/agents');
+      if (!response.ok) throw new Error('Failed to fetch staff agents');
+      const agents = await response.json();
+      
+      if (!Array.isArray(agents) || agents.length === 0) {
+        staffAgentSelector.innerHTML = '<option value="">No agents available</option>';
+        if (staffSlotsListBody) staffSlotsListBody.innerHTML = '<tr><td colspan="2" class="text-center py-6 text-muted">No staff agents found.</td></tr>';
+        
+        // Update connection status and disable buttons
+        try {
+          await updateAgentConnectionUI();
+        } catch (e) {
+          console.error('Error updating connection UI:', e);
+        }
+        return;
+      }
+      
+      const prevValue = selectedId || staffAgentSelector.value;
+      
+      staffAgentSelector.innerHTML = '';
+      agents.forEach(agent => {
+        const opt = document.createElement('option');
+        opt.value = agent.id;
+        const emailSuffix = agent.email ? ` - ${agent.email}` : '';
+        const waSuffix = agent.whatsapp_connected === false ? ' [No WA]' : '';
+        opt.textContent = `${agent.name} (${agentRole(agent.role) || 'Service Agent'})${emailSuffix}${waSuffix}`;
+        opt.dataset.email = agent.email || '';
+        opt.dataset.dbEmail = agent.db_email || agent.email || '';
+        opt.dataset.name = agent.name || '';
+        opt.dataset.role = agentRole(agent.role) || '';
+        opt.dataset.phone = agent.phone_number || '';
+        opt.dataset.whatsappConnected = agent.whatsapp_connected ? 'true' : 'false';
+        staffAgentSelector.appendChild(opt);
+      });
+      
+      // Preserve selection if possible, otherwise first option
+      if (prevValue && Array.from(staffAgentSelector.options).some(opt => opt.value == prevValue)) {
+        staffAgentSelector.value = prevValue;
+      } else {
+        staffAgentSelector.selectedIndex = 0;
+      }
+      
+      // Update the connection status UI
+      try {
+        await updateAgentConnectionUI();
+      } catch (e) {
+        console.error('Error updating connection UI:', e);
+      }
+
+      // Populate Business Hours & Workdays config in Staff view
+      try {
+        const cfgRes = await fetch('/api/v1/portal/config');
+        if (cfgRes.ok) {
+          const cfg = await cfgRes.json();
+          const bStartEl = document.getElementById('staff-bhours-start');
+          const bEndEl = document.getElementById('staff-bhours-end');
+          if (bStartEl) bStartEl.value = cfg.business_hours_start ?? 7;
+          if (bEndEl) bEndEl.value = cfg.business_hours_end ?? 18;
+          
+          const validDays = cfg.business_days || [0, 1, 2, 3, 4];
+          const dayCbs = document.querySelectorAll('.staff-day-cb');
+          dayCbs.forEach(cb => {
+            cb.checked = validDays.includes(parseInt(cb.value, 10));
+          });
+        }
+      } catch (err) {
+        console.error('Error fetching config for staff view:', err);
+      }
+
+      // Load calendar for the initially selected agent
+      const initialAgentId = staffAgentSelector.value;
+      if (initialAgentId) {
+        loadAgentCalendar(initialAgentId);
+      }
+      
+      // Attach change listener if not already attached
+      if (!isStaffListenerAttached) {
+        staffAgentSelector.addEventListener('change', async (e) => {
+          await updateAgentConnectionUI();
+          if (e.target.value) {
+            loadAgentCalendar(e.target.value);
+          } else {
+            if (staffSlotsListBody) staffSlotsListBody.innerHTML = '<tr><td colspan="2" class="text-center py-6 text-muted">Select an agent to load calendar slots.</td></tr>';
+          }
+        });
+        
+        // Connect / Disconnect agent calendar handler
+        const connectCalendarBtn = document.getElementById('connect-agent-calendar-btn');
+        if (connectCalendarBtn) {
+          connectCalendarBtn.addEventListener('click', async () => {
+            const agentId = staffAgentSelector.value;
+            if (!agentId) return;
+            const isConnected = connectCalendarBtn.dataset.isConnected === 'true';
+            
+            if (isConnected) {
+              if (!confirm('Are you sure you want to disconnect Google Calendar / Google Account integration for this staff member?')) return;
+              try {
+                const res = await fetch(`/api/v1/portal/agents/${agentId}/google/disconnect`, { method: 'POST' });
+                if (!res.ok) throw new Error('Disconnect failed');
+                showToast('Google Account disconnected successfully.');
+                await updateAgentConnectionUI();
+              } catch (err) {
+                console.error(err);
+                showToast('Error disconnecting: ' + err.message, 'error');
+              }
+            } else {
+              // Open OAuth Consent Screen in popup
+              try {
+                const authUrlRes = await fetch(`/api/v1/portal/agents/${agentId}/google/auth-url?action=calendar`);
+                if (!authUrlRes.ok) {
+                  const data = await authUrlRes.json();
+                  throw new Error(data.detail || 'Failed to generate OAuth URL');
+                }
+                const authData = await authUrlRes.json();
+                
+                const width = 600, height = 650;
+                const left = (window.screen.width - width) / 2;
+                const top = (window.screen.height - height) / 2;
+                const popup = window.open(
+                  authData.auth_url,
+                  'Google Agent Calendar Authentication',
+                  `width=${width},height=${height},left=${left},top=${top},status=no,resizable=yes,scrollbars=yes`
+                );
+                
+                window.addEventListener('message', function agentAuthMsgListener(event) {
+                  if (event.data === 'agent-auth-success') {
+                    showToast('Agent Google Calendar connected successfully!');
+                    updateAgentConnectionUI();
+                    window.removeEventListener('message', agentAuthMsgListener);
+                  }
+                });
+              } catch (err) {
+                console.error(err);
+                showToast('OAuth connection failed: ' + err.message, 'error');
+              }
+            }
+          });
+        }
+
+        // Connect / Disconnect agent Gmail handler
+        const connectGmailBtn = document.getElementById('connect-agent-gmail-btn');
+        if (connectGmailBtn) {
+          connectGmailBtn.addEventListener('click', async () => {
+            const agentId = staffAgentSelector.value;
+            if (!agentId) return;
+            const isConnected = connectGmailBtn.dataset.isConnected === 'true';
+            
+            if (isConnected) {
+              if (!confirm('Are you sure you want to disconnect Gmail Send capabilities for this staff member? (This will disconnect the Google account)')) return;
+              try {
+                const res = await fetch(`/api/v1/portal/agents/${agentId}/google/disconnect`, { method: 'POST' });
+                if (!res.ok) throw new Error('Disconnect failed');
+                showToast('Gmail integration disconnected successfully.');
+                await updateAgentConnectionUI();
+              } catch (err) {
+                console.error(err);
+                showToast('Error disconnecting: ' + err.message, 'error');
+              }
+            } else {
+              // Open OAuth Consent Screen in popup
+              try {
+                const authUrlRes = await fetch(`/api/v1/portal/agents/${agentId}/google/auth-url?action=gmail`);
+                if (!authUrlRes.ok) {
+                  const data = await authUrlRes.json();
+                  throw new Error(data.detail || 'Failed to generate OAuth URL');
+                }
+                const authData = await authUrlRes.json();
+                
+                const width = 600, height = 650;
+                const left = (window.screen.width - width) / 2;
+                const top = (window.screen.height - height) / 2;
+                const popup = window.open(
+                  authData.auth_url,
+                  'Google Agent Gmail Authentication',
+                  `width=${width},height=${height},left=${left},top=${top},status=no,resizable=yes,scrollbars=yes`
+                );
+                
+                window.addEventListener('message', function agentGmailAuthMsgListener(event) {
+                  if (event.data === 'gmail-auth-success') {
+                    showToast('Agent Gmail Send integration connected successfully!');
+                    updateAgentConnectionUI();
+                    window.removeEventListener('message', agentGmailAuthMsgListener);
+                  }
+                });
+              } catch (err) {
+                console.error(err);
+                showToast('OAuth connection failed: ' + err.message, 'error');
+              }
+            }
+          });
+        }
+
+        // Connect / Disconnect agent WhatsApp handler
+        const connectWhatsappBtn = document.getElementById('connect-agent-whatsapp-btn');
+        if (connectWhatsappBtn) {
+          connectWhatsappBtn.addEventListener('click', async () => {
+            const agentId = staffAgentSelector.value;
+            if (!agentId) return;
+            const action = connectWhatsappBtn.dataset.action;
+            const selectedOpt = Array.from(staffAgentSelector.options || []).find(opt => opt.value == agentId);
+            const phone = selectedOpt ? selectedOpt.dataset.phone : '';
+            const name = selectedOpt ? selectedOpt.dataset.name : '';
+
+            if (action === 'add_phone') {
+              if (editAgentProfileBtn) editAgentProfileBtn.click();
+              return;
+            }
+
+            if (action === 'disconnect') {
+              if (!confirm(`Are you sure you want to disconnect WhatsApp notifications for ${name || 'this staff member'}?`)) return;
+              try {
+                const res = await fetch(`/api/v1/portal/agents/${agentId}/whatsapp/disconnect`, { method: 'POST' });
+                if (!res.ok) throw new Error('Disconnect failed');
+                showToast('Agent WhatsApp disconnected.');
+                await updateAgentConnectionUI();
+                await loadStaffView(agentId);
+                if (typeof loadSMSWhitelist === 'function') loadSMSWhitelist();
+              } catch (err) {
+                console.error(err);
+                showToast('Error disconnecting WhatsApp: ' + err.message, 'error');
+              }
+            } else {
+              // Connect action: open QR code modal with agent's info
+              showQRCodeModal('AGENT', phone, name || 'Service Agent');
+            }
+          });
+        }
+
+        // Attach form submission for adding slot
+        if (addSlotForm) {
+          addSlotForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const selectedAgentId = staffAgentSelector.value;
+            if (!selectedAgentId) {
+              showToast('Please select a staff member first.', 'error');
+              return;
+            }
+            
+            const rawDatetime = newSlotDatetimeInput ? newSlotDatetimeInput.value : '';
+            if (!rawDatetime) return;
+            
+            // Format "2026-06-09T14:00" to "2026-06-09 14:00:00"
+            const formattedDatetime = rawDatetime.replace('T', ' ') + ':00';
+            
+            try {
+              const res = await fetch(`/api/v1/portal/agents/${selectedAgentId}/calendar`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ slot_datetime: formattedDatetime, is_booked: false })
+              });
+              
+              if (res.status === 400) {
+                const data = await res.json();
+                throw new Error(data.detail || 'Time slot already exists');
+              }
+              if (!res.ok) throw new Error('Failed to add slot');
+              
+              showToast('Availability slot added successfully!');
+              if (newSlotDatetimeInput) newSlotDatetimeInput.value = '';
+              loadAgentCalendar(selectedAgentId);
+            } catch (err) {
+              console.error(err);
+              showToast('Error adding slot: ' + err.message, 'error');
+            }
+          });
+        }
+
+        // Add Staff Member Form handler
+        if (addAgentForm) {
+          addAgentForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = newAgentNameInput.value.trim();
+            const role = newAgentRoleInput.value.trim() || 'Service Advisor';
+            const email = newAgentEmailInput.value.trim() || null;
+            const newAgentPhoneInput = document.getElementById('new-agent-phone');
+            const phone_number = newAgentPhoneInput ? (newAgentPhoneInput.value.trim() || null) : null;
+            
+            if (!name) return;
+            
+            try {
+              const response = await fetch('/api/v1/portal/agents', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, role, email, phone_number })
+              });
+              if (!response.ok) {
+                const data = await response.json();
+                throw new Error(data.detail || 'Failed to add staff member');
+              }
+              const data = await response.json();
+
+              // Auto-trigger Twilio Verified Caller ID if phone_number is provided
+              if (phone_number) {
+                try {
+                  await fetch('/api/v1/portal/twilio/verify-caller-id', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone_number, friendly_name: name })
+                  });
+                } catch (e) {
+                  console.error('Auto caller-id verify error:', e);
+                }
+              }
+
+              showToast(`Staff member "${name}" registered successfully!`);
+              addAgentForm.reset();
+              newAgentRoleInput.value = 'Service Advisor'; // restore default
+              
+              // Reload staff list and auto-select the new agent
+              await loadStaffView(data.id);
+            } catch (err) {
+              console.error(err);
+              showToast('Error adding staff member: ' + err.message, 'error');
+            }
+          });
+        }
+
+        const verifyAgentTwilioBtn = document.getElementById('verify-agent-twilio-btn');
+        if (verifyAgentTwilioBtn) {
+          verifyAgentTwilioBtn.addEventListener('click', async () => {
+            const newAgentPhoneInput = document.getElementById('new-agent-phone');
+            const phone = newAgentPhoneInput ? newAgentPhoneInput.value.trim() : '';
+            if (!phone) {
+              showToast('Please enter a phone number first.', 'error');
+              return;
+            }
+            try {
+              const name = newAgentNameInput ? newAgentNameInput.value.trim() : 'Staff Member';
+              const res = await fetch('/api/v1/portal/twilio/verify-caller-id', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone_number: phone, friendly_name: name })
+              });
+              if (!res.ok) throw new Error('Verification request failed');
+              showToast(`Phone number ${phone} submitted to Twilio Verified Caller IDs!`);
+            } catch (err) {
+              showToast('Twilio verification error: ' + err.message, 'error');
+            }
+          });
+        }
+
+        // Edit Profile click handler
+        if (editAgentProfileBtn) {
+          editAgentProfileBtn.addEventListener('click', async () => {
+            const agentId = staffAgentSelector.value;
+            if (!agentId) {
+              showToast('Please select a staff member to edit.', 'error');
+              return;
+            }
+
+            const selectedOpt = staffAgentSelector.options[staffAgentSelector.selectedIndex];
+            let name = selectedOpt ? selectedOpt.dataset.name : '';
+            let role = selectedOpt ? selectedOpt.dataset.role : '';
+            let email = selectedOpt ? (selectedOpt.dataset.dbEmail || selectedOpt.dataset.email) : '';
+            let phone = selectedOpt ? selectedOpt.dataset.phone : '';
+
+            try {
+              const res = await fetch(`/api/v1/portal/agents/${agentId}`);
+              if (res.ok) {
+                const agent = await res.json();
+                name = agent.name || name;
+                role = agentRole(agent.role) || role;
+                email = agent.db_email || agent.email || email;
+                phone = agent.phone_number || phone;
+              }
+            } catch (err) {
+              console.warn('Endpoint fetch fallback to dataset:', err);
+            }
+
+            document.getElementById('edit-agent-id').value = agentId;
+            document.getElementById('edit-agent-name').value = name || '';
+            document.getElementById('edit-agent-role').value = role || 'Service Advisor';
+            document.getElementById('edit-agent-email').value = email || '';
+            document.getElementById('edit-agent-phone').value = phone || '';
+
+            const editWaBadge = document.getElementById('edit-agent-whatsapp-badge');
+            if (editWaBadge) {
+              const isWaConn = selectedOpt ? selectedOpt.dataset.whatsappConnected === 'true' : false;
+              if (!phone) {
+                editWaBadge.className = 'badge danger';
+                editWaBadge.textContent = 'No Phone';
+              } else if (isWaConn) {
+                editWaBadge.className = 'badge success';
+                editWaBadge.textContent = 'Connected';
+              } else {
+                editWaBadge.className = 'badge danger';
+                editWaBadge.textContent = 'Disconnected';
+              }
+            }
+
+            openEditAgentDrawer();
+          });
+        }
+
+        // Verify edit agent phone with Twilio Caller ID
+        const verifyEditAgentTwilioBtn = document.getElementById('verify-edit-agent-twilio-btn');
+        if (verifyEditAgentTwilioBtn) {
+          verifyEditAgentTwilioBtn.addEventListener('click', async () => {
+            const phoneInput = document.getElementById('edit-agent-phone');
+            const nameInput = document.getElementById('edit-agent-name');
+            const phone = phoneInput ? phoneInput.value.trim() : '';
+            if (!phone) {
+              showToast('Please enter a phone number first.', 'error');
+              return;
+            }
+            try {
+              const name = nameInput ? nameInput.value.trim() : 'Staff Member';
+              const res = await fetch('/api/v1/portal/twilio/verify-caller-id', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone_number: phone, friendly_name: name })
+              });
+              if (!res.ok) throw new Error('Verification request failed');
+              showToast(`Phone number ${phone} submitted to Twilio Verified Caller IDs!`);
+            } catch (err) {
+              showToast('Twilio verification error: ' + err.message, 'error');
+            }
+          });
+        }
+
+        // Edit Staff Member Form submission handler
+        if (editAgentForm) {
+          editAgentForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const agentId = document.getElementById('edit-agent-id').value;
+            const name = document.getElementById('edit-agent-name').value.trim();
+            const role = document.getElementById('edit-agent-role').value.trim() || 'Service Advisor';
+            const email = document.getElementById('edit-agent-email').value.trim() || null;
+            const phone_number = document.getElementById('edit-agent-phone').value.trim() || null;
+
+            if (!agentId || !name) return;
+
+            try {
+              const response = await fetch(`/api/v1/portal/agents/${agentId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, role, email, phone_number })
+              });
+
+              if (!response.ok) {
+                const data = await response.json();
+                throw new Error(data.detail || 'Failed to update staff member');
+              }
+
+              const data = await response.json();
+
+              // Auto-trigger Twilio Verified Caller ID if phone_number is provided
+              if (phone_number) {
+                try {
+                  await fetch('/api/v1/portal/twilio/verify-caller-id', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone_number, friendly_name: name })
+                  });
+                } catch (e) {
+                  console.error('Auto caller-id verify error:', e);
+                }
+              }
+
+              showToast(`Staff member "${name}" updated successfully!`);
+              closeEditAgentDrawer();
+
+              // Reload staff view and re-select updated agent
+              await loadStaffView(agentId);
+            } catch (err) {
+              console.error(err);
+              showToast('Error updating staff member: ' + err.message, 'error');
+            }
+          });
+        }
+
+        // Delete Profile click handler
+        if (deleteAgentProfileBtn) {
+          deleteAgentProfileBtn.addEventListener('click', async () => {
+            const agentId = staffAgentSelector.value;
+            if (!agentId) return;
+            
+            const selectedText = staffAgentSelector.options[staffAgentSelector.selectedIndex].text;
+            if (!confirm(`Are you sure you want to deactivate the profile for "${selectedText}"?\nThis will remove their active Google integrations and automatically escalate any upcoming appointments to the supervisor for reassignment.`)) {
+              return;
+            }
+            
+            try {
+              const res = await fetch(`/api/v1/portal/agents/${agentId}`, {
+                method: 'DELETE'
+              });
+              const data = await res.json();
+              if (!res.ok) {
+                throw new Error(data.detail || 'Failed to delete profile');
+              }
+              if (data.escalated_appointments_count > 0) {
+                showToast(`Staff member profile deactivated. ${data.escalated_appointments_count} upcoming appointment(s) escalated for supervisor reassignment.`, 'warning');
+              } else {
+                showToast('Staff member profile deactivated successfully.', 'success');
+              }
+              
+              // Reload staff view and default to the first remaining agent
+              await loadStaffView();
+              if (typeof window.loadAppointments === 'function') {
+                await window.loadAppointments();
+              }
+            } catch (err) {
+              console.error(err);
+              showToast('Error deleting profile: ' + err.message, 'error');
+            }
+          });
+        }
+        
+        // Business Hours & Workdays Form handler
+        const staffBhoursForm = document.getElementById('staff-bhours-form');
+        if (staffBhoursForm && !staffBhoursForm.dataset.listenerAttached) {
+          staffBhoursForm.dataset.listenerAttached = 'true';
+          staffBhoursForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const bStartEl = document.getElementById('staff-bhours-start');
+            const bEndEl = document.getElementById('staff-bhours-end');
+            const dayCbs = document.querySelectorAll('.staff-day-cb');
+            
+            const bStart = bStartEl ? parseInt(bStartEl.value, 10) : 7;
+            const bEnd = bEndEl ? parseInt(bEndEl.value, 10) : 18;
+            const selectedDays = [];
+            dayCbs.forEach(cb => {
+              if (cb.checked) selectedDays.push(parseInt(cb.value, 10));
+            });
+            
+            if (selectedDays.length === 0) {
+              showToast('Please select at least one operating day of the week.', 'error');
+              return;
+            }
+            
+            try {
+              const res = await fetch('/api/v1/portal/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  business_hours_start: bStart,
+                  business_hours_end: bEnd,
+                  business_days: selectedDays
+                })
+              });
+              if (!res.ok) throw new Error('Failed to update business hours');
+              showToast('Business hours and operating workdays updated successfully!');
+            } catch (err) {
+              console.error(err);
+              showToast('Error saving business hours: ' + err.message, 'error');
+            }
+          });
+        }
+
+        isStaffListenerAttached = true;
+      }
+      
+    } catch (err) {
+      console.error(err);
+      showToast('Error loading staff view: ' + err.message, 'error');
+    }
+  }
+
+  async function loadAgentCalendar(agentId) {
+    if (!staffSlotsListBody) return;
+    try {
+      const response = await fetch(`/api/v1/portal/agents/${agentId}/calendar`);
+      if (!response.ok) throw new Error('Failed to fetch calendar slots');
+      const slots = await response.json();
+      
+      staffSlotsListBody.innerHTML = '';
+      
+      if (!Array.isArray(slots) || slots.length === 0) {
+        staffSlotsListBody.innerHTML = '<tr><td colspan="2" class="text-center py-6 text-muted">No availability slots scheduled.</td></tr>';
+        return;
+      }
+      
+      slots.forEach(slot => {
+        if (!slot || !slot.slot_datetime) return;
+        const tr = document.createElement('tr');
+        const rawDt = String(slot.slot_datetime).replace(' ', 'T');
+        const startDate = new Date(rawDt);
+        if (isNaN(startDate.getTime())) return;
+        const endDate = new Date(startDate.getTime() + 30 * 60 * 1000);
+        
+        const tz = activeBusinessTimezone || 'America/New_York';
+        const dateOptions = { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: tz };
+        const timeOptions = { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: tz };
+        
+        const dateString = startDate.toLocaleDateString(undefined, dateOptions);
+        const startTimeString = startDate.toLocaleTimeString(undefined, timeOptions);
+        const endTimeString = endDate.toLocaleTimeString(undefined, timeOptions);
+        
+        const timeWindowStr = `${dateString} @ ${startTimeString} - ${endTimeString}`;
+        
+        tr.innerHTML = `
+          <td><strong>${timeWindowStr}</strong></td>
+          <td><span class="badge ${slot.is_booked ? 'warning' : 'success'}">${slot.is_booked ? 'Booked' : 'Available'}</span></td>
+        `;
+        
+        staffSlotsListBody.appendChild(tr);
+      });
+      
+    } catch (err) {
+      console.error(err);
+      showToast('Error loading calendar: ' + err.message, 'error');
+    }
+  }
+
+  // --- VIEW 7: ADMIN NOTIFICATION CONFIG ---
+  let gmailSender = '';
+
+  async function loadGmailConfig() {
+    try {
+      const response = await fetch('/api/v1/portal/gmail-config');
+      if (!response.ok) throw new Error('Failed to fetch Gmail configurations');
+      const config = await response.json();
+      
+      const enableAgentSelectEl = document.getElementById('enable-agent-selection');
+      if (enableAgentSelectEl) {
+        enableAgentSelectEl.checked = !!config.enable_agent_selection;
+      }
+
+      const gmailEnabledEl = document.getElementById('gmail-enabled');
+      if (gmailEnabledEl) {
+        gmailEnabledEl.checked = !!config.gmail_enabled;
+      }
+
+      gmailSender = config.gmail_sender || '';
+
+      const recipientEl = document.getElementById('gmail-recipient');
+      if (recipientEl) {
+        recipientEl.value = config.gmail_recipient || '';
+      }
+
+      // Load Google Client ID
+      const clientIdInput = document.getElementById('gmail-client-id');
+      if (clientIdInput) {
+        clientIdInput.value = config.gmail_client_id || '';
+      }
+      
+      // Mask Client Secret
+      const clientSecretInput = document.getElementById('gmail-client-secret');
+      if (clientSecretInput) {
+        if (config.has_client_secret) {
+          clientSecretInput.value = '••••••••••••••••';
+        } else {
+          clientSecretInput.value = '';
+        }
+      }
+
+      // Populate exact Google Redirect URI to copy
+      const redirectUriDisplay = document.getElementById('gmail-redirect-uri-display');
+      if (redirectUriDisplay) {
+        redirectUriDisplay.textContent = window.location.origin + '/api/v1/portal/gmail/oauth/callback';
+      }
+
+      if (document.getElementById('admin-sms-phone')) {
+        document.getElementById('admin-sms-phone').value = config.admin_phone_number || '';
+      }
+
+      // Populate OAuth Connection status
+      const statusBadge = document.getElementById('gmail-oauth-status-badge');
+      const connectBtn = document.getElementById('connect-gmail-btn');
+      if (statusBadge && connectBtn) {
+        if (config.is_connected) {
+          statusBadge.className = 'badge success';
+          statusBadge.textContent = 'Connected';
+          connectBtn.textContent = 'Reconnect Google Account';
+        } else {
+          statusBadge.className = 'badge danger';
+          statusBadge.textContent = 'Disconnected';
+          connectBtn.textContent = 'Connect Gmail Account';
+        }
+      }
+      
+
+    } catch (err) {
+      console.error(err);
+      showToast('Error loading Gmail configuration: ' + err.message, 'error');
+    }
+  }
+
+  // Handle Save configuration
+  const gmailConfigForm = document.getElementById('gmail-config-form');
+  if (gmailConfigForm) {
+    gmailConfigForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const gmailEnabledEl = document.getElementById('gmail-enabled');
+      const enableAgentSelectEl = document.getElementById('enable-agent-selection');
+      const recipientEl = document.getElementById('gmail-recipient');
+      const adminPhoneEl = document.getElementById('admin-sms-phone');
+      const clientIdEl = document.getElementById('gmail-client-id');
+      const clientSecretEl = document.getElementById('gmail-client-secret');
+
+      const payload = {
+        gmail_enabled: gmailEnabledEl ? gmailEnabledEl.checked : false,
+        enable_agent_selection: enableAgentSelectEl ? enableAgentSelectEl.checked : false,
+        gmail_auth_type: 'oauth2',
+        gmail_sender: gmailSender,
+        gmail_recipient: recipientEl ? recipientEl.value.trim() : '',
+        admin_phone_number: adminPhoneEl ? adminPhoneEl.value.trim() : null,
+        gmail_client_id: clientIdEl ? clientIdEl.value.trim() : '',
+        gmail_client_secret: clientSecretEl ? clientSecretEl.value : ''
+      };
+      
+      try {
+        const response = await fetch('/api/v1/portal/gmail-config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!response.ok) throw new Error('Failed to save Gmail configurations');
+        showToast('Gmail configuration saved successfully!');
+        loadGmailConfig(); // reload to refresh fields and masking
+      } catch (err) {
+        console.error(err);
+        showToast('Error saving Gmail configuration: ' + err.message, 'error');
+      }
+    });
+  }
+
+  // Handle Test Connection button
+  const testGmailBtn = document.getElementById('test-gmail-btn');
+  if (testGmailBtn) {
+    testGmailBtn.addEventListener('click', async () => {
+      const gmailEnabledEl = document.getElementById('gmail-enabled');
+      const enableAgentSelectEl = document.getElementById('enable-agent-selection');
+      const recipientEl = document.getElementById('gmail-recipient');
+      const clientIdEl = document.getElementById('gmail-client-id');
+      const clientSecretEl = document.getElementById('gmail-client-secret');
+
+      const payload = {
+        gmail_enabled: gmailEnabledEl ? gmailEnabledEl.checked : false,
+        enable_agent_selection: enableAgentSelectEl ? enableAgentSelectEl.checked : false,
+        gmail_auth_type: 'oauth2',
+        gmail_sender: gmailSender,
+        gmail_recipient: recipientEl ? recipientEl.value.trim() : '',
+        gmail_client_id: clientIdEl ? clientIdEl.value.trim() : '',
+        gmail_client_secret: clientSecretEl ? clientSecretEl.value : ''
+      };
+      
+      if (!payload.gmail_recipient) {
+        showToast('Please fill out the Admin Notification Email first.', 'error');
+        return;
+      }
+      
+      showToast('Testing Gmail connection, sending test email...', 'info');
+      testGmailBtn.disabled = true;
+      
+      try {
+        const response = await fetch('/api/v1/portal/gmail-config/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        
+        testGmailBtn.disabled = false;
+        
+        if (!response.ok) {
+          const errData = await response.json();
+          throw new Error(errData.detail || 'Connection test failed');
+        }
+        
+        showToast('Test email sent successfully! Check your inbox.');
+      } catch (err) {
+        testGmailBtn.disabled = false;
+        console.error(err);
+        showToast('Connection Test Failed: ' + err.message, 'error');
+      }
+    });
+  }
+
+  // Handle Test Admin SMS button
+  const testAdminSmsBtn = document.getElementById('test-admin-sms-btn');
+  if (testAdminSmsBtn) {
+    testAdminSmsBtn.addEventListener('click', async () => {
+      const adminPhoneInput = document.getElementById('admin-sms-phone');
+      const admin_phone_number = adminPhoneInput ? adminPhoneInput.value.trim() : '';
+
+      if (!admin_phone_number) {
+        showToast('Please enter an Admin Contact Phone Number first.', 'error');
+        return;
+      }
+
+      showToast('Sending test SMS to Admin...', 'info');
+      testAdminSmsBtn.disabled = true;
+
+      try {
+        const response = await fetch('/api/v1/portal/sms/admin/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ admin_phone_number })
+        });
+
+        testAdminSmsBtn.disabled = false;
+
+        if (!response.ok) {
+          const errData = await response.json();
+          throw new Error(errData.detail || 'Failed to send Admin Test SMS');
+        }
+
+        showToast('Admin Test SMS sent successfully!');
+      } catch (err) {
+        testAdminSmsBtn.disabled = false;
+        console.error(err);
+        showToast('Admin SMS Test Failed: ' + err.message, 'error');
+      }
+    });
+  }
+
+  // Handle Connect Google Account popup redirection
+  const connectGmailBtn = document.getElementById('connect-gmail-btn');
+  if (connectGmailBtn) {
+    connectGmailBtn.addEventListener('click', async () => {
+      showToast('Redirecting to Google Account connection...', 'info');
+      try {
+        // Fetch consent authorization URL
+        const authUrlRes = await fetch('/api/v1/portal/gmail/oauth/auth-url');
+        if (!authUrlRes.ok) {
+          const data = await authUrlRes.json();
+          throw new Error(data.detail || 'Failed to generate OAuth redirect URL');
+        }
+        const authData = await authUrlRes.json();
+        
+        // Open Consent Screen in popup
+        const width = 600, height = 650;
+        const left = (window.screen.width - width) / 2;
+        const top = (window.screen.height - height) / 2;
+        const popup = window.open(
+          authData.auth_url,
+          'Google Account Authentication',
+          `width=${width},height=${height},left=${left},top=${top},status=no,resizable=yes,scrollbars=yes`
+        );
+        
+        // Listen for message confirmation back from the popup window callback page
+        window.addEventListener('message', function authMsgListener(event) {
+          if (event.data === 'gmail-auth-success') {
+            showToast('Google Account authorized and connected!');
+            loadGmailConfig();
+            window.removeEventListener('message', authMsgListener);
+          }
+        });
+
+      } catch (err) {
+        console.error(err);
+        showToast('Authentication failed: ' + err.message, 'error');
+      }
+    });
+  }
+
+
+  // --- VIEW: LIVE SMS INBOX & SMS CONFIGURATION ---
+  let activeConversationId = null;
+
+  async function loadSMSConfig() {
+    try {
+      const res = await fetch('/api/v1/portal/sms/config');
+      if (!res.ok) return;
+      const config = await res.json();
+      if (!config) return;
+
+      const supportPhoneEl = document.getElementById('sms-config-support-phone');
+      if (supportPhoneEl) supportPhoneEl.value = config.support_phone_number || '';
+      const adminPhoneEl = document.getElementById('sms-config-admin-phone');
+      if (adminPhoneEl) adminPhoneEl.value = config.admin_phone_number || '';
+      const envEl = document.getElementById('sms-config-environment');
+      if (envEl) {
+        const envVal = (config.environment === 'TESTING' || config.environment === 'TEST') ? 'TEST' : (config.environment || 'TEST');
+        envEl.value = envVal;
+      }
+      const quietStartEl = document.getElementById('sms-config-quiet-start');
+      if (quietStartEl) quietStartEl.value = config.quiet_start_time || '21:00';
+      const quietEndEl = document.getElementById('sms-config-quiet-end');
+      if (quietEndEl) quietEndEl.value = config.quiet_end_time || '08:00';
+      const autoRespEl = document.getElementById('sms-config-auto-responder');
+      if (autoRespEl) autoRespEl.value = config.auto_responder_template || '';
+      const shopAddrEl = document.getElementById('sms-config-shop-address');
+      if (shopAddrEl) shopAddrEl.value = config.business_address || '';
+      const mapsUrlEl = document.getElementById('sms-config-maps-url');
+      if (mapsUrlEl) mapsUrlEl.value = config.google_maps_url || '';
+      const timezoneEl = document.getElementById('sms-config-timezone');
+      if (timezoneEl && config.business_timezone) {
+        timezoneEl.value = config.business_timezone;
+      }
+      if (config.business_timezone) {
+        setAppBusinessTimezone(config.business_timezone);
+      }
+
+      // Load Escalation & Timing SLAs from portal config
+      try {
+        const portalRes = await fetch('/api/v1/portal/config');
+        if (portalRes.ok) {
+          const pCfg = await portalRes.json();
+          const minBufEl = document.getElementById('config-min-booking-buffer');
+          if (minBufEl) minBufEl.value = pCfg.min_booking_buffer_hours ?? 4;
+          const minCbBufEl = document.getElementById('config-min-callback-buffer');
+          if (minCbBufEl) minCbBufEl.value = pCfg.min_callback_buffer_hours ?? 2;
+          const supPhoneEl = document.getElementById('config-supervisor-phone');
+          if (supPhoneEl) supPhoneEl.value = pCfg.supervisor_alert_phone || '';
+          const slaAdvEl = document.getElementById('config-sla-advance');
+          if (slaAdvEl) slaAdvEl.value = pCfg.sla_advance_booking_hours ?? 4;
+          const slaMedEl = document.getElementById('config-sla-medium');
+          if (slaMedEl) slaMedEl.value = pCfg.sla_medium_booking_hours ?? 3;
+          const slaShortEl = document.getElementById('config-sla-short');
+          if (slaShortEl) slaShortEl.value = pCfg.sla_short_booking_hours ?? 1.5;
+          const finalRemEl = document.getElementById('config-final-reminder');
+          if (finalRemEl) finalRemEl.value = pCfg.final_reminder_hours ?? 2;
+          const mornGraceEl = document.getElementById('config-morning-grace');
+          if (mornGraceEl) mornGraceEl.value = pCfg.overnight_grace_minutes ?? 30;
+          const reassignWinEl = document.getElementById('config-reassign-window');
+          if (reassignWinEl) reassignWinEl.value = pCfg.reassignment_confirmation_window_minutes ?? 15;
+        }
+      } catch (pErr) {
+        console.error('Error loading escalation config:', pErr);
+      }
+    } catch (err) {
+      console.error('Error loading SMS config:', err);
+    }
+  }
+
+  let currentMatrixChannel = 'SMS';
+  async function loadSMSMatrixRules() {
+    try {
+      const res = await fetch('/api/v1/portal/sms/matrix-rules');
+      if (!res.ok) return;
+      const rules = await res.json();
+      const tbody = document.getElementById('sms-matrix-rules-tbody');
+      if (!tbody) return;
+
+      const events = ['BOOKING', 'RESCHEDULED', 'REASSIGNED', 'RESCHEDULED_REASSIGNED', 'CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_ADMIN', 'REMINDER_24H', 'REMINDER_2H', 'ESCALATION'];
+      const roles = ['customer', 'agent', 'previous_agent', 'admin'];
+
+      // Wire up channel buttons once
+      document.querySelectorAll('.matrix-channel-btn').forEach(btn => {
+        btn.onclick = (e) => {
+          e.preventDefault();
+          document.querySelectorAll('.matrix-channel-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          currentMatrixChannel = (btn.dataset.channel || 'SMS').toUpperCase();
+          renderMatrixTable();
+        };
+      });
+
+      function renderMatrixTable() {
+        tbody.innerHTML = '';
+        events.forEach(evt => {
+          const tr = document.createElement('tr');
+          const formattedEventName = evt.replace(/_/g, ' ');
+          tr.innerHTML = `<td><span style="font-size: 12px; font-weight: 500; color: var(--text-main);">${formattedEventName}</span></td>` + roles.map(r => {
+            const rule = rules.find(x => x.event_type === evt && x.recipient_role === r && (x.channel || 'WHATSAPP').toUpperCase() === currentMatrixChannel);
+            let checked = false;
+            if (rule) {
+              checked = Boolean(rule.enabled);
+            } else {
+              if (evt === 'ESCALATION') {
+                checked = (r === 'admin' && (currentMatrixChannel === 'SMS' || currentMatrixChannel === 'EMAIL'));
+              } else if (currentMatrixChannel === 'EMAIL') {
+                checked = (r === 'admin' && evt === 'BOOKING');
+              } else {
+                checked = (r !== 'admin' && !(evt === 'REASSIGNED' && r === 'customer'));
+              }
+            }
+            return `<td>
+              <label class="matrix-status-pill ${checked ? 'active' : 'disabled'}" style="cursor: pointer;">
+                <input type="checkbox" class="sms-matrix-cb" data-event="${evt}" data-role="${r}" ${checked ? 'checked' : ''} style="margin-right: 4px;">
+                <span>${checked ? 'Active' : 'Disabled'}</span>
+              </label>
+            </td>`;
+          }).join('');
+          tbody.appendChild(tr);
+        });
+
+        tbody.querySelectorAll('.sms-matrix-cb').forEach(cb => {
+          cb.addEventListener('change', async (e) => {
+            const event_type = e.target.dataset.event;
+            const recipient_role = e.target.dataset.role;
+            const enabled = e.target.checked;
+            const pill = e.target.closest('.matrix-status-pill');
+            if (pill) {
+              pill.className = `matrix-status-pill ${enabled ? 'active' : 'disabled'}`;
+              const labelSpan = pill.querySelector('span');
+              if (labelSpan) labelSpan.textContent = enabled ? 'Active' : 'Disabled';
+            }
+
+            try {
+              const res = await fetch('/api/v1/portal/sms/matrix-rules', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ event_type, recipient_role, channel: currentMatrixChannel, enabled })
+              });
+              if (!res.ok) {
+                throw new Error(`HTTP ${res.status}`);
+              }
+
+              // Update local rules cache on success
+              const existing = rules.find(x => x.event_type === event_type && x.recipient_role === recipient_role && (x.channel || 'WHATSAPP').toUpperCase() === currentMatrixChannel);
+              if (existing) {
+                existing.enabled = enabled;
+              } else {
+                rules.push({ event_type, recipient_role, channel: currentMatrixChannel, enabled });
+              }
+              showToast(`Notification rule updated for ${currentMatrixChannel}.`);
+            } catch (err) {
+              // Revert UI on failure
+              e.target.checked = !enabled;
+              if (pill) {
+                pill.className = `matrix-status-pill ${!enabled ? 'active' : 'disabled'}`;
+                const labelSpan = pill.querySelector('span');
+                if (labelSpan) labelSpan.textContent = !enabled ? 'Active' : 'Disabled';
+              }
+              showToast(`Failed to update notification rule.`, 'error');
+            }
+          });
+        });
+      }
+
+      renderMatrixTable();
+    } catch (err) {
+      console.error('Error loading matrix rules:', err);
+    }
+  }
+
+  async function loadSMSWhitelist() {
+    try {
+      const res = await fetch('/api/v1/portal/sms/whitelist');
+      if (!res.ok) return;
+      const whitelist = await res.json();
+      const tbody = document.getElementById('sms-whitelist-tbody');
+      if (!tbody) return;
+      tbody.innerHTML = '';
+
+      if (whitelist.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="text-muted text-center py-6">No whitelisted numbers added. All outbound SMS logged locally in test mode.</td></tr>';
+        return;
+      }
+
+      whitelist.forEach(item => {
+        const tr = document.createElement('tr');
+        const isWhatsApp = item.whatsapp_onboarded;
+        const statusBadge = isWhatsApp
+          ? `<span class="badge-whatsapp">WhatsApp Verified</span>`
+          : (item.twilio_verified ? `<span class="badge-verified">Whitelisted</span>` : `<span class="badge-unverified">Pending</span>`);
+
+        tr.innerHTML = `
+          <td><code style="font-size: 12.5px; background: rgba(255,255,255,0.05); padding: 2px 6px; border-radius: 4px;">${item.phone_number}</code></td>
+          <td>
+            <strong>${item.friendly_name || '--'}</strong>
+            ${item.recipient_role ? `<span class="badge" style="font-size: 9px; margin-left: 6px; padding: 1px 4px; background: rgba(255,255,255,0.08);">${item.recipient_role}</span>` : ''}
+          </td>
+          <td>${statusBadge}</td>
+          <td>
+            <button class="btn btn-sm btn-danger delete-whitelist-btn" data-id="${item.id}">
+              <svg class="btn-icon" viewBox="0 0 24 24" width="14" height="14"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+              Remove
+            </button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      tbody.querySelectorAll('.delete-whitelist-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const id = e.target.closest('button').dataset.id;
+          await fetch(`/api/v1/portal/sms/whitelist/${id}`, { method: 'DELETE' });
+          showToast('Whitelist entry removed.');
+          loadSMSWhitelist();
+        });
+      });
+    } catch (err) {
+      console.error('Error loading SMS whitelist:', err);
+    }
+  }
+
+  const smsGlobalForm = document.getElementById('sms-global-config-form');
+  if (smsGlobalForm) {
+    smsGlobalForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const payload = {
+        support_phone_number: document.getElementById('sms-config-support-phone').value,
+        admin_phone_number: document.getElementById('sms-config-admin-phone') ? document.getElementById('sms-config-admin-phone').value.trim() : null,
+        environment: document.getElementById('sms-config-environment').value,
+        quiet_start_time: document.getElementById('sms-config-quiet-start').value,
+        quiet_end_time: document.getElementById('sms-config-quiet-end').value,
+        auto_responder_template: document.getElementById('sms-config-auto-responder').value,
+        business_address: document.getElementById('sms-config-shop-address') ? document.getElementById('sms-config-shop-address').value.trim() : '',
+        google_maps_url: document.getElementById('sms-config-maps-url') ? document.getElementById('sms-config-maps-url').value.trim() : '',
+        business_timezone: document.getElementById('sms-config-timezone') ? document.getElementById('sms-config-timezone').value : activeBusinessTimezone
+      };
+      await fetch('/api/v1/portal/sms/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (payload.business_timezone) {
+        setAppBusinessTimezone(payload.business_timezone);
+      }
+      showToast('SMS global configuration saved successfully.');
+    });
+  }
+
+  const smsWhitelistForm = document.getElementById('sms-add-whitelist-form');
+  if (smsWhitelistForm) {
+    smsWhitelistForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const phone_number = document.getElementById('whitelist-phone-input').value;
+      const friendly_name = document.getElementById('whitelist-name-input').value;
+      await fetch('/api/v1/portal/twilio/verify-caller-id', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone_number, friendly_name })
+      });
+      showToast('Phone number added and caller ID verified.');
+      document.getElementById('whitelist-phone-input').value = '';
+      document.getElementById('whitelist-name-input').value = '';
+      loadSMSWhitelist();
+    });
+  }
+
+  const escalationConfigForm = document.getElementById('escalation-config-form');
+  if (escalationConfigForm) {
+    escalationConfigForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const saveBtn = document.getElementById('save-escalation-config-btn');
+      if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Saving...';
+      }
+
+      const payload = {
+        min_booking_buffer_hours: parseFloat(document.getElementById('config-min-booking-buffer').value) || 4,
+        min_callback_buffer_hours: parseFloat(document.getElementById('config-min-callback-buffer')?.value) || 2,
+        supervisor_alert_phone: document.getElementById('config-supervisor-phone').value.trim(),
+        sla_advance_booking_hours: parseFloat(document.getElementById('config-sla-advance').value) || 4,
+        sla_medium_booking_hours: parseFloat(document.getElementById('config-sla-medium').value) || 3,
+        sla_short_booking_hours: parseFloat(document.getElementById('config-sla-short').value) || 1.5,
+        final_reminder_hours: parseFloat(document.getElementById('config-final-reminder').value) || 2,
+        overnight_grace_minutes: parseInt(document.getElementById('config-morning-grace').value) || 30,
+        reassignment_confirmation_window_minutes: parseInt(document.getElementById('config-reassign-window').value) || 15
+      };
+
+      try {
+        const res = await fetch('/api/v1/portal/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) throw new Error('Failed to update escalation settings');
+        showToast('Escalation SLAs and timing settings saved successfully!');
+      } catch (err) {
+        console.error('Error saving escalation settings:', err);
+        showToast('Error saving escalation settings: ' + err.message, 'error');
+      } finally {
+        if (saveBtn) {
+          saveBtn.disabled = false;
+          saveBtn.textContent = 'Save Escalation Settings';
+        }
+      }
+    });
+  }
+
+  let cachedConversationsList = [];
+
+  async function loadSMSConversations(filterState = 'HANDOFF_REQUIRED') {
+    try {
+      const url = filterState && filterState !== 'all' ? `/api/v1/portal/sms/conversations?state=${filterState}` : '/api/v1/portal/sms/conversations';
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const convs = await res.json();
+      cachedConversationsList = convs;
+
+      // Update stat counter pills
+      let countAttention = 0, countProgress = 0, countResolved = 0;
+      convs.forEach(c => {
+        if (c.state === 'HANDOFF_REQUIRED') countAttention++;
+        else if (c.state === 'IN_PROGRESS') countProgress++;
+        else if (c.state === 'RESOLVED') countResolved++;
+      });
+      const statAttentionEl = document.getElementById('stat-sms-attention');
+      const statProgressEl = document.getElementById('stat-sms-progress');
+      const statResolvedEl = document.getElementById('stat-sms-resolved');
+      if (statAttentionEl) statAttentionEl.innerHTML = `<span class="stat-dot attention"></span> ${countAttention} Handoffs`;
+      if (statProgressEl) statProgressEl.innerHTML = `<span class="stat-dot progress"></span> ${countProgress} In Progress`;
+      if (statResolvedEl) statResolvedEl.innerHTML = `<span class="stat-dot resolved"></span> ${countResolved} Resolved`;
+
+      renderFilteredConversations();
+    } catch (err) {
+      console.error('Error loading SMS conversations:', err);
+    }
+  }
+
+  function renderFilteredConversations() {
+    const container = document.getElementById('sms-threads-list');
+    if (!container) return;
+    container.innerHTML = '';
+
+    const searchTerm = (document.getElementById('sms-thread-search-input')?.value || '').toLowerCase().trim();
+    const filtered = cachedConversationsList.filter(c => {
+      if (!searchTerm) return true;
+      const nameMatch = (c.customer_name || '').toLowerCase().includes(searchTerm);
+      const phoneMatch = (c.customer_phone || '').toLowerCase().includes(searchTerm);
+      return nameMatch || phoneMatch;
+    });
+
+    if (filtered.length === 0) {
+      container.innerHTML = '<div class="threads-empty-state"><p class="text-muted text-center">No matching conversation threads found.</p></div>';
+      return;
+    }
+
+    filtered.forEach(c => {
+      const item = document.createElement('div');
+      const isActive = c.id === activeConversationId;
+      item.className = `thread-item ${isActive ? 'active' : ''}`;
+      
+      let stateBadgeText = 'Bot Active';
+      let stateBadgeClass = 'automated';
+      let avatarRing = 'ring-resolved';
+
+      if (c.state === 'HANDOFF_REQUIRED') {
+        stateBadgeText = 'Needs Handoff';
+        stateBadgeClass = 'handoff';
+        avatarRing = 'ring-handoff';
+      } else if (c.state === 'IN_PROGRESS') {
+        stateBadgeText = 'In Progress';
+        stateBadgeClass = 'progress';
+        avatarRing = 'ring-progress';
+      } else if (c.state === 'RESOLVED') {
+        stateBadgeText = 'Resolved';
+        stateBadgeClass = 'resolved';
+        avatarRing = 'ring-resolved';
+      }
+
+      const initialChar = (c.customer_name ? c.customer_name.charAt(0) : 'P').toUpperCase();
+      const formattedTime = c.updated_at ? new Date(c.updated_at).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : '';
+
+      item.innerHTML = `
+        <div class="thread-avatar ${avatarRing}">${initialChar}</div>
+        <div class="thread-content-body">
+          <div class="thread-row-top">
+            <span class="thread-customer-title">${c.customer_name || c.customer_phone}</span>
+            <span class="thread-time">${formattedTime}</span>
+          </div>
+          <div class="thread-phone-subtitle">${c.customer_phone}</div>
+          <span class="thread-state-badge ${stateBadgeClass}">${stateBadgeText}</span>
+        </div>
+      `;
+
+      item.addEventListener('click', () => {
+        activeConversationId = c.id;
+        document.querySelectorAll('.thread-item').forEach(el => el.classList.remove('active'));
+        item.classList.add('active');
+        loadSMSMessages(c.id, c);
+      });
+      container.appendChild(item);
+    });
+  }
+
+  // Search input handler
+  const searchInputEl = document.getElementById('sms-thread-search-input');
+  if (searchInputEl) {
+    searchInputEl.addEventListener('input', () => {
+      renderFilteredConversations();
+    });
+  }
+
+  let activeConversationDetails = null;
+
+  async function loadSMSMessages(conversationId, convDetails) {
+    try {
+      activeConversationDetails = convDetails;
+      const initialChar = (convDetails.customer_name ? convDetails.customer_name.charAt(0) : 'P').toUpperCase();
+      
+      const avatarEl = document.getElementById('chat-customer-avatar');
+      if (avatarEl) avatarEl.textContent = initialChar;
+
+      const nameEl = document.getElementById('chat-customer-name');
+      if (nameEl) nameEl.textContent = convDetails.customer_name || convDetails.customer_phone;
+
+      const phoneEl = document.getElementById('chat-customer-phone');
+      if (phoneEl) phoneEl.textContent = `Phone: ${convDetails.customer_phone}`;
+
+      const stateBadgeEl = document.getElementById('chat-state-badge');
+      if (stateBadgeEl) {
+        stateBadgeEl.textContent = convDetails.state || 'ACTIVE';
+        stateBadgeEl.className = `badge ${convDetails.state === 'HANDOFF_REQUIRED' ? 'danger' : convDetails.state === 'IN_PROGRESS' ? 'warning' : 'success'}`;
+      }
+      
+      const resolveBtn = document.getElementById('mark-resolved-btn');
+      if (resolveBtn) {
+        resolveBtn.style.display = 'inline-flex';
+        resolveBtn.onclick = async () => {
+          await fetch('/api/v1/portal/sms/resolve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ conversation_id: conversationId })
+          });
+          showToast('Thread marked as resolved.');
+          loadSMSConversations(document.getElementById('sms-thread-filter').value);
+        };
+      }
+
+      document.getElementById('sms-reply-input').disabled = false;
+      document.getElementById('send-sms-reply-btn').disabled = false;
+
+      // Setup Quick Reply Chips
+      document.querySelectorAll('#quick-reply-bar .quick-chip').forEach(chip => {
+        chip.onclick = () => {
+          const text = chip.dataset.text;
+          const replyInput = document.getElementById('sms-reply-input');
+          if (replyInput) {
+            replyInput.value = text;
+            replyInput.focus();
+          }
+        };
+      });
+
+      // Render Appointment Context Sidebar
+      const contextDiv = document.getElementById('sms-context-details');
+      if (contextDiv) {
+        const apptId = convDetails.context_appointment_id;
+        let actionButtonsHtml = '';
+        if (apptId) {
+          actionButtonsHtml = `
+            <div class="context-actions-group">
+              <button class="btn btn-sm btn-secondary sidebar-reschedule-btn" data-id="${apptId}" style="width: 100%;">📅 Reschedule Booking</button>
+              <button class="btn btn-sm btn-danger sidebar-cancel-btn" data-id="${apptId}" style="width: 100%;">❌ Cancel Booking</button>
+              <select class="form-input sidebar-reassign-select" data-id="${apptId}" style="font-size: 12px; padding: 6px; width: 100%;">
+                <option value="">👤 Reassign Staff Agent...</option>
+              </select>
+            </div>
+          `;
+        }
+
+        contextDiv.innerHTML = `
+          <div class="context-info-card">
+            <div class="context-info-row">
+              <span class="context-label">Customer:</span>
+              <span class="context-value">${convDetails.customer_name || 'N/A'}</span>
+            </div>
+            <div class="context-info-row">
+              <span class="context-label">Phone:</span>
+              <span class="context-value">${convDetails.customer_phone}</span>
+            </div>
+            <div class="context-info-row">
+              <span class="context-label">State:</span>
+              <span class="context-value">${convDetails.state || 'N/A'}</span>
+            </div>
+          </div>
+
+          <div class="context-info-card">
+            <div class="context-info-row">
+              <span class="context-label">Booking Ref:</span>
+              <span class="context-value">#${convDetails.context_appointment_id || 'N/A'}</span>
+            </div>
+            <div class="context-info-row">
+              <span class="context-label">Service:</span>
+              <span class="context-value">${convDetails.appointment_service_type || 'N/A'}</span>
+            </div>
+            <div class="context-info-row">
+              <span class="context-label">Time:</span>
+              <span class="context-value">${convDetails.appointment_time || 'N/A'}</span>
+            </div>
+            <div class="context-info-row">
+              <span class="context-label">Assigned:</span>
+              <span class="context-value">${convDetails.agent_name || 'Unassigned'}</span>
+            </div>
+          </div>
+          ${actionButtonsHtml}
+        `;
+
+        if (apptId) {
+          const rescheduleBtn = contextDiv.querySelector('.sidebar-reschedule-btn');
+          const cancelBtn = contextDiv.querySelector('.sidebar-cancel-btn');
+          const reassignSelect = contextDiv.querySelector('.sidebar-reassign-select');
+
+          if (rescheduleBtn) {
+            rescheduleBtn.addEventListener('click', async () => {
+              const newTime = prompt('Enter new date & time (e.g. 2026-06-12 14:00:00):');
+              if (!newTime) return;
+              try {
+                const res = await fetch(`/api/v1/portal/service-requests/${apptId}/reschedule`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ booking_time: newTime })
+                });
+                if (!res.ok) throw new Error('Reschedule failed');
+                showToast('Appointment rescheduled!');
+                loadSMSMessages(conversationId, convDetails);
+              } catch (e) {
+                showToast('Error rescheduling: ' + e.message, 'error');
+              }
+            });
+          }
+
+          if (cancelBtn) {
+            cancelBtn.addEventListener('click', async () => {
+              if (!confirm('Are you sure you want to cancel this appointment?')) return;
+              try {
+                const res = await fetch(`/api/v1/portal/service-requests/${apptId}/status`, {
+                  method: 'PATCH',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ status: 'cancelled' })
+                });
+                if (!res.ok) throw new Error('Cancellation failed');
+                showToast('Appointment cancelled!');
+                loadSMSMessages(conversationId, convDetails);
+              } catch (e) {
+                showToast('Error cancelling: ' + e.message, 'error');
+              }
+            });
+          }
+
+          if (reassignSelect) {
+            const isApptDone = ['completed', 'done', 'cancelled', 'cancelled_by_customer'].includes(convDetails.appointment_status);
+            if (isApptDone) {
+              reassignSelect.disabled = true;
+              reassignSelect.title = "Cannot reassign agent for completed or cancelled tasks";
+            } else {
+              requestAvailableAgents(apptId, () => reassignSelect.isConnected).then(data => {
+                if (!data || !reassignSelect.isConnected) return;
+                const agents = data.agents || [];
+                let opts = '<option value="">👤 Reassign Staff Agent...</option>';
+                agents.forEach(a => {
+                  const isSel = (convDetails.assigned_staff_id && Number(convDetails.assigned_staff_id) === Number(a.id)) || (convDetails.staff_agent_name === a.name);
+                  const isUnavailable = a.is_available === false;
+                  const labelSuffix = isUnavailable ? ` (Unavailable: ${a.reason || 'Busy'})` : '';
+                  const disabledAttr = (isUnavailable && !isSel) ? 'disabled' : '';
+                  opts += `<option value="${a.id}" ${isSel ? 'selected' : ''} ${disabledAttr}>${a.name}${labelSuffix}</option>`;
+                });
+                reassignSelect.innerHTML = opts;
+              }).catch(console.error);
+
+              reassignSelect.addEventListener('change', async (e) => {
+                const agentId = e.target.value;
+                if (!agentId) return;
+                try {
+                  const res = await fetch(`/api/v1/portal/service-requests/${apptId}/assign-agent`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ staff_agent_id: parseInt(agentId) })
+                  });
+                  if (!res.ok) throw new Error('Reassignment failed');
+                  showToast('Agent reassigned!');
+                  loadSMSMessages(conversationId, convDetails);
+                } catch (e) {
+                  showToast('Error reassigning agent: ' + e.message, 'error');
+                }
+              });
+            }
+          }
+        }
+      }
+
+      // Load Chat Messages
+      const res = await fetch(`/api/v1/portal/sms/conversations/${conversationId}/messages`);
+      if (!res.ok) return;
+      const msgs = await res.json();
+      const container = document.getElementById('chat-messages-container');
+      container.innerHTML = '';
+
+      if (msgs.length === 0) {
+        container.innerHTML = '<div class="chat-placeholder"><p class="text-muted">No messages recorded in this conversation.</p></div>';
+        return;
+      }
+
+      msgs.forEach(m => {
+        const msgDiv = document.createElement('div');
+        const isCustomer = m.direction === 'inbound';
+        const isSystem = m.sender_type === 'SYSTEM_BOT' || m.sender_name === 'System';
+        
+        let bubbleTypeClass = 'outbound';
+        if (isCustomer) bubbleTypeClass = 'inbound';
+        else if (isSystem) bubbleTypeClass = 'system';
+
+        msgDiv.className = `chat-bubble ${bubbleTypeClass}`;
+        
+        const senderDisplayName = m.sender_name || (isCustomer ? 'Customer' : isSystem ? '🤖 Bot Auto-Responder' : '👤 Human Agent');
+        const formattedTimeString = formatLocalTimestamp(m.created_at, { timeOnly: true });
+
+        msgDiv.innerHTML = `
+          <div class="bubble-sender-name">${senderDisplayName}</div>
+          <div class="bubble-body-text">${m.body}</div>
+          <div class="bubble-time-stamp">${formattedTimeString} ${!isCustomer ? '✓✓' : ''}</div>
+        `;
+        container.appendChild(msgDiv);
+      });
+
+      container.scrollTop = container.scrollHeight;
+    } catch (err) {
+      console.error('Error loading SMS messages:', err);
+    }
+  }
+
+  // Send SMS Reply handler
+  const sendReplyBtn = document.getElementById('send-sms-reply-btn');
+  if (sendReplyBtn) {
+    sendReplyBtn.addEventListener('click', async () => {
+      const input = document.getElementById('sms-reply-input');
+      const message = input.value.trim();
+      if (!message || !activeConversationId) return;
+
+      await fetch('/api/v1/portal/sms/reply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversation_id: activeConversationId, message })
+      });
+      input.value = '';
+      showToast('SMS reply sent.');
+      loadSMSConversations(document.getElementById('sms-thread-filter').value);
+      if (activeConversationId && activeConversationDetails) {
+        await loadSMSMessages(activeConversationId, activeConversationDetails);
+      }
+    });
+  }
+
+  // SMS Thread Filter dropdown change
+  const smsThreadFilter = document.getElementById('sms-thread-filter');
+  if (smsThreadFilter) {
+    smsThreadFilter.addEventListener('change', (e) => {
+      loadSMSConversations(e.target.value);
+    });
+  }
+
+  // Relative time helper
+  function formatRelativeTime(dateStr) {
+    if (!dateStr) return '';
+    try {
+      let cleanStr = String(dateStr).trim();
+      if (cleanStr.includes(' ') && !cleanStr.includes('T')) cleanStr = cleanStr.replace(' ', 'T');
+      if (!cleanStr.endsWith('Z') && !/[+-]\d{2}:?\d{2}$/.test(cleanStr)) cleanStr += 'Z';
+      const d = new Date(cleanStr);
+      if (isNaN(d.getTime())) return '';
+      const diffMs = Date.now() - d.getTime();
+      const diffSecs = Math.round(diffMs / 1000);
+      if (diffSecs < 60) return 'just now';
+      const diffMins = Math.round(diffSecs / 60);
+      if (diffMins < 60) return `${diffMins}m ago`;
+      const diffHours = Math.round(diffMins / 60);
+      if (diffHours < 24) return `${diffHours}h ago`;
+      const diffDays = Math.round(diffHours / 24);
+      return `${diffDays}d ago`;
+    } catch {
+      return '';
+    }
+  }
+
+  // Appointment Details & Lifecycle Audit Drawer
+  window.openSMSLogDrawer = async function(appointmentId) {
+    try {
+      const subtitleEl = document.getElementById('sms-log-drawer-subtitle');
+      if (subtitleEl) subtitleEl.innerText = `Appointment #${appointmentId}`;
+      const statusBadgeEl = document.getElementById('details-drawer-status-badge');
+      if (statusBadgeEl) statusBadgeEl.style.display = 'none';
+
+      document.getElementById('sms-log-drawer-overlay').classList.add('active');
+      document.getElementById('sms-log-drawer').classList.add('active');
+
+      // Initialize tabs
+      const tabBtns = document.querySelectorAll('.details-tab-btn');
+      const tabPanes = document.querySelectorAll('.details-tab-pane');
+      const switchTab = (tabName) => {
+        tabBtns.forEach(b => {
+          b.classList.toggle('active', b.dataset.tab === tabName);
+        });
+        tabPanes.forEach(p => {
+          if (p.id === `tab-pane-${tabName}`) {
+            p.style.display = 'flex';
+            p.classList.add('active');
+          } else {
+            p.style.display = 'none';
+            p.classList.remove('active');
+          }
+        });
+      };
+
+      tabBtns.forEach(btn => {
+        btn.onclick = () => switchTab(btn.dataset.tab);
+      });
+      // Default to trace
+      switchTab('trace');
+
+      // Fetch unified trace API
+      let traceData = null;
+      try {
+        const res = await fetch(`/api/v1/portal/service-requests/${appointmentId}/trace`);
+        if (res.ok) {
+          traceData = await res.json();
+        }
+      } catch (e) {
+        console.warn('Trace endpoint fetch failed, falling back to SMS logs endpoint:', e);
+      }
+
+      // Fallback if trace endpoint returned non-200
+      if (!traceData) {
+        const fbRes = await fetch(`/api/v1/portal/sms/logs/appointment/${appointmentId}`);
+        if (!fbRes.ok) return;
+        const fbJson = await fbRes.json();
+        traceData = {
+          appointment: fbJson.appointment,
+          raw_sms_logs: fbJson.logs || [],
+          trace: []
+        };
+      }
+
+      const app = traceData.appointment;
+      const trace = traceData.trace || [];
+      const logs = traceData.raw_sms_logs || [];
+
+      // Update counters
+      const traceCountEl = document.getElementById('trace-event-count');
+      if (traceCountEl) traceCountEl.innerText = trace.length;
+      const smsCountEl = document.getElementById('sms-log-count');
+      if (smsCountEl) smsCountEl.innerText = logs.length;
+
+      // Update Header Subtitle & Status Badge
+      if (app) {
+        if (subtitleEl) {
+          subtitleEl.innerText = `Appointment #${appointmentId} • ${app.customer_name || 'Customer'}`;
+        }
+        if (statusBadgeEl) {
+          const st = (app.status || 'PENDING').toUpperCase();
+          const isCancelled = st.includes('CANCEL');
+          const isDone = st === 'CONFIRMED' || st === 'COMPLETED' || st === 'DONE';
+          statusBadgeEl.textContent = st;
+          statusBadgeEl.className = `badge ${isDone ? 'success' : (isCancelled ? 'danger' : 'warning')}`;
+          statusBadgeEl.style.display = 'inline-block';
+        }
+      }
+
+      // 1. Persistent Context Header Card
+      const overviewCard = document.getElementById('details-overview-header-card');
+      if (overviewCard) {
+        if (app) {
+          const vehicleStr = [app.vehicle_year, app.vehicle_make, app.vehicle_model].filter(Boolean).join(' ') || (app.vehicle_str || 'N/A');
+          let appTimeStr = app.booking_time || app.time_slot || 'N/A';
+          if (app.booking_start_time && app.booking_end_time) {
+            appTimeStr = `${formatShortDate(app.booking_start_time)} — ${formatShortDate(app.booking_end_time)} (${app.duration_minutes || 60} mins)`;
+          } else if (app.booking_time) {
+            appTimeStr = formatShortDate(app.booking_time);
+          }
+
+          const escBadge = (app.escalation_status === 'escalated')
+            ? `<span class="badge danger" style="font-size: 10px; margin-left: 6px;">Escalated (${app.escalation_reason || 'Alert'})</span>`
+            : (app.escalation_status === 'reassigned' ? `<span class="badge warning" style="font-size: 10px; margin-left: 6px;">Reassigned</span>` : '');
+
+          overviewCard.innerHTML = `
+            <div style="background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <div style="display: flex; align-items: center;">
+                  <strong style="color: #fff; font-size: 13px; font-weight: 600;">Service Overview</strong>
+                  ${escBadge}
+                </div>
+                <span class="text-muted" style="font-size: 11px;">Created: ${app.created_at ? formatShortDate(app.created_at) : 'N/A'}</span>
+              </div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; font-size: 12px;">
+                <div><span style="color: var(--text-muted);">Customer:</span> <span style="color: var(--text-main); font-weight: 500;">${app.customer_name || 'N/A'}</span></div>
+                <div><span style="color: var(--text-muted);">Phone:</span> <span style="color: var(--text-main); font-weight: 500;">${app.customer_phone || 'N/A'}</span></div>
+                <div><span style="color: var(--text-muted);">Agent:</span> <span style="color: var(--text-main); font-weight: 500;">${app.staff_agent_name || app.assigned_agent_name || 'Unassigned'}</span></div>
+                <div><span style="color: var(--text-muted);">Details:</span> <span style="color: var(--text-main); font-weight: 500;">${vehicleStr}</span></div>
+                <div style="grid-column: span 2;"><span style="color: var(--text-muted);">Service:</span> <span style="color: var(--text-main); font-weight: 500;">${formatIssueDescription(app.service_type) || 'N/A'}</span></div>
+                <div style="grid-column: span 2;"><span style="color: var(--text-muted);">Scheduled Window:</span> <span style="color: var(--text-main); font-weight: 500;">${appTimeStr}</span></div>
+              </div>
+            </div>
+          `;
+        } else {
+          overviewCard.innerHTML = '';
+        }
+      }
+
+      // 2. Render Tab 1: Full Lifecycle Trace
+      const timelineContainer = document.getElementById('trace-timeline-container');
+      const filterChips = document.querySelectorAll('.trace-filter-chip');
+
+      const renderTimeline = (activeFilter = 'all') => {
+        if (!timelineContainer) return;
+        timelineContainer.innerHTML = '';
+
+        const filteredEvents = trace.filter(ev => {
+          if (activeFilter === 'all') return true;
+          if (activeFilter === 'agent') return ['ASSIGNMENT', 'REASSIGNMENT', 'CONFIRMATION', 'DECLINE'].includes(ev.category);
+          if (activeFilter === 'escalation') return ev.category === 'ESCALATION';
+          if (activeFilter === 'status') return ['STATUS', 'CREATION', 'RESCHEDULE'].includes(ev.category);
+          return true;
+        });
+
+        if (filteredEvents.length === 0) {
+          timelineContainer.innerHTML = `
+            <p class="text-muted" style="font-size: 13px; padding: 12px 0;">
+              No events recorded matching this filter.
+            </p>
+          `;
+          return;
+        }
+
+        filteredEvents.forEach(ev => {
+          const item = document.createElement('div');
+          item.className = 'timeline-item';
+
+          const nodeColorClass = `node-${ev.badge_color || 'info'}`;
+          const formattedTs = ev.timestamp ? formatLocalTimestamp(ev.timestamp) : 'N/A';
+          const relTime = ev.timestamp ? formatRelativeTime(ev.timestamp) : '';
+          const relTimeHtml = relTime ? `<span style="opacity: 0.7; font-size: 11px;">(${relTime})</span>` : '';
+
+          // Meta tags rendering
+          let tagsHtml = '';
+          if (ev.metadata && typeof ev.metadata === 'object') {
+            const metaTags = [];
+            if (ev.metadata.old_agent_name && ev.metadata.new_agent_name) {
+              metaTags.push(`From: ${ev.metadata.old_agent_name} → To: ${ev.metadata.new_agent_name}`);
+            }
+            if (ev.metadata.reason) metaTags.push(`Reason: ${ev.metadata.reason}`);
+            if (ev.metadata.reply_text) metaTags.push(`Reply: "${ev.metadata.reply_text}"`);
+            if (ev.metadata.twilio_sid) metaTags.push(`SID: ${ev.metadata.twilio_sid.slice(0, 10)}...`);
+            if (ev.metadata.status && ev.category === 'DISPATCH') metaTags.push(`Status: ${ev.metadata.status}`);
+
+            if (metaTags.length > 0) {
+              tagsHtml = `
+                <div class="timeline-tags-wrap">
+                  ${metaTags.map(t => `<span class="timeline-meta-tag">${t}</span>`).join('')}
+                </div>
+              `;
+            }
+          }
+
+          // Optional quick action if escalated or declined
+          const isActionable = (ev.category === 'ESCALATION' || ev.category === 'DECLINE') &&
+                               app && !['completed', 'done', 'cancelled', 'cancelled_by_customer'].includes(app.status);
+          const actionBtnHtml = isActionable ? `
+            <button type="button" class="btn btn-primary btn-sm timeline-quick-reassign" style="background: #ef4444; border-color: #ef4444; color: #fff; margin-top: 8px; font-size: 11.5px; padding: 3px 8px;">
+              Reassign Agent
+            </button>
+          ` : '';
+
+          item.innerHTML = `
+            <div class="timeline-node-icon ${nodeColorClass}"></div>
+            <div class="timeline-card">
+              <div class="timeline-header">
+                <div class="timeline-title-wrap">
+                  <span class="timeline-category-tag">${ev.category || 'EVENT'}</span>
+                  <span class="timeline-title">${ev.title || 'Event Log'}</span>
+                </div>
+                <span class="badge ${ev.badge_color || 'info'}" style="font-size: 10.5px; padding: 2px 7px;">${ev.badge_color === 'success' ? '✓ Resolved' : (ev.badge_color === 'danger' ? '⚠️ Alert' : 'Log')}</span>
+              </div>
+              <div class="timeline-meta">
+                <span>By <span class="timeline-actor-pill">${ev.actor || 'System'}</span></span>
+                <span>•</span>
+                <span>${formattedTs} ${relTimeHtml}</span>
+              </div>
+              <div class="timeline-desc">${ev.description || ''}</div>
+              ${tagsHtml}
+              ${actionBtnHtml}
+            </div>
+          `;
+
+          const reassignBtn = item.querySelector('.timeline-quick-reassign');
+          if (reassignBtn) {
+            reassignBtn.addEventListener('click', () => {
+              if (window.openReassignModal) window.openReassignModal(app);
+            });
+          }
+
+          timelineContainer.appendChild(item);
+        });
+      };
+
+      // Filter chips event listeners
+      filterChips.forEach(chip => {
+        chip.onclick = () => {
+          filterChips.forEach(c => c.classList.remove('active'));
+          chip.classList.add('active');
+          renderTimeline(chip.dataset.filter);
+        };
+      });
+
+      renderTimeline('all');
+
+      // 3. Render Tab 2: SMS Dispatches
+      const smsContainer = document.getElementById('sms-log-items-container');
+      if (smsContainer) {
+        smsContainer.innerHTML = '';
+        if (logs.length === 0) {
+          smsContainer.innerHTML = `<p class="text-muted" style="font-size: 13px;">No SMS logs recorded for this appointment.</p>`;
+        } else {
+          const templateLabels = {
+            'booking': 'Booking Confirmation',
+            'booking_confirmation': 'Booking Confirmation',
+            'agent_booking': 'Agent Assignment Alert',
+            'admin_booking': 'Admin Notification Alert',
+            'agent_reassigned': 'Agent Reassignment Notice',
+            'unassignment': 'Previous Agent Unassigned Notice',
+            'reschedule': 'Reschedule Confirmation',
+            'cancellation': 'Cancellation Notice',
+            'reminder_24h': '24h Pre-Appointment Reminder',
+            'reminder_2h': '2h Pre-Appointment Reminder'
+          };
+          const getTemplateTitle = (raw) => {
+            if (!raw) return 'SMS Notification';
+            if (templateLabels[raw]) return templateLabels[raw];
+            return raw.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+          };
+          const getStatusBadgeHtml = (status) => {
+            const s = (status || '').toUpperCase();
+            if (s === 'DELIVERED') return `<span class="badge success">✅ Delivered</span>`;
+            if (s === 'SENT') return `<span class="badge success">✓ Sent</span>`;
+            if (s === 'FAILED') return `<span class="badge" style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2); color: #f87171;">❌ Failed</span>`;
+            if (s === 'SKIPPED_NOT_WHITELISTED') return `<span class="badge warning">⚠️ Skipped (Not Whitelisted)</span>`;
+            if (s === 'SKIPPED_OPT_OUT') return `<span class="badge warning">⚠️ Skipped (Opt-out)</span>`;
+            if (s === 'QUEUED') return `<span class="badge" style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.2); color: #60a5fa;">⏳ Queued</span>`;
+            return `<span class="badge" style="background: rgba(255,255,255,0.05); color: var(--text-muted); border: 1px solid var(--border-card);">${s || 'PENDING'}</span>`;
+          };
+
+          logs.forEach(l => {
+            const item = document.createElement('div');
+            item.style.cssText = 'padding: 12px 14px; border: 1px solid var(--border-card); border-radius: 8px; background: var(--bg-card); display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px;';
+            
+            const recipientRole = (l.recipient_type || 'CUSTOMER').toUpperCase();
+            const isFailed = l.status === 'FAILED';
+            const isNotWhitelisted = l.status === 'SKIPPED_NOT_WHITELISTED';
+            const isOptOut = l.status === 'SKIPPED_OPT_OUT';
+            const isQueued = l.status === 'QUEUED';
+
+            let reasonHtml = '';
+            if (isNotWhitelisted) {
+              reasonHtml = `<div style="font-size: 12px; color: var(--text-muted); border-left: 2px solid #d97706; padding-left: 8px; margin-top: 4px; line-height: 1.4;"><strong style="color: #d97706;">Skip Reason:</strong> Recipient phone number is not on the staging whitelist. Add number to SMS Config Whitelist to enable delivery.</div>`;
+            } else if (isOptOut) {
+              reasonHtml = `<div style="font-size: 12px; color: var(--text-muted); border-left: 2px solid #d97706; padding-left: 8px; margin-top: 4px; line-height: 1.4;"><strong style="color: #d97706;">Skip Reason:</strong> Customer has opted out of receiving automated SMS alerts.</div>`;
+            } else if (isFailed) {
+              reasonHtml = `<div style="font-size: 12px; color: var(--text-muted); border-left: 2px solid #dc2626; padding-left: 8px; margin-top: 4px; line-height: 1.4;"><strong style="color: #dc2626;">Error Details:</strong> ${l.error_message || l.error_code || 'Twilio delivery failed.'}</div>`;
+            } else if (isQueued && l.scheduled_send_at) {
+              reasonHtml = `<div style="font-size: 12px; color: var(--text-muted); border-left: 2px solid #38bdf8; padding-left: 8px; margin-top: 4px; line-height: 1.4;"><strong style="color: #38bdf8;">Quiet Hours Queue:</strong> Scheduled for release at ${formatLocalTimestamp(l.scheduled_send_at)}</div>`;
+            }
+
+            const canRetry = isFailed || isNotWhitelisted || isOptOut;
+
+            const metaParts = [];
+            metaParts.push(`Recipient: <span style="color: var(--text-main);">${l.recipient_phone}</span>`);
+            metaParts.push(`Logged: <span style="color: var(--text-main);">${formatLocalTimestamp(l.created_at)}</span>`);
+            if (l.sent_at) metaParts.push(`Sent: <span style="color: var(--text-main);">${formatLocalTimestamp(l.sent_at)}</span>`);
+            if (l.twilio_message_sid) metaParts.push(`SID: <code style="font-size: 10.5px; color: var(--text-main);">${l.twilio_message_sid}</code>`);
+            if (l.retry_count > 0) metaParts.push(`Retries: <span style="color: var(--text-main);">${l.retry_count}</span>`);
+
+            item.innerHTML = `
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <span style="font-size: 11px; font-weight: 600; color: var(--text-muted); margin-right: 6px; letter-spacing: 0.5px;">[${recipientRole}]</span>
+                  <strong style="color: #fff; font-size: 13px; font-weight: 500;">${getTemplateTitle(l.template_type)}</strong>
+                </div>
+                <div>${getStatusBadgeHtml(l.status)}</div>
+              </div>
+
+              <div style="font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-top: 2px;">
+                ${metaParts.join(' &nbsp;•&nbsp; ')}
+              </div>
+
+              ${reasonHtml}
+
+              ${canRetry ? `<button class="btn btn-secondary btn-sm retry-sms-btn" data-id="${l.id}" style="align-self: flex-start; margin-top: 6px; font-size: 11.5px; padding: 4px 10px;">Retry SMS Dispatch</button>` : ''}
+            `;
+            smsContainer.appendChild(item);
+          });
+
+          smsContainer.querySelectorAll('.retry-sms-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+              const logId = e.target.dataset.id;
+              await fetch(`/api/v1/portal/sms/retry/${logId}`, { method: 'POST' });
+              showToast('Retry SMS dispatched.');
+              window.openSMSLogDrawer(appointmentId);
+            });
+          });
+        }
+      }
+
+      // 4. Render Tab 3: Service Context
+      const contextContainer = document.getElementById('service-context-container');
+      if (contextContainer && app) {
+        contextContainer.innerHTML = `
+          <div style="background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 8px; padding: 14px; font-size: 12.5px; line-height: 1.6;">
+            <h4 style="color: #fff; font-size: 13px; font-weight: 600; margin-bottom: 10px;">Appointment Parameters</h4>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px;">
+              <div><span style="color: var(--text-muted);">Request ID:</span> #${app.id}</div>
+              <div><span style="color: var(--text-muted);">Booking Type:</span> ${app.booking_type || 'appointment'}</div>
+              <div><span style="color: var(--text-muted);">Estimated Duration:</span> ${app.duration_minutes || 60} mins</div>
+              <div><span style="color: var(--text-muted);">Assigned Agent ID:</span> ${app.staff_agent_id ? '#' + app.staff_agent_id : 'None'}</div>
+              <div><span style="color: var(--text-muted);">Confirmation Cutoff:</span> ${app.confirmation_cutoff_at ? formatLocalTimestamp(app.confirmation_cutoff_at) : 'None'}</div>
+              <div><span style="color: var(--text-muted);">Confirmed At:</span> ${app.confirmed_at ? formatLocalTimestamp(app.confirmed_at) : 'Not confirmed'}</div>
+              <div><span style="color: var(--text-muted);">Escalation Status:</span> ${app.escalation_status || 'none'}</div>
+              <div><span style="color: var(--text-muted);">Escalation Reason:</span> ${app.escalation_reason || 'None'}</div>
+            </div>
+            <div style="margin-top: 12px; border-top: 1px solid var(--border-card); padding-top: 10px;">
+              <span style="color: var(--text-muted);">Reported Issue Description:</span>
+              <p style="color: var(--text-main); margin-top: 4px; background: rgba(0,0,0,0.2); padding: 8px 10px; border-radius: 6px;">
+                ${app.issue_description || 'No additional issue description provided.'}
+              </p>
+            </div>
+          </div>
+        `;
+      }
+    } catch (err) {
+      console.error('Error opening Appointment Details & Trace drawer:', err);
+    }
+  };
+
+  const closeSMSLogBtn = document.getElementById('close-sms-log-drawer-btn');
+  const smsLogOverlay = document.getElementById('sms-log-drawer-overlay');
+  if (closeSMSLogBtn) {
+    closeSMSLogBtn.addEventListener('click', () => {
+      document.getElementById('sms-log-drawer').classList.remove('active');
+      smsLogOverlay.classList.remove('active');
+    });
+  }
+  if (smsLogOverlay) {
+    smsLogOverlay.addEventListener('click', () => {
+      document.getElementById('sms-log-drawer').classList.remove('active');
+      smsLogOverlay.classList.remove('active');
+    });
+  }
+
+
+  // Global Refresh Action
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => {
+      loadDashboardData();
+      showToast('Refreshed statistics and calls log history.');
+    });
+  }
+
+  // --- TWILIO WHATSAPP TEST ONBOARDING FLOW ---
+  async function loadTwilioSandboxInfo() {
+    try {
+      const res = await fetch('/api/v1/portal/twilio/sandbox-info');
+      if (!res.ok) return;
+      const info = await res.json();
+      
+      document.querySelectorAll('.sandbox-code-val').forEach(el => {
+        el.textContent = info.join_code || 'join evidence-lips';
+      });
+      document.querySelectorAll('.sandbox-num-val').forEach(el => {
+        el.textContent = info.sandbox_number || '+14155238886';
+      });
+      document.querySelectorAll('.sandbox-wa-link').forEach(el => {
+        el.href = info.whatsapp_url || '#';
+      });
+      
+      const qrImg = document.getElementById('customer-onboarding-qr');
+      if (qrImg && info.qr_code_url) {
+        qrImg.src = info.qr_code_url;
+      }
+    } catch (err) {
+      console.error('Error loading Twilio sandbox info:', err);
+    }
+  }
+
+  async function loadOnboardedTestCustomers() {
+    const tbody = document.getElementById('onboarded-customers-tbody');
+    if (!tbody) return;
+
+    try {
+      const res = await fetch('/api/v1/portal/sms/whitelist');
+      if (!res.ok) throw new Error('Failed to fetch whitelist');
+      const whitelist = await res.json();
+      
+      tbody.innerHTML = '';
+      if (!whitelist || whitelist.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="3" class="text-muted text-center py-4">No test customers onboarded yet.</td></tr>`;
+        return;
+      }
+
+      whitelist.forEach(item => {
+        const tr = document.createElement('tr');
+        const isWhatsApp = item.whatsapp_onboarded;
+        const statusBadge = isWhatsApp
+          ? `<span class="badge-whatsapp">WhatsApp Verified</span>`
+          : (item.twilio_verified ? `<span class="badge-verified">Whitelisted</span>` : `<span class="badge-unverified">Pending</span>`);
+
+        tr.innerHTML = `
+          <td>
+            <div style="font-weight: 500; color: #fff;">${item.friendly_name || 'Customer'}</div>
+            <div style="font-size: 11px; color: var(--text-muted);">${item.phone_number}</div>
+          </td>
+          <td>${statusBadge}</td>
+          <td>
+            <button class="btn btn-sm btn-secondary send-cust-ping-btn" data-phone="${item.phone_number}" data-name="${item.friendly_name || ''}" style="font-size: 11px; padding: 2px 8px;">
+              Ping WhatsApp
+            </button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      tbody.querySelectorAll('.send-cust-ping-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const phone = e.currentTarget.dataset.phone;
+          const name = e.currentTarget.dataset.name;
+          await sendWhatsAppTestPing(phone, name, 'CUSTOMER');
+        });
+      });
+    } catch (err) {
+      console.error('Error loading onboarded test customers:', err);
+      tbody.innerHTML = `<tr><td colspan="3" class="text-danger text-center py-3">Error loading test customers</td></tr>`;
+    }
+  }
+
+  async function sendWhatsAppTestPing(phone, name = '', role = 'CUSTOMER') {
+    if (!phone) {
+      showToast('Please enter a phone number first.', 'error');
+      return;
+    }
+    showToast(`Sending WhatsApp test ping to ${phone}...`);
+    try {
+      const res = await fetch('/api/v1/portal/twilio/whatsapp-test-ping', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone_number: phone, recipient_name: name, recipient_role: role })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(`WhatsApp test message sent successfully! SID: ${data.sid || 'mock'}`);
+      } else {
+        showToast(`WhatsApp ping notice: ${data.error_message || data.status || 'Dispatched in test mode'}`, 'warning');
+      }
+      loadOnboardedTestCustomers();
+      if (typeof loadSMSWhitelist === 'function') loadSMSWhitelist();
+    } catch (err) {
+      showToast('Failed to send WhatsApp test ping: ' + err.message, 'error');
+    }
+  }
+
+  document.querySelectorAll('.verify-whatsapp-ping-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const inputId = e.currentTarget.dataset.phoneInput;
+      const role = e.currentTarget.dataset.role || 'AGENT';
+      const inputEl = document.getElementById(inputId);
+      const phone = inputEl ? inputEl.value.trim() : '';
+      const name = role === 'ADMIN' ? 'Admin' : (role === 'CUSTOMER' ? 'Customer' : 'Staff Member');
+      await sendWhatsAppTestPing(phone, name, role);
+    });
+  });
+
+  const customerOnboardForm = document.getElementById('customer-onboard-form');
+  if (customerOnboardForm) {
+    customerOnboardForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = document.getElementById('onboard-customer-name').value.trim();
+      const phone = document.getElementById('onboard-customer-phone').value.trim();
+      if (!phone) {
+        showToast('Please enter a phone number.', 'error');
+        return;
+      }
+      try {
+        const res = await fetch('/api/v1/portal/twilio/customer-onboard', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone_number: phone, friendly_name: name, recipient_role: 'CUSTOMER' })
+        });
+        if (!res.ok) throw new Error('Failed to onboard customer');
+        showToast(`Customer ${name || phone} added to test whitelist.`);
+        loadOnboardedTestCustomers();
+        if (typeof loadSMSWhitelist === 'function') loadSMSWhitelist();
+      } catch (err) {
+        showToast('Error onboarding customer: ' + err.message, 'error');
+      }
+    });
+  }
+
+  const triggerCustomerTestPingBtn = document.getElementById('trigger-customer-test-ping-btn');
+  if (triggerCustomerTestPingBtn) {
+    triggerCustomerTestPingBtn.addEventListener('click', async () => {
+      const phone = document.getElementById('onboard-customer-phone').value.trim();
+      const name = document.getElementById('onboard-customer-name').value.trim();
+      await sendWhatsAppTestPing(phone, name, 'CUSTOMER');
+    });
+  }
+
+  // --- UNIFIED QR CODE ONBOARDING MODAL LOGIC (ADMIN, AGENT, CUSTOMER) ---
+  const qrModal = document.getElementById('qr-onboard-modal');
+  const qrOverlay = document.getElementById('qr-modal-overlay');
+  const closeQrModalBtn = document.getElementById('close-qr-modal-btn');
+  const qrCopyBtn = document.getElementById('qr-modal-copy-btn');
+
+  function hideQRCodeModal() {
+    if (qrModal) qrModal.style.display = 'none';
+    if (qrOverlay) qrOverlay.style.display = 'none';
+  }
+
+  if (closeQrModalBtn) closeQrModalBtn.addEventListener('click', hideQRCodeModal);
+  if (qrOverlay) qrOverlay.addEventListener('click', hideQRCodeModal);
+
+  async function showQRCodeModal(role = 'CUSTOMER', phone = '', name = '') {
+    try {
+      const cleanRole = (role || 'CUSTOMER').toUpperCase();
+      const res = await fetch(`/api/v1/portal/twilio/sandbox-info?role=${encodeURIComponent(cleanRole)}&phone_number=${encodeURIComponent(phone)}`);
+      if (!res.ok) throw new Error('Failed to fetch QR code data');
+      const info = await res.json();
+
+      const titleEl = document.getElementById('qr-modal-title');
+      const roleBadge = document.getElementById('qr-modal-role-badge');
+      const phoneDisplay = document.getElementById('qr-modal-phone-display');
+      const qrImg = document.getElementById('qr-modal-img');
+      const numEl = document.getElementById('qr-modal-num');
+      const joinEl = document.getElementById('qr-modal-join');
+      const waLink = document.getElementById('qr-modal-wa-link');
+
+      if (titleEl) titleEl.textContent = `${cleanRole} WhatsApp QR Onboarding`;
+      if (roleBadge) {
+        roleBadge.textContent = cleanRole;
+        if (cleanRole === 'ADMIN') {
+          roleBadge.style.background = 'rgba(255, 255, 255, 0.1)';
+          roleBadge.style.color = '#ffffff';
+          roleBadge.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+        } else if (cleanRole === 'AGENT') {
+          roleBadge.style.background = 'rgba(217, 119, 6, 0.12)';
+          roleBadge.style.color = '#d97706';
+          roleBadge.style.borderColor = 'rgba(217, 119, 6, 0.25)';
+        } else {
+          roleBadge.style.background = 'rgba(5, 150, 105, 0.12)';
+          roleBadge.style.color = '#059669';
+          roleBadge.style.borderColor = 'rgba(5, 150, 105, 0.25)';
+        }
+      }
+
+      if (phoneDisplay) phoneDisplay.textContent = phone ? `${name ? name + ' (' : ''}${phone}${name ? ')' : ''}` : `Onboarding Role: ${cleanRole}`;
+      if (qrImg && info.qr_code_url) qrImg.src = info.qr_code_url;
+      if (numEl) numEl.textContent = info.sandbox_number || '+1 415 523 8886';
+      if (joinEl) joinEl.textContent = info.join_code || 'join evidence-lips';
+      if (waLink) waLink.href = info.whatsapp_url || '#';
+
+      if (qrCopyBtn) {
+        qrCopyBtn.onclick = () => {
+          if (info.whatsapp_url) {
+            navigator.clipboard.writeText(info.whatsapp_url);
+            showToast('WhatsApp link copied to clipboard!');
+          }
+        };
+      }
+
+      if (qrModal) qrModal.style.display = 'block';
+      if (qrOverlay) qrOverlay.style.display = 'block';
+    } catch (err) {
+      console.error('Error showing QR Code modal:', err);
+      showToast('Error generating QR Code: ' + err.message, 'error');
+    }
+  }
+
+  // Admin QR Code Button Event
+  const adminQrBtn = document.getElementById('admin-qr-btn');
+  if (adminQrBtn) {
+    adminQrBtn.addEventListener('click', () => {
+      const phoneInput = document.getElementById('admin-sms-phone');
+      const phone = phoneInput ? phoneInput.value.trim() : '';
+      showQRCodeModal('ADMIN', phone, 'System Administrator');
+    });
+  }
+
+  // Agent QR Code Button Event
+  const agentQrOnboardBtn = document.getElementById('agent-qr-onboard-btn');
+  if (agentQrOnboardBtn) {
+    agentQrOnboardBtn.addEventListener('click', () => {
+      const staffSelector = document.getElementById('staff-agent-selector');
+      let agentName = '';
+      let phone = '';
+      if (staffSelector && staffSelector.selectedIndex >= 0) {
+        const opt = staffSelector.options[staffSelector.selectedIndex];
+        agentName = opt.dataset.name || opt.text;
+        phone = opt.dataset.phone || '';
+      }
+      showQRCodeModal('AGENT', phone, agentName || 'Service Agent');
+    });
+  }
+
+  // QR Modal Verify Button Event
+  const qrModalVerifyBtn = document.getElementById('qr-modal-verify-btn');
+  if (qrModalVerifyBtn) {
+    qrModalVerifyBtn.addEventListener('click', async () => {
+      const role = document.getElementById('qr-modal-role-badge') ? document.getElementById('qr-modal-role-badge').textContent.trim() : 'AGENT';
+      const staffSelector = document.getElementById('staff-agent-selector');
+      let phone = '';
+      let name = '';
+      if (role === 'AGENT' && staffSelector && staffSelector.selectedIndex >= 0) {
+        const opt = staffSelector.options[staffSelector.selectedIndex];
+        phone = opt.dataset.phone || '';
+        name = opt.dataset.name || 'Staff Member';
+      } else if (role === 'ADMIN') {
+        const adminInput = document.getElementById('admin-sms-phone');
+        phone = adminInput ? adminInput.value.trim() : '';
+        name = 'Admin';
+      } else {
+        const custInput = document.getElementById('onboard-customer-phone');
+        phone = custInput ? custInput.value.trim() : '';
+        name = 'Customer';
+      }
+      if (!phone) {
+        showToast('No phone number specified to verify.', 'error');
+        return;
+      }
+      await sendWhatsAppTestPing(phone, name, role);
+      if (typeof updateAgentConnectionUI === 'function') await updateAgentConnectionUI();
+      if (typeof loadStaffView === 'function') {
+        const currId = staffSelector ? staffSelector.value : null;
+        await loadStaffView(currId);
+      }
+      if (typeof loadSMSWhitelist === 'function') loadSMSWhitelist();
+      hideQRCodeModal();
+    });
+  }
+
+  // Customer QR Code Button Event
+  const customerQrBtn = document.getElementById('customer-qr-btn');
+  if (customerQrBtn) {
+    customerQrBtn.addEventListener('click', () => {
+      const phone = document.getElementById('onboard-customer-phone') ? document.getElementById('onboard-customer-phone').value.trim() : '';
+      const name = document.getElementById('onboard-customer-name') ? document.getElementById('onboard-customer-name').value.trim() : '';
+      showQRCodeModal('CUSTOMER', phone, name);
+    });
+  }
+
+  // --- Manual Service Request Feature ---
+  const srModal = document.getElementById('sr-modal');
+  const srModalOverlay = document.getElementById('sr-modal-overlay');
+  const srForm = document.getElementById('sr-form');
+  const confirmModal = document.getElementById('confirm-modal');
+  const confirmOverlay = document.getElementById('confirm-modal-overlay');
+
+  let activeConfirmAction = null;
+
+  let serviceRequestModalVersion = 0;
+  function closeSRModal() {
+    invalidateStaffSlotLookup();
+    serviceRequestModalVersion += 1;
+    if (srModal) srModal.style.display = 'none';
+    if (srModalOverlay) srModalOverlay.style.display = 'none';
+    srForm.reset();
+  }
+
+  function openConfirmModal(title, msg, onConfirm) {
+    document.getElementById('confirm-modal-title').textContent = title;
+    document.getElementById('confirm-modal-msg').textContent = msg;
+    activeConfirmAction = onConfirm;
+    if (confirmModal) confirmModal.style.display = 'block';
+    if (confirmOverlay) confirmOverlay.style.display = 'block';
+  }
+
+  function closeConfirmModal() {
+    activeConfirmAction = null;
+    if (confirmModal) confirmModal.style.display = 'none';
+    if (confirmOverlay) confirmOverlay.style.display = 'none';
+  }
+
+  document.getElementById('confirm-modal-no').addEventListener('click', closeConfirmModal);
+  document.getElementById('confirm-modal-yes').addEventListener('click', () => {
+    if (activeConfirmAction) activeConfirmAction();
+    closeConfirmModal();
+  });
+  
+  if (document.getElementById('close-sr-modal-btn')) {
+    document.getElementById('close-sr-modal-btn').addEventListener('click', closeSRModal);
+  }
+  if (document.getElementById('sr-cancel-btn')) {
+    document.getElementById('sr-cancel-btn').addEventListener('click', closeSRModal);
+  }
+
+  // Slot Availability & Consent Handling
+  const checkSlotsBtn = document.getElementById('sr-check-slots-btn');
+  const slotsContainer = document.getElementById('sr-available-slots-container');
+  const slotsDropdown = document.getElementById('sr-slots-dropdown');
+  const consentWrapper = document.getElementById('sr-consent-wrapper');
+  const consentCheck = document.getElementById('sr-customer-consent-check');
+  const srBookingTypeSelect = document.getElementById('sr-booking-type');
+  const srDurationGroup = document.getElementById('sr-duration-group');
+  const srDurationSelect = document.getElementById('sr-duration-minutes');
+
+  if (srBookingTypeSelect) {
+    srBookingTypeSelect.addEventListener('change', () => {
+      if (srBookingTypeSelect.value === 'callback') {
+        if (srDurationSelect) srDurationSelect.value = '15';
+        if (srDurationGroup) srDurationGroup.style.display = 'none';
+      } else {
+        if (srDurationGroup) srDurationGroup.style.display = 'block';
+        if (srDurationSelect && srDurationSelect.value === '15') srDurationSelect.value = '60';
+      }
+    });
+  }
+
+  const datePickerEl = document.getElementById('sr-check-date-picker');
+
+  function getNextBusinessDateString() {
+    const d = new Date();
+    if (d.getDay() === 0) d.setDate(d.getDate() + 1); // Sunday -> Monday
+    else if (d.getDay() === 6) d.setDate(d.getDate() + 2); // Saturday -> Monday
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
+  let staffSlotLookupVersion = 0;
+  function clearStaffSlotChoices(message) {
+    const selected = slotsDropdown?.value;
+    const timeInput = document.getElementById('sr-booking-time');
+    if (selected && timeInput && timeInput.value.replace('T', ' ').slice(0, 16) === selected.slice(0, 16)) {
+      timeInput.value = '';
+    }
+    if (slotsDropdown) {
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = message;
+      slotsDropdown.replaceChildren(option);
+      slotsDropdown.value = '';
+    }
+    if (consentCheck) consentCheck.checked = false;
+    if (consentWrapper) consentWrapper.style.display = 'none';
+  }
+
+  function invalidateStaffSlotLookup() {
+    staffSlotLookupVersion += 1;
+    clearStaffSlotChoices('Check availability for the current form...');
+    if (checkSlotsBtn) {
+      checkSlotsBtn.disabled = false;
+      checkSlotsBtn.textContent = 'Check Availability';
+    }
+  }
+
+  function currentBookingMetadata() {
+    const bookingType = srBookingTypeSelect?.value || srForm?.dataset.bookingType || 'appointment';
+    return {
+      bookingType,
+      durationMinutes: bookingType === 'callback' ? 15 : (parseInt(srDurationSelect?.value || srForm?.dataset.durationMinutes) || 60),
+      staffAgentId: document.getElementById('sr-agent-select')?.value ?? srForm?.dataset.staffAgentId ?? ''
+    };
+  }
+
+  async function checkStaffSlots(targetDate) {
+    if (!targetDate) return;
+    const invocation = ++staffSlotLookupVersion;
+    const modalVersion = serviceRequestModalVersion;
+    clearStaffSlotChoices('Checking live availability...');
+    if (slotsContainer) slotsContainer.style.display = 'block';
+    if (datePickerEl) datePickerEl.value = targetDate;
+    const agentSelect = document.getElementById('sr-agent-select');
+    const timeInput = document.getElementById('sr-booking-time');
+    const formState = () => JSON.stringify([document.getElementById('sr-form-id')?.value,
+      datePickerEl?.value, srBookingTypeSelect?.value, srDurationSelect?.value,
+      agentSelect?.value, timeInput?.value, srForm?.dataset.bookingType,
+      srForm?.dataset.durationMinutes, srForm?.dataset.staffAgentId]);
+    const capturedState = formState();
+    const isCurrent = () => invocation === staffSlotLookupVersion && modalVersion === serviceRequestModalVersion &&
+      srModal?.style.display !== 'none' && formState() === capturedState;
+    if (checkSlotsBtn) {
+      checkSlotsBtn.disabled = true;
+      checkSlotsBtn.textContent = 'Checking...';
+    }
+    try {
+      const metadata = currentBookingMetadata();
+      let url = `/api/v1/portal/available-slots?date=${encodeURIComponent(targetDate)}&duration_minutes=${metadata.durationMinutes}`;
+      if (metadata.staffAgentId) url += `&staff_agent_id=${encodeURIComponent(metadata.staffAgentId)}`;
+      // Share the existing portal calendar queue: one real lookup across all flows.
+      const operation = availabilityTail.catch(() => {}).then(async () => {
+        if (!isCurrent()) return null;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('Availability unverified');
+        const data = await response.json();
+        if (data.success !== true || !Array.isArray(data.available_slots)) throw new Error('Availability unverified');
+        return data;
+      });
+      availabilityTail = operation.catch(() => {});
+      const data = await operation;
+      if (!data || !isCurrent()) return;
+      clearStaffSlotChoices('Select an available slot...');
+      const slots = data.available_slots;
+      if (!slots.length) {
+        slotsDropdown.options[0].textContent = `No available slots on ${targetDate}`;
+      } else {
+        slots.forEach(slot => {
+          const option = document.createElement('option');
+          option.value = slot.start_time;
+          option.textContent = `${slot.start_time.substring(11, 16)} - ${slot.end_time.substring(11, 16)} (${slot.available_agents_count} agent free)`;
+          slotsDropdown.appendChild(option);
+        });
+      }
+    } catch {
+      if (!isCurrent()) return;
+      clearStaffSlotChoices('Calendar availability could not be verified. Check again to retry.');
+      showToast('Calendar availability could not be verified. Please retry.', 'danger');
+    } finally {
+      if (isCurrent() && checkSlotsBtn) {
+        checkSlotsBtn.disabled = false;
+        checkSlotsBtn.textContent = 'Check Availability';
+      }
+    }
+  }
+
+  [srBookingTypeSelect, srDurationSelect, document.getElementById('sr-agent-select')].forEach(control => {
+    control?.addEventListener('change', invalidateStaffSlotLookup);
+  });
+
+  if (checkSlotsBtn) {
+    checkSlotsBtn.addEventListener('click', async () => {
+      let currentVal = document.getElementById('sr-booking-time').value;
+      let targetDate = '';
+      if (currentVal) {
+        let matchISO = currentVal.match(/\d{4}-\d{2}-\d{2}/);
+        if (matchISO) {
+          targetDate = matchISO[0];
+        } else {
+          let matchSlash = currentVal.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+          if (matchSlash) {
+            let m = matchSlash[1].padStart(2, '0');
+            let d = matchSlash[2].padStart(2, '0');
+            let y = matchSlash[3];
+            targetDate = `${y}-${m}-${d}`;
+          } else {
+            targetDate = currentVal.substring(0, 10);
+          }
+        }
+      } else {
+        const origTime = (srForm && srForm.dataset.originalBookingTime) || '';
+        let matchOrig = origTime ? origTime.match(/\d{4}-\d{2}-\d{2}/) : null;
+        if (matchOrig) {
+          targetDate = matchOrig[0];
+        } else if (datePickerEl && datePickerEl.value) {
+          targetDate = datePickerEl.value;
+        } else {
+          targetDate = getNextBusinessDateString();
+        }
+      }
+      
+      await checkStaffSlots(targetDate);
+    });
+  }
+
+  if (datePickerEl) {
+    datePickerEl.addEventListener('change', async () => {
+      if (datePickerEl.value) {
+        await checkStaffSlots(datePickerEl.value);
+      }
+    });
+  }
+
+  if (slotsDropdown) {
+    slotsDropdown.addEventListener('change', () => {
+      const selectedSlot = slotsDropdown.value;
+      if (selectedSlot && selectedSlot.length >= 16) {
+        document.getElementById('sr-booking-time').value = selectedSlot.substring(0, 16).replace(' ', 'T');
+        if (datePickerEl) datePickerEl.value = selectedSlot.substring(0, 10);
+        triggerConsentCheckIfNeeded();
+      }
+    });
+  }
+
+  const bookingTimeInput = document.getElementById('sr-booking-time');
+  if (bookingTimeInput) {
+    bookingTimeInput.addEventListener('change', () => {
+      invalidateStaffSlotLookup();
+      triggerConsentCheckIfNeeded();
+    });
+  }
+
+  function triggerConsentCheckIfNeeded() {
+    if (!srForm) return;
+    const isEdit = !!document.getElementById('sr-form-id').value;
+    const origTime = srForm.dataset.originalBookingTime || '';
+    const curTime = (document.getElementById('sr-booking-time').value || '').replace('T', ' ');
+    
+    if (isEdit && curTime && curTime !== origTime) {
+      if (consentWrapper) consentWrapper.style.display = 'block';
+    } else if (!isEdit) {
+      if (consentWrapper) consentWrapper.style.display = 'none';
+    }
+  }
+
+  // Selective removal uses the booked component snapshot, never a parsed label.
+  const serviceRemovalNeedsReload = new Set();
+  function renderServiceRemoval(req, feedbackText = '') {
+    document.getElementById('sr-service-removal')?.remove();
+    if (!srForm || !Array.isArray(req.service_components)) return;
+    const modalVersion = serviceRequestModalVersion;
+    const isCurrentModal = () => modalVersion === serviceRequestModalVersion &&
+      srModal?.style.display !== 'none' && document.getElementById('sr-form-id')?.value === String(req.id);
+    const components = req.service_components;
+    const names = components.map(component => component?.name);
+    const valid = components.every(component => component && typeof component.name === 'string' &&
+      component.name.trim() && component.name === component.name.trim() && Number.isInteger(component.duration_minutes) &&
+      component.duration_minutes > 0 && component.duration_minutes % 15 === 0) &&
+      new Set(names).size === names.length;
+    const total = components.reduce((sum, component) => sum + (component?.duration_minutes || 0), 0);
+    if (!valid || total !== req.duration_minutes) return;
+    const terminal = ['cancelled', 'cancelled_by_customer', 'completed', 'done'].includes(req.status);
+    const start = String(req.booking_start_time || req.booking_time || '').replace('T', ' ').slice(0, 19);
+    const end = String(req.booking_end_time || '').replace('T', ' ').slice(0, 19);
+    const section = document.createElement('section');
+    section.id = 'sr-service-removal';
+    section.style.cssText = 'padding:12px;margin-top:16px;border:1px solid var(--border-card);border-radius:8px;';
+    const heading = document.createElement('h4');
+    heading.textContent = terminal ? 'Appointment services (history)' : 'Appointment services';
+    section.appendChild(heading);
+    const summary = document.createElement('p');
+    summary.id = 'sr-component-summary';
+    summary.textContent = components.map(c => `${c.name} — ${c.duration_minutes} minutes`).join('; ') || 'No remaining services';
+    section.appendChild(summary);
+    const readback = document.createElement('p');
+    readback.id = 'sr-component-readback';
+    readback.style.whiteSpace = 'pre-line';
+    readback.textContent = `Service: ${req.service_type || 'None'}\n${terminal ? 'Booked duration' : 'Duration'}: ${req.duration_minutes} minutes\n${terminal ? 'Booked start' : 'Start'}: ${start || 'None'}\n${terminal ? 'Booked end' : 'End'}: ${end || 'Unavailable'}\nStatus: ${req.status}\nCalendar: ${req.calendar_integration_status || 'Unverified'}\nNotification queue: ${req.notification_queue_status || 'Unverified'}; delivery unverified.`;
+    section.appendChild(readback);
+    const feedback = document.createElement('p');
+    feedback.id = 'sr-remove-service-feedback';
+    feedback.setAttribute('role', 'status');
+    feedback.setAttribute('aria-live', 'polite');
+    feedback.textContent = feedbackText || (serviceRemovalNeedsReload.has(req.id) ? 'Reload the appointment before taking another action.' : '');
+    section.appendChild(feedback);
+    const reload = document.createElement('button');
+    reload.type = 'button';
+    reload.className = 'btn btn-secondary';
+    reload.textContent = 'Reload appointment';
+    async function reloadRequest() {
+      const response = await fetch('/api/v1/portal/service-requests', {cache: 'no-store'});
+      if (!response.ok) throw new Error('Reload failed');
+      const rows = await response.json();
+      const matches = Array.isArray(rows) ? rows.filter(row => row.id === req.id) : [];
+      if (matches.length !== 1) throw new Error('Appointment read-back unavailable');
+      return matches[0];
+    }
+    reload.addEventListener('click', async () => {
+      reload.disabled = true;
+      try {
+        const fresh = await reloadRequest();
+        if (!isCurrentModal()) {
+          await loadDashboardData();
+          return;
+        }
+        serviceRemovalNeedsReload.delete(req.id);
+        window.openSREditModal(fresh);
+      } catch {
+        feedback.textContent = 'Appointment could not be reloaded. Check its state before taking another action.';
+        reload.disabled = false;
+      }
+    });
+    section.appendChild(reload);
+    srForm.lastElementChild.before(section);
+    if (req.booking_type !== 'appointment' || !['pending', 'confirmed', 'in_progress'].includes(req.status) || !components.length ||
+        !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(start)) return;
+    const label = document.createElement('label');
+    label.htmlFor = 'sr-remove-service-select';
+    label.textContent = 'Service to remove';
+    label.style.cssText = 'display:block;margin-top:12px;';
+    const select = document.createElement('select');
+    select.id = 'sr-remove-service-select';
+    select.className = 'form-input';
+    for (const component of components) {
+      const option = document.createElement('option');
+      option.value = component.name;
+      option.textContent = `${component.name} — ${component.duration_minutes} minutes`;
+      select.appendChild(option);
+    }
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'btn btn-secondary';
+    remove.textContent = 'Remove selected service';
+    remove.style.marginTop = '8px';
+    let pending = serviceRemovalNeedsReload.has(req.id);
+    remove.disabled = pending;
+    select.disabled = pending;
+    remove.addEventListener('click', () => {
+      if (pending) return;
+      const component = components.find(item => item.name === select.value);
+      if (!component) return;
+      const remaining = total - component.duration_minutes;
+      const stamp = new Date(start.replace(' ', 'T') + 'Z');
+      if (!Number.isFinite(stamp.getTime())) return;
+      const shortenedEnd = new Date(stamp.getTime() + remaining * 60000).toISOString().slice(0, 19).replace('T', ' ');
+      const change = remaining
+        ? `Appointment start stays ${start}; end becomes ${shortenedEnd} (${remaining} minutes).`
+        : `Only this appointment will be cancelled; its last service is being removed.`;
+      openConfirmModal(`Remove ${component.name}?`,
+        `Customer consent is required to remove ${component.name} (${component.duration_minutes} minutes). ${change} Other appointments stay unchanged.`, async () => {
+          if (pending) return;
+          pending = true;
+          serviceRemovalNeedsReload.add(req.id);
+          remove.disabled = true;
+          select.disabled = true;
+          reload.disabled = true;
+          const save = document.getElementById('sr-save-btn');
+          if (save) save.disabled = true;
+          let confirmed = false;
+          try {
+            const response = await fetch(`/api/v1/portal/service-requests/${req.id}/remove-service`, {
+              method: 'POST', headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({service_name: component.name, customer_consent_obtained: true})
+            });
+            const result = await response.json();
+            if (!response.ok || result.success !== true) {
+              const detail = typeof result.detail === 'string' ? result.detail : result.message;
+              feedback.textContent = detail || 'Service removal was rejected. Reload the appointment before another action.';
+              return;
+            }
+            confirmed = true;
+            const fresh = await reloadRequest();
+            const cancelled = remaining === 0;
+            const freshStart = String(fresh.booking_start_time || fresh.booking_time || '').replace('T', ' ').slice(0, 19);
+            const freshEnd = String(fresh.booking_end_time || '').replace('T', ' ').slice(0, 19);
+            const expectedComponents = components.filter(item => item.name !== component.name);
+            if (freshStart !== start || (cancelled ? fresh.status !== 'cancelled' :
+                fresh.duration_minutes !== remaining || freshEnd !== shortenedEnd ||
+                !Array.isArray(fresh.service_components) || fresh.service_components.length !== expectedComponents.length ||
+                !fresh.service_components.every((item, index) => item.name === expectedComponents[index].name &&
+                  item.duration_minutes === expectedComponents[index].duration_minutes))) {
+              throw new Error('Removal read-back does not match');
+            }
+            await loadDashboardData();
+            serviceRemovalNeedsReload.delete(req.id);
+            if (!isCurrentModal()) return;
+            window.openSREditModal(fresh);
+            renderServiceRemoval(fresh, cancelled ? 'Selected appointment cancelled; other appointments unchanged.' : 'Service removed; other appointments unchanged.');
+          } catch {
+            feedback.textContent = confirmed
+              ? 'Removal response received, but the saved outcome could not be verified. Reload before another action.'
+              : 'Removal outcome is unknown. Reload the appointment before taking another action; do not retry blindly.';
+          } finally {
+            // Retrying a mutation after an uncertain response requires a fresh read.
+            reload.disabled = false;
+            if (save && isCurrentModal()) save.disabled = serviceRemovalNeedsReload.has(req.id);
+          }
+        });
+    });
+    section.insertBefore(label, reload);
+    section.insertBefore(select, reload);
+    section.insertBefore(remove, reload);
+  }
+
+  window.openSREditModal = (req) => {
+    invalidateStaffSlotLookup();
+    serviceRequestModalVersion += 1;
+    const saveButton = document.getElementById('sr-save-btn');
+    if (saveButton) saveButton.disabled = serviceRemovalNeedsReload.has(req.id);
+    document.getElementById('sr-modal-title').textContent = 'Edit Service Request';
+    document.getElementById('sr-form-id').value = req.id;
+    if (srForm) {
+      srForm.dataset.bookingType = req.booking_type || 'appointment';
+      srForm.dataset.durationMinutes = String(req.duration_minutes || (req.booking_type === 'callback' ? 15 : 60));
+      srForm.dataset.staffAgentId = req.staff_agent_id == null ? '' : String(req.staff_agent_id);
+    }
+
+    // Store original booking time for consent diffing
+    let origBt = req.booking_time || req.time_slot || '';
+    if (origBt && origBt.length >= 16) {
+      origBt = origBt.substring(0, 16).replace(' ', 'T');
+    } else {
+      origBt = '';
+    }
+    if (srForm) srForm.dataset.originalBookingTime = origBt;
+
+    // Reset slot check & consent wrapper
+    if (slotsContainer) slotsContainer.style.display = 'none';
+    if (consentCheck) consentCheck.checked = false;
+    if (consentWrapper) consentWrapper.style.display = 'none';
+
+    // Populate form
+    document.getElementById('sr-cust-name').value = req.customer_name || '';
+    document.getElementById('sr-cust-phone').value = req.phone || '';
+    document.getElementById('sr-veh-make').value = req.make || '';
+    document.getElementById('sr-veh-model').value = req.model || '';
+    document.getElementById('sr-veh-year').value = req.year || '';
+    document.getElementById('sr-veh-vin').value = req.vin || '';
+    renderRequestIntake(req.intake_data);
+    const svcSelect = document.getElementById('sr-service-type');
+    const rawValToSet = req.service_type || '';
+    const valToSet = formatIssueDescription(rawValToSet);
+    if (valToSet) {
+      let optionExists = Array.from(svcSelect.options).some(opt => opt.value === valToSet || opt.value === rawValToSet);
+      if (!optionExists) {
+        const customOpt = document.createElement('option');
+        customOpt.value = valToSet;
+        customOpt.textContent = valToSet;
+        svcSelect.appendChild(customOpt);
+      }
+      let matchingOpt = Array.from(svcSelect.options).find(opt => opt.value === valToSet || opt.value === rawValToSet);
+      if (matchingOpt) {
+        svcSelect.value = matchingOpt.value;
+      } else {
+        svcSelect.value = valToSet;
+      }
+    } else {
+      svcSelect.value = '';
+    }
+    const issueDescEl = document.getElementById('sr-issue-desc');
+    const cleanedIssueDesc = formatIssueDescription(req.issue_description || '');
+    issueDescEl.value = (req.booking_type === 'callback' && cleanedIssueDesc && !cleanedIssueDesc.toLowerCase().startsWith('callback'))
+      ? `Callback: ${cleanedIssueDesc}`
+      : cleanedIssueDesc;
+    
+    // Disable customer and service type fields for editing
+    document.getElementById('sr-cust-name').disabled = true;
+    document.getElementById('sr-cust-phone').disabled = true;
+    document.getElementById('sr-service-type').disabled = true;
+
+    // Populate booking time, booking type, and duration if available
+    document.getElementById('sr-booking-time').value = origBt;
+    if (origBt && datePickerEl) {
+      datePickerEl.value = origBt.substring(0, 10);
+    }
+    const bookingTypeVal = req.booking_type || 'appointment';
+    const durationMinutesVal = req.duration_minutes || (bookingTypeVal === 'callback' ? 15 : 60);
+    if (srBookingTypeSelect) srBookingTypeSelect.value = bookingTypeVal;
+    if (srDurationSelect) srDurationSelect.value = String(durationMinutesVal);
+    if (srDurationGroup) srDurationGroup.style.display = (bookingTypeVal === 'callback') ? 'none' : 'block';
+
+    renderServiceRemoval(req);
+    if (srModal) srModal.style.display = 'block';
+    if (srModalOverlay) srModalOverlay.style.display = 'block';
+  };
+
+  const btnNewRequest = document.getElementById('btn-new-request');
+  if (btnNewRequest) {
+    btnNewRequest.addEventListener('click', async () => {
+      invalidateStaffSlotLookup();
+      serviceRequestModalVersion += 1;
+      document.getElementById('sr-service-removal')?.remove();
+      const saveButton = document.getElementById('sr-save-btn');
+      if (saveButton) saveButton.disabled = false;
+      document.getElementById('sr-modal-title').textContent = 'New Service Request';
+      document.getElementById('sr-form-id').value = '';
+      renderRequestIntake();
+      ['sr-cust-name', 'sr-cust-phone', 'sr-veh-make', 'sr-veh-model', 'sr-veh-year', 'sr-veh-vin', 'sr-issue-desc'].forEach(id => { document.getElementById(id).value = ''; });
+      if (srForm) {
+        srForm.dataset.originalBookingTime = '';
+        srForm.dataset.bookingType = 'appointment';
+        srForm.dataset.durationMinutes = '60';
+        srForm.dataset.staffAgentId = '';
+      }
+      
+      if (slotsContainer) slotsContainer.style.display = 'none';
+      if (consentCheck) consentCheck.checked = false;
+      if (consentWrapper) consentWrapper.style.display = 'none';
+
+      if (srBookingTypeSelect) srBookingTypeSelect.value = 'appointment';
+      if (srDurationSelect) srDurationSelect.value = '60';
+      if (srDurationGroup) srDurationGroup.style.display = 'block';
+
+      // Reset agent selection UI
+      const agentSelectContainer = document.getElementById('sr-agent-select-container');
+      const autoAssignText = document.getElementById('sr-auto-assign-text');
+      const agentSelect = document.getElementById('sr-agent-select');
+      if (agentSelectContainer) agentSelectContainer.style.display = 'none';
+      if (autoAssignText) autoAssignText.style.display = 'block';
+      if (agentSelect) agentSelect.value = '';
+
+      try {
+        const [profileResponse, servicesResponse] = await Promise.all([fetch('/api/v1/portal/config'), fetch('/api/v1/portal/services')]);
+        if (!profileResponse.ok || !servicesResponse.ok) throw new Error('Could not load business intake and services');
+        applyBusinessProfile(await profileResponse.json());
+        renderRequestIntake();
+        const services = await servicesResponse.json();
+        const select = document.getElementById('sr-service-type');
+        select.replaceChildren(new Option('Select Service Type...', ''));
+        services.forEach(service => select.add(new Option(service.name, service.name)));
+      } catch (error) { showToast(error.message, 'error'); return; }
+
+      // Enable all fields
+      document.getElementById('sr-cust-name').disabled = false;
+      document.getElementById('sr-cust-phone').disabled = false;
+      document.getElementById('sr-service-type').disabled = false;
+      
+      document.getElementById('sr-booking-time').value = '';
+      if (datePickerEl) datePickerEl.value = getNextBusinessDateString();
+      if (srModal) srModal.style.display = 'block';
+      if (srModalOverlay) srModalOverlay.style.display = 'block';
+
+      // Check if manual agent selection is enabled
+      try {
+        const configRes = await fetch('/api/v1/portal/gmail-config');
+        if (configRes.ok) {
+          const config = await configRes.json();
+          if (config.enable_agent_selection) {
+            if (agentSelectContainer) agentSelectContainer.style.display = 'block';
+            if (autoAssignText) autoAssignText.style.display = 'none';
+            await populateAgentsDropdown('sr-agent-select');
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load config for agent selection:', e);
+      }
+    });
+  }
+
+  async function populateAgentsDropdown(selectId, selectedAgentId) {
+    const selectEl = document.getElementById(selectId);
+    if (!selectEl) return;
+    
+    try {
+      const res = await fetch('/api/v1/portal/agents');
+      if (res.ok) {
+        const agents = await res.json();
+        selectEl.innerHTML = '<option value="">Select an Agent...</option>';
+        agents.forEach(a => {
+          const opt = document.createElement('option');
+          opt.value = a.id;
+          opt.textContent = `${a.name} (${agentRole(a.role)})`;
+          if (selectedAgentId && a.id == selectedAgentId) opt.selected = true;
+          selectEl.appendChild(opt);
+        });
+      }
+    } catch (e) {
+      console.error('Failed to load agents', e);
+    }
+  }
+
+  if (srForm) {
+    srForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      
+      const submitBtn = srForm.querySelector('button[type="submit"]') || document.getElementById('sr-save-btn');
+      if (submitBtn && submitBtn.disabled) return;
+      
+      const reqId = document.getElementById('sr-form-id').value;
+      const isEdit = !!reqId;
+      
+      let bookingTimeStr = document.getElementById('sr-booking-time').value;
+      let origBt = (srForm.dataset.originalBookingTime || '').replace(' ', 'T');
+      if (bookingTimeStr) {
+         bookingTimeStr = bookingTimeStr.replace('T', ' ') + (bookingTimeStr.length === 16 ? ':00' : ''); // formatting to YYYY-MM-DD HH:MM:SS
+      }
+      
+      const isTimeChanged = isEdit && bookingTimeStr && bookingTimeStr.substring(0, 16).replace(' ', 'T') !== origBt;
+      const isConsentChecked = consentCheck ? consentCheck.checked : false;
+
+      if (isTimeChanged && !isConsentChecked) {
+        showToast('Customer consent is required when rescheduling an appointment. Please check the consent box.', 'warning');
+        if (consentWrapper) consentWrapper.style.display = 'block';
+        return;
+      }
+
+      if (!isEdit) {
+        const phoneVal = document.getElementById('sr-cust-phone').value;
+        if (phoneVal) {
+          const digits = phoneVal.replace(/\D/g, '');
+          if (digits.length !== 10 && !(digits.length === 11 && digits.startsWith('1'))) {
+            showToast('Phone number must be a valid 10-digit number.', 'warning');
+            return;
+          }
+        } else {
+          showToast('Customer phone number is required.', 'warning');
+          return;
+        }
+      }
+
+      const actionText = isEdit ? (isTimeChanged ? 'Reschedule this appointment?' : 'Update service request?') : 'Create new service request?';
+      let msg = 'This will save the changes.';
+      if (bookingTimeStr) msg += ' A booking notification SMS will be sent to the customer.';
+
+      openConfirmModal(actionText, msg, async () => {
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.dataset.origText = submitBtn.textContent;
+          submitBtn.textContent = 'Saving...';
+        }
+        try {
+          const metadata = currentBookingMetadata();
+          const selectedBookingType = metadata.bookingType;
+          const selectedDurationMinutes = metadata.durationMinutes;
+
+          const payload = {
+            intake_data: collectRequestIntake(),
+            vehicle_details: activeBusinessProfile.collect_vehicle_details ? {
+              make: document.getElementById('sr-veh-make').value,
+              model: document.getElementById('sr-veh-model').value,
+              year: parseInt(document.getElementById('sr-veh-year').value),
+              vin: document.getElementById('sr-veh-vin').value || null
+            } : null,
+            booking_time: bookingTimeStr || null,
+            booking_type: selectedBookingType,
+            duration_minutes: selectedDurationMinutes,
+            customer_consent_obtained: isConsentChecked,
+            issue_description: formatIssueDescription(document.getElementById('sr-issue-desc').value)
+          };
+
+          let url, method, finalPayload;
+          
+          if (isEdit) {
+            url = `/api/v1/portal/service-requests/${reqId}`;
+            method = 'PUT';
+            finalPayload = payload;
+          } else {
+            url = `/api/v1/portal/service-requests`;
+            method = 'POST';
+            
+            const agentSelect = document.getElementById('sr-agent-select');
+            const selectedAgentId = agentSelect && agentSelect.value ? parseInt(agentSelect.value) : null;
+            
+            finalPayload = {
+              customer: {
+                name: document.getElementById('sr-cust-name').value,
+                phone: document.getElementById('sr-cust-phone').value
+              },
+              vehicle: payload.vehicle_details,
+              intake_data: payload.intake_data,
+              service_request: {
+                service_type: document.getElementById('sr-service-type').value,
+                issue_description: payload.issue_description,
+                booking_time: payload.booking_time,
+                booking_type: selectedBookingType,
+                duration_minutes: selectedDurationMinutes,
+                staff_agent_id: selectedAgentId
+              }
+            };
+          }
+
+          const res = await fetch(url, {
+            method,
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(finalPayload)
+          });
+          
+          if (res.ok) {
+            showToast('Service Request saved successfully!', 'success');
+            closeSRModal();
+            loadDashboardData(); // reload dashboard
+          } else {
+            const err = await res.json();
+            showToast(err.detail || 'Failed to save request.', 'danger');
+          }
+        } catch (err) {
+          showToast('An error occurred.', 'danger');
+        } finally {
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = submitBtn.dataset.origText || 'Save Request';
+          }
+        }
+      });
+    });
+  }
+
+  // --- REASSIGN ESCALATED APPOINTMENT MODAL ---
+  window.openReassignModal = async function(req) {
+    if (['cancelled', 'cancelled_by_customer', 'completed', 'done'].includes(req.status)) {
+      showToast('Cannot reassign a completed or cancelled appointment.', 'warning');
+      return;
+    }
+    const modal = document.getElementById('reassign-modal');
+    const overlay = document.getElementById('reassign-modal-overlay');
+    if (!modal || !overlay) return;
+
+    document.getElementById('reassign-sr-id').value = req.id;
+    document.getElementById('reassign-customer-name').textContent = req.customer_name || 'Unknown Customer';
+    
+    const formattedTime = formatBookingTimeRange(req);
+    const bookingTimeEl = document.getElementById('reassign-booking-time');
+    if (formattedTime) {
+      bookingTimeEl.innerHTML = formattedTime;
+    } else {
+      bookingTimeEl.textContent = req.booking_time || '--';
+    }
+
+    const isCallback = req.booking_type === 'callback' || (req.service_type && req.service_type.toLowerCase() === 'callback');
+    const modalTitleEl = document.getElementById('reassign-modal-title');
+    if (modalTitleEl) modalTitleEl.textContent = isCallback ? 'Reassign Service Callback' : 'Reassign Service Appointment';
+    const timeLabelEl = document.getElementById('reassign-time-label');
+    if (timeLabelEl) timeLabelEl.textContent = isCallback ? 'Callback Time:' : 'Appointment Time:';
+    const submitBtnInit = document.getElementById('reassign-submit-btn');
+    if (submitBtnInit) submitBtnInit.textContent = isCallback ? 'Reassign Callback' : 'Reassign Appointment';
+
+    modal.dataset.isCallback = isCallback ? 'true' : 'false';
+
+    document.getElementById('reassign-current-agent').textContent = req.staff_agent_name || 'Unassigned';
+    document.getElementById('reassign-reason-display').textContent = req.escalation_reason || 'Manual reassignment';
+    document.getElementById('reassign-reason-note').value = '';
+
+    const agentSelect = document.getElementById('reassign-agent-select');
+    agentSelect.removeAttribute('aria-busy');
+    const status = document.getElementById('reassign-availability-status');
+    const retry = document.getElementById('reassign-availability-retry');
+    const submit = document.getElementById('reassign-submit-btn');
+    document.getElementById('reassign-escalation-badge').hidden = req.escalation_status !== 'escalated';
+    modal.returnFocus = document.activeElement;
+    modal.style.display = 'block';
+    overlay.style.display = 'block';
+    modal.focus();
+
+    const invocation = Symbol('reassign availability');
+    modal.availabilityInvocation = invocation;
+    const isCurrent = () => modal.availabilityInvocation === invocation && modal.style.display !== 'none';
+    const loadCandidates = async () => {
+      if (!isCurrent() || agentSelect.getAttribute('aria-busy') === 'true') return;
+      agentSelect.setAttribute('aria-busy', 'true');
+      agentSelect.disabled = true;
+      submit.disabled = true;
+      retry.hidden = true;
+      agentSelect.replaceChildren(new Option('Checking live availability…', ''));
+      status.textContent = 'Checking live availability…';
+      try {
+        const data = await requestAvailableAgents(req.id, isCurrent);
+        if (!data || !isCurrent()) return;
+        if (!Array.isArray(data.agents)) throw new Error('Invalid availability response');
+        agentSelect.replaceChildren(new Option('-- Choose Replacement Agent --', ''));
+        const currentId = req.assigned_staff_id || req.staff_agent_id;
+        let availableCount = 0;
+        data.agents.forEach(candidate => {
+          const id = candidate.agent_id || candidate.id;
+          if (Number(id) === Number(currentId)) return;
+          const available = candidate.is_available !== false && candidate.available !== false;
+          const availability = available ? 'Available' : `Unavailable (${candidate.reason || 'Not available'})`;
+          const option = new Option(`${candidate.agent_name || candidate.name} — ${availability}`, id);
+          option.disabled = !available;
+          agentSelect.append(option);
+          if (available) availableCount++;
+        });
+        agentSelect.disabled = false;
+        submit.disabled = availableCount === 0;
+        status.textContent = availableCount ? 'Choose an available replacement agent.' : 'No available replacement agents for this time.';
+        retry.hidden = availableCount > 0;
+        if (modal.contains(document.activeElement)) agentSelect.focus();
+      } catch (err) {
+        if (!isCurrent()) return;
+        agentSelect.replaceChildren(new Option('Availability could not be verified', ''));
+        status.textContent = 'Could not verify agent availability. Please retry.';
+        retry.hidden = false;
+      } finally {
+        if (isCurrent()) agentSelect.removeAttribute('aria-busy');
+      }
+    };
+    retry.onclick = loadCandidates;
+    await loadCandidates();
+  };
+
+  function closeReassignModal() {
+    const modal = document.getElementById('reassign-modal');
+    const overlay = document.getElementById('reassign-modal-overlay');
+    if (modal) modal.style.display = 'none';
+    if (overlay) overlay.style.display = 'none';
+    if (modal?.returnFocus?.isConnected) modal.returnFocus.focus();
+  }
+
+  document.getElementById('reassign-modal')?.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeReassignModal();
+    }
+  });
+
+  const closeReassignBtn = document.getElementById('close-reassign-modal-btn');
+  if (closeReassignBtn) closeReassignBtn.addEventListener('click', closeReassignModal);
+  const cancelReassignBtn = document.getElementById('reassign-cancel-btn');
+  if (cancelReassignBtn) cancelReassignBtn.addEventListener('click', closeReassignModal);
+  const reassignOverlay = document.getElementById('reassign-modal-overlay');
+  if (reassignOverlay) reassignOverlay.addEventListener('click', closeReassignModal);
+
+  const reassignForm = document.getElementById('reassign-form');
+  if (reassignForm) {
+    reassignForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const modal = document.getElementById('reassign-modal');
+      const isCallback = modal ? modal.dataset.isCallback === 'true' : false;
+      const srId = document.getElementById('reassign-sr-id').value;
+      const newAgentId = parseInt(document.getElementById('reassign-agent-select').value);
+      const note = document.getElementById('reassign-reason-note').value.trim();
+
+      if (!newAgentId) {
+        showToast('Please select a replacement agent.', 'error');
+        return;
+      }
+
+      const submitBtn = document.getElementById('reassign-submit-btn');
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Reassigning...';
+      }
+
+      try {
+        const res = await fetch(`/api/v1/portal/service-requests/${srId}/reassign`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            new_agent_id: newAgentId,
+            reason: note || 'Supervisor reassignment'
+          })
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.detail || 'Reassignment failed');
+        }
+
+        const typeLabel = isCallback ? 'Callback' : 'Appointment';
+        showToast(`${typeLabel} reassignment saved. Waiting for agent confirmation.`, 'success');
+        closeReassignModal();
+
+        // Refresh service requests
+        const reqsResponse = await fetch('/api/v1/portal/service-requests');
+        if (reqsResponse.ok) {
+          allRequests = await reqsResponse.json();
+          applyServiceRequestsFilter();
+        }
+      } catch (err) {
+        console.error('Error during reassignment:', err);
+        showToast('Error reassigning: ' + err.message, 'error');
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = isCallback ? 'Reassign Callback' : 'Reassign Appointment';
+        }
+      }
+    });
+  }
+
+  // ==========================================================================
+  // Operational Analytics & SLA Performance Controller
+  // ==========================================================================
+  const activeAnalyticsCharts = {};
+  let currentAnalyticsSubtab = 'sla';
+  let cachedTechnicianScorecard = [];
+
+  // Sub-subtab switcher
+  const analyticsSubBtns = document.querySelectorAll('.analytics-sub-btn');
+  analyticsSubBtns.forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const targetSub = btn.getAttribute('data-analytics-subtab');
+      if (!targetSub) return;
+      currentAnalyticsSubtab = targetSub;
+
+      analyticsSubBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      document.querySelectorAll('.analytics-pane').forEach(p => p.classList.remove('active'));
+      const activePane = document.getElementById(`analytics-pane-${targetSub}`);
+      if (activePane) activePane.classList.add('active');
+
+      // Trigger redraw/resize of charts in the newly visible pane
+      Object.values(activeAnalyticsCharts).forEach(chart => {
+        if (chart && typeof chart.resize === 'function') chart.resize();
+      });
+    });
+  });
+
+  // Agent table search input
+  const techSearchInput = document.getElementById('tech-search-input');
+  if (techSearchInput) {
+    techSearchInput.addEventListener('input', () => {
+      renderTechnicianScorecardTable(cachedTechnicianScorecard, techSearchInput.value.trim().toLowerCase());
+    });
+  }
+
+  // Hook global timeframe selector to reload analytics if on analytics tab
+  const globalTfSelect = document.getElementById('calls-timeframe-select');
+  if (globalTfSelect) {
+    globalTfSelect.addEventListener('change', () => {
+      if (activeConfigSubtab === 'analytics') {
+        loadAnalyticsView();
+      }
+    });
+  }
+
+  function destroyAnalyticsChart(id) {
+    if (activeAnalyticsCharts[id]) {
+      try {
+        activeAnalyticsCharts[id].destroy();
+      } catch (err) {
+        console.warn('Error destroying chart:', id, err);
+      }
+      delete activeAnalyticsCharts[id];
+    }
+  }
+
+  async function loadAnalyticsView() {
+    const tf = (globalTfSelect ? globalTfSelect.value : '7d') || '7d';
+
+    try {
+      // 1. Fetch Overview KPIs
+      const overviewRes = await fetch(`/api/v1/portal/analytics/overview?timeframe=${tf}`);
+      if (overviewRes.ok) {
+        const overview = await overviewRes.json();
+        renderAnalyticsOverviewKPIs(overview);
+      }
+
+      // 2. Fetch SLA Performance
+      const slaRes = await fetch(`/api/v1/portal/analytics/sla?timeframe=${tf}`);
+      if (slaRes.ok) {
+        const slaData = await slaRes.json();
+        renderSLACharts(slaData);
+      }
+
+      // 3. Fetch Escalation Recovery
+      const escRes = await fetch(`/api/v1/portal/analytics/escalations?timeframe=${tf}`);
+      if (escRes.ok) {
+        const escData = await escRes.json();
+        renderEscalationCharts(escData);
+      }
+
+      // 4. Fetch Agent Scorecard
+      const techRes = await fetch(`/api/v1/portal/analytics/technicians?timeframe=${tf}`);
+      if (techRes.ok) {
+        cachedTechnicianScorecard = await techRes.json();
+        renderTechnicianPerformanceChart(cachedTechnicianScorecard);
+        renderTechnicianScorecardTable(cachedTechnicianScorecard);
+      }
+    } catch (err) {
+      console.error('Error loading analytics:', err);
+      showToast('Error loading analytics data', 'error');
+    }
+  }
+
+  function renderAnalyticsOverviewKPIs(data) {
+    const slaEl = document.getElementById('kpi-sla-compliance');
+    const slaBadge = document.getElementById('badge-sla-compliance');
+    if (slaEl) slaEl.textContent = `${data.sla_on_time_pct ?? '--'}%`;
+    if (slaBadge) slaBadge.innerHTML = `<span class="badge-dot success"></span>${data.on_time_confirmed ?? 0} on-time confirmations`;
+
+    const recEl = document.getElementById('kpi-recovery-rate');
+    const recBadge = document.getElementById('badge-recovery-rate');
+    if (recEl) recEl.textContent = `${data.recovery_rate_pct ?? '--'}%`;
+    const resolvedSum = (data.escalations_resolved || 0) + (data.escalations_reassigned || 0);
+    if (recBadge) recBadge.innerHTML = `<span class="badge-dot success"></span>${resolvedSum} resolved (${data.escalations_resolved || 0} tech / ${data.escalations_reassigned || 0} reassigned)`;
+
+    const respEl = document.getElementById('kpi-avg-response');
+    if (respEl) respEl.textContent = `${data.avg_response_minutes ?? '--'} min`;
+
+    const escEl = document.getElementById('kpi-total-escalations');
+    const escBadge = document.getElementById('badge-reassigned-count');
+    if (escEl) escEl.textContent = data.total_escalated ?? 0;
+    if (escBadge) escBadge.innerHTML = `<span class="badge-dot warning"></span>${data.escalations_active || 0} currently active`;
+  }
+
+  function renderSLACharts(slaData) {
+    if (typeof Chart === 'undefined') return;
+
+    // A. Daily SLA Trend Chart
+    const trendCtx = document.getElementById('chart-sla-trend')?.getContext('2d');
+    if (trendCtx) {
+      destroyAnalyticsChart('sla-trend');
+      const timeline = slaData.timeline || [];
+      const labels = timeline.map(t => t.date);
+      const onTimeData = timeline.map(t => t.on_time);
+      const breachedData = timeline.map(t => t.breached);
+
+      activeAnalyticsCharts['sla-trend'] = new Chart(trendCtx, {
+        type: 'bar',
+        data: {
+          labels: labels.length ? labels : ['No Data'],
+          datasets: [
+            {
+              label: 'On-Time Confirmed',
+              data: onTimeData.length ? onTimeData : [0],
+              backgroundColor: '#34d399',
+              borderRadius: 4
+            },
+            {
+              label: 'SLA Breached',
+              data: breachedData.length ? breachedData : [0],
+              backgroundColor: '#f87171',
+              borderRadius: 4
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { labels: { color: '#94a3b8', font: { family: 'Inter', size: 12 } } }
+          },
+          scales: {
+            x: { stacked: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } },
+            y: { stacked: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8', precision: 0 } }
+          }
+        }
+      });
+    }
+
+    // B. Response Latency Distribution Chart
+    const latCtx = document.getElementById('chart-sla-latency')?.getContext('2d');
+    if (latCtx) {
+      destroyAnalyticsChart('sla-latency');
+      const dist = slaData.latency_distribution || {};
+      const latLabels = ['< 15 min', '15m - 1 hr', '1 - 2 hrs', '2 - 4 hrs', '> 4 hrs'];
+      const latValues = [
+        dist.under_15m || 0,
+        dist.between_15m_1h || 0,
+        dist.between_1h_2h || 0,
+        dist.between_2h_4h || 0,
+        dist.over_4h || 0
+      ];
+
+      activeAnalyticsCharts['sla-latency'] = new Chart(latCtx, {
+        type: 'doughnut',
+        data: {
+          labels: latLabels,
+          datasets: [{
+            data: latValues,
+            backgroundColor: ['#38bdf8', '#34d399', '#fbbf24', '#f97316', '#f87171'],
+            borderColor: '#0f172a',
+            borderWidth: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'right', labels: { color: '#94a3b8', font: { family: 'Inter', size: 11 } } }
+          }
+        }
+      });
+    }
+  }
+
+  function renderEscalationCharts(escData) {
+    if (typeof Chart === 'undefined') return;
+
+    // A. Escalation Funnel Outcomes
+    const funnelCtx = document.getElementById('chart-escalation-funnel')?.getContext('2d');
+    if (funnelCtx) {
+      destroyAnalyticsChart('esc-funnel');
+      const out = escData.outcomes || {};
+      const funnelLabels = ['Tech Late Confirm', 'Supervisor Reassigned', 'Active Pending', 'Cancelled'];
+      const funnelValues = [
+        out.recovered_by_agent || 0,
+        out.supervisor_reassigned || 0,
+        out.active_unresolved || 0,
+        out.cancelled || 0
+      ];
+
+      activeAnalyticsCharts['esc-funnel'] = new Chart(funnelCtx, {
+        type: 'doughnut',
+        data: {
+          labels: funnelLabels,
+          datasets: [{
+            data: funnelValues,
+            backgroundColor: ['#34d399', '#38bdf8', '#f87171', '#64748b'],
+            borderColor: '#0f172a',
+            borderWidth: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'right', labels: { color: '#94a3b8', font: { family: 'Inter', size: 11 } } }
+          }
+        }
+      });
+    }
+
+    // B. Escalation Reasons Breakdown
+    const reasonsCtx = document.getElementById('chart-escalation-reasons')?.getContext('2d');
+    if (reasonsCtx) {
+      destroyAnalyticsChart('esc-reasons');
+      const reasons = escData.reasons || {};
+      const labels = Object.keys(reasons);
+      const values = Object.values(reasons);
+
+      activeAnalyticsCharts['esc-reasons'] = new Chart(reasonsCtx, {
+        type: 'bar',
+        data: {
+          labels: labels.length ? labels : ['None'],
+          datasets: [{
+            label: 'Escalations Triggered',
+            data: values.length ? values : [0],
+            backgroundColor: '#fbbf24',
+            borderRadius: 4
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          indexAxis: 'y',
+          plugins: {
+            legend: { display: false }
+          },
+          scales: {
+            x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8', precision: 0 } },
+            y: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 11 } } }
+          }
+        }
+      });
+    }
+  }
+
+  function renderTechnicianPerformanceChart(scorecard) {
+    if (typeof Chart === 'undefined') return;
+
+    const techCtx = document.getElementById('chart-technician-performance')?.getContext('2d');
+    if (!techCtx) return;
+
+    destroyAnalyticsChart('tech-perf');
+    const validTechs = scorecard.slice(0, 10);
+    const names = validTechs.map(t => t.agent_name || `Tech #${t.agent_id}`);
+    const complianceRates = validTechs.map(t => t.on_time_pct);
+    const escalations = validTechs.map(t => t.escalated_count);
+
+    activeAnalyticsCharts['tech-perf'] = new Chart(techCtx, {
+      type: 'bar',
+      data: {
+        labels: names.length ? names : ['No Data'],
+        datasets: [
+          {
+            label: 'On-Time Compliance (%)',
+            data: complianceRates.length ? complianceRates : [0],
+            backgroundColor: 'rgba(56, 189, 248, 0.75)',
+            borderColor: '#38bdf8',
+            borderWidth: 1,
+            yAxisID: 'y',
+            borderRadius: 4
+          },
+          {
+            label: 'Escalations Triggered',
+            data: escalations.length ? escalations : [0],
+            backgroundColor: 'rgba(248, 113, 113, 0.75)',
+            borderColor: '#f87171',
+            borderWidth: 1,
+            yAxisID: 'y1',
+            borderRadius: 4
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { labels: { color: '#94a3b8', font: { family: 'Inter', size: 12 } } }
+        },
+        scales: {
+          x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } },
+          y: {
+            type: 'linear',
+            position: 'left',
+            max: 100,
+            grid: { color: 'rgba(255,255,255,0.05)' },
+            ticks: { color: '#38bdf8', callback: v => `${v}%` }
+          },
+          y1: {
+            type: 'linear',
+            position: 'right',
+            grid: { drawOnChartArea: false },
+            ticks: { color: '#f87171', precision: 0 }
+          }
+        }
+      }
+    });
+  }
+
+  function renderTechnicianScorecardTable(scorecard, filterQuery = '') {
+    const tbody = document.getElementById('technician-scorecard-tbody');
+    if (!tbody) return;
+
+    const filtered = scorecard.filter(t => {
+      if (!filterQuery) return true;
+      const name = (t.agent_name || '').toLowerCase();
+      const role = (agentRole(t.role) || '').toLowerCase();
+      const email = (t.email || '').toLowerCase();
+      return name.includes(filterQuery) || role.includes(filterQuery) || email.includes(filterQuery);
+    });
+
+    if (filtered.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="8" class="text-center py-6 text-muted">No agents match search filter.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = filtered.map(t => {
+      const pct = t.on_time_pct ?? 100;
+      let barClass = 'high';
+      if (pct < 70) barClass = 'low';
+      else if (pct < 85) barClass = 'medium';
+
+      return `
+        <tr>
+          <td>
+            <div style="font-weight: 600; color: #fff;">${t.agent_name}</div>
+            <div style="font-size: 11px; color: var(--text-muted);">${t.email}</div>
+          </td>
+          <td><span class="badge neutral" style="font-size: 11px;">${agentRole(t.role)}</span></td>
+          <td><strong>${t.total_assigned}</strong></td>
+          <td>${t.confirmed_count}</td>
+          <td>
+            <div class="scorecard-bar-wrap">
+              <span style="font-weight: 600; min-width: 42px;">${pct}%</span>
+              <div class="scorecard-bar-track">
+                <div class="scorecard-bar-fill ${barClass}" style="width: ${pct}%;"></div>
+              </div>
+            </div>
+          </td>
+          <td>
+            ${t.escalated_count > 0 ? `<span class="badge danger" style="font-size: 11px;">${t.escalated_count}</span>` : `<span style="color: var(--text-muted);">0</span>`}
+          </td>
+          <td>
+            ${t.reassigned_count > 0 ? `<span class="badge warning" style="font-size: 11px;">${t.reassigned_count}</span>` : `<span style="color: var(--text-muted);">0</span>`}
+          </td>
+          <td>${t.avg_response_minutes > 0 ? `${t.avg_response_minutes} min` : `<span style="color: var(--text-muted);">--</span>`}</td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  loadTwilioSandboxInfo();
+  initBusinessTimezone();
+
+  // Initial Data & URL Hash Router Load
+  handleUrlHash();
+  window.addEventListener('hashchange', () => handleUrlHash());
+});
+

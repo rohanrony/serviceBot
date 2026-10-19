@@ -1992,3 +1992,39 @@
         <label for="reassign-agent-select" style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 6px;">Select Replacement Agent</label>
         <p id="reassign-availability-status" role="status" class="text-muted"></p>
         <button id="reassign-availability-retry" type="button" class="btn btn-secondary btn-sm" hidden>Retry availability</button>
+        <select id="reassign-agent-select" class="form-input" required style="width: 100%;">
+          <option value="">Loading available candidates...</option>
+        </select>
+        <small class="text-muted" style="font-size: 11px; display: block; margin-top: 4px;">Candidates are ranked by calendar availability and current schedule load.</small>
+      </div>
+
+      <div class="form-group mb-4">
+        <label for="reassign-reason-note" style="font-size: 12px; font-weight: 600; display: block; margin-bottom: 6px;">Reassignment Notes (Optional)</label>
+        <input type="text" id="reassign-reason-note" class="form-input" placeholder="e.g. Agent called out sick / unreachable">
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+        <button type="button" class="btn btn-secondary" id="reassign-cancel-btn">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="reassign-submit-btn" style="background: #ef4444; border-color: #ef4444;">Reassign Appointment</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Confirmation Modal -->
+  <div class="drawer-overlay" id="confirm-modal-overlay"></div>
+  <div class="modal-card" id="confirm-modal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1200; max-width: 400px; width: 90%; background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 12px; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.6);">
+      <h3 id="confirm-modal-title" style="margin-top: 0; color: #fff;">Are you sure?</h3>
+      <p id="confirm-modal-msg" style="color: var(--text-muted); margin-bottom: 24px;">This action cannot be undone.</p>
+      <div style="display: flex; justify-content: flex-end; gap: 12px;">
+          <button type="button" class="btn btn-secondary" id="confirm-modal-no">Cancel</button>
+          <button type="button" class="btn btn-primary" id="confirm-modal-yes">Confirm</button>
+      </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div class="toast" id="app-toast">Action completed successfully</div>
+
+  <!-- Javascript Logic -->
+  <script src="app.js?v=46"></script>
+</body>
+</html>
