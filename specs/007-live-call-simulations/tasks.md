@@ -801,3 +801,11 @@ timezone writer mismatch. Independent source review additionally found mapping
 drift and missing-trigger verification, both repaired with Red/Green tests.
 Integrated focused validation passed320 tests; full exact-candidate verification,
 hosted review and publication remain T166. No live calls or deployment occurred.
+
+The b6adeed complete gate exposed nine unit failures in older contracts: eight
+captured adapter responses omitted the new intent identity, and the explicit
+migration rollback inventory stopped at0010. Update those fixtures to the real
+API contract and include0011, preserving all existing safety assertions. Add a
+valid-shape cross-intent rejection regression. Focused adapter/staff/migration
+contracts pass186 tests; the failed candidate cannot authorize publication and
+the corrected exact commit requires a fresh complete gate.

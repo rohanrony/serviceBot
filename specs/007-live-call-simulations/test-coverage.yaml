@@ -31,7 +31,8 @@
         "e2e/test_simulation_staff_recovery.py::test_original_intent_recovery_auth_cross_run_drift_and_replay",
         "e2e/test_simulation_staff_recovery.py::test_real_cleanup_commit_response_loss_recovers_without_repeat",
         "tests/test_simulation_staff.py::test_cleanup_refuses_mapping_edit_after_recovery",
-        "tests/test_simulation_staff.py::test_staff_intent_migration_immutable_claims_and_safe_rollback"
+        "tests/test_simulation_staff.py::test_staff_intent_migration_immutable_claims_and_safe_rollback",
+        "tests/test_deployed_full_adapter.py::test_c23_cross_intent_response_is_rejected_before_fixture_adoption"
       ],
       "layer": [
         "unit",
@@ -693,7 +694,7 @@
   "review": {
     "red": "Historical failure evidence and the original offline repair package are retained in scratch/full-delta-20261019; this publication reconstructs those fixes onto current main. Publication intake regression: three expected database-forbidden failures captured before admission guard. C50 accounting: 64 intended failures before implementation, 20 existing session tests passing; retained c50-red.log. PR7 review repairs: C33 five intended failures and C48 seven intended failures preceded their fixes. C50 management command failed to settle known native charges before wiring; three further regressions reproduced its current-customer database dependency. Second hosted review: six management false-success failures and two real PostgreSQL timezone composition failures reproduced before repairs. Third review: actual committed-create/disarm/cleanup response loss, absent phase callbacks/journals, non-UTC condition epochs, mapping drift and missing-trigger verification reproduced before repairs. Canonical writer regression retained in condition-writer-contract-red.log.",
     "green": "Focused native reader/session/adapter/causal/quota/Budget contracts pass; full offline and exact-candidate publication verification recorded separately. PR7 C33/native/conditions:105 passed; C48:55 passed. Current-candidate full gate recorded separately. C50 session/credit contracts:105 passed; combined C33/C48/native/conditions:160 passed. Independent source review found no remaining actionable review repair. Second review repairs:113 session/credit tests and21 projection/causal tests passed with zero skips; new exact-candidate full gate pending. Third review integrated focused set:320 passed; independent recovery/ownership/authentication/lock/privacy and typed-timezone reviews clean after corrective regressions. Fresh complete candidate gate pending.",
-    "test_changes": "Preserve main future-date handling and migration0010; add migration0008/0009 assertions. Review the failure, ownership, concurrency, provenance and unknown-charge assertions; no skips or assertion weakening.",
+    "test_changes": "Preserve main future-date handling and migration0010; add migration0008/0009 assertions. Review the failure, ownership, concurrency, provenance and unknown-charge assertions; no skips or assertion weakening. Full-gate stale C23 responses now echo the real submitted intent, migration inventory includes0011, and valid-shape cross-intent rejection is asserted; no existing safety assertion weakened.",
     "sufficiency": "Native database/HTTP tests exercise transactional ownership, retry, cleanup and migration behavior; deterministic provider contracts cover actual payload shapes and negative evidence. Full paid provider acceptance remains pending, including independently verified real-account native credit units."
   }
 }

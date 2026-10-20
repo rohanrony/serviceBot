@@ -579,7 +579,7 @@ def negative_native(native_case, monkeypatch):
             staff.update(id=88,name='signed-owned-staff',email=None,phone_number=None,is_active=True,
                 requests=0,reservations=0,oauth=0,oauth_states=0,slots=0,mappings=[188])
             return httpx.Response(201,json={'success':True,'run_id':adapter.campaign.manifest['run_id'],
-                'nonce':'a'*32,'staff_id':88,'service_id':188,'name':'signed-owned-staff',
+                'intent_id':body['intent_id'],'nonce':'a'*32,'staff_id':88,'service_id':188,'name':'signed-owned-staff',
                 'service_name':'signed-owned-service','receipt':'synthetic-private-receipt'})
         if request.url.path.endswith('/voice/tools'):
             if body['name'] == 'check_availability': return httpx.Response(200, json={'result': response})
@@ -818,3 +818,23 @@ def test_catalog_binding_membership_is_exact_without_requiring_api_order(fixture
     else:
         with pytest.raises(SimulationError,match='read-back differs'):
             adapter._catalog_readback()
+
+
+def test_c23_cross_intent_response_is_rejected_before_fixture_adoption(negative_native, monkeypatch):
+    from live_simulations import deployed_full_negative as negative
+    adapter, _, _, _, _, _, _ = negative_native
+    def wrong_intent(request):
+        import json
+        body = json.loads(request.content)
+        assert request.method == 'POST'
+        assert len(body['intent_id']) == 32
+        return httpx.Response(201, json={'success': True, 'run_id': body['run_id'],
+            'intent_id': '0'*32, 'staff_id': 88, 'service_id': 188,
+            'name': 'owned', 'service_name': 'owned-service', 'receipt': 'private-original'})
+    with httpx.Client(transport=httpx.MockTransport(wrong_intent), trust_env=False, follow_redirects=False) as client:
+        adapter.simulation_staff_client = client
+        with pytest.raises(SimulationError, match='identity unknown'):
+            negative.create_owned_staff(adapter)
+    assert adapter.state['blocked'] is True
+    assert not adapter.state.get('full_unconnected_staff')
+    assert adapter.state['operations'][-1]['status'] == 'unknown'
