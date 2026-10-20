@@ -734,16 +734,18 @@ document.addEventListener('DOMContentLoaded', () => {
     let startDt = null;
     let endDt = null;
 
-    if (req.booking_start_time) {
-      const cleanStart = req.booking_start_time.includes(' ') && !req.booking_start_time.includes('T') ? req.booking_start_time.replace(' ', 'T') : req.booking_start_time;
+    const bookingStart = req.booking_start_iso || req.booking_start_time;
+    const bookingEnd = req.booking_end_iso || req.booking_end_time;
+    if (bookingStart) {
+      const cleanStart = bookingStart.includes(' ') && !bookingStart.includes('T') ? bookingStart.replace(' ', 'T') : bookingStart;
       startDt = new Date(cleanStart);
     } else {
       const cleanRaw = String(rawTime).includes(' ') && !String(rawTime).includes('T') ? String(rawTime).replace(' ', 'T') : String(rawTime);
       startDt = new Date(cleanRaw);
     }
 
-    if (req.booking_end_time) {
-      const cleanEnd = req.booking_end_time.includes(' ') && !req.booking_end_time.includes('T') ? req.booking_end_time.replace(' ', 'T') : req.booking_end_time;
+    if (bookingEnd) {
+      const cleanEnd = bookingEnd.includes(' ') && !bookingEnd.includes('T') ? bookingEnd.replace(' ', 'T') : bookingEnd;
       endDt = new Date(cleanEnd);
     } else if (startDt && !isNaN(startDt.getTime())) {
       endDt = new Date(startDt.getTime() + durationMin * 60000);

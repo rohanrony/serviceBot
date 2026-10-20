@@ -359,6 +359,7 @@ def test_checkout_has_the_verified_git_revision_and_fixture_controls_test_mode(s
         "def test_rule():\n"
         "    assert subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip() == os.environ['VERIFY_HEAD_SHA']\n"
         "    assert 'TESTING' not in os.environ\n"
+        "    assert os.environ['TZ'] == 'UTC'\n"
     )
     ok(repo, "git", "add", ".")
     ok(repo, "git", "commit", "-qm", "Git metadata and test mode boundary")

@@ -9,7 +9,8 @@ and `e2e/requirements.txt` into `.venv`, install Chromium with
 whose user can create databases. PostgreSQL must use UTF8 encoding; server version, encoding
 and timezone are recorded in the receipt. `TEST_DATABASE_URL` must name a database ending in `_test`;
 fixtures create/drop only their own random databases. The URL is connection configuration,
-not a database to reset. The developer `.env` and production credentials are never copied.
+not a database to reset. The isolated application/browser runtime uses UTC across hosts and records that setting;
+business-clock tests provide explicit deterministic clocks. The developer `.env` and production credentials are never copied.
 Legacy imports that parse `.env` directly receive a generated file containing synthetic keys
 inside the disposable checkout. No paid provider calls are used.
 

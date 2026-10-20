@@ -1,6 +1,6 @@
 """Normal dropdown recovery through real HTTP, services, DB, and Chromium."""
 
-from datetime import timedelta
+from datetime import timedelta, timezone
 
 import pytest
 from playwright.sync_api import expect
@@ -246,8 +246,9 @@ def test_reassigning_one_visit_segment_preserves_its_confirmed_companion(
     assert companion_state() == before
 
 
+@pytest.mark.parametrize("as_of_timezone", ["business", "UTC", "naive"])
 def test_replacement_is_eligible_for_escalation_only_at_its_new_deadline(
-    api, db, scenario, assignment_clock
+    api, db, scenario, assignment_clock, as_of_timezone
 ):
     from serviceBot.db.queries import get_breached_unconfirmed_appointments
 
@@ -261,6 +262,10 @@ def test_replacement_is_eligible_for_escalation_only_at_its_new_deadline(
     assert response.status_code == 200
 
     def breached(at):
+        if as_of_timezone == "UTC":
+            at = at.astimezone(timezone.utc)
+        elif as_of_timezone == "naive":
+            at = at.replace(tzinfo=None)
         return {
             row["id"] for row in get_breached_unconfirmed_appointments(as_of_time=at)
         }

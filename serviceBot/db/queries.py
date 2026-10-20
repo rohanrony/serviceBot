@@ -4518,6 +4518,12 @@ def get_breached_unconfirmed_appointments(
         from serviceBot.services.booking import BUSINESS_TZ
         cutoff_threshold = as_of_time if as_of_time is not None else dt_mod.datetime.now(BUSINESS_TZ).replace(tzinfo=None)
 
+    if cutoff_threshold.tzinfo is not None:
+        from serviceBot.services.timezone_service import to_business_tz
+
+        # Cutoffs are business wall-clock timestamps, independent of the DB session timezone.
+        cutoff_threshold = to_business_tz(cutoff_threshold).replace(tzinfo=None)
+
     query = """
     SELECT sr.*, c.name AS customer_name, c.phone AS customer_phone, sa.name AS agent_name, sa.phone_number AS agent_phone
     FROM service_requests sr

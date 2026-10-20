@@ -180,7 +180,7 @@ def sanitized_environment(root, checkout, run_dir):
     browser_path = os.environ.get("PLAYWRIGHT_BROWSERS_PATH") or str(Path.home() / (
         "Library/Caches/ms-playwright" if sys.platform == "darwin" else ".cache/ms-playwright"))
     env = {key: os.environ[key] for key in ("PATH", "SYSTEMROOT", "LANG", "LC_ALL", "TMPDIR") if key in os.environ}
-    env.update(HOME=str(home), PYTHONPATH=str(checkout), PYTHON_DOTENV_DISABLED="1",
+    env.update(HOME=str(home), TZ="UTC", PYTHONPATH=str(checkout), PYTHON_DOTENV_DISABLED="1",
                PYTHONDONTWRITEBYTECODE="1", PYTHONUNBUFFERED="1", PYTEST_DISABLE_PLUGIN_AUTOLOAD="1",
                PLAYWRIGHT_BROWSERS_PATH=browser_path, LOG_FILE=str(run_dir / "application.log"),
                TEST_ARTIFACTS_DIR=str(run_dir / "runtime"), VERIFY_EVIDENCE_DIR=str(run_dir),
@@ -295,6 +295,7 @@ def run_verification(root, output, head, base):
         with tempfile.TemporaryDirectory(prefix="voice-verify-") as temporary:
             checkout = Path(temporary) / "checkout"
             env = sanitized_environment(root, checkout, run_dir)
+            receipt["tools"]["runtime_timezone"] = env["TZ"]
             env["VERIFY_HEAD_SHA"] = head
             git_env = {**env, "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"}
             require(run("snapshot", ["git", "-c", "core.hooksPath=/dev/null", "clone", "--shared", "--no-checkout", "--quiet",

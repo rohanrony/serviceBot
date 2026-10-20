@@ -347,8 +347,9 @@ def test_unverified_second_calendar_cannot_produce_an_available_slot(
     assert booking_state(db) == before
 
 
+@pytest.mark.parametrize("browser_timezone", ["UTC", "America/Los_Angeles"])
 def test_joined_label_booking_shows_both_technicians_and_windows_after_reload(
-    page, live_server, api, db, scenario, catalogue
+    page, live_server, api, db, scenario, catalogue, browser_timezone
 ):
     for name, duration in zip(NAMES, [90, 120], strict=True):
         details = voice(api, "get_service_fields", {"service_name": name})
@@ -371,6 +372,17 @@ def test_joined_label_booking_shows_both_technicians_and_windows_after_reload(
         in availability["available_slots"]
     )
     rows = assert_visit(db, scenario, book(api, scenario))
+    from zoneinfo import ZoneInfo
+
+    persisted = {row["id"]: row for row in api.get("/api/v1/portal/service-requests").json()}
+    for row, offset, duration in zip(rows, [0, 90], [90, 120], strict=True):
+        start = (scenario["start"] + timedelta(minutes=offset)).replace(
+            tzinfo=ZoneInfo("America/New_York")
+        )
+        assert persisted[row["id"]]["booking_start_iso"] == start.isoformat()
+        assert persisted[row["id"]]["booking_end_iso"] == (
+            start + timedelta(minutes=duration)
+        ).isoformat()
     page.goto(f"{live_server}/portal/")
     page.reload()
     for row, technician, offset, duration in zip(

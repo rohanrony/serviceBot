@@ -1,0 +1,105 @@
+schema: 1
+feature: changes/ci-portability
+acceptance:
+- id: CI-AC1
+  behavior: Persisted booking windows display in business time across browser zones
+    after reload
+  preconditions:
+  - Isolated PostgreSQL, New York business zone, UTC and Los Angeles Chromium contexts
+  success:
+  - Fresh API exposes explicit instants; both technicians and original windows render
+    after reload
+  failure:
+  - A browser's local zone must not reinterpret business wall-clock values
+  invariants:
+  - Legacy time fields, service durations, reservations and unrelated records remain
+    unchanged
+  tests:
+  - e2e/test_canonical_multiservice_booking.py::test_joined_label_booking_shows_both_technicians_and_windows_after_reload
+  layer:
+  - database
+  - http
+  - browser
+  - composed
+  live_acceptance:
+    status: not_required
+    reason: Display serialization changes no provider request or effect
+- id: CI-AC2
+  behavior: Escalation eligibility starts at the persisted replacement deadline for
+    equivalent aware and naive inputs
+  preconditions:
+  - Frozen business clock, reassigned booking, UTC PostgreSQL session
+  success:
+  - Ineligible one microsecond before cutoff; eligible at the exact cutoff for business/UTC/naive
+    inputs
+  failure:
+  - Timezone coercion must not create premature escalation
+  invariants:
+  - Persisted cutoff and replacement ownership do not change during the query
+  tests:
+  - e2e/test_escalated_assignment.py::test_replacement_is_eligible_for_escalation_only_at_its_new_deadline
+  layer:
+  - database
+  - http
+  - composed
+  live_acceptance:
+    status: not_required
+    reason: Read-only query normalization; provider effects and ordinary naive-clock
+      caller contracts unchanged
+- id: CI-AC3
+  behavior: The full simulation observer reconnects to its fixture-owned authenticated
+    database read-only
+  preconditions:
+  - Synthetic password-authenticated loopback PostgreSQL, fresh E2E database
+  success:
+  - Real adapter reads and composed cases execute using the authenticated fixture
+    URL
+  failure:
+  - Masked connection.dsn credentials cannot be reused as authentication
+  invariants:
+  - Observer remains read-only and bound to the same isolated database
+  tests:
+  - e2e/test_deployed_full_fixtures.py::test_c23_quarantined_unconnected_component_preserves_originals_and_refuses_unsafe_cleanup
+  layer:
+  - database
+  - composed
+  live_acceptance:
+    status: not_required
+    reason: Test fixture credential transport only; no live observer or provider invoked
+- id: CI-AC4
+  behavior: Clock tests and isolated verification do not depend on host-local time
+  preconditions:
+  - Fixed business clocks and an explicit UTC verification runtime
+  success:
+  - Date matching respects business date; retry backoff is exact; exhaustion persists
+    FAILED; verifier child sees UTC
+  failure:
+  - UTC/business date divergence and host wall clocks must not prevent exercising
+    the intended contract
+  invariants:
+  - All original behavior assertions and full-suite requirements remain
+  tests:
+  - tests/test_service_agent_availability_and_timezone.py::test_telephony_time_match_requires_date_and_time
+  - tests/test_sms_reminders_cadence.py::test_polling_worker_handles_carrier_error_retry_backoff
+  - tests/test_sms_reminders_cadence.py::test_polling_worker_max_retries_marks_failed
+  - tests/verification/test_verification_gate.py::test_checkout_has_the_verified_git_revision_and_fixture_controls_test_mode
+  layer:
+  - unit
+  - database
+  - targeted
+  live_acceptance:
+    status: not_required
+    reason: Deterministic offline clocks and synthetic tests only
+omitted_layers:
+  provider_contract: No Google/Twilio/Gmail/ElevenLabs transport shape change; full
+    existing provider tests still execute
+  migration: No schema or stored-record migration
+review:
+  red: Initial hosted failure plus local UTC/authenticated reproduction; expanded
+    regressions failed before application fixes
+  green: 46 focused unit/gate and 62 E2E cases passed; full exact-candidate verification
+    required before publication
+  test_changes: Preserved assertions, added timezone variants and fresh API checks;
+    retry timestamp assertion strengthened to exact equality
+  sufficiency: Covers rendering/reload, deadline boundaries, authenticated read-only
+    observer and deterministic clock failure modes

@@ -443,9 +443,15 @@ def browser_artifacts(request):
 
 
 @pytest.fixture
-def page(browser_instance, live_server, request, browser_artifacts):
+def browser_timezone():
+    return "UTC"
+
+
+@pytest.fixture
+def page(browser_instance, live_server, request, browser_artifacts, browser_timezone):
     context = browser_instance.new_context(
-        viewport={"width": 1280, "height": 800}, base_url=live_server
+        viewport={"width": 1280, "height": 800}, base_url=live_server,
+        timezone_id=browser_timezone,
     )
 
     context.route("**/*", route_offline_browser_request)

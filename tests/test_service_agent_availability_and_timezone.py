@@ -1,4 +1,5 @@
 import datetime as dt_mod
+from zoneinfo import ZoneInfo
 from unittest.mock import patch, MagicMock
 import pytest
 
@@ -36,7 +37,7 @@ def test_dynamic_slots_business_timezone_lead_time():
         )
 
 
-def test_telephony_time_match_requires_date_and_time():
+def test_telephony_time_match_requires_date_and_time(monkeypatch):
     """
     Verify date-safe time matching:
     If candidate slots only contain tomorrow at 4:00 PM, a query for today at 4:00 PM
@@ -44,7 +45,11 @@ def test_telephony_time_match_requires_date_and_time():
     """
     preferred_date = "today"
     preferred_time = "4:00 PM"
-    tomorrow_iso = (dt_mod.date.today() + dt_mod.timedelta(days=1)).isoformat()
+    from serviceBot.services import timezone_service
+
+    business_now = dt_mod.datetime(2026, 10, 15, 23, 30, tzinfo=ZoneInfo("America/New_York"))
+    monkeypatch.setattr(timezone_service, "now_in_business_tz", lambda: business_now)
+    tomorrow_iso = (business_now.date() + dt_mod.timedelta(days=1)).isoformat()
     slots = [f"{tomorrow_iso} 16:00:00"]  # Only tomorrow at 4 PM is available
 
     iso_date_target, _, _ = parse_preferred_date_and_time(preferred_date)
@@ -62,7 +67,7 @@ def test_telephony_time_match_requires_date_and_time():
     assert not time_match, "Should not match 4:00 PM tomorrow when today 4:00 PM was requested"
 
     # Now verify with today's 4:00 PM in slots
-    today_iso = dt_mod.date.today().isoformat()
+    today_iso = business_now.date().isoformat()
     slots_with_today = [f"{today_iso} 16:00:00"]
     time_match_today = any(
         (not iso_date_target or s.startswith(iso_date_target))
