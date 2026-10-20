@@ -20,13 +20,16 @@ def fixture(tmp_path,monkeypatch):
     folder=tmp_path/manifest['run_id'];folder.mkdir()
     campaign=SimpleNamespace(root=tmp_path,folder=folder,run_id=manifest['run_id'],manifest=manifest,
         config={},save=lambda:None)
-    adapter=SimpleNamespace(campaign=campaign,config={'budget':{'native_session_credit_units_verified':True}},
+    adapter=SimpleNamespace(campaign=campaign,config={'budget':{'native_session_credit_units_verified':True, 'verified_credit_units':True,
+            'native_session_credit_subscription_tier':'legacy-test', 'monthly_credits':1000, 'reset_unix':4000000000}},
         state={'full_history':{'run_id':manifest['run_id'],'case_id':'C50','agent_id':'agent-owned','customer_id':7,
             'baseline_note_ids':[],'baseline_event_ids':[],'customer_phone':'+15550100001','customer_name':'Owner'}},_guard=lambda:None,_save=lambda:None)
     (tmp_path/'usage-ledger.json').write_text(json.dumps({'entries':[],'stage_authorizations':[{**auth,'run_id':manifest['run_id']}]}))
     events=[{'type':'conversation_initiation_metadata','conversation_initiation_metadata_event':{'conversation_id':'actual-session'}},
         {'type':'ping','ping_event':{'event_id':42}},{'type':'agent_response','agent_response_event':{'agent_response':'Hello'}}]
-    sent=[];closed=[];requests=[]
+    sent=[];closed=[];requests=[];quota_reads=[]
+    subscription={'tier':'legacy-test','status':'active','character_count':0,'character_limit':1000,
+        'character_refresh_period':'monthly_period','next_character_count_reset_unix':4000000000}
     class Socket:
         def send(self,value):sent.append(json.loads(value))
         def recv(self,timeout):return json.dumps(events.pop(0))
@@ -34,6 +37,9 @@ def fixture(tmp_path,monkeypatch):
     detail={'conversation_id':'actual-session','agent_id':'agent-owned','status':'done','transcript':[{'role':'user','message':'hello'}],
         'user_id':'+15550100001','conversation_initiation_client_data':{'dynamic_variables':{},'user_id':'+15550100001'},'metadata':{'cost':3}}
     class Provider:
+        def subscription(self):
+            quota_reads.append(True)
+            return deepcopy(subscription)
         def request(self,method,path):
             requests.append((method,path))
             if 'get-signed-url' in path:return {'signed_url':'wss://api.elevenlabs.io/v1/convai/conversation?signature=must-stay-secret','conversation_id':'actual-session'}
@@ -43,7 +49,8 @@ def fixture(tmp_path,monkeypatch):
     monkeypatch.setattr(session.causal,'observe_history',lambda *a,**kw:{'synthetic':True})
     monkeypatch.setattr(session.causal,'verify_native_history',lambda observation,provider,**kw:provider['conversation_id']=='actual-session')
     return SimpleNamespace(adapter=adapter,provider=Provider(),socket_factory=lambda url:Socket(),events=events,
-        sent=sent,closed=closed,requests=requests,detail=detail,tmp=tmp_path)
+        sent=sent,closed=closed,requests=requests,detail=detail,tmp=tmp_path,
+        quota_reads=quota_reads,subscription=subscription)
 
 
 def run(f):
@@ -230,3 +237,141 @@ def test_compiled_socket_factory_is_bounded_and_never_uses_proxy_or_global_logge
     assert calls[0][1]['proxy'] is None and calls[0][1]['open_timeout']==10 and calls[0][1]['close_timeout']==5
     assert calls[0][1]['max_size']==1000000
     assert calls[0][1]['logger'].isEnabledFor(50) is False
+
+
+def test_compiled_reader_settles_and_reconciles_exact_charge(fixture):
+    f = fixture
+    result = session.execute(f.adapter, provider=f.provider, socket_factory=f.socket_factory,
+        credit_reader=session.native_credit_reader,
+        budget=Budget(1000, 'full', 1000, credit_ceiling=1000), estimate=10, script=['hello'])
+    assert result['history_verified'] is True
+    first = json.loads((f.tmp/'usage-ledger.json').read_text())['entries'][0]
+    assert first['credits'] == '3' and first['unsettled'] is False
+    assert first['credit_source'] == 'conversation.metadata.cost' and first['credit_units'] == 'credits'
+    intent = json.loads((f.adapter.campaign.folder/'C50-native-session-intent.json').read_text())
+    assert intent['credit_contract']['subscription_tier'] == 'legacy-test'
+    assert session.reconcile(f.adapter, provider=f.provider,
+        credit_reader=session.native_credit_reader)['history_verified'] is True
+    assert json.loads((f.tmp/'usage-ledger.json').read_text())['entries'][0] == first
+    assert len(f.quota_reads) == 1
+    assert sum('get-signed-url' in path for _, path in f.requests) == 1
+
+
+@pytest.mark.parametrize('change', ['headroom', 'tier', 'reset', 'unknown'])
+def test_fresh_quota_denies_before_intent_signed_url_or_socket(fixture, change):
+    f = fixture
+    if change == 'headroom': f.subscription['character_count'] = 995
+    elif change == 'tier': f.subscription['tier'] = 'other-plan'
+    elif change == 'reset': f.subscription['next_character_count_reset_unix'] += 1
+    else:
+        def failed(): raise RuntimeError('private-provider-text')
+        f.provider.subscription = failed
+    with pytest.raises(SimulationError): run(f)
+    assert f.requests == [] and f.sent == []
+    assert not (f.adapter.campaign.folder/'C50-native-session-intent.json').exists()
+    assert json.loads((f.tmp/'usage-ledger.json').read_text())['entries'] == []
+
+
+@pytest.mark.parametrize('remaining,used,expected', [(1000, 500, 500), (100, 0, 100)])
+def test_fresh_quota_never_replenishes_known_budget(fixture, remaining, used, expected):
+    f = fixture
+    f.subscription['character_count'] = used
+    budget = Budget(1000, 'full', remaining, credit_ceiling=1000)
+    session.execute(f.adapter, provider=f.provider, socket_factory=f.socket_factory,
+        credit_reader=session.native_credit_reader, budget=budget, estimate=10, script=['hello'])
+    assert budget.remaining == expected
+
+
+@pytest.mark.parametrize('amount', [None, 0, True, '3', 3.1])
+def test_compiled_totals_preserve_unknown_and_explicit_zero(fixture, amount):
+    f = fixture; f.detail['metadata']['cost'] = amount
+    result = session.execute(f.adapter, provider=f.provider, socket_factory=f.socket_factory,
+        credit_reader=session.native_credit_reader,
+        budget=Budget(1000, 'full', 1000, credit_ceiling=1000), estimate=10, script=['hello'])
+    entry = json.loads((f.tmp/'usage-ledger.json').read_text())['entries'][0]
+    if amount == 0 and type(amount) is int:
+        assert entry['credits'] == '0' and entry['unsettled'] is False
+    else:
+        assert entry['unsettled'] is True and 'credits' not in entry
+        assert result['global_stop'] is True and result['status'] == 'unknown_actual_credits'
+
+
+def test_compiled_failed_conversation_settles_cost_without_functional_success(fixture):
+    f = fixture; f.detail['status'] = 'failed'
+    result = session.execute(f.adapter, provider=f.provider, socket_factory=f.socket_factory,
+        credit_reader=session.native_credit_reader,
+        budget=Budget(1000, 'full', 1000, credit_ceiling=1000), estimate=10, script=['hello'])
+    assert result['history_verified'] is False and result['global_stop'] is True
+    entry = json.loads((f.tmp/'usage-ledger.json').read_text())['entries'][0]
+    assert entry['credits'] == '3' and entry['unsettled'] is False
+
+
+def test_compiled_reconcile_after_rollover_uses_only_existing_conversation_get(fixture):
+    f = fixture; f.detail['metadata']['cost'] = None
+    result = session.execute(f.adapter, provider=f.provider, socket_factory=f.socket_factory,
+        credit_reader=session.native_credit_reader,
+        budget=Budget(1000, 'full', 1000, credit_ceiling=1000), estimate=10, script=['hello'])
+    assert result['global_stop'] is True
+    requests_before = len(f.requests)
+    f.detail['metadata']['cost'] = 0
+    f.adapter.config['budget']['reset_unix'] = 1
+    def forbidden(): raise AssertionError('Reconciliation must not fetch new admission quota')
+    f.provider.subscription = forbidden
+    assert session.reconcile(f.adapter, provider=f.provider,
+        credit_reader=session.native_credit_reader)['history_verified'] is True
+    assert f.requests[requests_before:] == [('GET', '/v1/convai/conversations/actual-session')]
+    assert json.loads((f.tmp/'usage-ledger.json').read_text())['entries'][0]['credits'] == '0'
+
+
+def test_compiled_native_charge_reaches_outer_budget_once(fixture):
+    from live_simulations import deployed_full_execution as execution
+    from live_simulations.runner import campaign_lock
+
+    f = fixture; ledger = {'entries': []}
+    budget = Budget(1000, 'full', 1000, credit_ceiling=1000)
+    f.adapter.execute_c50 = lambda **kw: session.execute(f.adapter,
+        provider=kw['provider'], socket_factory=f.socket_factory,
+        credit_reader=session.native_credit_reader, budget=kw['budget'], estimate=10, script=['hello'])
+    with campaign_lock(f.tmp):
+        execution.run_c50(f.adapter, provider=f.provider, budget=budget, ledger=ledger,
+            campaign=f.adapter.campaign, estimate=10)
+    assert budget.spent == 3 and budget.remaining == 997 and not budget.unknown
+    assert budget.settled == {'conversation:actual-session'}
+    assert len(ledger['entries']) == 1 and ledger['entries'][0]['credits'] == '3'
+    f.adapter.execute_c50 = lambda **kw: session.reconcile(f.adapter,
+        provider=kw['provider'], credit_reader=session.native_credit_reader)
+    with campaign_lock(f.tmp):
+        execution.run_c50(f.adapter, provider=f.provider, budget=budget, ledger=ledger,
+            campaign=f.adapter.campaign, estimate=10)
+    assert budget.spent == 3 and budget.remaining == 997
+    assert len(f.quota_reads) == 1 and len(ledger['entries']) == 1
+
+
+def test_c50_reconciliation_uses_compiled_default_after_restart(fixture):
+    f = fixture
+    session.execute(f.adapter, provider=f.provider, socket_factory=f.socket_factory,
+        credit_reader=session.native_credit_reader,
+        budget=Budget(1000, 'full', 1000, credit_ceiling=1000), estimate=10, script=['hello'])
+    assert not hasattr(f.adapter, 'native_session_credit_reader')
+    requests_before = len(f.requests)
+    checks = session.causal.checks(f.adapter, 'C50', {}, [], [], provider=f.provider)
+    assert checks and all(check['passed'] for check in checks)
+    assert len(f.quota_reads) == 1
+    assert f.requests[requests_before:] == [('GET', '/v1/convai/conversations/actual-session')]
+
+
+def test_compiled_unknown_charge_blocks_outer_budget(fixture):
+    from live_simulations import deployed_full_execution as execution
+    from live_simulations.runner import campaign_lock
+
+    f = fixture; f.detail['metadata']['cost'] = None; ledger = {'entries': []}
+    budget = Budget(1000, 'full', 1000, credit_ceiling=1000)
+    f.adapter.execute_c50 = lambda **kw: session.execute(f.adapter,
+        provider=kw['provider'], socket_factory=f.socket_factory,
+        credit_reader=session.native_credit_reader, budget=kw['budget'], estimate=10, script=['hello'])
+    with campaign_lock(f.tmp):
+        result = execution.run_c50(f.adapter, provider=f.provider, budget=budget,
+            ledger=ledger, campaign=f.adapter.campaign, estimate=10)
+    assert result['global_stop'] is True and budget.unknown is True
+    assert budget.spent == 0 and not budget.can_start(1)
+    assert len(ledger['entries']) == 1 and ledger['entries'][0]['unsettled'] is True

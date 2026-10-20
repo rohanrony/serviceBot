@@ -155,3 +155,24 @@ def test_c50_history_and_booking_flags_cannot_replace_actual_provider_delivery(a
     assert result['full_case_verified'] is False and result['global_stop'] is True
     assert observed==[{'expected_booking':{'exact':'expected'},'request_id':50,'conversation_id':'real-session'}]
     assert any(c['name']=='actual provider WhatsApp delivery' and c['passed'] is False for c in result['checks'])
+
+
+def test_c50_default_reader_is_compiled_without_runtime_attribute_injection(adapter,monkeypatch):
+    adapter.config.update(variables={'customer_name':'Owner','customer_phone':'+15550100001','appointment_time':'2026-11-11T10:00:00'},
+        budget={'native_session_credit_units_verified':True,'case_upper_estimate':10})
+    adapter.arrange=lambda *args:None
+    adapter._discover_condition_rows=lambda *args:None
+    adapter._c48_expected_booking=lambda values:{'exact':'expected'}
+    adapter.current_ids={50}
+    adapter.checks=lambda *args:[full.check('native booking flags',True)]
+    monkeypatch.setattr(full.medium,'_read',lambda *args:[{'make':'Toyota','model':'Camry','year':2021}])
+    monkeypatch.setattr(full.medium,'_request_rows',lambda *args:[{'id':50}])
+    monkeypatch.setattr(full.medium.Adapter,'final_checks',lambda *args:[full.check('reloaded browser owned row 50',True)])
+    observed=[]
+    def execute(*args,**kwargs):
+        observed.append(kwargs['credit_reader'])
+        return {'history_verified':True,'global_stop':False,'provider_conversation_id':'real-session'}
+    monkeypatch.setattr(full.session,'execute',execute)
+    adapter.native_bridge=SimpleNamespace(c50_delivery=lambda **kwargs:{'evidence_complete':True,'checks':[full.check('actual provider WhatsApp delivery',True)]})
+    assert adapter.execute_c50(provider=object(),budget=object(),ledger={'entries':[]},campaign=adapter.campaign)['full_case_verified']
+    assert observed == [full.session.native_credit_reader]

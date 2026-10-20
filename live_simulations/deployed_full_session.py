@@ -1,7 +1,7 @@
 """Owned genuine C50 session driver, with injected REST/socket boundaries only.
 
-Signed URLs and authentication headers are never persisted. No default connection,
-credit conversion or session script is supplied; unknown effects remain unsettled.
+Signed URLs and authentication headers are never persisted. Native totals require
+an independently verified account unit contract; unknown effects remain unsettled.
 """
 from __future__ import annotations
 
@@ -10,12 +10,13 @@ import re
 import secrets
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import quote, urlencode, urlsplit
 
 from . import deployed_full_causal as causal
 from .core import SimulationError, fingerprint, number, private_json
 from .deployed_full_interruption import _intent, _read
-from .runner import campaign_lock
+from .runner import campaign_lock, current_remaining
 
 
 def _paths(adapter):
@@ -52,7 +53,8 @@ def _baseline(adapter):
 
 
 def _units(adapter,credit_reader):
-    if adapter.config.get('budget',{}).get('native_session_credit_units_verified') is not True:
+    if (adapter.config.get('budget',{}).get('native_session_credit_units_verified') is not True
+            or adapter.config.get('budget',{}).get('verified_credit_units') is not True):
         raise SimulationError('Native session credit units remain unverified')
     if not callable(credit_reader):
         raise SimulationError('Native session requires independently verified credit reader')
@@ -130,6 +132,11 @@ def _finish(adapter,provider,credit_reader,max_polls):
                 continue
             # Credit reader must use the independently verified native unit contract;
             # there is intentionally no fallback to fiat/LLM cost estimates.
+            if credit_reader is native_credit_reader:
+                contract=intent.get('credit_contract',{})
+                if (contract.get('source')!='conversation.metadata.cost' or contract.get('units')!='credits'
+                        or not isinstance(contract.get('subscription_tier'),str) or not contract['subscription_tier']):
+                    raise SimulationError('Original native session credit-unit contract unavailable')
             credits=credit_reader(detail)
             if credits is None or type(credits) is bool:
                 result=_report('unknown_actual_credits')
@@ -137,7 +144,8 @@ def _finish(adapter,provider,credit_reader,max_polls):
             amount=str(number(credits))
             if entry.get('unsettled') is False and number(entry['credits'])!=number(amount):
                 raise SimulationError('Settled native session credits conflict')
-            entry.update(credits=amount,unsettled=False)
+            entry.update(credits=amount,unsettled=False,credit_units='credits',
+                credit_source='conversation.metadata.cost' if credit_reader is native_credit_reader else 'verified_injected_reader')
             private_json(root/'usage-ledger.json',ledger)
             native=causal.observe_history(adapter,customer_id=baseline['customer_id'],conversation_id=cid)
             valid=(detail['status']=='done' and causal.verify_native_history(native,detail,
@@ -190,10 +198,22 @@ def execute(adapter,*,provider,socket_factory,credit_reader,budget,estimate,scri
         authority=_authority(adapter,ledger)
         if budget.cap!=number(adapter.campaign.manifest['stage_authorization']['credit_ceiling'],positive=True):
             raise SimulationError('Native session Budget differs from claimed stage ceiling')
+        # Fresh account admission happens under the same lock and before intent,
+        # signed URL or socket. Never replenish already-accounted headroom.
+        remaining=native_credit_remaining(adapter.config,provider)
+        budget.remaining=min(budget.remaining,remaining)
+        if not budget.can_start(number(estimate,positive=True)):
+            raise SimulationError('Native session fresh quota cannot admit this conversation')
+        credit_config=adapter.config['budget']
+        credit_contract={'source':'conversation.metadata.cost','units':'credits',
+            'subscription_tier':credit_config['native_session_credit_subscription_tier'],
+            'reset_unix':credit_config['reset_unix'],
+            'monthly_credits':str(number(credit_config['monthly_credits'],positive=True))}
         nonce=secrets.token_hex(16)
         dynamic={'run_id':baseline['run_id'],'case_id':'C50','session_nonce':nonce}
         intent={'schema_version':1,'run_id':baseline['run_id'],'case_id':'C50','agent_id':baseline['agent_id'],
-            'authorization_id':authority,'session_nonce':nonce,'dynamic_variables':dynamic,'baseline':baseline,'script_sha256':fingerprint(script)}
+            'authorization_id':authority,'session_nonce':nonce,'dynamic_variables':dynamic,'baseline':baseline,
+            'script_sha256':fingerprint(script),'credit_contract':credit_contract}
         _intent(path,intent)
         entry={k:intent[k] for k in ('run_id','case_id','agent_id','session_nonce','authorization_id')}
         entry.update(resource_type='conversation',unsettled=True,submission_unknown=True,intent_sha256=fingerprint(intent))
@@ -294,3 +314,45 @@ def native_socket_factory(signed_url):
 def unknown_credit_reader(detail):
     """Native API fiat amounts don't establish credit units; never convert them."""
     return
+
+
+def native_credit_reader(detail):
+    """Read only the exact total under a separately verified account unit contract.
+
+    Provider schemas do not prove credit equivalence for every plan. The caller
+    must retain the account-specific unit gate. Charging components have no
+    established additive/alias formula and fiat values are never substitutes.
+    """
+    if not isinstance(detail,dict) or detail.get('status') not in ('done','failed'):
+        return None
+    metadata=detail.get('metadata')
+    if not isinstance(metadata,dict):
+        return None
+    amount=metadata.get('cost')
+    return amount if type(amount) is int and amount>=0 else None
+
+
+def native_credit_remaining(config,provider):
+    """Observe fresh native admission headroom, never infer real account units.
+
+    The explicit verified tier pins the account-specific operator verification.
+    GET-only reconciliation deliberately does not use this new-admission gate.
+    """
+    budget=config.get('budget',{})
+    tier=budget.get('native_session_credit_subscription_tier')
+    if (budget.get('verified_credit_units') is not True
+            or budget.get('native_session_credit_units_verified') is not True
+            or not isinstance(tier,str) or not re.fullmatch('[A-Za-z0-9_-]{1,80}',tier)):
+        raise SimulationError('Native session credit units and pinned subscription tier require independent verification')
+    try:
+        sub=provider.subscription()
+        if (not isinstance(sub,dict) or sub.get('status')!='active' or sub.get('tier')!=tier
+                or any(type(sub.get(key)) is not int for key in
+                    ('character_count','character_limit','next_character_count_reset_unix'))
+                or sub['character_count']<0 or sub['character_limit']<=0):
+            raise ValueError
+        # Reuse the existing owner for monthly allowance, future reset/rollover
+        # and refreshed remaining accounting; do not infer a minutes/credit rate.
+        return current_remaining(config,SimpleNamespace(subscription=lambda:sub))
+    except Exception:  # noqa: BLE001 - external diagnostics can contain credentials
+        raise SimulationError('Native session current account quota is unavailable or changed') from None

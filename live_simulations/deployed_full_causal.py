@@ -122,7 +122,7 @@ def checks(adapter, cid, values, before, after, provider=None):
         return [check(cid + ' native causal provenance', False, REQUIREMENTS[cid])]
     try:
         from . import deployed_full_session as session
-        reader=getattr(adapter,'native_session_credit_reader',None)
+        reader=getattr(adapter,'native_session_credit_reader',session.native_credit_reader)
         if not callable(reader):
             return [check('C50 genuine native session accounting is unavailable',False)]
         report=session.reconcile(adapter,provider=provider,credit_reader=reader)

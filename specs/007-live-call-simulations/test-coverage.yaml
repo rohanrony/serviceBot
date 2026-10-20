@@ -47,7 +47,7 @@
         "cleanup_recovery": [
           "Retain journals and unknown charges; GET-only reconciliation before retry; retire only owned effects"
         ],
-        "estimated_credits": "Unknown for C50 until native credit reader exists; other cases require current differential campaign estimate",
+        "estimated_credits": "Requires current measured case estimates and separate live authorization; native account credit equivalence remains unverified.",
         "spending_ceiling": "No paid execution authorized by this publication request",
         "unknown_charge_handling": "Stop admission, retain common ledger and reconcile without replay",
         "reuse": "Reuse prior case evidence only while its source, bindings, prerequisites and assertions remain valid"
@@ -103,7 +103,7 @@
         "cleanup_recovery": [
           "Retain journals and unknown charges; GET-only reconciliation before retry; retire only owned effects"
         ],
-        "estimated_credits": "Unknown for C50 until native credit reader exists; other cases require current differential campaign estimate",
+        "estimated_credits": "Requires current measured case estimates and separate live authorization; native account credit equivalence remains unverified.",
         "spending_ceiling": "No paid execution authorized by this publication request",
         "unknown_charge_handling": "Stop admission, retain common ledger and reconcile without replay",
         "reuse": "Reuse prior case evidence only while its source, bindings, prerequisites and assertions remain valid"
@@ -164,7 +164,7 @@
         "cleanup_recovery": [
           "Retain journals and unknown charges; GET-only reconciliation before retry; retire only owned effects"
         ],
-        "estimated_credits": "Unknown for C50 until native credit reader exists; other cases require current differential campaign estimate",
+        "estimated_credits": "Requires current measured case estimates and separate live authorization; native account credit equivalence remains unverified.",
         "spending_ceiling": "No paid execution authorized by this publication request",
         "unknown_charge_handling": "Stop admission, retain common ledger and reconcile without replay",
         "reuse": "Reuse prior case evidence only while its source, bindings, prerequisites and assertions remain valid"
@@ -217,7 +217,7 @@
         "cleanup_recovery": [
           "Retain journals and unknown charges; GET-only reconciliation before retry; retire only owned effects"
         ],
-        "estimated_credits": "Unknown for C50 until native credit reader exists; other cases require current differential campaign estimate",
+        "estimated_credits": "Requires current measured case estimates and separate live authorization; native account credit equivalence remains unverified.",
         "spending_ceiling": "No paid execution authorized by this publication request",
         "unknown_charge_handling": "Stop admission, retain common ledger and reconcile without replay",
         "reuse": "Reuse prior case evidence only while its source, bindings, prerequisites and assertions remain valid"
@@ -267,7 +267,7 @@
         "cleanup_recovery": [
           "Retain journals and unknown charges; GET-only reconciliation before retry; retire only owned effects"
         ],
-        "estimated_credits": "Unknown for C50 until native credit reader exists; other cases require current differential campaign estimate",
+        "estimated_credits": "Requires current measured case estimates and separate live authorization; native account credit equivalence remains unverified.",
         "spending_ceiling": "No paid execution authorized by this publication request",
         "unknown_charge_handling": "Stop admission, retain common ledger and reconcile without replay",
         "reuse": "Reuse prior case evidence only while its source, bindings, prerequisites and assertions remain valid"
@@ -278,11 +278,12 @@
       "behavior": "Use a bounded actual provider socket and require authenticated callback, native booking, Google projection and actual WhatsApp delivery.",
       "preconditions": [
         "Owned native session claim and exact identity",
-        "Verified credit units and native credit reader; otherwise stop before provider effects"
+        "Independently verified native/general account credit units and pinned subscription tier; fresh active monthly quota"
       ],
       "success": [
         "Real session handshake and common ledger",
-        "Exact authenticated ingress, CRM, booking, Google and WhatsApp join"
+        "Exact authenticated ingress, CRM, booking, Google and WhatsApp join",
+        "Compiled exact total reader settles the actual known conversation in the common ledger"
       ],
       "failure": [
         "Unknown credits; missing/foreign handshake; malformed/unpaired socket events; partial or unrelated external evidence"
@@ -312,7 +313,8 @@
         "prerequisites": [
           "Deployed exact candidate and additive migrations",
           "Explicit campaign budget and verified provider credit units",
-          "Designated recipients and Google-connected calendars; scenario-specific native prerequisites"
+          "Designated recipients and Google-connected calendars; scenario-specific native prerequisites",
+          "Independent account-specific proof that metadata.cost and the declared monthly allowance use the same credits; pin the verified subscription tier"
         ],
         "expected_effects": [
           "Case-specific persisted native effects joined to independent provider read-back"
@@ -320,7 +322,7 @@
         "cleanup_recovery": [
           "Retain journals and unknown charges; GET-only reconciliation before retry; retire only owned effects"
         ],
-        "estimated_credits": "Unknown for C50 until native credit reader exists; other cases require current differential campaign estimate",
+        "estimated_credits": "Requires current measured case estimates and separate live authorization; native account credit equivalence remains unverified.",
         "spending_ceiling": "No paid execution authorized by this publication request",
         "unknown_charge_handling": "Stop admission, retain common ledger and reconcile without replay",
         "reuse": "Reuse prior case evidence only while its source, bindings, prerequisites and assertions remain valid"
@@ -371,7 +373,7 @@
         "cleanup_recovery": [
           "Retain journals and unknown charges; GET-only reconciliation before retry; retire only owned effects"
         ],
-        "estimated_credits": "Unknown for C50 until native credit reader exists; other cases require current differential campaign estimate",
+        "estimated_credits": "Requires current measured case estimates and separate live authorization; native account credit equivalence remains unverified.",
         "spending_ceiling": "No paid execution authorized by this publication request",
         "unknown_charge_handling": "Stop admission, retain common ledger and reconcile without replay",
         "reuse": "Reuse prior case evidence only while its source, bindings, prerequisites and assertions remain valid"
@@ -422,7 +424,70 @@
         "cleanup_recovery": [
           "Retain journals and unknown charges; GET-only reconciliation before retry; retire only owned effects"
         ],
-        "estimated_credits": "Unknown for C50 until native credit reader exists; other cases require current differential campaign estimate",
+        "estimated_credits": "Requires current measured case estimates and separate live authorization; native account credit equivalence remains unverified.",
+        "spending_ceiling": "No paid execution authorized by this publication request",
+        "unknown_charge_handling": "Stop admission, retain common ledger and reconcile without replay",
+        "reuse": "Reuse prior case evidence only while its source, bindings, prerequisites and assertions remain valid"
+      }
+    },
+    {
+      "id": "FR-069-C50-accounting",
+      "behavior": "Settle only a verified exact terminal native total; revalidate current account quota before new effects and reconcile existing IDs without replay.",
+      "preconditions": [
+        "Existing native and general account-specific credit-unit verification; pinned verified subscription tier",
+        "Matching known owned conversation, terminal status and common ledger"
+      ],
+      "success": [
+        "Persist exact integer total and credit source under real conversation billing ID",
+        "Outer Budget settles once; repeated GET reconciliation retains the same charge"
+      ],
+      "failure": [
+        "Malformed/missing/fiat-only/negative/noninteger total remains unknown",
+        "Changed subscription tier/reset/counters or insufficient fresh quota stops before intent/signed URL/socket",
+        "Changed settled total raises an integrity error"
+      ],
+      "invariants": [
+        "Never infer a formula from charge components, price, duration or subscription deltas",
+        "No automatic verification of real account billing units or paid execution",
+        "Reconciliation never opens another session or depends on new-admission quota"
+      ],
+      "tests": [
+        "tests/test_native_session_credits.py::test_exact_terminal_native_total",
+        "tests/test_native_session_credits.py::test_invalid_native_total_remains_unknown",
+        "tests/test_native_session_credits.py::test_fresh_quota_requires_verified_matching_account_contract",
+        "tests/test_deployed_full_session.py::test_compiled_reader_settles_and_reconciles_exact_charge",
+        "tests/test_deployed_full_session.py::test_fresh_quota_denies_before_intent_signed_url_or_socket",
+        "tests/test_deployed_full_session.py::test_compiled_native_charge_reaches_outer_budget_once",
+        "tests/test_deployed_full_session.py::test_compiled_unknown_charge_blocks_outer_budget",
+        "tests/test_deployed_full_session.py::test_compiled_reconcile_after_rollover_uses_only_existing_conversation_get",
+        "tests/test_deployed_full_session.py::test_c50_reconciliation_uses_compiled_default_after_restart",
+        "tests/test_deployed_full_integration.py::test_c50_default_reader_is_compiled_without_runtime_attribute_injection",
+        "tests/test_deployed_full_native.py::test_c50_account_preflight_observes_fresh_quota_and_pinned_tier"
+      ],
+      "layer": [
+        "unit",
+        "provider_contract",
+        "composed"
+      ],
+      "live_acceptance": {
+        "status": "pending",
+        "reason": "Real account billing-unit equivalence is not established by provider schemas; paid C50 and other real effects remain separately pending.",
+        "scenarios": [
+          "C50"
+        ],
+        "prerequisites": [
+          "Deployed exact candidate and additive migrations",
+          "Explicit campaign budget and verified provider credit units",
+          "Designated recipients and Google-connected calendars; scenario-specific native prerequisites",
+          "Independent account-specific proof that metadata.cost and the declared monthly allowance use the same credits; pin the verified subscription tier"
+        ],
+        "expected_effects": [
+          "Case-specific persisted native effects joined to independent provider read-back"
+        ],
+        "cleanup_recovery": [
+          "Retain journals and unknown charges; GET-only reconciliation before retry; retire only owned effects"
+        ],
+        "estimated_credits": "Requires current measured case estimates and separate live authorization; native account credit equivalence remains unverified.",
         "spending_ceiling": "No paid execution authorized by this publication request",
         "unknown_charge_handling": "Stop admission, retain common ledger and reconcile without replay",
         "reuse": "Reuse prior case evidence only while its source, bindings, prerequisites and assertions remain valid"
@@ -433,9 +498,9 @@
     "browser": "These repairs add internal APIs, campaign observers and migrations, with no new user interface. The complete existing browser subset still runs as regression coverage before publication."
   },
   "review": {
-    "red": "Historical failure evidence and the original offline repair package are retained in scratch/full-delta-20261019; this publication reconstructs those fixes onto current main. Publication intake regression: three expected database-forbidden failures captured before admission guard.",
-    "green": "Run the full exact-candidate tests/ and e2e/ suites, including browser journeys; record fresh results for the publication commit.",
+    "red": "Historical failure evidence and the original offline repair package are retained in scratch/full-delta-20261019; this publication reconstructs those fixes onto current main. Publication intake regression: three expected database-forbidden failures captured before admission guard. C50 accounting: 64 intended failures before implementation, 20 existing session tests passing; retained c50-red.log.",
+    "green": "Focused native reader/session/adapter/causal/quota/Budget contracts pass; full offline and exact-candidate publication verification recorded separately.",
     "test_changes": "Preserve main future-date handling and migration0010; add migration0008/0009 assertions. Review the failure, ownership, concurrency, provenance and unknown-charge assertions; no skips or assertion weakening.",
-    "sufficiency": "Native database/HTTP tests exercise transactional ownership, retry, cleanup and migration behavior; deterministic provider contracts cover actual payload shapes and negative evidence. Full paid provider acceptance remains pending, including the deliberately blocked C50 credit reader."
+    "sufficiency": "Native database/HTTP tests exercise transactional ownership, retry, cleanup and migration behavior; deterministic provider contracts cover actual payload shapes and negative evidence. Full paid provider acceptance remains pending, including independently verified real-account native credit units."
   }
 }

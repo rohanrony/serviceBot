@@ -1420,9 +1420,17 @@ class NativeBridge:
                     blockers.append(
                         "Native authenticated callback audit/HMAC mechanism unavailable"
                     )
-                blockers.append(
-                    "Native session provider credit units and refreshed quota require independent verification"
-                )
+                try:
+                    from . import deployed_full_session as session
+                    remaining=session.native_credit_remaining(self.adapter.config,self.elevenlabs)
+                    budget=self.adapter.config['budget']
+                    estimate=number(budget.get('case_estimates',{}).get('C50',budget.get('case_upper_estimate')),positive=True)
+                    if remaining<estimate:
+                        raise SimulationError('Insufficient native quota')
+                except Exception:  # noqa: BLE001 - no account/credential detail crosses readiness
+                    blockers.append(
+                        "Native session provider credit units, pinned account tier and refreshed quota require independent verification"
+                    )
             if cid == "C48":
                 if not google_permissions or any(
                     not p or p.get("write") is not True

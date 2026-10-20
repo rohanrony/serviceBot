@@ -774,3 +774,17 @@ observers join source-owned IDs through independent authenticated GETs. Retain
 real operator, independent sender, enrollment/window, timeout and quiet-hours
 policy gates. A missing verified native-session credit unit is an explicit
 prepaid blocker, not a guessed currency conversion or a configuration-ready flag.
+
+### FR-069 implementation plan
+
+Reuse `deployed_full_session.py` as the single native-session accounting owner.
+Add strict total parsing and a bounded read-only subscription admission helper,
+reusing the runner's monthly allowance/reset checks after validating the native
+unit flags, pinned tier and strict subscription counter types. Run admission
+under the campaign lock before intent, signed URL or socket. Wire defaults in
+full Adapter, causal reconciliation and native prerequisite observations; retain
+source/units in the common ledger without raw provider details. Do not invent a
+charging-component formula or enable verification flags. Update focused captured
+REST/socket/Budget regression contracts and the feature coverage matrix; then
+review/converge and run the full exact-candidate gate once its workflow lands.
+No migration, product UI, provider write, saved-agent change or paid call is needed.

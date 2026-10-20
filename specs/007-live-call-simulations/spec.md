@@ -652,3 +652,13 @@ in the offline phase. Fault credentials use secret dynamic header variables,
 remain absent from saved clone tools/prompts and ordinary artifacts, and are
 restricted to an independently read-back campaign-owned clone. Restore that clone
 exactly; concurrent or unknown changes stop the campaign.
+
+### C50 compiled accounting completion (FR-069)
+
+- **FR-069**: Complete the native-session actual-total reader and normal execution/
+  reconciliation wiring according to `contracts/c50-credit-accounting.md`. Retain
+  independently verified account-specific credit units, pin the verified account
+  tier, refresh monthly quota before new effects, accept only an exact terminal
+  nonnegative integer total, preserve unknown/conflicting charges, and reconcile
+  known conversations by GET without replay. Code completion does not verify the
+  real account's native billing units or authorize paid sessions.

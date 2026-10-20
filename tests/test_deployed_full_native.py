@@ -1178,3 +1178,26 @@ def test_c50_partial_or_unrelated_external_evidence_cannot_complete(
         client.close()
     assert report["evidence_complete"] is False
     assert report["native_inbox_receiving"] == "unverified"
+
+
+def test_c50_account_preflight_observes_fresh_quota_and_pinned_tier(tmp_path):
+    value = adapter(tmp_path)
+    value.config['budget'] = {'verified_credit_units': True,
+        'native_session_credit_units_verified': True,
+        'native_session_credit_subscription_tier': 'legacy-test',
+        'monthly_credits': 1000, 'reset_unix': 4000000000, 'case_estimates': {'C50': 10}}
+    subscription = {'tier': 'legacy-test', 'status': 'active',
+        'character_count': 10, 'character_limit': 1000,
+        'character_refresh_period': 'monthly_period', 'next_character_count_reset_unix': 4000000000}
+    reads = []
+    def observe_subscription():
+        reads.append(True)
+        return dict(subscription)
+    bridge = NativeBridge(value, SimpleNamespace(subscription=observe_subscription), reader=Reader())
+    bridge.session_capabilities = lambda: {'audit_schema_ready': True}
+    first = bridge.preflight(['C50'])['C50']
+    assert not any('credit' in blocker for blocker in first['blockers'])
+    subscription['tier'] = 'different-minute-plan'
+    second = bridge.preflight(['C50'])['C50']
+    assert any('credit' in blocker for blocker in second['blockers'])
+    assert len(reads) == 2

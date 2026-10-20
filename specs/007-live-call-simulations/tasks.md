@@ -690,9 +690,10 @@ integration/lifecycle gaps. No paid/native outcome is inferred from this review.
 ### Offline implementation boundary
 
 All34 C17-C50 identifiers now have source-owned dispatch/observer paths. This is
-not native readiness or a successful full campaign. Genuine C50 session billing
-still has no independently verified credit reader: the default returns unknown
-and full admission deliberately blocks. Its accounting contract must be verified
+not native readiness or a successful full campaign. At the v15 boundary, genuine
+C50 session billing had no compiled verified-contract reader: the default returned
+unknown and full admission deliberately blocked. Phase32 completes that code path
+without independently verifying the real account unit contract. Its accounting contract must be verified
 and integrated before live work; approving a numeric ceiling alone cannot remove
 that gate. Receiving-inbox proof remains unverified under the approved manual
 receipt mode. Distinct customer/technician sender identity, an actually unenrolled
@@ -718,3 +719,28 @@ actionable defect remains in the reviewed, available offline phase. This is not
 convergence of the deferred native campaign or proof that all production behavior
 has passed. All changes remain local and uncommitted; no deployed/provider
 mutation, new paid submission or ElevenLabs credit usage occurred in this phase.
+
+## Phase 32: C50 compiled accounting completion
+
+- [x] T160 Add failing exact-total, unknown-charge, admission quota and persisted
+  reconciliation regressions per FR-069 and the C50 accounting contract.
+- [x] T161 Implement the strict compiled native total reader and source-default
+  execute/reconcile wiring; retain account-specific verification gates and
+  current monthly quota/tier checks before new effects per FR-069.
+- [x] T162 Review accounting invariants and captured REST/socket/Budget evidence,
+  fix actionable findings, and record the actual validation/publication boundary.
+
+Real account-specific native billing equivalence remains an external prerequisite;
+these tasks do not set real verification flags or authorize paid execution.
+
+Phase32 bounded review: strict terminal total parsing, immutable original account
+contract, under-lock fresh quota/tier checks, downward-only headroom, exact-zero/
+failed-charge settlement, source-default execution/recovery and outer once-only
+Budget settlement retain captured-provider regression coverage. 64 new expected
+Red failures preceded implementation; focused reader/session/native/adapter/causal/
+Budget contracts pass with no skipped or expected-failure cases. Independent
+requirements/provider-source and runtime reviews found no actionable in-scope
+finding. The source models do not establish the real account's native credit
+equivalence; no real verification flag was enabled and no provider calls were made.
+Full offline execution and publication verification remain separate gates; the
+other chat's verifier/CI workflow must reach main before scoped publication.

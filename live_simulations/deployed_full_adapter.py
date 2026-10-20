@@ -555,7 +555,7 @@ class Adapter(medium.Adapter):
 
     def execute_c50(self,*,provider,budget,ledger,campaign):
         factory=getattr(self,'native_session_socket_factory',session.native_socket_factory)
-        reader=getattr(self,'native_session_credit_reader',session.unknown_credit_reader)
+        reader=getattr(self,'native_session_credit_reader',session.native_credit_reader)
         if (not callable(factory) or not callable(reader)
                 or self.config.get('budget',{}).get('native_session_credit_units_verified') is not True
                 or reader is session.unknown_credit_reader):
@@ -932,7 +932,14 @@ def native_prerequisites(config,client,cases,baseline):
             options.update(twilio_client=client,twilio_account_sid=sid,twilio_auth=(sid,token))
         except SimulationError:
             pass
-        bridge=native.NativeBridge(seed,None,**options)
+        elevenlabs=None
+        if 'C50' in reports:
+            try:
+                from .provider import ElevenLabs
+                elevenlabs=ElevenLabs(secret(config,'elevenlabs_key'),client=client)
+            except SimulationError:
+                pass
+        bridge=native.NativeBridge(seed,elevenlabs,**options)
         conditions_report=bridge.preflight([*conditions.CASES,'C48','C50'])
         for cid,report in conditions_report.items():
             if cid in reports:
@@ -944,7 +951,7 @@ def native_prerequisites(config,client,cases,baseline):
                 reports[cid].append(check('native operational permission and policy mechanisms available',False))
     if 'C50' in reports:
         reports['C50'] += [check('compiled genuine provider session socket',callable(session.native_socket_factory)),
-            check('native conversation credit-unit contract independently implemented',False)]
+            check('native conversation credit reader compiled',callable(session.native_credit_reader))]
     if 'C47' in reports:
         probe(['C47'],'actual resolved handoff capability absence',lambda:bool(negative.handoff_capability(seed)))
     return reports
