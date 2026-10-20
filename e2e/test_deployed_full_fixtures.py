@@ -108,7 +108,14 @@ def cleanup(native):
     assert native.events == {}
 
 
-def test_c23_quarantined_unconnected_component_preserves_originals_and_refuses_unsafe_cleanup(native_full, monkeypatch):
+def enable_c23(native,monkeypatch):
+    monkeypatch.setenv('SIMULATION_STAFF_ENABLED','true')
+    monkeypatch.setenv('C23_NATIVE_FIXTURE_SECRET','e2e-only-cron-secret')
+    native.adapter.config.setdefault('secrets',{})['simulation_staff_cron_secret']='C23_NATIVE_FIXTURE_SECRET'
+    native.adapter.simulation_staff_client=native.api
+
+
+def test_c23_signed_unconnected_pair_preserves_originals_and_cleans_safely(native_full, monkeypatch):
     from live_simulations import deployed_full_negative as negative
     from serviceBot.services import google_calendar
     n = native_full
@@ -127,27 +134,26 @@ def test_c23_quarantined_unconnected_component_preserves_originals_and_refuses_u
     original_catalog = n.db('SELECT * FROM services ORDER BY id')
     original_mappings = n.db('SELECT * FROM service_staff_agents WHERE service_id=1 ORDER BY staff_agent_id')
     before = negative.footprint(n.adapter)
-    # This is an offline component prototype, not an admitted full case. Only
-    # the disposable test can bypass the source-hard-false lifecycle guard.
-    monkeypatch.setattr(negative, 'native_setup_allowed', lambda: True)
+    enable_c23(n,monkeypatch)
     n.adapter.current_case = 'C23'
     negative.arrange(n.adapter, 'C23', n.values)
     staff = n.adapter.state['full_unconnected_staff']
     assert staff['id'] not in (1, 2)
-    assert n.adapter.state['full_negative_cases']['C23']['arguments']['service_type'] == n.adapter.state['services']['oil']['name']
+    assert n.adapter.state['full_negative_cases']['C23']['arguments']['service_type'] == staff['service_name']
     assert set(observed_agents) == {staff['id']}
     assert not n.db('SELECT agent_id FROM user_google_accounts WHERE agent_id=%s', (staff['id'],))
     assert n.db('SELECT * FROM service_staff_agents WHERE service_id=1 ORDER BY staff_agent_id') == original_mappings
     checks = negative.checks(n.adapter, 'C23')
     assert [c['name'] for c in checks if not c['passed']] == [
-        'C23 native setup and safe cleanup remain blocked', 'actual conversation tool call and result correlation remains unverified']
+        'actual conversation tool call and result correlation remains unverified']
     assert negative.footprint(n.adapter) == before
     assert not n.events and not n.effects
     from live_simulations.core import SimulationError
     operation_count = len(n.adapter.state['operations'])
-    with pytest.raises(SimulationError, match='noncascading'): n.adapter.cleanup_case()
-    assert len(n.adapter.state['operations']) == operation_count
-    assert n.db('SELECT is_active FROM staff_agents WHERE id=%s', (staff['id'],)) == [{'is_active': True}]
+    n.adapter.cleanup_case()
+    assert len(n.adapter.state['operations']) == operation_count+1
+    assert not n.db('SELECT id FROM staff_agents WHERE id=%s', (staff['id'],))
+    assert not n.db('SELECT id FROM services WHERE id=%s', (staff['service_id'],))
     assert negative.footprint(n.adapter) == before
     # Catalog facts outside the exact owned oil mapping never changed.
     assert n.db('SELECT * FROM services WHERE id=1') == [row for row in original_catalog if row['id'] == 1]
@@ -162,7 +168,7 @@ def test_c23_external_change_refuses_cleanup_before_mapping_or_staff_writes(nati
     # Captured provider uncertainty; actual HTTP, owned staff and read-only
     # PostgreSQL footprint still run through their ordinary implementations.
     monkeypatch.setattr(google_calendar, 'fetch_agent_events', lambda *args: None)
-    monkeypatch.setattr(negative, 'native_setup_allowed', lambda: True)
+    enable_c23(n,monkeypatch)
     n.adapter.current_case = 'C23'
     negative.arrange(n.adapter, 'C23', n.values)
     staff = n.adapter.state['full_unconnected_staff']
@@ -177,16 +183,18 @@ def test_c23_external_change_refuses_cleanup_before_mapping_or_staff_writes(nati
     assert len(n.adapter.state['operations']) == operation_count
     assert n.db('SELECT is_active FROM staff_agents WHERE id=%s', (staff['id'],)) == [{'is_active': True}]
     assert n.db('SELECT staff_agent_id FROM service_staff_agents WHERE service_id=%s',
-                (n.adapter.state['services']['oil']['id'],)) == [{'staff_agent_id': staff['id']}]
+                (staff['service_id'],)) == [{'staff_agent_id': staff['id']}]
+    assert n.db('SELECT staff_agent_id FROM service_staff_agents WHERE service_id=%s',
+                (n.adapter.state['services']['oil']['id'],)) == [{'staff_agent_id':1}]
 
 
-def test_c23_public_adapter_rejects_unsafe_lifecycle_before_all_native_setup(native_full):
+def test_c23_public_adapter_missing_credential_rejects_before_all_native_setup(native_full):
     from live_simulations import deployed_full_negative as negative
     from live_simulations.core import SimulationError
     n = native_full
     before = negative.footprint(n.adapter)
     operation_count = len(n.adapter.state['operations'])
-    with pytest.raises(SimulationError, match='noncascading'): n.adapter.arrange(CASES['C23'], n.values)
+    with pytest.raises(SimulationError, match='credential|secret|Secret'): n.adapter.arrange(CASES['C23'], n.values)
     assert len(n.adapter.state['operations']) == operation_count
     assert not n.adapter.state.get('full_unconnected_staff')
     assert negative.footprint(n.adapter) == before

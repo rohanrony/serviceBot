@@ -2718,3 +2718,55 @@ async def whatsapp_test_ping_endpoint(payload: WhatsAppTestPingPayload):
 
 
 
+
+
+class SimulationStaffCreate(BaseModel):
+    run_id: StrictStr
+
+
+class SimulationStaffCleanup(BaseModel):
+    receipt: StrictStr
+
+
+def _simulation_staff_operation(request, payload, *, cleanup=False):
+    from serviceBot.services import simulation_staff
+    from serviceBot.db.connection import get_db_connection
+
+    try:
+        secret = simulation_staff.authorize(request.headers.get('authorization'))
+    except simulation_staff.LifecycleDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from None
+    try:
+        with get_db_connection() as conn:
+            if cleanup:
+                return simulation_staff.cleanup(conn, payload.receipt, secret)
+            return simulation_staff.create(conn, payload.run_id, secret)
+    except simulation_staff.LifecycleDenied as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+
+
+@router.post('/internal/simulation-staff', status_code=201)
+def create_owned_simulation_staff(payload: SimulationStaffCreate, request: Request,
+                                  background_tasks: BackgroundTasks):
+    result = _simulation_staff_operation(request, payload)
+    background_tasks.add_task(sync_services_to_kb)
+    return result
+
+
+@router.get('/internal/simulation-staff')
+def owned_simulation_staff_capability(request: Request):
+    """Read-only admission probe; anonymous or disabled requests fail closed."""
+    from serviceBot.services import simulation_staff
+    try:
+        simulation_staff.authorize(request.headers.get('authorization'))
+    except simulation_staff.LifecycleDenied:
+        raise HTTPException(status_code=403, detail='Simulation staff lifecycle is unavailable') from None
+    return {'success': True, 'enabled': True, 'capability': 'owned-staff-v1'}
+
+
+@router.post('/internal/simulation-staff/cleanup')
+def cleanup_owned_simulation_staff(payload: SimulationStaffCleanup, request: Request,
+                                   background_tasks: BackgroundTasks):
+    result = _simulation_staff_operation(request, payload, cleanup=True)
+    background_tasks.add_task(sync_services_to_kb)
+    return result

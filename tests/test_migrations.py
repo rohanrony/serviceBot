@@ -58,6 +58,8 @@ def test_booking_integrity_migrations_have_explicit_rollbacks():
         "0005_staff_agent_soft_delete_and_escalation",
         "0006_calendar_deletion_state",
         "0007_service_components",
+        "0008_authenticated_webhook_ingress",
+        "0009_simulation_fault_leases",
         "0010_business_intake",
     ]
 

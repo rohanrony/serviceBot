@@ -5,6 +5,7 @@ import contextlib
 import fcntl
 import json
 import os
+import threading
 import time
 from datetime import datetime
 from decimal import Decimal
@@ -72,7 +73,7 @@ def stage_authorization(config, tier, requested, selected, repeat, *, target='is
     if (not isinstance(auth, dict) or not expected or requested is None
             or target not in ('isolated', 'deployed')
             or config.get('target') not in ((None, 'isolated') if target == 'isolated' else ('deployed',))
-            or (target == 'deployed' and tier != 'medium')
+            or (target == 'deployed' and tier not in ('medium','full'))
             or config.get('environment', '').lower() in ('production', 'prod')
             or 'campaign_authorization' in config or config.get('calibration')
             or type(repeat) is not int or repeat != 1
@@ -114,7 +115,7 @@ def email_mode(config, *, target='isolated'):
             not isinstance(config.get('stage_authorization'), dict)
             or target not in ('isolated', 'deployed')
             or config.get('target') not in ((None, 'isolated') if target == 'isolated' else ('deployed',))
-            or (target == 'deployed' and config['stage_authorization'].get('tier') != 'medium')
+            or (target == 'deployed' and config['stage_authorization'].get('tier') not in ('medium','full'))
             or 'campaign_authorization' in config
             or str(config.get('environment', '')).lower() in ('production', 'prod')):
         raise SimulationError('Operator email receipt requires an isolated stage authorization')
@@ -166,8 +167,18 @@ def campaign_status(results):
     return 'passed' if results and statuses == {'passed'} else 'incomplete'
 
 
+_campaign_lock_owner = threading.local()
+
+
 @contextlib.contextmanager
 def campaign_lock(root):
+    key = (os.getpid(), str(root.resolve()))
+    active = getattr(_campaign_lock_owner, 'roots', set())
+    if key in active:
+        if key not in getattr(_campaign_lock_owner, 'coordinator_roots', set()):
+            raise SimulationError('Another campaign owns this artifact root')
+        yield
+        return
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     fd = os.open(root / '.campaign.lock', os.O_CREAT | os.O_RDWR, 0o600)
     try:
@@ -175,9 +186,29 @@ def campaign_lock(root):
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise SimulationError('Another campaign owns this artifact root') from None
+        _campaign_lock_owner.roots = active | {key}
         yield
     finally:
+        _campaign_lock_owner.roots = active
         os.close(fd)
+
+
+@contextlib.contextmanager
+def owned_campaign_scope(root):
+    """Explicitly delegate this thread's held lock to a stage coordinator.
+
+    Ordinary nested campaign owners remain rejected. This capability is scoped
+    to the exact PID/thread/canonical root and disappears on every exit path.
+    """
+    key = (os.getpid(), str(root.resolve()))
+    if key not in getattr(_campaign_lock_owner,'roots',set()):
+        raise SimulationError('Stage coordinator requires the existing campaign owner')
+    previous = getattr(_campaign_lock_owner,'coordinator_roots',set())
+    _campaign_lock_owner.coordinator_roots = previous | {key}
+    try:
+        yield
+    finally:
+        _campaign_lock_owner.coordinator_roots = previous
 
 
 def traces(runtime, since=0):
@@ -716,6 +747,10 @@ def reconcile(runtime):
         provider = ElevenLabs(secret(runtime.config, 'elevenlabs_key'))
         for entry in ledger['entries']:
             if entry.get('run_id') != runtime.run_id or not entry.get('unsettled'):
+                continue
+            if entry.get('resource_type') == 'conversation':
+                # Native-session accounting has a distinct provider identity and
+                # credit-unit contract; generic agent-test discovery cannot infer it.
                 continue
             invocation = entry.get('invocation_id')
             if not invocation:

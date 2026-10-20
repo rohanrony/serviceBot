@@ -77,10 +77,10 @@ def elevenlabs_webhook_secret_configured() -> bool:
     return bool(_elevenlabs_secret())
 
 
-def verify_elevenlabs_request(raw_body: bytes, signature_header: str | None) -> None:
+def verify_elevenlabs_request(raw_body: bytes, signature_header: str | None) -> bool:
     """Verify ElevenLabs' t=<unix>,v0=<hmac> signature over timestamp.body."""
     if is_test_environment():
-        return
+        return False
     secret = _elevenlabs_secret()
     if not secret:
         raise WebhookVerificationError(
@@ -130,6 +130,8 @@ def verify_elevenlabs_request(raw_body: bytes, signature_header: str | None) -> 
     if not any(hmac.compare_digest(expected, signature) for signature in signatures):
         raise WebhookVerificationError("Invalid ElevenLabs request signature.", code="invalid_signature")
 
+    return True
+
 
 class WebhookEventStore:
     """Claims provider events before side effects and records their final state."""
@@ -151,6 +153,32 @@ class WebhookEventStore:
         if isinstance(raw_payload, str):
             raw_payload = raw_payload.encode("utf-8")
         return hashlib.sha256(raw_payload).hexdigest()
+
+    def record_authenticated_ingress(self, event_id: str, raw_payload: bytes) -> None:
+        """Append exact verified HTTP payload identity; callers must verify first.
+
+        No UPDATE path exists: matching retries retain the first verification time.
+        Sync/direct ingestion must never call this method.
+        """
+        if not isinstance(event_id, str) or not event_id.strip() or not isinstance(raw_payload, bytes):
+            raise WebhookVerificationError("Invalid authenticated ingress identity.")
+        payload_hash = self._payload_hash(raw_payload)
+        with self._connection_factory() as conn:
+            with self._cursor_factory(conn) as cursor:
+                cursor.execute(
+                    """INSERT INTO authenticated_webhook_ingress
+                       (provider,event_id,conversation_id,payload_hash)
+                       VALUES ('elevenlabs',%s,%s,%s)
+                       ON CONFLICT (provider,event_id) DO NOTHING""",
+                    (event_id,event_id,payload_hash),
+                )
+                cursor.execute(
+                    """SELECT conversation_id,payload_hash FROM authenticated_webhook_ingress
+                       WHERE provider='elevenlabs' AND event_id=%s""", (event_id,))
+                row = cursor.fetchone()
+                if not row or row["conversation_id"] != event_id or row["payload_hash"] != payload_hash:
+                    raise WebhookReplayConflictError("Authenticated webhook payload identity conflicts.")
+            conn.commit()
 
     def begin(self, provider: str, event_id: str, raw_payload: bytes | str | dict[str, Any]) -> bool:
         """Claim a new event; return False for a completed/in-flight identical delivery."""

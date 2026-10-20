@@ -7,20 +7,34 @@ No readiness or spending authorization is implied by SUPPORTED_CASE_IDS.
 from __future__ import annotations
 
 import copy
+import json
 import math
 import re
-from datetime import timedelta
+import time
+from datetime import timedelta, timezone
+from pathlib import Path
+from types import SimpleNamespace
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
+from . import deployed_full_causal as causal
+from . import deployed_full_conditions as conditions
+from . import deployed_full_faults as faults
+from . import deployed_full_native as native
 from . import deployed_full_negative as negative
+from . import deployed_full_provenance as provenance
+from . import deployed_full_recovery as recovery
+from . import deployed_full_session as session
 from . import deployed_full_visits as visits
 from . import deployed_medium as medium
-from .core import SimulationError
+from .core import SimulationError, load_catalog, number, secret
 from .evidence import check
 
-SUPPORTED_CASE_IDS = frozenset({'C17', 'C18', 'C19', 'C20', 'C21', 'C22', 'C24', 'C25',
+SUPPORTED_CASE_IDS = frozenset({'C17', 'C18', 'C19', 'C20', 'C21', 'C22', 'C23', 'C24', 'C25',
                                 'C26', 'C27', 'C28', 'C29', 'C30', 'C31', 'C32', 'C34', 'C46', 'C47', 'C49'})
-_NEGATIVE = frozenset({'C17', 'C18', 'C19', 'C20', 'C22', 'C24', 'C46', 'C47', 'C49'})
+SUPPORTED_CASE_IDS = SUPPORTED_CASE_IDS | faults.SUPPORTED_CASE_IDS | conditions.CASES | {'C48','C50'}
+
+_NEGATIVE = frozenset({'C17', 'C18', 'C19', 'C20', 'C22', 'C23', 'C24', 'C46', 'C47', 'C49'})
 _FIELDS = ('id', 'status', 'service_type', 'booking_type', 'booking_time',
            'duration_minutes', 'staff_agent_id', 'customer_id', 'reservation_id')
 
@@ -286,8 +300,6 @@ class Adapter(medium.Adapter):
     def arrange(self, case, values):
         self._guard()
         cid = case['id']
-        if cid == 'C23':
-            raise SimulationError(negative.C23_SETUP_BLOCKER)
         if cid not in SUPPORTED_CASE_IDS:
             raise SimulationError('Full-native case is unsupported: ' + cid)
         if (not self.state.get('full_adapter') or set(self.state['services']) != set(medium.KEYS)
@@ -323,6 +335,30 @@ class Adapter(medium.Adapter):
         adapted['success_conditions'].append('Use only actual native catalog facts: ' + '; '.join(
             f"{s['name']}: {s['price_range']}, {s['duration_minutes']} minutes" for s in self.state['services'].values()))
         adapted['scenario'] += ' Use only these exact test service names: ' + '; '.join(names.values()) + '. Never modify a pre-existing booking.'
+        self.state['full_case_values'] = copy.deepcopy(values)
+        if cid in conditions.CASES or cid in {'C48','C50'}:
+            previous=medium._read(self.config,'SELECT id FROM service_requests WHERE service_type=ANY(%s) ORDER BY id',
+                ([item['name'] for item in self.state['services'].values()],))
+            if any(type(row.get('id')) is not int or row['id']<=0 for row in previous):
+                raise SimulationError('Full case request baseline contains unknown identities')
+            self.state['full_case_request_baseline_ids']=[row['id'] for row in previous]
+        self._save()
+        if cid in faults.SUPPORTED_CASE_IDS:
+            owned = faults.arrange(self,cid,values)
+            adapted['scenario'] = adapted['scenario'].replace(names['Oil Change'],owned['service_name'])
+            adapted['success_conditions'].append('Use only the exact owned service '+owned['service_name']+'. Obtain explicit consent before the native booking tool.')
+            return adapted,[]
+        if cid in conditions.CASES:
+            self._bridge().arrange_conditions(cid,values)
+            return adapted,[]
+        if cid == 'C50':
+            causal.arrange(self,cid,values)
+            return adapted,[]
+        if cid == 'C23':
+            negative.arrange(self, cid, values)
+            owned_name = self.state['full_unconnected_staff']['service_name']
+            adapted = {**adapted, 'scenario': adapted['scenario'].replace(names['Oil Change'], owned_name)}
+            adapted['success_conditions'].append('Use only the exact owned unavailable service ' + owned_name + '; never book from unknown availability.')
         if cid == 'C47':
             negative.arrange(self, cid, values)
             tool = self.state['full_negative_cases'][cid]['capability']['tool_name']
@@ -417,6 +453,245 @@ class Adapter(medium.Adapter):
                     raise SimulationError('The exact run-owned callback issue is required')
         return super()._register(ids, values, callback=callback, combined=combined)
 
+    def _bridge(self,provider=None):
+        if provider is not None:
+            self._full_provider=provider
+        bridge=getattr(self,'native_bridge',None)
+        if bridge is not None:
+            return bridge
+        provider=getattr(self,'_full_provider',None)
+        if provider is None:
+            raise SimulationError('Full native provider reader must be attached before fixture setup')
+        options={'google_client':self.client}
+        try:
+            options['capability_headers']={'Authorization':'Bearer '+secret(self.config,'simulation_staff_cron_secret')}
+        except SimulationError:
+            pass
+        try:
+            sid,token=secret(self.config,'twilio_sid'),secret(self.config,'twilio_token')
+            options.update(twilio_client=self.client,twilio_account_sid=sid,twilio_auth=(sid,token))
+        except SimulationError:
+            pass
+        self.native_bridge=native.NativeBridge(self,provider,**options)
+        return self.native_bridge
+
+    def attach_provider(self,provider):
+        self._full_provider=provider
+
+    def bind_invocation(self,case,*,invocation_id,test_id):
+        cid=case['id']
+        if cid in faults.SUPPORTED_CASE_IDS:
+            faults.bind(self,cid,invocation_id=invocation_id,test_id=test_id)
+        elif cid in {'C23','C47'}:
+            provenance.bind_negative_invocation(self,cid,invocation_id,test_id,self._full_provider)
+        else:
+            manifest=self.campaign.manifest
+            ledger=json.loads((Path(self.campaign.root)/'usage-ledger.json').read_text())
+            rows=[e for e in ledger['entries'] if e.get('invocation_id')==invocation_id]
+            expected={'run_id':manifest['run_id'],'case_id':cid,'invocation_id':invocation_id,'test_id':test_id}
+            if (len(rows)!=1 or any(rows[0].get(k)!=v for k,v in expected.items())
+                    or invocation_id not in manifest.get('invocations',[]) or test_id not in manifest.get('provider_tests',[])):
+                raise SimulationError('Full invocation must already have exact common ledger ownership')
+            saved=self.state.setdefault('full_invocation_bindings',{})
+            if saved.get(cid) not in (None,expected):
+                raise SimulationError('Full case invocation cannot be rebound')
+            saved[cid]=expected
+            self._save()
+
+    def prepare_case_agent(self,case,provider):
+        self.attach_provider(provider)
+        if case['id'] in faults.SUPPORTED_CASE_IDS:
+            return provenance.prepare_owned_case_agent(self,case['id'],faults.prepare_case_agent(self,case['id']),provider)
+        return None
+
+    def case_dynamic_variables(self,case):
+        return provenance.case_dynamic_variables(self,case['id']) if case['id'] in faults.SUPPORTED_CASE_IDS else {}
+
+    def restore_case_agent(self,case,provider):
+        if case['id'] in faults.SUPPORTED_CASE_IDS:
+            return provenance.restore_owned_case_agent(self,provider)
+        return None
+
+    def poll_during_call(self,case,values,provider):
+        cid=case['id']
+        if cid in faults.SUPPORTED_CASE_IDS:
+            row,_=faults.observe(self,cid)
+            if cid=='C36' and row.get('response_loss_consumed_at') and not self.state.get('full_faults',{}).get(cid,{}).get('reconciliation'):
+                faults.reconcile(self,cid)
+        elif cid in conditions.CASES:
+            self._discover_condition_rows(values)
+            return self._bridge(provider).poll_conditions(cid,values)
+
+    def _discover_condition_rows(self,values):
+        identity=medium._identity_id(self.config)
+        rows=medium._read(self.config,'SELECT id FROM service_requests WHERE customer_id=%s AND service_type=%s ORDER BY id',
+            (identity,self.state['services']['oil']['name']))
+        prior=self.state.get('full_case_request_baseline_ids')
+        if not isinstance(prior,list):
+            raise SimulationError('New owned request discovery requires a pre-submission case baseline')
+        ids={r['id'] for r in rows if type(r.get('id')) is int and r['id'] not in self.original_ids and r['id'] not in prior}
+        if ids:
+            self._register(ids,values)
+
+    def execution_checks(self,case,values,before,after,*,provider):
+        cid=case['id']
+        self.attach_provider(provider)
+        if self.current_case!=cid:
+            raise SimulationError('Full case was not arranged')
+        original=medium._serial(medium._request_rows(self.config,self.original_ids))
+        checks=[check('original native bookings preserved',original==self.state['full_baseline'])]
+        if cid in faults.SUPPORTED_CASE_IDS:
+            return checks+faults.checks(self,cid,values,before,after,provider=provider)
+        if cid in conditions.CASES:
+            self._discover_condition_rows(values)
+            report=self._bridge(provider).observe_conditions(cid,values)
+            return checks+[check('actual native operational condition',report.get('evidence_complete') is True,
+                                 report.get('blockers',[]))]
+        if cid in {'C23','C47'}:
+            ids={r['id'] for r in after}
+            rows=self._register(ids,values)
+            return checks+[check('zero new native requests or reservations',not rows and not ids)]+negative.checks(self,cid,provider=provider)
+        return self.checks(case,values,before,after)
+
+    def execute_c50(self,*,provider,budget,ledger,campaign):
+        factory=getattr(self,'native_session_socket_factory',session.native_socket_factory)
+        reader=getattr(self,'native_session_credit_reader',session.unknown_credit_reader)
+        if (not callable(factory) or not callable(reader)
+                or self.config.get('budget',{}).get('native_session_credit_units_verified') is not True
+                or reader is session.unknown_credit_reader):
+            raise SimulationError('C50 genuine native session socket or verified credit reader unavailable')
+        self.attach_provider(provider)
+        values=copy.deepcopy(self.config['variables'])
+        values.update(self.state.get('full_case_values',{}))
+        case=copy.deepcopy(next(c for c in load_catalog() if c['id']=='C50'))
+        self.arrange(case,values)
+        estimate=number(self.config['budget'].get('case_estimates',{}).get('C50',self.config['budget'].get('case_upper_estimate')),positive=True)
+        when=values.get('appointment_time') or self.config.get('case_bindings',{}).get('C50',{}).get('variables',{}).get('appointment_time')
+        if not when:
+            raise SimulationError('C50 requires exact intended appointment time before session')
+        profiles=medium._read(self.config,'SELECT make,model,year FROM vehicles WHERE customer_id=%s ORDER BY id',
+            (medium._identity_id(self.config),))
+        matching=[p for p in profiles if p.get('make')=='Toyota' and p.get('model')=='Camry' and p.get('year')==2021]
+        if not matching:
+            raise SimulationError('C50 actual native fixture vehicle is unavailable; do not invent intake')
+        profile=matching[0]
+        script=['My name is '+values['customer_name']+'. I am calling from '+values['customer_phone']+'.',
+                'Please book '+self.state['services']['oil']['name']+' at '+when+'. My vehicle is a '+str(profile['year'])+' '+profile['make']+' '+profile['model']+'.',
+                'I confirm this exact appointment and consent to booking it. Please confirm the saved appointment, then end the conversation.']
+        report=session.execute(self,provider=provider,socket_factory=factory,credit_reader=reader,budget=budget,estimate=estimate,script=script)
+        self._discover_condition_rows(values)
+        rows=medium._request_rows(self.config,self.current_ids)
+        expected=self._c48_expected_booking(values)
+        conversation=report.get('provider_conversation_id')
+        delivery=self._bridge(provider).c50_delivery(expected_booking=expected,
+            request_id=rows[0]['id'] if len(rows)==1 else None,conversation_id=conversation)
+        booking_checks=self.checks(case,values,[],rows)+super().final_checks(case,values,rows)
+        booking_checks.append(check('required native portal readback',any(c.get('name','').startswith('reloaded browser owned row ') and c.get('passed') is True for c in booking_checks)))
+        booking_checks.extend(delivery.get('checks',[]))
+        full_verified=(report.get('history_verified') is True and delivery.get('evidence_complete') is True
+            and all(c['passed'] for c in booking_checks))
+        report.update(full_case_verified=full_verified,global_stop=report.get('global_stop') is not False or not full_verified,
+                      booking_checks=booking_checks,checks=booking_checks,native_inbox_receiving='unverified')
+        self.state['full_c50_report']=report
+        self._save()
+        return report
+
+    def _owned_test(self,provider,case,values,phase):
+        from .deployed import deployed_scenario
+        manifest=self.campaign.manifest
+        if manifest.get('test_create_pending'):
+            raise SimulationError('Previous provider test creation remains unresolved')
+        manifest['test_create_pending']='C48:'+phase
+        intent={'case_id':'C48','phase':phase,'attempt':1,'repeat':1,'status':'intent'}
+        manifest.setdefault('test_creation_intents',[]).append(intent)
+        self.campaign.save()
+        dynamic={'caller_phone':values['customer_phone'],'customer_phone':values['customer_phone'],'customer_name':values['customer_name'],
+                 'run_id':manifest['run_id'],'case_id':'C48'}
+        test_id=provider.create(deployed_scenario(case,values),manifest['run_id'],dynamic,self.config['environment'])
+        if not isinstance(test_id,str) or not test_id:
+            raise SimulationError('C48 provider test identity is unknown')
+        intent.update(status='observed',test_id=test_id)
+        manifest.setdefault('provider_tests',[]).append(test_id)
+        manifest['test_create_pending']=None
+        self.campaign.save()
+        return {'id':test_id,'type':'simulation','tool_mock_config':{'mocking_strategy':'none','fallback_strategy':'call_real_tool','mocked_tool_ids':[]}}
+
+    def _c48_expected_booking(self,values):
+        identity=medium._identity_id(self.config)
+        local_start=medium._dt(values['appointment_time'],self.config)
+        zone=ZoneInfo(self.config['app_config']['business_timezone'])
+        def aware(local):
+            first=local.replace(tzinfo=zone,fold=0)
+            second=local.replace(tzinfo=zone,fold=1)
+            if (first.utcoffset()!=second.utcoffset()
+                    or first.astimezone(timezone.utc).astimezone(zone).replace(tzinfo=None)!=local):
+                raise SimulationError('C48 requires an unambiguous existing business-time slot')
+            return first
+        start=aware(local_start)
+        end=aware(local_start+timedelta(minutes=60))
+        if end.astimezone(timezone.utc)-start.astimezone(timezone.utc)!=timedelta(minutes=60):
+            raise SimulationError('C48 requires an unambiguous one-hour elapsed business-time slot')
+        expected={'customer_id':identity,'staff_agent_id':self.config['deployed_medium']['technician_ids'][0],
+            'starts_at':start.isoformat(),'ends_at':end.isoformat(),
+            'service_type':self.state['services']['oil']['name'],'duration_minutes':60}
+        return expected
+
+    def execute_c48(self,*,provider,budget,ledger,campaign):
+        from .deployed import current_remaining
+        self.attach_provider(provider)
+        values=copy.deepcopy(self.state.get('full_case_values') or self.config['variables'])
+        case=copy.deepcopy(next(c for c in load_catalog() if c['id']=='C48'))
+        self.arrange(case,values)
+        identity=medium._identity_id(self.config)
+        if identity is None:
+            raise SimulationError('C48 requires independently resolved native customer identity')
+        expected=self._c48_expected_booking(values)
+        actual=provenance._owned(self,provider)
+        resolved=provider.resolve_reference(actual)
+        tools=resolved.get('conversation_config',{}).get('agent',{}).get('prompt',{}).get('tools',[])
+        bookings=[t for t in tools if t.get('name')=='book_appointment' and t.get('type')=='webhook']
+        if len(bookings)!=1 or bookings[0].get('api_schema',{}).get('method')!='POST':
+            raise SimulationError('C48 actual owned clone booking tool is unavailable')
+        tool_url=bookings[0].get('api_schema',{}).get('url','')
+        target,origin=urlsplit(tool_url),urlsplit(self.config['deployed_url'])
+        if (target.scheme,target.netloc)!=(origin.scheme,origin.netloc) or target.path!='/api/v1/voice/tools':
+            raise SimulationError('C48 actual native booking tool origin differs')
+        source_case=copy.deepcopy(case)
+        source_case['scenario']='Book '+expected['service_type']+' at {{appointment_time}}. Provide the fixture identity and explicit booking consent. Ask the agent to confirm the saved appointment.'
+        source_case['expected_tools']=['book_appointment']
+        source_case['success_conditions']=['The exact native appointment is booked after explicit consent.']
+        recovery_case=copy.deepcopy(case)
+        recovery_case['scenario']='Ask whether the previously interrupted '+expected['service_type']+' at {{appointment_time}} exists. Require a lookup of existing appointments. Do not authorize a new booking or any mutation.'
+        source_definition=self._owned_test(provider,source_case,values,'source')
+        recovery_definition=self._owned_test(provider,recovery_case,values,'recovery')
+        base={'run_id':campaign.manifest['run_id'],'case_id':'C48','attempt':1,'agent_id':campaign.manifest['campaign_agent_id']}
+        source_identity=dict(base,test_id=source_definition['id'])
+        recovery_identity=dict(base,test_id=recovery_definition['id'])
+        hooks=self._bridge(provider).c48_observers(identity=source_identity,expected_booking=expected)
+        source_estimate=number(self.config['budget'].get('case_estimates',{}).get('C48',self.config['budget'].get('case_upper_estimate')),positive=True)
+        retained={'source_estimate':str(source_estimate),'recovery_estimate':str(number(self.config['budget']['c48_recovery_upper_estimate'],positive=True)),
+            'credit_ceiling':str(budget.cap),'remaining':str(current_remaining(self.config,provider))}
+        submit=lambda request:provider.run(base['agent_id'],request['tests'][0]['test_id'])
+        result=recovery.execute(campaign.root,source={'identity':source_identity,'expected_booking':expected,'test_definition':source_definition,
+            'tool_url':tool_url,'budget':retained,'observe_baseline':hooks['observe_baseline'],'submit':submit,'now':time.time},
+            recovery={'identity':recovery_identity,'test_definition':recovery_definition,'submit':submit},provider=hooks['provider'],
+            observe_booking=hooks['observe_booking'],observe_delivery=hooks['observe_delivery'])
+        retained_manifest=json.loads((Path(campaign.folder)/'manifest.json').read_text())
+        for key in ('invocations','provider_tests'):
+            campaign.manifest[key]=list(dict.fromkeys([*campaign.manifest.get(key,[]),*retained_manifest.get(key,[])]))
+        self._discover_condition_rows(values)
+        native_rows=medium._request_rows(self.config,self.current_ids)
+        native_checks=self.checks(case,values,[],native_rows)+super().final_checks(case,values,native_rows)
+        native_checks.append(check('required native portal readback',any(c.get('name','').startswith('reloaded browser owned row ') and c.get('passed') is True for c in native_checks)))
+        native_checks.append(check('actual native Google and WhatsApp recovery delivery',result.get('recovery_verified') is True))
+        result['checks']=native_checks
+        result['full_case_verified']=result.get('recovery_verified') is True and all(c['passed'] for c in native_checks)
+        result['global_stop']=result.get('global_stop') is not False or not result['full_case_verified']
+        result['native_inbox_receiving']='unverified'
+        self.state['full_c48_report']=result
+        self._save()
+        return result
+
     def checks(self, case, values, before, after):
         cid = case['id']
         if cid not in SUPPORTED_CASE_IDS or self.current_case != cid:
@@ -428,7 +703,7 @@ class Adapter(medium.Adapter):
         checks = [check('original native bookings preserved', baseline == self.state['full_baseline'])]
         if cid in _NEGATIVE:
             return checks + [check('zero new native requests or reservations', not rows and not ids)] + (
-                negative.checks(self, cid) if cid == 'C47' else [])
+                negative.checks(self, cid) if cid in {'C23', 'C47'} else [])
         active = [r for r in rows if r['status'] != 'cancelled']
         if cid == 'C30':
             return checks + self._selective_removal_checks(values, rows)
@@ -552,8 +827,12 @@ class Adapter(medium.Adapter):
                     and companion['calendar_event_id'] == original[split]['calendar_event_id'])]
 
     def final_checks(self, case, values, after):
-        if case['id'] == 'C47':
-            checks = self.checks(case, values, [], after)
+        if case['id'] in faults.SUPPORTED_CASE_IDS or case['id'] in conditions.CASES:
+            return self.execution_checks(case,values,[],after,provider=self._full_provider)+super().final_checks(case,values,after)
+        if case['id'] in {'C23', 'C47'}:
+            provider=getattr(self,'_full_provider',None)
+            checks=(self.execution_checks(case,values,[],after,provider=provider) if provider is not None
+                    else self.checks(case,values,[],after))
             if self.config.get('deployed_medium', {}).get('browser_readback'):
                 # A negative case has no new owned rows. Read back the actual
                 # original baseline rows rather than passing an empty-row oracle.
@@ -562,7 +841,7 @@ class Adapter(medium.Adapter):
         return self.checks(case, values, [], after) + super().final_checks(case, values, after)
 
     def _browser_checks_owned(self, case, rows):
-        if case['id'] != 'C47':
+        if case['id'] not in {'C23', 'C47'}:
             return super()._browser_checks_owned(case, rows)
         # The portal table displays issue_description, not service_type. Keep
         # actual baseline IDs/statuses and compare the actual visible field.
@@ -575,6 +854,8 @@ class Adapter(medium.Adapter):
         return super()._browser_checks_owned(case, visible_rows)
 
     def cleanup_case(self):
+        if self.current_case in faults.SUPPORTED_CASE_IDS:
+            faults.cleanup(self,self.current_case)
         negative.before_cleanup(self)
         super().cleanup_case()
         if self.state.get('full_google_busy'):
@@ -601,3 +882,69 @@ class Adapter(medium.Adapter):
         if self.state.get('full_google_busy', {}).get('status') not in (None, 'deleted'):
             raise SimulationError('Owned Google busy event must be removed before catalog cleanup')
         super().cleanup_catalog()
+
+
+def native_prerequisites(config,client,cases,baseline):
+    """Fresh read-only mechanisms and permission checks; no fixture/claim exists.
+
+    Post-call outcomes are deliberately absent: this probe checks whether source
+    mechanisms can run now. Unobserved phone/operator/policy/unit gates fail closed.
+    """
+    reports={case['id']:[check('compiled full native fixture and assertion path',case['id'] in SUPPORTED_CASE_IDS)] for case in cases}
+    seed=SimpleNamespace(config=config,client=client,state={'services':{},'operations':[]},_guard=lambda:None,_save=lambda:None,
+        campaign=SimpleNamespace(root=Path(config.get('artifact_root','scratch/live-simulations')),
+                                 manifest={'run_id':'preflight'}))
+    def probe(cids,name,callback):
+        try:
+            observed=callback()
+            good=observed is True
+        except Exception:  # noqa: BLE001 - no provider/credential diagnostics cross readiness boundary
+            good=False
+        for cid in cids:
+            if cid in reports:
+                reports[cid].append(check(name,good))
+    probe(reports,'independent native booking and callback audit schema',lambda:medium._read(config,
+        "SELECT to_regclass('appointment_reservations') IS NOT NULL AND to_regclass('outbox_notifications') IS NOT NULL AND to_regclass('authenticated_webhook_ingress') IS NOT NULL AS ready")==[{'ready':True}])
+    identity=medium._identity_id(config)
+    probe(reports,'exact existing native customer identity',lambda: identity is not None and len(medium._read(config,
+        'SELECT id FROM customers WHERE id=%s',(identity,)))==1)
+    def staff_control():
+        auth=secret(config,'simulation_staff_cron_secret')
+        response=client.get(config['deployed_url'].rstrip('/')+'/api/v1/portal/internal/simulation-staff',headers={'Authorization':'Bearer '+auth})
+        response.raise_for_status()
+        value=response.json()
+        return value.get('success') is True and value.get('enabled') is True and value.get('capability')=='owned-staff-v1'
+    probe(['C23'],'authenticated deployed owned staff lifecycle capability',staff_control)
+    from .deployed_full_google import GoogleBusy
+    probe(['C22'],'actual designated Google account and writable calendar identity',lambda:GoogleBusy(seed,client)._identity() is None)
+    values=dict(config.get('variables',{}))
+    values.update(config.get('case_bindings',{}).get('C35',{}).get('variables',{}))
+    for cid in faults.SUPPORTED_CASE_IDS:
+        probe([cid],'authenticated deployed native scoped fault controls and allowlists',lambda cid=cid:bool(faults.prerequisites(seed,cid,values)))
+    try:
+        options={'google_client':client}
+        try:
+            options['capability_headers']={'Authorization':'Bearer '+secret(config,'simulation_staff_cron_secret')}
+        except SimulationError:
+            pass
+        try:
+            sid,token=secret(config,'twilio_sid'),secret(config,'twilio_token')
+            options.update(twilio_client=client,twilio_account_sid=sid,twilio_auth=(sid,token))
+        except SimulationError:
+            pass
+        bridge=native.NativeBridge(seed,None,**options)
+        conditions_report=bridge.preflight([*conditions.CASES,'C48','C50'])
+        for cid,report in conditions_report.items():
+            if cid in reports:
+                reports[cid].append(check('independently observed native operational mechanisms',
+                    report.get('source_supported') is True and not report.get('blockers'),report.get('blockers',[])))
+    except Exception:  # noqa: BLE001 - fixed diagnostic protects native/provider details
+        for cid in [*conditions.CASES,'C48','C50']:
+            if cid in reports:
+                reports[cid].append(check('native operational permission and policy mechanisms available',False))
+    if 'C50' in reports:
+        reports['C50'] += [check('compiled genuine provider session socket',callable(session.native_socket_factory)),
+            check('native conversation credit-unit contract independently implemented',False)]
+    if 'C47' in reports:
+        probe(['C47'],'actual resolved handoff capability absence',lambda:bool(negative.handoff_capability(seed)))
+    return reports

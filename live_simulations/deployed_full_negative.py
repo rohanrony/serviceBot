@@ -24,8 +24,8 @@ C23_SETUP_BLOCKER = ('C23 native setup is blocked: no atomic conditional noncasc
 
 
 def native_setup_allowed():
-    """No config flag or supplied receipt can enable the unsafe staff lifecycle."""
-    return False
+    """Compiled owned lifecycle exists; deployment opt-in/auth remain independent."""
+    return True
 
 
 class _ReadOnlyProvider(ElevenLabs):
@@ -60,6 +60,9 @@ def footprint(adapter):
         f"SELECT '{table}' AS scope,count(*) AS rows,md5(COALESCE(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text)::text,'[]')) AS fingerprint FROM {table} t"
         for table in BUSINESS_TABLES)
     service_ids = [item['id'] for item in adapter.state['services'].values()]
+    owned_service_id = adapter.state.get('full_unconnected_staff', {}).get('service_id')
+    if type(owned_service_id) is int and owned_service_id > 0:
+        service_ids.append(owned_service_id)
     staff_id = adapter.state.get('full_unconnected_staff', {}).get('id', -1)
     for scope, source in (
         ('original_services', 'SELECT * FROM services WHERE NOT(id=ANY(%s))'),
@@ -224,29 +227,9 @@ def arrange_unknown(adapter, values):
         raise SimulationError('Unknown-calendar fixture requires a future locally feasible native interval')
     if adapter.state.get('full_unconnected_staff'):
         raise SimulationError('Existing unconnected technician fixture cannot be adopted or repeated')
-    name = adapter.config['deployed_medium']['ownership_id'] + ' unconnected ' + adapter.campaign.manifest['run_id']
-    if medium._read(adapter.config, 'SELECT id FROM staff_agents WHERE name=%s', (name,)):
-        raise SimulationError('Existing technician cannot become unconnected-fixture owned')
-    phones, emails = adapter.config.get('allowlisted_phone_numbers', []), adapter.config.get('allowlisted_emails', [])
-    phone = values.get('customer_phone')
-    if (not phone or medium._digits(phone) not in {medium._digits(v) for v in phones} or not emails):
-        raise SimulationError('Unconnected fixture requires existing designated recipients')
-    result = adapter._mutate('POST', '/api/v1/portal/agents',
-        {'name': name, 'role': 'Technician', 'email': emails[0], 'phone_number': phone})
-    identifier = result.get('id')
-    if type(identifier) is not int or identifier <= 0 or identifier in adapter.config['deployed_medium']['technician_ids']:
-        _block(adapter, 'Owned unconnected technician creation identity is unknown')
-    owned = {'id': identifier, 'name': name, 'email': emails[0], 'phone_number': phone, 'cleanup_complete': False}
-    adapter.state['full_unconnected_staff'] = owned
-    adapter._save()
-    _verify_unconnected(adapter, active=True, mapped=[])
-    original = list(adapter.state['services']['oil']['assigned_agent_ids'])
-    adapter.state['mapping_restore'] = {'key': 'oil', 'agents': original}
-    owned['original_mapping'] = original
-    adapter._save()
-    adapter._mapping('oil', [identifier])
-    _verify_unconnected(adapter, active=True, mapped=[adapter.state['services']['oil']['id']])
-    arguments = {'service_type': adapter.state['services']['oil']['name'], 'booking_type': 'appointment',
+    owned = create_owned_staff(adapter)
+    _verify_unconnected(adapter, active=True, mapped=[owned['service_id']])
+    arguments = {'service_type': owned['service_name'], 'booking_type': 'appointment',
                  'preferred_date': when.date().isoformat(), 'preferred_time': when.strftime('%I:%M %p')}
     _record(adapter, 'C23')['arguments'] = arguments
     adapter._save()
@@ -269,10 +252,10 @@ def arrange(adapter, cid, values):
         observe(adapter, cid, capability['tool_name'], arguments)
 
 
-def checks(adapter, cid):
+def checks(adapter, cid, provider=None):
     record = _record(adapter, cid)
     if cid == 'C23':
-        _verify_unconnected(adapter, active=True, mapped=[adapter.state['services']['oil']['id']])
+        _verify_unconnected(adapter, active=True, mapped=[adapter.state['full_unconnected_staff']['service_id']])
         name = 'check_availability'
     else:
         actual = handoff_capability(adapter)
@@ -280,13 +263,16 @@ def checks(adapter, cid):
             _block(adapter, 'Actual handoff capability changed since arrangement')
         name = actual['tool_name']
     observe(adapter, cid, name, record['arguments'])
-    return ([check('C23 native setup and safe cleanup remain blocked', False)] if cid == 'C23' else []) + [
+    proof = [check('actual conversation tool call and result correlation remains unverified', False)]
+    if provider is not None:
+        from .deployed_full_provenance import negative_checks
+        proof = negative_checks(adapter, cid, provider)
+    return [
             check('exact native structured unknown' if cid == 'C23' else 'actual open-window unavailable handoff',
                   all(o.get('status') == 'observed' and o.get('exact_negative_result') is True
                       and o.get('no_business_effects') is True for o in record['observations'])),
             check('no changes in observed local request reservation audit outbox message or calendar tables',
-                  footprint(adapter) == record['business_baseline']),
-            check('actual conversation tool call and result correlation remains unverified', False)]
+                  footprint(adapter) == record['business_baseline'])] + proof
 
 
 def cleanup(adapter):
@@ -299,7 +285,7 @@ def cleanup(adapter):
     if cid == 'C23':
         if not adapter.state.get('full_unconnected_staff'):
             return
-        _block(adapter, C23_SETUP_BLOCKER)
+        cleanup_owned_staff(adapter)
 
 
 def before_cleanup(adapter):
@@ -313,6 +299,93 @@ def before_cleanup(adapter):
         owned = adapter.state.get('full_unconnected_staff')
         if not owned:
             return
-        mapped = [adapter.state['services']['oil']['id']] if adapter.state.get('mapping_restore') else []
+        mapped = [owned['service_id']]
         _verify_unconnected(adapter, active=not owned['cleanup_complete'], mapped=mapped)
-        _block(adapter, C23_SETUP_BLOCKER)
+
+
+def _staff_lifecycle_request(adapter, action, body):
+    """Authenticated isolated transport; journal contains no bearer or receipt."""
+    adapter._guard()
+    auth = secret(adapter.config, 'simulation_staff_cron_secret')
+    operations = adapter.state.setdefault('operations', [])
+    if any(op.get('owned_staff_action') == action for op in operations):
+        raise SimulationError('Owned staff lifecycle cannot be replayed; reconcile existing intent')
+    operation = {'owned_staff_action': action, 'status': 'intent',
+                 'body_fingerprint': fingerprint(body)}
+    operations.append(operation)
+    adapter._save()
+    supplied = getattr(adapter, 'simulation_staff_client', None)
+    context = nullcontext(supplied) if supplied is not None else httpx.Client(
+        trust_env=False, follow_redirects=False)
+    try:
+        with context as client:
+            if (client.follow_redirects or getattr(client, '_trust_env', True)
+                    or 'authorization' in client.headers or 'xi-api-key' in client.headers):
+                raise SimulationError('Owned staff requires isolated per-request credentials')
+            suffix = '/cleanup' if action == 'cleanup' else ''
+            response = client.post(adapter.config['deployed_url'].rstrip('/') +
+                '/api/v1/portal/internal/simulation-staff' + suffix,
+                json=body, headers={'Authorization': 'Bearer ' + auth},
+                timeout=medium._native_mutation_timeout(adapter.config))
+            response.raise_for_status()
+            result = response.json()
+            if not isinstance(result, dict) or result.get('success') is not True:
+                raise SimulationError('Owned staff lifecycle response is unknown')
+    except Exception:  # noqa: BLE001 - retain unknown effects without replaying a write
+        operation['status'] = 'unknown'
+        _block(adapter, 'Owned staff lifecycle effect unknown; reconcile without replay')
+    operation['status'] = 'response_received'
+    adapter._save()
+    return result, operation
+
+
+def create_owned_staff(adapter):
+    """Reviewed lifecycle building block; C23 admission guard remains separate."""
+    from pathlib import Path
+
+    from .core import private_json
+    if adapter.state.get('full_unconnected_staff'):
+        raise SimulationError('Existing technician fixture cannot be adopted')
+    path = Path(adapter.campaign.folder) / 'c23-owned-staff-receipt.json'
+    if path.exists() or path.is_symlink():
+        raise SimulationError('Existing owned fixture receipt requires reconciliation')
+    run_id = adapter.campaign.manifest['run_id']
+    result, operation = _staff_lifecycle_request(adapter, 'create', {'run_id': run_id})
+    if (result.get('run_id') != run_id
+            or any(type(result.get(k)) is not int or result[k] <= 0 for k in ('staff_id', 'service_id'))
+            or any(not isinstance(result.get(k), str) or not result[k] for k in ('name','service_name','receipt'))
+            or result['staff_id'] in adapter.config.get('deployed_medium', {}).get('technician_ids', [])):
+        operation['status'] = 'unknown'
+        _block(adapter, 'Owned fixture identity unknown; reconcile without replay')
+    try:
+        private_json(path, {'receipt': result['receipt']})
+    except Exception:  # noqa: BLE001 - missing receipt prevents safe ownership adoption
+        operation['status'] = 'unknown'
+        _block(adapter, 'Owned fixture private receipt unavailable; reconcile without replay')
+    owned = {'id': result['staff_id'], 'name': result['name'], 'email': None, 'phone_number': None,
+             'service_id': result['service_id'], 'service_name': result['service_name'],
+             'receipt_fingerprint': fingerprint(result['receipt']), 'cleanup_complete': False}
+    adapter.state['full_unconnected_staff'] = owned
+    operation.update(status='observed', staff_id=owned['id'], service_id=owned['service_id'])
+    adapter._save()
+    return owned
+
+
+def cleanup_owned_staff(adapter):
+    import json
+    from pathlib import Path
+    owned = adapter.state['full_unconnected_staff']
+    path = Path(adapter.campaign.folder) / 'c23-owned-staff-receipt.json'
+    if path.is_symlink() or path.stat().st_mode & 0o077:
+        raise SimulationError('Owned fixture private receipt is unsafe')
+    receipt = json.loads(path.read_text())['receipt']
+    if fingerprint(receipt) != owned['receipt_fingerprint']:
+        raise SimulationError('Owned fixture receipt changed')
+    result, operation = _staff_lifecycle_request(adapter, 'cleanup', {'receipt': receipt})
+    if result.get('staff_id') != owned['id'] or result.get('service_id') != owned['service_id']:
+        operation['status'] = 'unknown'
+        _block(adapter, 'Owned fixture cleanup identity unknown; reconcile without replay')
+    owned['cleanup_complete'] = True
+    operation.update(status='observed', staff_id=owned['id'], service_id=owned['service_id'])
+    adapter._save()
+    return result

@@ -1,14 +1,14 @@
-from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import RedirectResponse
-import os
 import asyncio
-import time
-import threading
-from contextlib import asynccontextmanager
-from dotenv import find_dotenv, load_dotenv
-
+import os
 import sys
+import time
+from contextlib import asynccontextmanager
+
+from dotenv import find_dotenv, load_dotenv
+from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
+
 if os.getenv("PYTHON_DOTENV_DISABLED") != "1":
     _is_testing_env = (
         "pytest" in sys.modules
@@ -24,10 +24,13 @@ if os.getenv("PYTHON_DOTENV_DISABLED") != "1":
     else:
         load_dotenv(override=_override)
 
-from serviceBot.logger import get_logger, setup_logging
 from serviceBot.api.middleware import RequestLoggingMiddleware, global_exception_handler
-from serviceBot.api.telephony import router as telephony_router, voice_router as voice_router
 from serviceBot.api.portal import router as portal_router
+from serviceBot.api.simulation_faults import router as simulation_faults_router
+from serviceBot.api.simulation_sessions import router as simulation_sessions_router
+from serviceBot.api.telephony import router as telephony_router
+from serviceBot.api.telephony import voice_router as voice_router
+from serviceBot.logger import get_logger
 
 # Initialize structured logger
 logger = get_logger("main")
@@ -91,7 +94,9 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"[reminder_worker] Failed to launch reminder worker: {e}", exc_info=e)
 
-    from serviceBot.services.webhook_security import elevenlabs_webhook_secret_configured
+    from serviceBot.services.webhook_security import (
+        elevenlabs_webhook_secret_configured,
+    )
     if not elevenlabs_webhook_secret_configured():
         logger.error(
             "[webhook_config] ELEVENLABS_WEBHOOK_SECRET is missing; "
@@ -172,6 +177,8 @@ async def cron_process_reminders(authorization: str = Header(None)):
 app.include_router(telephony_router)
 app.include_router(voice_router)
 app.include_router(portal_router)
+app.include_router(simulation_sessions_router)
+app.include_router(simulation_faults_router)
 
 # Root-level aliases for Twilio webhooks configured without /api/v1/telephony prefix
 @app.post("/sms/inbound")

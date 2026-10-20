@@ -69,7 +69,7 @@ _ROWS = (
 _SPECIAL = {
     'C22': ('designated Google account with actual free/busy access and owned event cleanup',),
     'C23': ('actual deployed unconnected-calendar dependency; local gateway faults are not deployed proof and this is not an external Google outage',
-            'native_setup_allowed=False until atomic conditional noncascading owned-technician cleanup exists'),
+            'authenticated owned-pair lifecycle must be deployed and explicitly enabled; atomic conditional noncascading cleanup is required'),
     'C26': ('all possible eligible technician destinations must be allowlisted',),
     'C30': ('actual selected-only removal with independently retired selected projection and unchanged companion interval',),
     'C31': ('actual qualified callback slots and two distinct fifteen-minute calendar projections with the intentional gap',),
@@ -144,7 +144,7 @@ def readiness(config, cases, *, capabilities=None):
         }
         if cid == 'C23':
             reports[cid]['native_setup_allowed'] = False
-            reports[cid]['implementation_status'] = 'partial_blocked'
+            reports[cid]['implementation_status'] = 'implemented_offline' if implemented else 'partial_blocked'
     return {
         'ready': all(row['status'] == 'verified' for row in reports.values()),
         'scope': 'full_delta', 'case_ids': list(FULL_IDS),

@@ -641,3 +641,80 @@ frozen main26-file proposal or deferred production messaging/system Gmail scope.
 T147-T149 local implementation, bounded reviews and source-frozen verification are complete. The final root gate passed 1815 unit/integration + 543 API/browser tests with zero failures, errors or skips. Prior v11 retained four unit fixture failures and 543 passing API/browser tests; the two legacy fixture files now preserve all six original tests/assertions while providing owned state and isolated per-test session caches. No production guard was relaxed.
 
 The expanded 34-file immutable proposal is review-proposal-v10/manifest.json. T150 remains pending scoped publication/deployment approval. All34 native full cases remain unrun; no new credits were spent and T127-T135/paid prerequisites remain open. Offline counts do not establish native acceptance.
+
+## Phase 30: Offline fixture completion before live acceptance
+
+T150 was subsequently approved and deployed as 074939e / dep-dbb2e0vbtjjs7393ul30.
+The immutable native-release-v10-completion receipt records core preservation,
+the explained pre-deploy reminder activity, and bounded memory/browser evidence.
+The owner now requests local fixes first and live execution later.
+
+- [x] T151 [P] Implement and behavior-test C23 authenticated owned service/staff
+  creation and atomic noncascading cleanup with signed exact identities, reference
+  races, changed/missing resources and disabled/unauthorized no-effect contracts.
+- [x] T152 [P] Complete C48 preparation/interruption/recovery coordinator with
+  immutable baselines, both-phase reserve, exact invocation binding, durable
+  submission intents, common-ledger settlement and no-duplicate read-back tests.
+- [x] T153 [P] Add C35/C36/C37 causal native observers and C50 authenticated HTTP
+  ingress audit/read-back, with captured transport, direct/sync rejection, callback
+  replay, migration verification and rollback coverage.
+- [x] T154 Integrate available offline mechanisms and explicit external-condition
+  gates into shared full-case planning/adapter paths; test missing, stale, foreign
+  or fabricated observations and retain all native/paid admission boundaries.
+- [x] T155 Independently review the integrated patch, fix actionable findings,
+  run focused and complete offline/API/browser verification, and record precise
+  source completion versus remaining operational requirements. No publish, deploy,
+  paid run, real fixture mutation or production messaging work in this phase.
+
+## Phase 31: Convergence
+
+Bounded current-scope review of FR-062/SC-003/SC-004 found four partial
+integration/lifecycle gaps. No paid/native outcome is inferred from this review.
+
+- [x] T156 Preserve the business timezone through actual C48 coordinator
+  preparation; reject ambiguous/nonexistent local times and test the real
+  preparation boundary per FR-062 (partial).
+- [x] T157 Require C50 independent Google/message provider evidence in addition
+  to authenticated history and exact native booking, propagate required evidence
+  and manual/unverified receiving-inbox state through the special executor path,
+  and reject a history-only or local-flags-only success per SC-003 (partial).
+- [x] T158 Capture a genuine per-case pre-request baseline and prevent prior
+  retained/canceled campaign requests from being re-registered as current-case
+  effects; retain current-case canceled effects for owned cleanup per FR-062 and
+  SC-004 (partial).
+- [x] T159 Respect a sequence's uncalled initial value when binding a fresh
+  request; recheck discovered reference schema after cleanup locks and reject
+  intervening foreign-key/cascade attachments, with disposable-DB regressions per
+  SC-004 (partial).
+
+### Offline implementation boundary
+
+All34 C17-C50 identifiers now have source-owned dispatch/observer paths. This is
+not native readiness or a successful full campaign. Genuine C50 session billing
+still has no independently verified credit reader: the default returns unknown
+and full admission deliberately blocks. Its accounting contract must be verified
+and integrated before live work; approving a numeric ceiling alone cannot remove
+that gate. Receiving-inbox proof remains unverified under the approved manual
+receipt mode. Distinct customer/technician sender identity, an actually unenrolled
+recipient, real provider-window timestamps, human replies, elapsed escalation
+deadlines and C41's deferred quiet-hours policy remain independent prerequisites.
+No current source capability flag, synthetic receipt or prior minimal/medium
+approval can replace them. Existing native/paid acceptance tasks remain open.
+
+### Final offline verification and bounded convergence
+
+`./run_tests.sh --verify` passed 2100 unit/integration and569 API/browser tests
+with zero failures, errors or skips. The source-frozen final gate is
+`scratch/full-delta-20261019/full-offline-v15-gate.json`: all344 runtime/test
+source hashes remained unchanged. v13/v14 retain earlier passing test results
+but are not final gates because fixes/lint edits occurred during those runs.
+The earlier eight-failure unit run and genuine focused Red logs remain retained.
+
+Independent bounded reviews and the root implementation/convergence pass repaired
+the recorded timezone, provider-evidence, prior-case discovery, sequence and
+reference-race findings. Neutral provider schema defaults, nullable transcript
+turns and ordinary non-simulation booking SQL retain regression coverage. No
+actionable defect remains in the reviewed, available offline phase. This is not
+convergence of the deferred native campaign or proof that all production behavior
+has passed. All changes remain local and uncommitted; no deployed/provider
+mutation, new paid submission or ElevenLabs credit usage occurred in this phase.

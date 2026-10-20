@@ -207,6 +207,9 @@ def process_outbox_batch(batch_size: int = 10) -> int:
                 processed_count += 1
 
                 try:
+                    if event_type == "calendar_projection":
+                        from serviceBot.services.simulation_faults import before_calendar_dispatch
+                        before_calendar_dispatch(item_id, request_id, payload)
                     _dispatch_outbox_event(event_type, request_id, payload)
                     # Success: Mark DELIVERED
                     with dict_cursor(conn) as cursor:

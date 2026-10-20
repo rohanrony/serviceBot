@@ -736,3 +736,41 @@ claim, fixture, provider call or spending authority comes from the preview.
 Keep the prior28-file v9 package immutable until this independently reviewed
 follow-up is applied and a complete source-frozen gate is recorded. Any expanded
 publication/deployment proposal must supersede that old scope explicitly.
+
+## Offline fixture completion, 19 October 2026
+
+Continue the existing feature under the owner's fixes-first instruction. Preserve
+the deployed 074939e release and original paid ledger; make all changes locally.
+Root owns shared adapter/prerequisite integration. Independent workers own the
+C23 service/technician lifecycle, C48 preparation/recovery coordinator, and C50
+authenticated callback audit plus causal observers. No worker changes shared
+specification artifacts or deployment state.
+
+The C23 lifecycle is opt-in and authenticated, issues a signed receipt for a pair
+created in one transaction, and rejects cleanup unless every exact identity and
+attachment precondition still holds under locks. C48 journals both phase budgets
+and immutable pre-invocation state before any injected submit callback, preserves
+common-ledger settlement and reconciles ambiguous writes by the same handle.
+C50 stores verified HTTP-ingress provenance independently from deduplicated event
+processing; new schema includes verification and rollback artifacts. C35-C45
+observers must read causal native/provider state and keep actual trigger, phone,
+policy and elapsed-time requirements visible. No ready flag supplies those facts.
+
+TDD applies at service, captured HTTP and disposable PostgreSQL boundaries. No new
+browser journey is introduced; run the existing complete API/browser gate after
+focused contracts and independent review. Native conditions, paid authorization,
+deployment/configuration and real provider acceptance remain separate future work.
+
+The integrated full executor reuses the existing campaign, full-stage claim,
+owned clone and common ledger. It does not create another runtime owner. Native
+read-only prerequisite probes precede fixture or paid mutations. Fault leases
+have same-transaction booking bindings and worker/HTTP hooks that are inert for
+ordinary bookings. Per-case clone tool changes use placeholder secret headers,
+strict provider read-back, exclusive durable intents and exact restoration.
+
+Use the current agent-testing response schema for C48 paired call/result proof;
+use a separate actual WebSocket session for C50 history. Native message/Google
+observers join source-owned IDs through independent authenticated GETs. Retain
+real operator, independent sender, enrollment/window, timeout and quiet-hours
+policy gates. A missing verified native-session credit unit is an explicit
+prepaid blocker, not a guessed currency conversion or a configuration-ready flag.

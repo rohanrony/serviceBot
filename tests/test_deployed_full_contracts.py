@@ -60,10 +60,12 @@ def test_implementation_support_is_source_owned_and_does_not_prove_native_readin
     assert report['cases']['C25']['implementation_status'] == 'implemented_offline'
     assert report['cases']['C30']['implementation_status'] == 'implemented_offline'
     assert report['cases']['C31']['implementation_status'] == 'implemented_offline'
-    assert report['cases']['C23']['implementation_status'] == 'partial_blocked'
-    assert 'C23' in report['unsupported_case_ids']
+    assert report['cases']['C23']['implementation_status'] == 'implemented_offline'
+    assert 'C23' not in report['unsupported_case_ids']
     assert report['cases']['C47']['implementation_status'] == 'implemented_offline'
-    assert report['cases']['C38']['implementation_status'] == 'missing'
+    assert report['cases']['C38']['implementation_status'] == 'implemented_offline'
+    assert report['cases']['C38']['status'] == 'blocked'
+    assert any('unenrolled' in reason for reason in report['cases']['C38']['blockers'])
     assert report['ready'] is False
     assert report['blocked_case_ids'] == list(FULL_IDS)
 
