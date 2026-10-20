@@ -745,6 +745,7 @@ def reconcile(runtime,*,native_reconcile=None):
         path = runtime.root / 'usage-ledger.json'
         ledger = json.loads(path.read_text())
         provider = ElevenLabs(secret(runtime.config, 'elevenlabs_key'))
+        native_unverified=False
         try:
             entries=sorted(ledger['entries'],key=lambda e:e.get('resource_type')!='conversation')
             for original in entries:
@@ -757,11 +758,23 @@ def reconcile(runtime,*,native_reconcile=None):
                 if entry.get('resource_type') == 'conversation':
                     if native_reconcile is None:
                         continue
+                    native_unverified=True
                     with owned_campaign_scope(runtime.root):
                         native_reconcile(runtime,provider)
                     # The native owner writes the same ledger; never overwrite it
                     # with the pre-recovery snapshot.
                     ledger = json.loads(path.read_text())
+                    identity_keys=('run_id','case_id','resource_type','agent_id','session_nonce',
+                        'authorization_id','intent_sha256','provider_conversation_id','billing_id')
+                    matches=[candidate for candidate in ledger['entries']
+                        if all(candidate.get(key)==entry.get(key) for key in identity_keys)]
+                    try:
+                        if len(matches)!=1 or matches[0].get('unsettled') is not False:
+                            raise ValueError
+                        number(matches[0]['credits'])
+                    except (KeyError,TypeError,ValueError,SimulationError):
+                        raise SimulationError('Native conversation charges remain unverified') from None
+                    native_unverified=False
                     continue
                 invocation = entry.get('invocation_id')
                 if not invocation:
@@ -786,7 +799,19 @@ def reconcile(runtime,*,native_reconcile=None):
         finally:
             ledger=json.loads(path.read_text())
             relevant = [e for e in ledger['entries'] if e['run_id'] == runtime.run_id]
-            runtime.manifest['unsettled_usage'] = any(e.get('unsettled') for e in relevant)
-            runtime.manifest['spent_credits'] = str(sum((number(e['credits']) for e in relevant if not e.get('unsettled')), Decimal(0)))
+            spent=Decimal(0)
+            unsettled=native_unverified
+            for entry in relevant:
+                if entry.get('unsettled') is not False:
+                    unsettled=True
+                    continue
+                try:
+                    spent+=number(entry['credits'])
+                except (KeyError,TypeError,ValueError,SimulationError):
+                    # A malformed settled row is unknown; preserve the safe
+                    # recovery error and report only charges actually known.
+                    unsettled=True
+            runtime.manifest['unsettled_usage'] = unsettled
+            runtime.manifest['spent_credits'] = str(spent)
             runtime.save()
             write_report(runtime)

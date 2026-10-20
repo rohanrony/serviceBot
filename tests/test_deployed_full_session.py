@@ -414,21 +414,20 @@ def test_management_settles_native_charge_with_blocked_fixtures_and_preserves_ot
     assert f.requests==[('GET','/v1/convai/conversations/actual-session')]
 
 
-@pytest.mark.parametrize('damage',['unknown_id','missing_units','claim_drift','cross_run','malformed','provider_error'])
+@pytest.mark.parametrize('damage',['unknown_id','missing_units','claim_drift','malformed','provider_error'])
 def test_management_native_recovery_fails_closed(fixture,monkeypatch,damage):
     f=fixture; manage=_management_fixture(f,monkeypatch)
     path=f.tmp/'usage-ledger.json';ledger=json.loads(path.read_text())
     if damage=='unknown_id': ledger['entries'][0].pop('provider_conversation_id')
     elif damage=='missing_units': f.adapter.config['budget']['verified_credit_units']=False
     elif damage=='claim_drift': ledger['stage_authorizations'][0]['run_id']='foreign'
-    elif damage=='cross_run': ledger['entries'][0]['run_id']='foreign'
     elif damage=='malformed': f.detail['metadata']['cost']=True
     else:
         def failed(*args): raise RuntimeError('private-provider-text')
         f.provider.request=failed
     path.write_text(json.dumps(ledger))
-    try: manage()
-    except SimulationError as error: assert 'private-provider-text' not in str(error)
+    with pytest.raises(SimulationError) as error: manage()
+    assert 'private-provider-text' not in str(error.value)
     ledger=json.loads(path.read_text())
     assert ledger['entries'][0]['unsettled'] is True and 'credits' not in ledger['entries'][0]
     assert all(method=='GET' and url=='/v1/convai/conversations/actual-session' for method,url in f.requests)
@@ -498,7 +497,10 @@ def test_management_customer_drift_uses_original_provider_identity(fixture,monke
     f.detail['metadata']['cost']=4
     f.detail['user_id']=provider_phone
     monkeypatch.setattr(session.causal.medium,'_read',lambda *a:[{'id':7,'name':'Changed','phone':'+15550109999'}])
-    assert manage()==0
+    if provider_phone=='+15550100001':
+        assert manage()==0
+    else:
+        with pytest.raises(SimulationError,match='Native conversation charges remain unverified'):manage()
     entry=json.loads((f.tmp/'usage-ledger.json').read_text())['entries'][0]
     assert entry['unsettled'] is (provider_phone!='+15550100001')
 
@@ -513,3 +515,62 @@ def test_management_malformed_saved_customer_identity_stops_before_get(fixture,m
     monkeypatch.setattr(session.causal.medium,'_read',lambda *a:pytest.fail('No customer DB needed'))
     with pytest.raises(SimulationError,match='saved customer identity'):manage()
     assert f.requests==[]
+
+
+@pytest.mark.parametrize('outcome',['pending','missing_cost','provider_failure'])
+def test_management_unresolved_native_charge_raises_and_persists_summary(fixture,monkeypatch,outcome):
+    f=fixture;manage=_management_fixture(f,monkeypatch)
+    path=f.tmp/'usage-ledger.json';ledger=json.loads(path.read_text())
+    settled={'run_id':f.adapter.campaign.run_id,'case_id':'C17','unsettled':False,'credits':'9'}
+    ledger['entries'].append(settled);path.write_text(json.dumps(ledger))
+    if outcome=='pending':f.detail['status']='processing'
+    if outcome=='provider_failure':
+        def failed(*a):raise RuntimeError('private-provider-error')
+        f.provider.request=failed
+    with pytest.raises(SimulationError,match='Native conversation charges remain unverified') as error:manage()
+    assert 'private-provider-error' not in str(error.value)
+    ledger=json.loads(path.read_text())
+    assert ledger['entries'][0]['unsettled'] is True and ledger['entries'][1]==settled
+    manifest=json.loads((f.adapter.campaign.folder/'manifest.json').read_text())
+    assert manifest['spent_credits']=='9' and manifest['unsettled_usage'] is True
+
+
+def test_management_foreign_unknown_conversation_does_not_trigger_recovery(fixture,monkeypatch):
+    f=fixture;manage=_management_fixture(f,monkeypatch)
+    f.detail['metadata']['cost']=3
+    path=f.tmp/'usage-ledger.json';ledger=json.loads(path.read_text())
+    foreign={'run_id':'foreign','case_id':'C50','resource_type':'conversation','unsettled':True}
+    ledger['entries'].append(foreign);path.write_text(json.dumps(ledger))
+    assert manage()==0
+    assert json.loads(path.read_text())['entries'][1]==foreign
+    assert f.requests==[('GET','/v1/convai/conversations/actual-session')]
+
+
+@pytest.mark.parametrize('damage',['missing','duplicate','identity_changed','missing_credits'])
+def test_management_requires_exact_settled_native_entry_after_callback(fixture,monkeypatch,damage):
+    f=fixture;manage=_management_fixture(f,monkeypatch)
+    path=f.tmp/'usage-ledger.json'
+    def changed(campaign,provider):
+        ledger=json.loads(path.read_text());entry=ledger['entries'][0]
+        entry.update(unsettled=False,credits='3')
+        if damage=='missing':ledger['entries']=[]
+        elif damage=='duplicate':ledger['entries'].append(deepcopy(entry))
+        elif damage=='identity_changed':entry['billing_id']='conversation:foreign'
+        else:entry.pop('credits')
+        path.write_text(json.dumps(ledger))
+        return {'status':'pretend-success'}
+    monkeypatch.setattr(session,'reconcile_campaign',changed)
+    with pytest.raises(SimulationError,match='Native conversation charges remain unverified'):manage()
+    assert f.requests==[]
+    manifest=json.loads((f.adapter.campaign.folder/'manifest.json').read_text())
+    assert manifest['unsettled_usage'] is True
+
+
+def test_management_only_foreign_unknown_conversation_is_skipped(fixture,monkeypatch):
+    f=fixture;manage=_management_fixture(f,monkeypatch)
+    path=f.tmp/'usage-ledger.json';ledger=json.loads(path.read_text())
+    ledger['entries'][0]['run_id']='foreign'
+    ledger['entries'][0].pop('provider_conversation_id')
+    path.write_text(json.dumps(ledger));before=deepcopy(ledger)
+    assert manage()==0
+    assert json.loads(path.read_text())==before and f.requests==[]

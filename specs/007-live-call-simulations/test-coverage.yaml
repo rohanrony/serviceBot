@@ -62,7 +62,8 @@
       ],
       "success": [
         "Booking, reservation and outbox bind in the same transaction",
-        "Worker failure is consumed once; committed HTTP truncation reconciles the same booking"
+        "Worker failure is consumed once; committed HTTP truncation reconciles the same booking",
+        "Actual PostgreSQL TIMESTAMP projection snapshots serialize with timezone offsets and compose with transition verification in UTC and America/Los_Angeles"
       ],
       "failure": [
         "Expired/foreign/changed payload; concurrent claims; interrupted intent; schema or catalog drift",
@@ -77,7 +78,8 @@
         "e2e/test_simulation_faults.py::test_fault_consumption_is_one_shot_under_concurrent_claims",
         "e2e/test_simulation_faults.py::test_transaction_bound_booking_survives_missing_http_result_without_rebooking",
         "e2e/test_simulation_faults.py::test_cleanup_rechecks_schema_after_late_cascading_reference_before_locks",
-        "tests/test_simulation_faults.py::test_required_business_intake_blocks_before_fault_resources"
+        "tests/test_simulation_faults.py::test_required_business_intake_blocks_before_fault_resources",
+        "tests/test_projection_timezone.py::test_projection_timestamp_read_composes_with_transition"
       ],
       "layer": [
         "database",
@@ -439,13 +441,15 @@
       ],
       "success": [
         "Persist exact integer total and credit source under real conversation billing ID",
-        "Outer Budget settles once; repeated GET reconciliation retains the same charge"
+        "Outer Budget settles once; repeated GET reconciliation retains the same charge",
+        "Management command returns success only after exact current-run native settlement; legitimate foreign-run entries remain unchanged"
       ],
       "failure": [
         "Malformed/missing/fiat-only/negative/noninteger total remains unknown",
         "Changed subscription tier/reset/counters or insufficient fresh quota stops before intent/signed URL/socket",
         "Changed settled total raises an integrity error",
-        "Supported management reconciliation preserves unknown or mismatched native identities and persists partial billing settlement without enabling fixture mutations"
+        "Supported management reconciliation preserves unknown or mismatched native identities and persists partial billing settlement without enabling fixture mutations",
+        "Pending native status, missing cost, malformed total or provider failure raises a fixed safe error through the supported management command while preserving partial settlement"
       ],
       "invariants": [
         "Never infer a formula from charge components, price, duration or subscription deltas",
@@ -473,7 +477,11 @@
         "tests/test_deployed_full_session.py::test_management_persists_discovered_invocation_before_pending_read",
         "tests/test_deployed_full_session.py::test_management_financial_recovery_does_not_require_current_customer_database",
         "tests/test_deployed_full_session.py::test_management_customer_drift_uses_original_provider_identity",
-        "tests/test_deployed_full_session.py::test_management_malformed_saved_customer_identity_stops_before_get"
+        "tests/test_deployed_full_session.py::test_management_malformed_saved_customer_identity_stops_before_get",
+        "tests/test_deployed_full_session.py::test_management_unresolved_native_charge_raises_and_persists_summary",
+        "tests/test_deployed_full_session.py::test_management_foreign_unknown_conversation_does_not_trigger_recovery",
+        "tests/test_deployed_full_session.py::test_management_requires_exact_settled_native_entry_after_callback",
+        "tests/test_deployed_full_session.py::test_management_only_foreign_unknown_conversation_is_skipped"
       ],
       "layer": [
         "unit",
@@ -607,8 +615,8 @@
     "browser": "These repairs add internal APIs, campaign observers and migrations, with no new user interface. The complete existing browser subset still runs as regression coverage before publication."
   },
   "review": {
-    "red": "Historical failure evidence and the original offline repair package are retained in scratch/full-delta-20261019; this publication reconstructs those fixes onto current main. Publication intake regression: three expected database-forbidden failures captured before admission guard. C50 accounting: 64 intended failures before implementation, 20 existing session tests passing; retained c50-red.log. PR7 review repairs: C33 five intended failures and C48 seven intended failures preceded their fixes. C50 management command failed to settle known native charges before wiring; three further regressions reproduced its current-customer database dependency.",
-    "green": "Focused native reader/session/adapter/causal/quota/Budget contracts pass; full offline and exact-candidate publication verification recorded separately. PR7 C33/native/conditions:105 passed; C48:55 passed. Current-candidate full gate recorded separately. C50 session/credit contracts:105 passed; combined C33/C48/native/conditions:160 passed. Independent source review found no remaining actionable review repair.",
+    "red": "Historical failure evidence and the original offline repair package are retained in scratch/full-delta-20261019; this publication reconstructs those fixes onto current main. Publication intake regression: three expected database-forbidden failures captured before admission guard. C50 accounting: 64 intended failures before implementation, 20 existing session tests passing; retained c50-red.log. PR7 review repairs: C33 five intended failures and C48 seven intended failures preceded their fixes. C50 management command failed to settle known native charges before wiring; three further regressions reproduced its current-customer database dependency. Second hosted review: six management false-success failures and two real PostgreSQL timezone composition failures reproduced before repairs.",
+    "green": "Focused native reader/session/adapter/causal/quota/Budget contracts pass; full offline and exact-candidate publication verification recorded separately. PR7 C33/native/conditions:105 passed; C48:55 passed. Current-candidate full gate recorded separately. C50 session/credit contracts:105 passed; combined C33/C48/native/conditions:160 passed. Independent source review found no remaining actionable review repair. Second review repairs:113 session/credit tests and21 projection/causal tests passed with zero skips; new exact-candidate full gate pending.",
     "test_changes": "Preserve main future-date handling and migration0010; add migration0008/0009 assertions. Review the failure, ownership, concurrency, provenance and unknown-charge assertions; no skips or assertion weakening.",
     "sufficiency": "Native database/HTTP tests exercise transactional ownership, retry, cleanup and migration behavior; deterministic provider contracts cover actual payload shapes and negative evidence. Full paid provider acceptance remains pending, including independently verified real-account native credit units."
   }

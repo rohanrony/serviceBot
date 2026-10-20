@@ -677,3 +677,10 @@ exactly; concurrent or unknown changes stop the campaign.
   after exhaustion. C33 records the exact other customer's booking and customer
   baseline before submission, rejects subsequent drift, and never registers the
   foreign request as campaign-owned or eligible for cleanup.
+
+  The management command must fail when its exact current-run native charge
+  remains unsettled after bounded GET recovery; persist truthful partial totals
+  and unknown-use state even on failure. Native projection observations must
+  serialize timezone-aware timestamps using the database timestamp owner's
+  timezone convention, and compose with transition validation against actual
+  PostgreSQL rows in UTC and a non-UTC session timezone.

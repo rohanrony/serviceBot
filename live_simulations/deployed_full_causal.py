@@ -93,8 +93,11 @@ def observe_projection(adapter, *, request_ids):
             or any(type(i) is not int or i <= 0 for i in request_ids)
             or not request_ids <= set(adapter.current_ids)):
         raise SimulationError('Projection observation requires exact registered owned request IDs')
+    # Native TIMESTAMP values are written by CURRENT_TIMESTAMP in the database
+    # session zone; interpret them in that same zone before serialization.
     return medium._serial(medium._read(adapter.config, '''SELECT id,request_id,event_type,status,
-        attempts,error_log,updated_at,payload FROM outbox_notifications
+        attempts,error_log,updated_at AT TIME ZONE current_setting('TimeZone') AS updated_at,
+        payload FROM outbox_notifications
         WHERE request_id=ANY(%s) AND event_type='calendar_projection' ORDER BY id''',
         (sorted(request_ids),)))
 

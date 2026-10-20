@@ -765,3 +765,16 @@ four fixes, including three database-independence regressions from independent
 review. Source re-review found no remaining actionable issue. Exact-candidate
 verification, hosted CI and publication are tracked by T166 and PR7; no new paid
 session or production mutation was performed.
+
+### Second hosted review findings
+
+- [x] T167 Reject successful management status while exact native usage remains
+  unsettled; preserve ledger/manifest state and cover pending, unknown cost,
+  provider failure and mismatched settlement (FR-070).
+- [x] T168 Compose real PostgreSQL projection reads with transition validation
+  across UTC/non-UTC session timezones; preserve timestamp timezone information
+  according to its database writer convention (FR-070).
+
+The 0d556f0 exact-candidate and hosted gates passed2348unit/integration+658API/
+browser tests (108browser subset). Hosted Codex review then found T167/T168;
+that candidate was not merged. Fresh source evidence and review are required.

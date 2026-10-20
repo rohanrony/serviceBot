@@ -803,3 +803,11 @@ compare subsequent reads without adding foreign IDs to ownership or cleanup.
 Add failure-first captured-provider and composed regressions, review source and
 assertions, then run the complete exact-candidate and hosted CI gates. No new UI
 journey is introduced; existing browser regressions remain mandatory.
+
+After native management recovery reload the exact ledger binding and reject
+nonterminal, missing, ambiguous or changed settlement instead of returning a
+successful command status. Preserve totals in the runner's finalization path.
+Convert the naive outbox timestamp using the database session timezone, matching
+its CURRENT_TIMESTAMP writer and the history observer convention. Validate the
+actual read/serialization/transition composition in a disposable PostgreSQL
+schema under UTC and America/Los_Angeles, with independent observation snapshots.
