@@ -50,3 +50,13 @@ Codex review. Prior 4c9386d evidence does not authorize publishing these new sou
 Live acceptance: not required for the new clock/serialization and fixture contracts. Provider
 request/response shapes and effects are unchanged; no live-provider verification or deployment
 is claimed. Existing provider acceptance obligations remain separate.
+
+## Coverage reference correction
+
+Release verification of `a45a4e4` completed 2,401 unit/integration tests and 679 E2E tests
+without failures or skips, then rejected CI-AC3's obsolete C23 node identifier. C23 now has
+separate successful cleanup and external-change refusal tests. Map CI-AC3 to both collected
+tests so the authenticated read-only observer and cleanup contracts remain represented.
+This corrects metadata only; application behavior and test assertions are unchanged.
+Validate the references against the retained complete collection manifests and obtain a
+new exact-candidate verification receipt before publication.
