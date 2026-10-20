@@ -17,6 +17,7 @@ acceptance:
       - tests/test_customer_notification_details.py::test_business_name_prefix_omits_missing_or_invalid_name
       - tests/test_customer_notification_details.py::test_customer_reminder_messages_omit_appointment_number_and_include_details
       - tests/test_customer_notification_details.py::test_sms_router_customer_messages_omit_appointment_number_and_include_map
+      - tests/test_no_duplicate_booking_messages.py::test_booking_does_not_duplicate_messages_to_customer_and_agent
     layer: [unit, database, provider_contract]
     live_acceptance:
       status: pending
