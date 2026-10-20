@@ -1,0 +1,83 @@
+schema: 1
+feature: "admin-routine-email-copies"
+acceptance:
+  - id: "AC-1"
+    behavior: "Routine admin email copies are off by default for every non-escalation booking lifecycle event, including configurations without the new setting."
+    preconditions: ["Gmail is enabled and has configured sender and admin recipient; routine preference is false or absent"]
+    success: ["No separate admin Gmail message is submitted for appointment, callback, reschedule, reassignment, or cancellation"]
+    failure: ["A missing or false preference still submits any routine admin email"]
+    invariants: ["Customer and agent notification behavior is unchanged"]
+    tests:
+      - "tests/test_gmail_service.py::test_routine_admin_copies_are_disabled_by_default"
+      - "tests/test_gmail_integration.py::test_get_gmail_config"
+    layer: [unit, http]
+    live_acceptance:
+      status: pending
+      reason: "Provider-side inbox and calendar read-back requires a designated test recipient/calendar and separate live-test authorization."
+      scenarios: ["C01"]
+      scenario_source: "live_simulations/scenarios.json"
+      prerequisites: ["Target revision and environment; designated admin test inbox and isolated calendar; Gmail and Calendar permissions; unique run-owned booking fixture"]
+      expected_effects: ["One admin Calendar invitation for the routine booking; no separate [Admin Copy] email; no unrelated recipient messages"]
+      independent_read_back: ["Read the Google Calendar event by provider event ID and verify the admin attendee; inspect the designated inbox to distinguish the Calendar invitation from any separate [Admin Copy] message"]
+      cleanup_recovery: ["Retain event/message/request identifiers; delete only the run-owned Calendar event and reconcile ambiguous delivery before retry"]
+      estimated_credits: "Unknown pending live-run calibration; blocks live readiness"
+      estimated_cost: "Unknown pending provider and call-budget confirmation; blocks live readiness"
+      spending_ceiling: "None approved; live execution requires a separately authorized cap"
+      unknown_charge_handling: "Stop, retain the run ledger, and reconcile before retry"
+      reuse: "Update C01 acceptance; prior evidence does not prove the new no-copy/calendar-invite contract"
+      evidence: []
+  - id: "AC-2"
+    behavior: "The Admin Mail preference is visible, defaults off, can be changed, and persists across API and browser reloads."
+    preconditions: ["Admin Mail configuration is open"]
+    success: ["GET returns the saved boolean; POST with the setting changes it; a page reload shows the saved value"]
+    failure: ["An omitted POST field clears an existing choice or the page shows a value different from the saved setting"]
+    invariants: ["Other Gmail settings and credentials remain unchanged"]
+    tests:
+      - "tests/test_gmail_service.py::test_routine_admin_copies_send_when_enabled"
+      - "tests/test_gmail_integration.py::test_get_gmail_config"
+      - "tests/test_gmail_integration.py::test_post_gmail_config"
+      - "tests/test_gmail_integration.py::test_gmail_routine_copy_setting_persists_and_omitted_updates_preserve"
+      - "e2e/test_admin_mail_oauth.py::test_legacy_settings_render_google_only_and_save_after_reload"
+    layer: [http, browser]
+    live_acceptance:
+      status: not_required
+      reason: "Configuration persistence and browser rendering are fully verified through isolated local files and HTTP; no provider effect is needed."
+      scenarios: []
+  - id: "AC-3"
+    behavior: "Routine-copy suppression leaves calendar invitations and escalation admin emails intact."
+    preconditions: ["Routine preference is off; Gmail and current escalation email rule allow email; captured provider boundaries are installed"]
+    success: ["Outbox booking requests a Calendar event update with the admin attendee and no separate admin Gmail send; an escalation still submits its urgent admin email"]
+    failure: ["Routine suppression disables the calendar invite or blocks the escalation email"]
+    invariants: ["Calendar invitations remain independent from routine Gmail copies; existing escalation configuration remains authoritative"]
+    tests:
+      - "tests/test_sla_escalation_admin_email.py::test_send_admin_notification_escalation"
+      - "e2e/test_admin_mail_delivery.py::test_routine_admin_copy_is_suppressed_while_calendar_invitation_remains"
+    layer: [unit, provider_contract, composed]
+    live_acceptance:
+      status: pending
+      reason: "Escalation delivery requires a designated test inbox and separate live-test authorization."
+      scenarios: ["C44"]
+      scenario_source: "live_simulations/scenarios.json"
+      prerequisites: ["Target revision and environment; designated admin test inbox; isolated booking with a safely controlled escalation trigger; Gmail permissions"]
+      expected_effects: ["One urgent escalation email while routine copies remain disabled; no unrelated recipient messages"]
+      independent_read_back: ["Inspect the designated inbox for the escalation message and correlate it to the run-owned appointment and escalation reason"]
+      cleanup_recovery: ["Retain message and appointment identifiers; resolve/reset only the run-owned appointment and reconcile ambiguous delivery before retry"]
+      estimated_credits: "Unknown pending live-run calibration; blocks live readiness"
+      estimated_cost: "Unknown pending provider and call-budget confirmation; blocks live readiness"
+      spending_ceiling: "None approved; live execution requires a separately authorized cap"
+      unknown_charge_handling: "Stop, retain the run ledger, and reconcile before retry"
+      reuse: "Update C44 acceptance; prior evidence does not prove escalation delivery with routine copies disabled"
+      evidence: []
+omitted_layers:
+  database: "The preference is stored in the existing JSON config file; no relational persistence is introduced."
+  migration: "No database schema changes are planned."
+  targeted: "The acceptance contracts are fully observable through the mapped automated pytest layers; no separate manual probe is required."
+review:
+  red: "Run the new focused tests before sender/API/UI implementation and record the intended failures."
+  green: "Run focused unit, API, browser, and captured-provider tests after implementation."
+  test_changes: "Review updated existing fixtures for their intended mail mode; no assertions may be weakened."
+  sufficiency: "Cover defaults, all routine event categories, opt-in, persistence, escalation, and the independent Calendar boundary."
+  offline:
+    status: pending
+    reason: "The integrated feature candidate must pass exact-head offline verification before these results are recorded."
+    evidence: []

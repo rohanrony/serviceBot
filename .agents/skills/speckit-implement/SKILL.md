@@ -227,13 +227,31 @@ Report final status with summary of completed work.
 
 ## Project test-coverage obligation
 
-Follow `docs/SPECKIT_WORKFLOW.md` and `docs/MERGE_READINESS.md`. Each changed acceptance
-contract requires a feature-local `test-coverage.yaml` before implementation, with behavior,
-preconditions, success/failure, invariants, real test IDs, layers, omitted-layer reasons and
-live requirements. Tests are mandatory for behavioral changes. Review meaningful Red → Green
-→ Refactor evidence, fresh persisted reads/reloads, prohibited effects and realistic external
-boundary transports. Counts alone are insufficient. Required behavior cannot be skipped,
-xfail or placeholder. At analysis/convergence, report missing or stale coverage as a gap.
+Follow `docs/SPECKIT_WORKFLOW.md` and `docs/MERGE_READINESS.md`. For every changed acceptance
+contract, update or add a feature-local `test-coverage.yaml` row before implementation, naming
+real collected automated test IDs and relevant live scenario IDs with their definition path.
+Add/update tests first; add missing live scenario definitions. A contract with no live boundary
+uses `scenarios: []`, `status: not_required` and a concrete reason. Missing scenarios, prerequisites,
+budget or authorization mean `pending`. Include behavior, preconditions, success/failure,
+invariants, layers and omitted-layer reasons. Keep coverage current through handoff.
+
+Provider behavior changes must update the actual live scenario definition, expected external
+and prohibited effects, independent provider read-back with correlated IDs, prerequisites,
+cleanup/recovery, credit/cost estimates with units/basis, spending ceiling and unknown-charge
+handling. Coverage maintenance is required offline work; live execution and spending require
+separate authorization. Offline/mock tests cannot prove provider delivery. Reuse live evidence
+only when its scenario, assertions, target/revision and bindings remain applicable.
+
+Tests are mandatory for behavioral changes. Review meaningful Red → Green → Refactor evidence,
+fresh persisted reads/reloads, prohibited effects and realistic external boundary transports.
+Counts alone are insufficient. Required behavior cannot be skipped, xfail or placeholder.
+At analysis/convergence, report missing/stale rows, test/scenario IDs, definitions or provider
+fields as gaps; retain Analyze's read-only and Converge's append-only boundaries.
+Before handoff report Offline and Live independently as `verified`, `pending` or `not_required`,
+with actual results, evidence and a reason. Required live execution may remain pending separate
+authorization; missing/stale coverage definitions remain development gaps.
 Before authorized publication, require exact-SHA/current-target verification through
 `./scripts/verify_change.sh --base <target-ref> --head <commit-sha>`, including both complete
 offline suites and browser journeys within E2E. Live execution remains separately authorized.
+
+Complete matrix and scenario updates with the implementation; do not convert live execution tasks to complete on offline results.

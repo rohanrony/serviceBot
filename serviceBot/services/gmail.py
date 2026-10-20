@@ -425,6 +425,12 @@ def send_admin_notification(
         print("Admin Notifications: disabled in settings.")
         return False
 
+    normalized_booking_type = str(booking_type or "").strip().lower()
+    is_escalation = normalized_booking_type in {"escalation", "escalated", "sla_breach"}
+    if not is_escalation and not config.get("gmail_routine_admin_copies_enabled", False):
+        print("Routine admin email copies: disabled in settings.")
+        return False
+
     sender = config.get("gmail_sender", "")
     admin_recipient = config.get("gmail_recipient", "")
 
@@ -468,7 +474,6 @@ def send_admin_notification(
     appt_id = details.get("appointment_id")
     from serviceBot.services.business_profile import notification_portal_url
     reassign_url = notification_portal_url(config)
-    is_escalation = booking_type in ["escalation", "escalated", "sla_breach"]
     esc_reason = details.get("escalation_reason") or details.get("reason")
 
     html_body = f"""

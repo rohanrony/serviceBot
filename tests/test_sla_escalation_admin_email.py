@@ -10,6 +10,7 @@ def test_send_admin_notification_escalation(mock_load, mock_send_api):
     """Verify send_admin_notification properly formats SLA escalation alerts."""
     mock_load.return_value = {
         "gmail_enabled": True,
+        "gmail_routine_admin_copies_enabled": False,
         "gmail_sender": "sender@davidsoncarcare.com",
         "gmail_recipient": "admin@davidsoncarcare.com",
         "portal_base_url": "https://studio.example",

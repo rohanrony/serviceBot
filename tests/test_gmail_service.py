@@ -133,6 +133,7 @@ def test_send_admin_notification(mock_load, mock_send_api):
     """Verify send_admin_notification sends email with assigned mechanic info."""
     mock_load.return_value = {
         "gmail_enabled": True,
+        "gmail_routine_admin_copies_enabled": True,
         "gmail_sender": "sender@example.com",
         "gmail_recipient": "admin@example.com",
         "gmail_auth_type": "oauth2"
@@ -159,6 +160,58 @@ def test_send_admin_notification(mock_load, mock_send_api):
     assert kwargs.get("recipient") == "admin@example.com"
     assert "John Mechanic" in kwargs.get("html_body", "")
     assert "john@example.com" in kwargs.get("html_body", "")
+
+
+@patch("serviceBot.services.gmail.send_gmail_api_email")
+@patch("serviceBot.services.gmail.load_config")
+def test_routine_admin_copies_are_disabled_by_default(mock_load, mock_send_api):
+    """A legacy config without the opt-in never sends routine admin copies."""
+    mock_load.return_value = {
+        "gmail_enabled": True,
+        "gmail_sender": "sender@example.com",
+        "gmail_recipient": "admin@example.com",
+    }
+
+    routine_event_types = (
+        "appointment",
+        "callback",
+        "reschedule",
+        "reassign",
+        "cancel",
+        "cancelled_by_customer",
+        "cancelled_by_admin",
+    )
+    for event_type in routine_event_types:
+        assert send_admin_notification(event_type, {}) is False
+
+    assert mock_load.call_count == len(routine_event_types)
+    mock_send_api.assert_not_called()
+
+
+@patch("serviceBot.services.gmail.send_gmail_api_email")
+@patch("serviceBot.services.gmail.load_config")
+def test_routine_admin_copies_send_when_enabled(mock_load, mock_send_api):
+    """The Admin Mail opt-in retains routine-copy delivery for lifecycle events."""
+    mock_load.return_value = {
+        "gmail_enabled": True,
+        "gmail_routine_admin_copies_enabled": True,
+        "gmail_sender": "sender@example.com",
+        "gmail_recipient": "admin@example.com",
+    }
+    mock_send_api.return_value = True
+
+    routine_event_types = (
+        "appointment",
+        "callback",
+        "reschedule",
+        "reassign",
+        "cancel",
+    )
+    for event_type in routine_event_types:
+        assert send_admin_notification(event_type, {}) is True
+
+    assert mock_send_api.call_count == len(routine_event_types)
+
 
 @patch("httpx.post")
 @patch("serviceBot.services.gmail.get_gmail_access_token")

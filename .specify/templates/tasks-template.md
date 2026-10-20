@@ -11,7 +11,13 @@ description: "Task list template for feature implementation"
 
 **Tests**: Mandatory for every changed behavioral contract. Update `test-coverage.yaml` before
 implementation; write meaningful failing tests before the corresponding implementation task.
-Include affected browser journeys and reasons for omitted layers. Finish with complete
+For each changed acceptance contract, update/add a row with real collected automated test IDs
+and relevant live scenario IDs/definition paths (or an explicit `not_required` reason). Include
+affected browser journeys and reasons for omitted layers. Provider changes require tasks to
+update the actual scenario, expected external effects, independent read-back, prerequisites,
+cleanup/recovery, credit/cost estimate and spending ceiling. Keep live execution as a separate
+task pending its own authorization; offline/mock passes cannot prove provider delivery. Finish
+with Offline and Live statuses (verified, pending or not_required), reasons/evidence, and complete
 `./scripts/verify_change.sh --base <target-ref> --head <commit-sha>` evidence and test review.
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
@@ -158,6 +164,8 @@ Examples of foundational tasks (adjust based on your project):
 - [ ] TXXX Code cleanup and refactoring
 - [ ] TXXX Performance optimization across all stories
 - [ ] TXXX Review matrix and behavior/failure/invariant assertions in tests/ and e2e/
+- [ ] TXXX Reconcile every changed contract's test-coverage.yaml row and real automated/live IDs; update affected live scenario definitions and provider evidence/budget fields
+- [ ] TXXX Record Offline and Live results/status/reasons/evidence; keep required live execution pending until separately authorized
 - [ ] TXXX Security hardening
 - [ ] TXXX Run quickstart.md validation
 

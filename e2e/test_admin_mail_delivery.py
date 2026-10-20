@@ -21,6 +21,7 @@ def test_legacy_admin_delivery_uses_persisted_google_accounts(
     config = portal.load_config()
     config.update(
         gmail_enabled=True,
+        gmail_routine_admin_copies_enabled=True,
         gmail_auth_type="app_password",
         gmail_password=encrypt_key("obsolete-password"),
         gmail_sender="sender@example.test",
@@ -94,3 +95,62 @@ def test_legacy_admin_delivery_uses_persisted_google_accounts(
     assert db("SELECT * FROM user_google_accounts WHERE agent_id = 1") == before
     assert portal.load_config() == config
     smtp.assert_not_called()
+
+
+def test_routine_admin_copy_is_suppressed_while_calendar_invitation_remains(
+    db, monkeypatch
+):
+    from serviceBot.api import portal
+    from serviceBot.services import gmail, outbox_worker
+
+    config = portal.load_config()
+    config.update(
+        gmail_enabled=True,
+        gmail_routine_admin_copies_enabled=False,
+        gmail_sender="sender@example.test",
+        gmail_recipient="admin@example.test",
+    )
+    portal.save_config(config)
+
+    monkeypatch.setattr(gmail, "get_gmail_access_token", lambda: "calendar-access")
+    monkeypatch.setattr(
+        outbox_worker, "delete_admin_calendar_event", lambda *_args, **_kwargs: True
+    )
+    calendar_calls = []
+
+    def capture_calendar_event(url, **kwargs):
+        calendar_calls.append((url, kwargs))
+        return httpx.Response(
+            201,
+            json={"id": "captured-admin-calendar-event"},
+            request=httpx.Request("POST", url),
+        )
+
+    monkeypatch.setattr(gmail.httpx, "post", capture_calendar_event)
+    send_admin_mail = MagicMock(return_value=True)
+    monkeypatch.setattr(gmail, "send_gmail_api_email", send_admin_mail)
+
+    outbox_worker._dispatch_outbox_event(
+        "booking_notification",
+        request_id=None,
+        payload={
+            "booking_type": "appointment",
+            "notification_event": "BOOKING",
+            "details": {
+                "customer_name": "Calendar Test Customer",
+                "service_type": "Inspection",
+                "issue": "Captured provider test",
+            },
+            "agent_name": "Test Agent",
+            "agent_email": None,
+            "agent_phone": None,
+            "booking_time_str": "2026-11-23 10:00:00",
+        },
+    )
+
+    send_admin_mail.assert_not_called()
+    assert len(calendar_calls) == 1
+    url, kwargs = calendar_calls[0]
+    assert url.endswith("/calendars/primary/events")
+    assert kwargs["params"] == {"sendUpdates": "all"}
+    assert kwargs["json"]["attendees"] == [{"email": "admin@example.test"}]

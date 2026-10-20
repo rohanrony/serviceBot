@@ -3114,6 +3114,11 @@ document.addEventListener('DOMContentLoaded', () => {
         gmailEnabledEl.checked = !!config.gmail_enabled;
       }
 
+      const routineAdminCopiesEl = document.getElementById('gmail-routine-admin-copies-enabled');
+      if (routineAdminCopiesEl) {
+        routineAdminCopiesEl.checked = !!config.gmail_routine_admin_copies_enabled;
+      }
+
       gmailSender = config.gmail_sender || '';
 
       const recipientEl = document.getElementById('gmail-recipient');
@@ -3176,6 +3181,7 @@ document.addEventListener('DOMContentLoaded', () => {
       e.preventDefault();
       
       const gmailEnabledEl = document.getElementById('gmail-enabled');
+      const routineAdminCopiesEl = document.getElementById('gmail-routine-admin-copies-enabled');
       const enableAgentSelectEl = document.getElementById('enable-agent-selection');
       const recipientEl = document.getElementById('gmail-recipient');
       const adminPhoneEl = document.getElementById('admin-sms-phone');
@@ -3184,6 +3190,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const payload = {
         gmail_enabled: gmailEnabledEl ? gmailEnabledEl.checked : false,
+        gmail_routine_admin_copies_enabled: routineAdminCopiesEl ? routineAdminCopiesEl.checked : false,
         enable_agent_selection: enableAgentSelectEl ? enableAgentSelectEl.checked : false,
         gmail_auth_type: 'oauth2',
         gmail_sender: gmailSender,
