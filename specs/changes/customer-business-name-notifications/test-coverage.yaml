@@ -74,7 +74,7 @@ omitted_layers:
   targeted: "All changed behavior is covered by the focused unit and provider-boundary tests above."
 review:
   red: "The missing/invalid-name regression first failed at collection before the helper existed; customer, agent, and admin prefix assertions then failed before internal message prefixes were implemented."
-  green: "6 focused notification/name cases passed; the complete notification test file passed 10/10; complete offline verification passed all unit/integration and 680 E2E cases."
+  green: "6 focused notification/name cases passed; the complete notification test file passed 10/10; exact-candidate offline verification passed 2,405 unit/integration and 679 E2E cases."
   test_changes: "Business-name assertions are additive. The duplicate-booking test double now applies the queried SMS-log table and due-time cutoff instead of returning reminder rows for every SELECT; existing no-duplicate assertions remain."
   sufficiency: "Covers configured names in customer, agent, and admin lifecycle/reminder bodies plus missing, blank, whitespace-only, and non-string names. The complete offline suite also exercises notification delivery workflows."
   offline:
@@ -82,5 +82,5 @@ review:
     reason: Focused notification tests and required complete offline verification passed.
     evidence:
       - "./run_tests.sh --file tests/test_customer_notification_details.py: 10 passed"
-      - "./run_tests.sh --verify: unit/integration and 680 E2E passed"
+      - "./run_tests.sh --verify: 2,405 unit/integration and 679 E2E passed"
       - "JSON/YAML parsing, Python compilation, and git diff --check passed"
