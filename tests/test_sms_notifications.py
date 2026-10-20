@@ -527,11 +527,11 @@ class TestVoiceToolsSMSTriggers:
     @patch("serviceBot.api.telephony.get_customer_appointments")
     @patch("serviceBot.api.telephony.lookup_customer_by_phone")
     def test_reschedule_appointment_triggers_sms(
-        self, mock_lookup, mock_get_appts, mock_reschedule, mock_details
+        self, mock_lookup, mock_get_appts, mock_reschedule, mock_details, saved_reschedule_boundary
     ):
         mock_lookup.return_value = {"customer_id": 42}
-        mock_get_appts.return_value = [{"id": 500, "booking_time": "2026-10-25 14:00:00"}]
-        mock_reschedule.return_value = True
+        saved_reschedule_boundary(mock_get_appts, mock_reschedule, identifier=500, phone="5550020005",
+                                  old_time="2026-10-25 14:00:00", new_time="2026-11-05 11:00:00")
         mock_details.return_value = {
             "customer_name": "Eve Green",
             "phone": "+15550020005",
