@@ -56,7 +56,10 @@ fixture from the relevant evidence when useful, not production secrets or full c
 Record expected behavior, root-cause evidence, invariants, regression test and Red/Green results
 in the existing relevant feature or a short change record. Do not create spec/plan/tasks merely
 to fix a bounded defect. Add a permanent regression before changing behavior; include fresh
-persisted reads/reload and prohibited effects where applicable. Escalate to the full route if
+persisted reads/reload and prohibited effects where applicable. Update or add the regression's
+feature-local `test-coverage.yaml` row with real automated test IDs and relevant live scenario IDs
+(or `not_required` with a reason). Provider fixes also update the actual live scenario definition
+and provider evidence/budget fields in the shared gates. Escalate to the full route if
 the fix requires new product semantics or substantial design decisions.
 
 ## Small-change route
@@ -66,6 +69,9 @@ appropriate. No full PRD, technical plan or new active feature pointer is requir
 rename or similarly bounded change. For a behavioral change, demonstrate the intended failure
 before implementation and update the relevant boundary test. A label/accessibility change may
 need an existing browser assertion updated; do not invent unrelated business-rule tests.
+Update or add a feature-local coverage row for each changed contract, including real automated
+and relevant live IDs (or a concrete `not_required` reason). Apply the shared provider coverage
+requirements even to a bounded change.
 
 When a small new feature benefits from durable design artifacts, use the shorter Spec-Kit path:
 Specify → Plan → Tasks → Implement ↔ Converge. Honor each invoked stage's prerequisites and
@@ -80,11 +86,13 @@ Follow each corresponding `speckit-*` skill, including its hooks and artifact bo
 3. `speckit-clarify`: assess ambiguity before planning. Ask material questions and persist answers;
    report when no meaningful ambiguity remains rather than inventing questions or answers.
 4. `speckit-plan`: resolve technical uncertainties and document design/contracts/test layers.
+   Prepare coverage rows with automated/live IDs and provider evidence/budget fields.
 5. `speckit-checklist`: generate requirements-quality items, then obtain reviewer evaluation.
    Custom items remain unchecked until reviewed; the agent may evaluate only when explicitly
    asked. Checked items mean requirements quality was accepted, not implementation completed.
    Return requirement gaps to Specify/Clarify and reconcile the plan before proceeding.
-6. `speckit-tasks`: generate dependency-ordered test-first implementation work.
+6. `speckit-tasks`: generate dependency-ordered test-first implementation work, including coverage
+   rows and live scenario maintenance. Keep separately authorized live execution as a distinct task.
 7. `speckit-analyze`: produce a read-only consistency report. Correct owning artifacts outside
    analysis and rerun until material findings are resolved.
 8. `speckit-implement`: use Red → Green → Refactor. Treat checklist files/markers as read-only;
@@ -98,10 +106,15 @@ Follow each corresponding `speckit-*` skill, including its hooks and artifact bo
 
 ## Shared testing and publication gates
 
-Every route maps acceptance criteria to appropriate tests and failure cases before implementation.
-Use `test-coverage.yaml` beside the existing feature or short change record, following
-`.specify/templates/test-coverage-template.yaml`; one acceptance row can suffice for a bounded fix.
-Explain omitted layers. Review observable outcomes, fresh persistence/reload, prohibited effects,
+Every route must update or add one feature-local `test-coverage.yaml` row for every changed
+acceptance contract before implementation, following `.specify/templates/test-coverage-template.yaml`.
+Use the existing feature or neighboring short change record; one row can suffice for a bounded fix.
+Name real collected automated test IDs and relevant live scenario IDs with their definition path.
+Add/update tests first; add a maintained live scenario if no existing ID covers the contract.
+For no live boundary use `scenarios: []`, `status: not_required` and a concrete reason. Missing
+scenarios, prerequisites, budget or authorization remain `pending`. Keep rows current through handoff;
+IDs and green offline results alone do not prove live delivery. Explain omitted layers.
+Review observable outcomes, fresh persistence/reload, prohibited effects,
 deterministic fixtures and external-boundary mocks. Required behavior cannot remain a placeholder,
 skip or expected failure. Review removed tests and weakened assertions.
 
@@ -113,11 +126,23 @@ earlier evidence, including for already committed work. Use explicit files with 
 require current aggregate CI and resolved review findings before separately authorized merge.
 
 Normal tests, verification, pre-push and CI stay offline with synthetic credentials; diagnostic
-credentials and production data must never enter their environment. Provider changes also update
-relevant live scenarios, effects/read-back, prerequisites, cleanup/recovery and spending bounds.
-Reuse valid differential evidence. Live execution requires separate authorization.
+credentials and production data must never enter their environment. Provider behavior changes
+must update the actual live scenario and the row's expected external/prohibited effects,
+independent read-back with correlated provider IDs, prerequisites, cleanup/recovery, credit/cost
+estimate with units/basis, spending ceiling and unknown-charge handling. Unknown estimates block
+live readiness. Coverage/scenario maintenance is required offline development work; executing live
+tests requires separate authorization for the environment, cases, recipients and cap. A proposed
+ceiling does not authorize spending. Offline/mock tests cannot prove provider delivery. Reuse live
+evidence only with a recorded validity reason; changed provider assertions invalidate affected evidence.
+At analysis/convergence, report missing/stale rows, IDs, scenarios and provider fields as gaps.
 
 Report the route/reason, change artifacts, diagnosis/acceptance evidence, actual tests/results,
-review findings and remaining limits. Report Offline verified, Live pending/verified/not required,
-Committed/Pushed, Merged and Deployed separately. Do not publish, merge, deploy or make external
+review findings and remaining limits. Before handoff, report Offline and Live independently as
+`verified`, `pending` or `not_required`, with a reason and evidence: verified means the required
+checks actually passed; pending includes unrun, failed, incomplete or blocked checks; not_required
+needs a concrete applicability reason. Live verified additionally requires retained independent
+provider read-back for the applicable target/revision. Name coverage paths, acceptance/test/scenario
+IDs, definition updates and remaining authorization/budget needs. Live execution may remain pending;
+missing/stale coverage definitions remain a development gap. Report Committed/Pushed, Merged and
+Deployed separately. Do not publish, merge, deploy or make external
 mutations without authorization. Do not claim completed behavior with unresolved relevant gaps.

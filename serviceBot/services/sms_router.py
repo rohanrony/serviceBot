@@ -409,9 +409,12 @@ class SMSNotificationRouter:
             update_or_cancel_appointment_reminders(appointment_id)
 
         # 1. Customer Dispatch
+        from serviceBot.api.portal import load_config
+        from serviceBot.services.business_profile import prefix_business_name
+        business_config = load_config()
         customer_channels = self._enabled_channels(event_type, "customer", rules, channel_overrides, recipient_phone=customer_phone)
         if customer_phone and customer_channels:
-            shop_addr, shop_map = get_shop_address_and_map_url()
+            shop_addr, shop_map = get_shop_address_and_map_url(business_config)
             loc_lines = []
             if shop_addr:
                 loc_lines.append(f"Location: {shop_addr}")
@@ -475,6 +478,7 @@ class SMSNotificationRouter:
                     f"{iss_line}"
                     f"{loc_suffix}"
                 )
+            customer_body = prefix_business_name(customer_body, business_config)
             if not get_customer_opt_in(customer_phone):
                 for channel in customer_channels:
                     log_id = log_sms_dispatch(
@@ -572,6 +576,7 @@ class SMSNotificationRouter:
                     f"{confirm_prompt}"
                 )
 
+            agent_body = prefix_business_name(agent_body, business_config)
             dispatches.extend(self._dispatch_to(
                 recipient_type="agent",
                 recipient_phone=agent_phone,
@@ -596,6 +601,7 @@ class SMSNotificationRouter:
                 f"{iss_line}\n"
                 f"Slot: {slot_range_str}"
             )
+            previous_agent_body = prefix_business_name(previous_agent_body, business_config)
             dispatches.extend(self._dispatch_to(
                 recipient_type="previous_agent",
                 recipient_phone=previous_agent_phone,
@@ -620,6 +626,7 @@ class SMSNotificationRouter:
                 f"Details: {veh} | Service: {srv}\n"
                 f"Slot: {slot_range_str}"
             )
+            body = prefix_business_name(body, business_config)
             dispatches.extend(self._dispatch_to(
                 recipient_type="admin",
                 recipient_phone=target_admin_phone,

@@ -824,7 +824,7 @@
             <div class="content-card flex-2">
               <div class="card-header">
                 <h3>Admin Notification Settings</h3>
-                <p class="text-muted">Configure the default admin email that gets notified each time a slot is booked. Every booking sends the assigned agent their notification, and a copy is sent here so you always know who gets which service request.</p>
+                <p class="text-muted">Configure the admin email address for calendar invitations and admin alerts. Routine email copies are optional; urgent escalation emails follow the escalation notification settings.</p>
               </div>
               
               <form id="gmail-config-form" class="form-grid">
@@ -833,6 +833,14 @@
                     <input type="checkbox" id="gmail-enabled">
                     <span>Enable Email Notifications</span>
                   </label>
+                </div>
+
+                <div class="form-group full-width">
+                  <label class="checkbox-item" style="margin-bottom: 4px;">
+                    <input type="checkbox" id="gmail-routine-admin-copies-enabled">
+                    <span>Send routine admin email copies</span>
+                  </label>
+                  <small class="text-muted">Off by default. Calendar invitations continue, and escalation email follows its existing settings.</small>
                 </div>
 
                 <div class="form-group full-width">
@@ -867,7 +875,7 @@
                 
                 <div class="form-group">
                   <label for="gmail-recipient">Admin Notification Email</label>
-                  <input type="text" id="gmail-recipient" class="form-input" placeholder="e.g. admin@yourbusiness.com — receives a copy of every booking" required>
+                  <input type="text" id="gmail-recipient" class="form-input" placeholder="e.g. admin@yourbusiness.com — receives calendar invitations and enabled admin alerts" required>
                 </div>
 
                 <div class="form-group">

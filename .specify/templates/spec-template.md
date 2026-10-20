@@ -119,9 +119,15 @@
 
 ## Assumptions
 
-Before implementation, accompany this spec with `test-coverage.yaml` from the coverage template.
-Every acceptance criterion needs observable success/failure, preconditions, invariants, tests,
-layers and live acceptance. Omitted layers require reasons. Counts alone do not prove coverage.
+Before implementation, update or add a feature-local `test-coverage.yaml` row for each changed
+acceptance contract using the coverage template. Include observable success/failure,
+preconditions, invariants, real collected automated test IDs, layers and relevant live scenario
+IDs with a definition path (or `scenarios: []` and a concrete `not_required` reason). Omitted
+layers require reasons. Provider changes must update the actual live scenario, expected external
+effects, independent read-back, prerequisites, cleanup/recovery, credit/cost estimate and spending
+ceiling. Coverage maintenance does not authorize live execution; offline/mock passes do not prove
+provider delivery. Before handoff, report Offline and Live independently as verified, pending or
+not_required with a reason and evidence. Counts alone do not prove coverage.
 
 <!--
   ACTION REQUIRED: The content in this section represents placeholders.

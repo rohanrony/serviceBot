@@ -605,6 +605,9 @@ def run_reminder_polling_worker_cycle() -> int:
         else:
             body = f"Reminder: Appointment #{rem['appointment_id']}."
 
+        from serviceBot.services.business_profile import prefix_business_name
+        body = prefix_business_name(body, cfg)
+
         # Determine dispatch channel from matrix rules (default to WHATSAPP)
         channel = "WHATSAPP"
         try:
@@ -822,6 +825,8 @@ def dispatch_supervisor_escalation_alert(service_request_id: int, reason: str = 
         f"is UNCONFIRMED by agent {technician_name} (Reason: {reason}). "
         f"{portal_action}"
     )
+    from serviceBot.services.business_profile import prefix_business_name
+    body = prefix_business_name(body, cfg)
 
     # Determine enabled channels from Notification Matrix
     rules = []

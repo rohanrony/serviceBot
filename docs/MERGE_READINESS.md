@@ -97,12 +97,21 @@ Settings require maintainer approval and a published check before selecting its 
 
 ## Live acceptance and reporting
 
-Update the relevant live-simulation scenarios when provider behavior changes. Record recipients,
-calendars, permissions, expected effects with independent verification, cleanup/recovery,
-credit estimates, spending ceiling and unknown-charge handling in the feature matrix and live
-brief. Reuse valid differential evidence; rerun cases invalidated by the change. Live execution
-requires separate authorization and never runs from this gate, pre-push or PR verification.
+Every route must update or add a feature-local `test-coverage.yaml` row for each changed
+acceptance contract, naming real collected automated test IDs and relevant live scenario IDs
+with definition paths (or empty scenarios and a concrete `not_required` reason). When provider
+behavior changes, update the actual scenario definition, recipients/calendars/permissions,
+expected external and prohibited effects, independent read-back, prerequisites, cleanup/recovery,
+credit/cost estimates with units/basis, spending ceiling and unknown-charge handling in the matrix
+and live brief. Reuse only applicable retained evidence; changed assertions invalidate affected
+evidence. Coverage maintenance is required offline work. Live execution requires separate
+authorization and never runs from this gate, pre-push or PR verification. Offline/mock passes
+cannot prove provider delivery.
 
-Report **Offline verified · Live pending/verified/not required · Merged · Deployed** separately.
+Report **Offline** and **Live** independently as `verified`, `pending` or `not_required`, with
+reasons and evidence, then report Merged and Deployed separately. Follow the
+[workflow status definitions](SPECKIT_WORKFLOW.md#handoff-record); missing authorization or
+prerequisites means Live pending, not not_required. Missing/stale coverage definitions remain
+development gaps even when live execution is pending.
 A feature is merge-ready only when acceptance tests are meaningful, current-candidate full
 suites and CI pass, review findings are resolved and live obligations are explicit.

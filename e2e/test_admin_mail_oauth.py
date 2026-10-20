@@ -32,6 +32,7 @@ def test_legacy_settings_render_google_only_and_save_after_reload(
     )
     portal.save_config(config)
     open_mail(page, live_server)
+    expect(page.locator("#gmail-routine-admin-copies-enabled")).not_to_be_checked()
     for selector in (
         "#gmail-auth-type",
         "#gmail-password",
@@ -45,6 +46,7 @@ def test_legacy_settings_render_google_only_and_save_after_reload(
     expect(page.locator("#oauth-help-text")).to_be_visible()
     page.locator("#gmail-recipient").fill("new-admin@example.test")
     page.locator("#gmail-enabled").check()
+    page.locator("#gmail-routine-admin-copies-enabled").check()
     page.locator("#enable-agent-selection").uncheck()
     with page.expect_response(
         lambda r: r.request.method == "POST" and r.url.endswith("/gmail-config")
@@ -53,6 +55,7 @@ def test_legacy_settings_render_google_only_and_save_after_reload(
     assert saved.value.status == 200
     submitted = saved.value.request.post_data_json
     assert submitted["gmail_auth_type"] == "oauth2"
+    assert submitted["gmail_routine_admin_copies_enabled"] is True
     assert (
         not {"gmail_password", "gmail_smtp_server", "gmail_smtp_port"}
         & submitted.keys()
@@ -65,6 +68,7 @@ def test_legacy_settings_render_google_only_and_save_after_reload(
     open_mail(page, live_server)
     expect(page.locator("#gmail-recipient")).to_have_value("new-admin@example.test")
     expect(page.locator("#gmail-enabled")).to_be_checked()
+    expect(page.locator("#gmail-routine-admin-copies-enabled")).to_be_checked()
     expect(page.locator("#enable-agent-selection")).not_to_be_checked()
 
 

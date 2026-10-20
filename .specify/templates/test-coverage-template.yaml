@@ -1,5 +1,7 @@
-# Copy to specs/<feature>/test-coverage.yaml before implementation.
-# Add one row per acceptance criterion; reference real collected pytest node IDs.
+# Copy to specs/<feature>/test-coverage.yaml or specs/changes/<slug>/test-coverage.yaml.
+# All routes: update/add one row per changed acceptance contract before implementation.
+# Replace template values with real collected test IDs and maintained live scenario IDs.
+# Maintaining this file and live scenarios does not authorize live execution or spending.
 schema: 1
 feature: "<feature-directory>"
 acceptance:
@@ -9,19 +11,26 @@ acceptance:
     success: ["Expected response/visible result and fresh persisted state"]
     failure: ["Malformed, unauthorized, stale, concurrent and interrupted cases as applicable"]
     invariants: ["No duplicates, unrelated writes or premature success"]
-    tests: ["tests/test_feature.py::test_observable_contract"]
+    tests: [] # Required: real collected pytest node IDs; include relevant parameter cases.
     layer: [unit, database, http, browser, provider_contract, composed, migration, targeted]
     live_acceptance:
-      status: pending # Use not_required with a concrete reason where appropriate.
+      status: pending # verified | pending | not_required; see handoff semantics in the workflow.
       reason: "Real provider effects require separately authorized acceptance"
-      scenarios: ["live_simulations scenario identifiers or not applicable with reason"]
-      prerequisites: ["Recipient, calendar, account and permissions"]
-      expected_effects: ["Provider effect and independent read-back"]
+      scenarios: [] # Required for pending/verified: real IDs, e.g. C01; add missing definitions.
+      scenario_source: "live_simulations/scenarios.json" # Or path to a maintained scenario definition.
+      prerequisites: ["Target environment/revision, fixtures, prerequisite scenarios, recipients, calendars, accounts and permissions"]
+      expected_effects: ["Expected external outcome and prohibited/duplicate effects"]
+      independent_read_back: ["Provider/calendar/inbox/status read, correlated event/message/request IDs, and required outcome; application success alone is insufficient"]
       cleanup_recovery: ["Cleanup and recovery after partial failure"]
-      estimated_credits: "Estimate or unknown"
-      spending_ceiling: "Explicit authorized cap required before live execution"
+      estimated_credits: "Estimate with units/basis, unknown (blocks readiness), or not applicable with reason"
+      estimated_cost: "Estimate with currency/basis, unknown (blocks readiness), or not applicable with reason"
+      spending_ceiling: "Proposed credit/cost cap with units; explicit authorization required before execution"
       unknown_charge_handling: "Stop, retain ledger, reconcile before retry"
       reuse: "Existing valid case/evidence and what change invalidates it"
+      evidence: [] # verified requires retained run/target/revision, provider read-back and cleanup evidence.
+      # For no live boundary: status: not_required, concrete reason, scenarios: [].
+      # Omit provider-only fields for not_required; resolve placeholders in applicable fields.
+      # Missing scenario, access, estimates, budget or authorization => pending, not not_required.
 omitted_layers:
   # Remove layers used above; include a reason for every omitted layer.
   example_layer: "Reason this acceptance contract does not cross this boundary"
@@ -30,3 +39,8 @@ review:
   green: "Command and resulting observable behavior"
   test_changes: "Review removals, weakened assertions, skips/xfails and fixture realism"
   sufficiency: "Explain behavioral and failure-mode coverage; counts support this judgment"
+  offline:
+    status: pending # verified | pending | not_required; always give a reason and actual results.
+    reason: "Required offline checks have not yet run"
+    evidence: [] # Commands, results and revision; document/diff checks for documentation-only work.
+  # Report Live independently per row above; offline/mock passes cannot prove provider delivery.
