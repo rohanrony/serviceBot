@@ -641,3 +641,171 @@ frozen main26-file proposal or deferred production messaging/system Gmail scope.
 T147-T149 local implementation, bounded reviews and source-frozen verification are complete. The final root gate passed 1815 unit/integration + 543 API/browser tests with zero failures, errors or skips. Prior v11 retained four unit fixture failures and 543 passing API/browser tests; the two legacy fixture files now preserve all six original tests/assertions while providing owned state and isolated per-test session caches. No production guard was relaxed.
 
 The expanded 34-file immutable proposal is review-proposal-v10/manifest.json. T150 remains pending scoped publication/deployment approval. All34 native full cases remain unrun; no new credits were spent and T127-T135/paid prerequisites remain open. Offline counts do not establish native acceptance.
+
+## Phase 30: Offline fixture completion before live acceptance
+
+T150 was subsequently approved and deployed as 074939e / dep-dbb2e0vbtjjs7393ul30.
+The immutable native-release-v10-completion receipt records core preservation,
+the explained pre-deploy reminder activity, and bounded memory/browser evidence.
+The owner now requests local fixes first and live execution later.
+
+- [x] T151 [P] Implement and behavior-test C23 authenticated owned service/staff
+  creation and atomic noncascading cleanup with signed exact identities, reference
+  races, changed/missing resources and disabled/unauthorized no-effect contracts.
+- [x] T152 [P] Complete C48 preparation/interruption/recovery coordinator with
+  immutable baselines, both-phase reserve, exact invocation binding, durable
+  submission intents, common-ledger settlement and no-duplicate read-back tests.
+- [x] T153 [P] Add C35/C36/C37 causal native observers and C50 authenticated HTTP
+  ingress audit/read-back, with captured transport, direct/sync rejection, callback
+  replay, migration verification and rollback coverage.
+- [x] T154 Integrate available offline mechanisms and explicit external-condition
+  gates into shared full-case planning/adapter paths; test missing, stale, foreign
+  or fabricated observations and retain all native/paid admission boundaries.
+- [x] T155 Independently review the integrated patch, fix actionable findings,
+  run focused and complete offline/API/browser verification, and record precise
+  source completion versus remaining operational requirements. No publish, deploy,
+  paid run, real fixture mutation or production messaging work in this phase.
+
+## Phase 31: Convergence
+
+Bounded current-scope review of FR-062/SC-003/SC-004 found four partial
+integration/lifecycle gaps. No paid/native outcome is inferred from this review.
+
+- [x] T156 Preserve the business timezone through actual C48 coordinator
+  preparation; reject ambiguous/nonexistent local times and test the real
+  preparation boundary per FR-062 (partial).
+- [x] T157 Require C50 independent Google/message provider evidence in addition
+  to authenticated history and exact native booking, propagate required evidence
+  and manual/unverified receiving-inbox state through the special executor path,
+  and reject a history-only or local-flags-only success per SC-003 (partial).
+- [x] T158 Capture a genuine per-case pre-request baseline and prevent prior
+  retained/canceled campaign requests from being re-registered as current-case
+  effects; retain current-case canceled effects for owned cleanup per FR-062 and
+  SC-004 (partial).
+- [x] T159 Respect a sequence's uncalled initial value when binding a fresh
+  request; recheck discovered reference schema after cleanup locks and reject
+  intervening foreign-key/cascade attachments, with disposable-DB regressions per
+  SC-004 (partial).
+
+### Offline implementation boundary
+
+All34 C17-C50 identifiers now have source-owned dispatch/observer paths. This is
+not native readiness or a successful full campaign. At the v15 boundary, genuine
+C50 session billing had no compiled verified-contract reader: the default returned
+unknown and full admission deliberately blocked. Phase32 completes that code path
+without independently verifying the real account unit contract. Its accounting contract must be verified
+and integrated before live work; approving a numeric ceiling alone cannot remove
+that gate. Receiving-inbox proof remains unverified under the approved manual
+receipt mode. Distinct customer/technician sender identity, an actually unenrolled
+recipient, real provider-window timestamps, human replies, elapsed escalation
+deadlines and C41's deferred quiet-hours policy remain independent prerequisites.
+No current source capability flag, synthetic receipt or prior minimal/medium
+approval can replace them. Existing native/paid acceptance tasks remain open.
+
+### Final offline verification and bounded convergence
+
+`./run_tests.sh --verify` passed 2100 unit/integration and569 API/browser tests
+with zero failures, errors or skips. The source-frozen final gate is
+`scratch/full-delta-20261019/full-offline-v15-gate.json`: all344 runtime/test
+source hashes remained unchanged. v13/v14 retain earlier passing test results
+but are not final gates because fixes/lint edits occurred during those runs.
+The earlier eight-failure unit run and genuine focused Red logs remain retained.
+
+Independent bounded reviews and the root implementation/convergence pass repaired
+the recorded timezone, provider-evidence, prior-case discovery, sequence and
+reference-race findings. Neutral provider schema defaults, nullable transcript
+turns and ordinary non-simulation booking SQL retain regression coverage. No
+actionable defect remains in the reviewed, available offline phase. This is not
+convergence of the deferred native campaign or proof that all production behavior
+has passed. All changes remain local and uncommitted; no deployed/provider
+mutation, new paid submission or ElevenLabs credit usage occurred in this phase.
+
+## Phase 32: C50 compiled accounting completion
+
+- [x] T160 Add failing exact-total, unknown-charge, admission quota and persisted
+  reconciliation regressions per FR-069 and the C50 accounting contract.
+- [x] T161 Implement the strict compiled native total reader and source-default
+  execute/reconcile wiring; retain account-specific verification gates and
+  current monthly quota/tier checks before new effects per FR-069.
+- [x] T162 Review accounting invariants and captured REST/socket/Budget evidence,
+  fix actionable findings, and record the actual validation/publication boundary.
+
+Real account-specific native billing equivalence remains an external prerequisite;
+these tasks do not set real verification flags or authorize paid execution.
+
+Phase32 bounded review: strict terminal total parsing, immutable original account
+contract, under-lock fresh quota/tier checks, downward-only headroom, exact-zero/
+failed-charge settlement, source-default execution/recovery and outer once-only
+Budget settlement retain captured-provider regression coverage. 64 new expected
+Red failures preceded implementation; focused reader/session/native/adapter/causal/
+Budget contracts pass with no skipped or expected-failure cases. Independent
+requirements/provider-source and runtime reviews found no actionable in-scope
+finding. The source models do not establish the real account's native credit
+equivalence; no real verification flag was enabled and no provider calls were made.
+Full offline execution and publication verification remain separate gates; the
+other chat's verifier/CI workflow must reach main before scoped publication.
+
+## Phase 33: PR 7 review repairs
+
+- [x] T163 Add failing C33 pre-submission foreign identity and drift regressions;
+  bind read-only snapshots without adopting foreign bookings (FR-070).
+- [x] T164 Add failing C48 shared-ledger ceiling and pending-recovery regressions;
+  scope ceilings to the run and poll the same recovery handle with bounded
+  attempts and a retained continuation binding (FR-070).
+- [x] T165 Cover the supported deployed C50 management command and implement
+  GET-only native reconciliation with exact authority and ledger aggregation
+  (FR-069/070).
+- [ ] T166 Review all four PR findings, run fresh exact-candidate full offline
+  verification and hosted CI, resolve review threads and publish/merge the
+  authorized branch. Preserve deferred deployment and native acceptance.
+
+Phase33 focused evidence: C33/native/conditions and C48 together pass160 tests;
+C50 session/credit contracts pass105 tests. Expected Red failures preceded all
+four fixes, including three database-independence regressions from independent
+review. Source re-review found no remaining actionable issue. Exact-candidate
+verification, hosted CI and publication are tracked by T166 and PR7; no new paid
+session or production mutation was performed.
+
+### Second hosted review findings
+
+- [x] T167 Reject successful management status while exact native usage remains
+  unsettled; preserve ledger/manifest state and cover pending, unknown cost,
+  provider failure and mismatched settlement (FR-070).
+- [x] T168 Compose real PostgreSQL projection reads with transition validation
+  across UTC/non-UTC session timezones; preserve timestamp timezone information
+  according to its database writer convention (FR-070).
+
+The 0d556f0 exact-candidate and hosted gates passed2348unit/integration+658API/
+browser tests (108browser subset). Hosted Codex review then found T167/T168;
+that candidate was not merged. Fresh source evidence and review are required.
+
+### Third hosted review: retained-intent recovery
+
+- [x] T169 Recover committed C35/C36 control responses through private-nonce,
+  authenticated GET proof; retain mutation guards and exact blocker provenance
+  through create/disarm/cleanup uncertainty (FR-071).
+- [x] T170 Journal C23's original response/mapping atomically, recover create and
+  cleanup through authenticated GET, and add migration0011 immutability,
+  verification and guarded rollback. Reject intervening full mapping edits.
+- [x] T171 Normalize operational timestamps by actual business/UTC/database
+  writer conventions and reject naive guesses; retain ambiguous confirmed_at as
+  wall-clock text without timing claims (FR-071).
+- [x] T172 Recover ambiguous C48 handles into their exact phase journals and
+  expose phase/fixture continuation through deployed management without replay.
+  Preserve billing totals, native-pending state and separate recovery authority.
+
+The 31f1b40 local and hosted gates passed2358unit/integration+658API/browser
+tests, but its hosted review identified T169-T172 before merge. Expected Red
+regressions covered committed-response loss, phase journal recovery and the
+timezone writer mismatch. Independent source review additionally found mapping
+drift and missing-trigger verification, both repaired with Red/Green tests.
+Integrated focused validation passed320 tests; full exact-candidate verification,
+hosted review and publication remain T166. No live calls or deployment occurred.
+
+The b6adeed complete gate exposed nine unit failures in older contracts: eight
+captured adapter responses omitted the new intent identity, and the explicit
+migration rollback inventory stopped at0010. Update those fixtures to the real
+API contract and include0011, preserving all existing safety assertions. Add a
+valid-shape cross-intent rejection regression. Focused adapter/staff/migration
+contracts pass186 tests; the failed candidate cannot authorize publication and
+the corrected exact commit requires a fresh complete gate.

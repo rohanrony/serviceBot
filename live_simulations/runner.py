@@ -5,6 +5,7 @@ import contextlib
 import fcntl
 import json
 import os
+import threading
 import time
 from datetime import datetime
 from decimal import Decimal
@@ -72,7 +73,7 @@ def stage_authorization(config, tier, requested, selected, repeat, *, target='is
     if (not isinstance(auth, dict) or not expected or requested is None
             or target not in ('isolated', 'deployed')
             or config.get('target') not in ((None, 'isolated') if target == 'isolated' else ('deployed',))
-            or (target == 'deployed' and tier != 'medium')
+            or (target == 'deployed' and tier not in ('medium','full'))
             or config.get('environment', '').lower() in ('production', 'prod')
             or 'campaign_authorization' in config or config.get('calibration')
             or type(repeat) is not int or repeat != 1
@@ -114,7 +115,7 @@ def email_mode(config, *, target='isolated'):
             not isinstance(config.get('stage_authorization'), dict)
             or target not in ('isolated', 'deployed')
             or config.get('target') not in ((None, 'isolated') if target == 'isolated' else ('deployed',))
-            or (target == 'deployed' and config['stage_authorization'].get('tier') != 'medium')
+            or (target == 'deployed' and config['stage_authorization'].get('tier') not in ('medium','full'))
             or 'campaign_authorization' in config
             or str(config.get('environment', '')).lower() in ('production', 'prod')):
         raise SimulationError('Operator email receipt requires an isolated stage authorization')
@@ -166,8 +167,18 @@ def campaign_status(results):
     return 'passed' if results and statuses == {'passed'} else 'incomplete'
 
 
+_campaign_lock_owner = threading.local()
+
+
 @contextlib.contextmanager
 def campaign_lock(root):
+    key = (os.getpid(), str(root.resolve()))
+    active = getattr(_campaign_lock_owner, 'roots', set())
+    if key in active:
+        if key not in getattr(_campaign_lock_owner, 'coordinator_roots', set()):
+            raise SimulationError('Another campaign owns this artifact root')
+        yield
+        return
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     fd = os.open(root / '.campaign.lock', os.O_CREAT | os.O_RDWR, 0o600)
     try:
@@ -175,9 +186,29 @@ def campaign_lock(root):
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise SimulationError('Another campaign owns this artifact root') from None
+        _campaign_lock_owner.roots = active | {key}
         yield
     finally:
+        _campaign_lock_owner.roots = active
         os.close(fd)
+
+
+@contextlib.contextmanager
+def owned_campaign_scope(root):
+    """Explicitly delegate this thread's held lock to a stage coordinator.
+
+    Ordinary nested campaign owners remain rejected. This capability is scoped
+    to the exact PID/thread/canonical root and disappears on every exit path.
+    """
+    key = (os.getpid(), str(root.resolve()))
+    if key not in getattr(_campaign_lock_owner,'roots',set()):
+        raise SimulationError('Stage coordinator requires the existing campaign owner')
+    previous = getattr(_campaign_lock_owner,'coordinator_roots',set())
+    _campaign_lock_owner.coordinator_roots = previous | {key}
+    try:
+        yield
+    finally:
+        _campaign_lock_owner.coordinator_roots = previous
 
 
 def traces(runtime, since=0):
@@ -708,36 +739,96 @@ def cleanup(runtime, *, live=False):
         write_report(runtime)
 
 
-def reconcile(runtime):
+def reconcile(runtime,*,native_reconcile=None,phase_reconcile=None,fixture_reconcile=None):
     """Read provider billing; never repeat a paid request to recover its identity."""
     with campaign_lock(runtime.root):
         path = runtime.root / 'usage-ledger.json'
         ledger = json.loads(path.read_text())
         provider = ElevenLabs(secret(runtime.config, 'elevenlabs_key'))
-        for entry in ledger['entries']:
-            if entry.get('run_id') != runtime.run_id or not entry.get('unsettled'):
-                continue
-            invocation = entry.get('invocation_id')
-            if not invocation:
-                result = provider.request('GET', '/v1/convai/test-invocations?test_id=' + quote(entry['test_id'], safe=''))
-                matches = result.get('results', [])
-                if result.get('has_more') or len(matches) != 1:
-                    raise SimulationError('Ambiguous invocation cannot yet be reconciled; do not resubmit it')
-                invocation = matches[0]['id']
-                entry['invocation_id'] = invocation
-                if invocation not in runtime.manifest['invocations']:
-                    runtime.manifest['invocations'].append(invocation)
-                    runtime.save()
-            result = provider.get(invocation)
-            if any(r.get('status') == 'pending' for r in result.get('test_runs', [])):
-                raise SimulationError('Invocation is still pending')
-            credits = provider.credits(result)
-            if credits is None:
-                raise SimulationError('Invocation charges are still unverified')
-            entry.update(unsettled=False, credits=str(credits))
-            private_json(path, ledger)
-        relevant = [e for e in ledger['entries'] if e['run_id'] == runtime.run_id]
-        runtime.manifest['unsettled_usage'] = any(e.get('unsettled') for e in relevant)
-        runtime.manifest['spent_credits'] = str(sum((number(e['credits']) for e in relevant if not e.get('unsettled')), Decimal(0)))
-        runtime.save()
-        write_report(runtime)
+        native_unverified=False
+        try:
+            def phase_entry(entry):
+                return (entry.get('run_id')==runtime.run_id and entry.get('case_id')=='C48'
+                    and entry.get('phase') in ('interruption','recovery'))
+            if phase_reconcile is not None and any(phase_entry(e) for e in ledger['entries']):
+                # A settled invoice does not finish cancellation/native evidence.
+                # The phase owner restores journals and advances only retained handles.
+                runtime.manifest['phase_reconciliation_pending']=True
+                runtime.save()
+                with owned_campaign_scope(runtime.root):
+                    phase_reconcile(runtime,provider)
+                runtime.manifest['phase_reconciliation_pending']=False
+                ledger=json.loads(path.read_text())
+            entries=sorted(ledger['entries'],key=lambda e:e.get('resource_type')!='conversation')
+            for original in entries:
+                ledger=json.loads(path.read_text())
+                entry=next((e for e in ledger['entries'] if e==original),None)
+                if entry is None:
+                    continue
+                if entry.get('run_id') != runtime.run_id or not entry.get('unsettled'):
+                    continue
+                if phase_reconcile is not None and phase_entry(entry):
+                    continue
+                if entry.get('resource_type') == 'conversation':
+                    if native_reconcile is None:
+                        continue
+                    native_unverified=True
+                    with owned_campaign_scope(runtime.root):
+                        native_reconcile(runtime,provider)
+                    # The native owner writes the same ledger; never overwrite it
+                    # with the pre-recovery snapshot.
+                    ledger = json.loads(path.read_text())
+                    identity_keys=('run_id','case_id','resource_type','agent_id','session_nonce',
+                        'authorization_id','intent_sha256','provider_conversation_id','billing_id')
+                    matches=[candidate for candidate in ledger['entries']
+                        if all(candidate.get(key)==entry.get(key) for key in identity_keys)]
+                    try:
+                        if len(matches)!=1 or matches[0].get('unsettled') is not False:
+                            raise ValueError
+                        number(matches[0]['credits'])
+                    except (KeyError,TypeError,ValueError,SimulationError):
+                        raise SimulationError('Native conversation charges remain unverified') from None
+                    native_unverified=False
+                    continue
+                invocation = entry.get('invocation_id')
+                if not invocation:
+                    result = provider.request('GET', '/v1/convai/test-invocations?test_id=' + quote(entry['test_id'], safe=''))
+                    matches = result.get('results', [])
+                    if result.get('has_more') or len(matches) != 1:
+                        raise SimulationError('Ambiguous invocation cannot yet be reconciled; do not resubmit it')
+                    invocation = matches[0]['id']
+                    entry['invocation_id'] = invocation
+                    private_json(path, ledger)
+                    if invocation not in runtime.manifest['invocations']:
+                        runtime.manifest['invocations'].append(invocation)
+                        runtime.save()
+                result = provider.get(invocation)
+                if any(r.get('status') == 'pending' for r in result.get('test_runs', [])):
+                    raise SimulationError('Invocation is still pending')
+                credits = provider.credits(result)
+                if credits is None:
+                    raise SimulationError('Invocation charges are still unverified')
+                entry.update(unsettled=False, credits=str(credits))
+                private_json(path, ledger)
+            if fixture_reconcile is not None:
+                with owned_campaign_scope(runtime.root):
+                    fixture_reconcile(runtime,provider)
+        finally:
+            ledger=json.loads(path.read_text())
+            relevant = [e for e in ledger['entries'] if e['run_id'] == runtime.run_id]
+            spent=Decimal(0)
+            unsettled=native_unverified
+            for entry in relevant:
+                if entry.get('unsettled') is not False:
+                    unsettled=True
+                    continue
+                try:
+                    spent+=number(entry['credits'])
+                except (KeyError,TypeError,ValueError,SimulationError):
+                    # A malformed settled row is unknown; preserve the safe
+                    # recovery error and report only charges actually known.
+                    unsettled=True
+            runtime.manifest['unsettled_usage'] = unsettled
+            runtime.manifest['spent_credits'] = str(spent)
+            runtime.save()
+            write_report(runtime)

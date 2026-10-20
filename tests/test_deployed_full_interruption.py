@@ -82,6 +82,26 @@ def run(setup, **kwargs):
                    observe_booking=lambda: copy.deepcopy(booking), **kwargs)
 
 
+def test_owned_canonical_catalog_service_is_used_in_native_and_provider_proof(setup):
+    from live_simulations.deployed_full_interruption import _booking, _executed_booking
+    _, _, journal, booking, _ = setup
+    name = 'full_owned_20261019 Oil Change'
+    journal['expected_booking']['service_type'] = name
+    booking['requests'][0]['service_type'] = name
+    run_receipt = receipt('cancelled', 17)['test_runs'][0]
+    call = run_receipt['agent_responses'][0]['tool_calls'][0]
+    call['params_as_json'] = json.dumps({'service_type': name})
+    result = run_receipt['agent_responses'][1]['tool_results'][0]
+    payload = json.loads(result['result_value'])
+    payload['result']['appointments'][0]['service_type'] = name
+    result['result_value'] = json.dumps(payload)
+    assert _booking(booking, journal) == booking
+    assert _executed_booking(run_receipt, journal, booking)['native_request_id'] == 31
+    call['params_as_json'] = json.dumps({'service_type': 'Oil Change'})
+    with pytest.raises(SimulationError):
+        _executed_booking(run_receipt, journal, booking)
+
+
 def test_verified_interruption_is_not_recovery_or_full_support(setup):
     result = run(setup)
     assert result['status'] == 'verified_interruption'

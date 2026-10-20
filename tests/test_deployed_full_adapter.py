@@ -65,10 +65,17 @@ def test_full_catalog_owns_exact_durations_and_uses_native_transport(fixture):
 
 
 @pytest.mark.parametrize('cid', ['C33','C35'])
-def test_unsupported_never_arranges_or_mutates(fixture, cid):
+def test_new_source_paths_require_prepared_catalog_before_arranging_or_mutating(fixture, cid):
+    adapter, values, calls, _, _ = fixture
+    with pytest.raises(SimulationError, match='catalog must be prepared'):
+        adapter.arrange(case(cid), values)
+    assert calls == []
+
+
+def test_outside_full_scope_never_arranges_or_mutates(fixture):
     adapter, values, calls, _, _ = fixture
     with pytest.raises(SimulationError, match='unsupported'):
-        adapter.arrange(case(cid), values)
+        adapter.arrange(case('C33') | {'id': 'C51'}, values)
     assert calls == []
 
 
@@ -555,13 +562,25 @@ def negative_native(native_case, monkeypatch):
     requests_seen = []
     capability = {'agent_id': 'observed', 'agent_fingerprint': 'fixed', 'resolved_fingerprint': 'fixed', 'tool_name': 'cba_webhook'}
     monkeypatch.setattr(negative, 'footprint', lambda adapter: deepcopy(business))
-    # Exercise only a disposable captured fixture prototype. The real adapter
-    # hard-blocks C23 setup until conditional safe staff cleanup exists.
-    monkeypatch.setattr(negative, 'native_setup_allowed', lambda: True)
+    monkeypatch.setenv('C23_FIXTURE_SECRET','offline-c23-captured-key')
+    adapter.config.setdefault('secrets',{})['simulation_staff_cron_secret']='C23_FIXTURE_SECRET'
     monkeypatch.setattr(negative, 'handoff_capability', lambda adapter: deepcopy(capability))
     def transport(request):
         body = json.loads(request.content) if request.content else {}
         requests_seen.append((request.method, request.url.path, deepcopy(body)))
+        if '/internal/simulation-staff' in request.url.path:
+            assert request.headers['authorization']=='Bearer offline-c23-captured-key'
+            assert adapter.state['operations'][-1]['status']=='intent'
+            if request.url.path.endswith('/cleanup'):
+                assert body=={'receipt':'synthetic-private-receipt'}
+                assert all(staff[k]==0 for k in ('requests','oauth','slots'))
+                staff['is_active']=False
+                return httpx.Response(200,json={'success':True,'staff_id':88,'service_id':188})
+            staff.update(id=88,name='signed-owned-staff',email=None,phone_number=None,is_active=True,
+                requests=0,reservations=0,oauth=0,oauth_states=0,slots=0,mappings=[188])
+            return httpx.Response(201,json={'success':True,'run_id':adapter.campaign.manifest['run_id'],
+                'intent_id':body['intent_id'],'nonce':'a'*32,'staff_id':88,'service_id':188,'name':'signed-owned-staff',
+                'service_name':'signed-owned-service','receipt':'synthetic-private-receipt'})
         if request.url.path.endswith('/voice/tools'):
             if body['name'] == 'check_availability': return httpx.Response(200, json={'result': response})
             return httpx.Response(200, json={'result': {'success': False, 'handoff_status': 'unavailable',
@@ -573,28 +592,28 @@ def negative_native(native_case, monkeypatch):
             staff.update(reservations=0, oauth_states=0, slots=0, mappings=[])
         if request.method == 'PUT': staff['mappings'] = [int(request.url.path.split('/')[-1])] if 88 in body['agent_ids'] else []
         return result
-    adapter.client = httpx.Client(transport=httpx.MockTransport(transport))
+    adapter.client = httpx.Client(transport=httpx.MockTransport(transport),trust_env=False,follow_redirects=False)
+    adapter.simulation_staff_client=adapter.client
     return adapter, values, staff, business, response, requests_seen, capability
 
 
-def test_c23_offline_prototype_owns_exact_unconnected_service_but_cannot_claim_cleanup(negative_native):
+def test_c23_signed_owned_pair_preserves_original_mapping_and_cleans_safely(negative_native):
     from live_simulations import deployed_full_negative as negative
     adapter, values, staff, _, _, calls, _ = negative_native
-    # Deliberately invoke the quarantined component only in the disposable fake;
-    # the public full adapter rejects C23 before any setup mutation.
     adapter.current_case = 'C23'
     negative.arrange(adapter, 'C23', values)
     assert staff['oauth'] == staff['requests'] == 0
-    assert adapter.state['services']['oil']['assigned_agent_ids'] == [88]
+    assert adapter.state['services']['oil']['assigned_agent_ids'] == [7]
+    assert staff['mappings']==[188]
     actual = next(body for _, path, body in calls if path.endswith('/voice/tools'))
-    assert actual['arguments']['service_type'] == adapter.state['services']['oil']['name']
+    assert actual['arguments']['service_type'] == adapter.state['full_unconnected_staff']['service_name']
     checks = negative.checks(adapter, 'C23')
     assert [c['name'] for c in checks if not c['passed']] == [
-        'C23 native setup and safe cleanup remain blocked', 'actual conversation tool call and result correlation remains unverified']
+        'actual conversation tool call and result correlation remains unverified']
     calls.clear()
-    with pytest.raises(SimulationError, match='noncascading'): adapter.cleanup_case()
-    assert staff['is_active'] is True and not adapter.state['full_unconnected_staff']['cleanup_complete']
-    assert all(method == 'GET' for method, _, _ in calls)
+    adapter.cleanup_case()
+    assert staff['is_active'] is False and adapter.state['full_unconnected_staff']['cleanup_complete']
+    assert [path for method,path,_ in calls if method!='GET']==['/api/v1/portal/internal/simulation-staff/cleanup']
 
 
 @pytest.mark.parametrize('defect', ['oauth', 'requests', 'slots', 'name', 'mapping', 'business'])
@@ -620,17 +639,19 @@ def test_c23_empty_success_is_not_an_unknown_failure_fixture(negative_native):
     response.update(success=True, availability_status='unavailable')
     adapter.current_case = 'C23'
     with pytest.raises(SimulationError, match='Exact structured'): negative.arrange(adapter, 'C23', values)
-    with pytest.raises(SimulationError, match='noncascading'): adapter.cleanup_case()
-    assert not adapter.state['full_unconnected_staff']['cleanup_complete']
+    adapter.cleanup_case()
+    assert adapter.state['full_unconnected_staff']['cleanup_complete']
 
 
-def test_c23_native_setup_hard_block_precedes_every_fixture_mutation(fixture):
+def test_c23_missing_credential_precedes_every_fixture_mutation(fixture,monkeypatch):
+    from live_simulations import deployed_full_negative as negative
+    monkeypatch.setattr(negative,'footprint',lambda adapter:{'unchanged':True})
     adapter, values, calls, _, _ = fixture
     adapter.prepare_catalog(); calls.clear()
-    with pytest.raises(SimulationError, match='noncascading'): adapter.arrange(case('C23'), values)
+    with pytest.raises(SimulationError, match='credential|secret|Secret'): adapter.arrange(case('C23'), values)
     assert all(method == 'GET' for method, _, _ in calls)
     assert not adapter.state.get('full_unconnected_staff')
-    assert 'C23' not in full.SUPPORTED_CASE_IDS
+    assert 'C23' in full.SUPPORTED_CASE_IDS
 
 
 def test_c47_readonly_observation_requires_repeated_actual_capability(negative_native):
@@ -797,3 +818,23 @@ def test_catalog_binding_membership_is_exact_without_requiring_api_order(fixture
     else:
         with pytest.raises(SimulationError,match='read-back differs'):
             adapter._catalog_readback()
+
+
+def test_c23_cross_intent_response_is_rejected_before_fixture_adoption(negative_native, monkeypatch):
+    from live_simulations import deployed_full_negative as negative
+    adapter, _, _, _, _, _, _ = negative_native
+    def wrong_intent(request):
+        import json
+        body = json.loads(request.content)
+        assert request.method == 'POST'
+        assert len(body['intent_id']) == 32
+        return httpx.Response(201, json={'success': True, 'run_id': body['run_id'],
+            'intent_id': '0'*32, 'staff_id': 88, 'service_id': 188,
+            'name': 'owned', 'service_name': 'owned-service', 'receipt': 'private-original'})
+    with httpx.Client(transport=httpx.MockTransport(wrong_intent), trust_env=False, follow_redirects=False) as client:
+        adapter.simulation_staff_client = client
+        with pytest.raises(SimulationError, match='identity unknown'):
+            negative.create_owned_staff(adapter)
+    assert adapter.state['blocked'] is True
+    assert not adapter.state.get('full_unconnected_staff')
+    assert adapter.state['operations'][-1]['status'] == 'unknown'

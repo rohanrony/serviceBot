@@ -776,6 +776,7 @@ async def post_call_webhook(request: Request = None, payload: Dict[str, Any] = N
     event_id = None
     event_claimed = False
     raw_event_payload = payload or {}
+    http_signature_verified = False
     try:
         if isinstance(request, dict):
             payload = request
@@ -789,7 +790,7 @@ async def post_call_webhook(request: Request = None, payload: Dict[str, Any] = N
                 verify_elevenlabs_request,
             )
             try:
-                verify_elevenlabs_request(
+                http_signature_verified = verify_elevenlabs_request(
                     body_bytes,
                     request.headers.get("ElevenLabs-Signature"),
                 )
@@ -816,7 +817,7 @@ async def post_call_webhook(request: Request = None, payload: Dict[str, Any] = N
             
         data = payload.get("data") or {}
         conversation_id = data.get("conversation_id")
-        if not conversation_id:
+        if not isinstance(conversation_id, str) or not conversation_id.strip():
             raise HTTPException(status_code=400, detail="Missing conversation_id in data payload.")
 
         from serviceBot.services.webhook_security import (
@@ -826,6 +827,8 @@ async def post_call_webhook(request: Request = None, payload: Dict[str, Any] = N
         event_store = WebhookEventStore()
         event_id = conversation_id
         try:
+            if http_signature_verified is True:
+                event_store.record_authenticated_ingress(event_id, raw_event_payload)
             event_claimed = event_store.begin("elevenlabs", event_id, raw_event_payload)
         except WebhookReplayConflictError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc

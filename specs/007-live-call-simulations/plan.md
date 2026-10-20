@@ -736,3 +736,103 @@ claim, fixture, provider call or spending authority comes from the preview.
 Keep the prior28-file v9 package immutable until this independently reviewed
 follow-up is applied and a complete source-frozen gate is recorded. Any expanded
 publication/deployment proposal must supersede that old scope explicitly.
+
+## Offline fixture completion, 19 October 2026
+
+Continue the existing feature under the owner's fixes-first instruction. Preserve
+the deployed 074939e release and original paid ledger; make all changes locally.
+Root owns shared adapter/prerequisite integration. Independent workers own the
+C23 service/technician lifecycle, C48 preparation/recovery coordinator, and C50
+authenticated callback audit plus causal observers. No worker changes shared
+specification artifacts or deployment state.
+
+The C23 lifecycle is opt-in and authenticated, issues a signed receipt for a pair
+created in one transaction, and rejects cleanup unless every exact identity and
+attachment precondition still holds under locks. C48 journals both phase budgets
+and immutable pre-invocation state before any injected submit callback, preserves
+common-ledger settlement and reconciles ambiguous writes by the same handle.
+C50 stores verified HTTP-ingress provenance independently from deduplicated event
+processing; new schema includes verification and rollback artifacts. C35-C45
+observers must read causal native/provider state and keep actual trigger, phone,
+policy and elapsed-time requirements visible. No ready flag supplies those facts.
+
+TDD applies at service, captured HTTP and disposable PostgreSQL boundaries. No new
+browser journey is introduced; run the existing complete API/browser gate after
+focused contracts and independent review. Native conditions, paid authorization,
+deployment/configuration and real provider acceptance remain separate future work.
+
+The integrated full executor reuses the existing campaign, full-stage claim,
+owned clone and common ledger. It does not create another runtime owner. Native
+read-only prerequisite probes precede fixture or paid mutations. Fault leases
+have same-transaction booking bindings and worker/HTTP hooks that are inert for
+ordinary bookings. Per-case clone tool changes use placeholder secret headers,
+strict provider read-back, exclusive durable intents and exact restoration.
+
+Use the current agent-testing response schema for C48 paired call/result proof;
+use a separate actual WebSocket session for C50 history. Native message/Google
+observers join source-owned IDs through independent authenticated GETs. Retain
+real operator, independent sender, enrollment/window, timeout and quiet-hours
+policy gates. A missing verified native-session credit unit is an explicit
+prepaid blocker, not a guessed currency conversion or a configuration-ready flag.
+
+### FR-069 implementation plan
+
+Reuse `deployed_full_session.py` as the single native-session accounting owner.
+Add strict total parsing and a bounded read-only subscription admission helper,
+reusing the runner's monthly allowance/reset checks after validating the native
+unit flags, pinned tier and strict subscription counter types. Run admission
+under the campaign lock before intent, signed URL or socket. Wire defaults in
+full Adapter, causal reconciliation and native prerequisite observations; retain
+source/units in the common ledger without raw provider details. Do not invent a
+charging-component formula or enable verification flags. Update focused captured
+REST/socket/Budget regression contracts and the feature coverage matrix; then
+review/converge and run the full exact-candidate gate once its workflow lands.
+No migration, product UI, provider write, saved-agent change or paid call is needed.
+
+### FR-070 publication review repairs
+
+Keep the existing campaign and common ledger as the ownership boundary. Route
+deployed management recovery to the native session's compiled GET-only reader
+with saved intent, stage claim and customer identity validation. Reload ledger
+state before aggregation so native settlement cannot be overwritten. Keep
+read-only financial recovery separate from permission to mutate blocked fixtures.
+Scope C48 ceiling accounting to its validated run and retain global unknown-use
+and fresh quota-delta checks. Bound same-handle recovery polling and preserve the
+resume binding. Snapshot C33's foreign request/customer before submission and
+compare subsequent reads without adding foreign IDs to ownership or cleanup.
+Add failure-first captured-provider and composed regressions, review source and
+assertions, then run the complete exact-candidate and hosted CI gates. No new UI
+journey is introduced; existing browser regressions remain mandatory.
+
+After native management recovery reload the exact ledger binding and reject
+nonterminal, missing, ambiguous or changed settlement instead of returning a
+successful command status. Preserve totals in the runner's finalization path.
+Convert the naive outbox timestamp using the database session timezone, matching
+its CURRENT_TIMESTAMP writer and the history observer convention. Validate the
+actual read/serialization/transition composition in a disposable PostgreSQL
+schema under UTC and America/Los_Angeles, with independent observation snapshots.
+
+### FR-071 retained-intent recovery
+
+Add migration0011 for C23's same-transaction original-response and mapping journal,
+an immutable ownership trigger, one-way cleanup state, explicit verification of
+the required trigger and a guarded rollback. Read-only authenticated recovery
+returns original claims after locked/snapshot ownership checks; cleanup rechecks
+the complete mapping snapshot under its existing locks. C35/C36 reuse their
+existing journal and a private nonce digest instead of another schema owner.
+Operation-specific blocker provenance permits proven recovery while preserving
+unrelated uncertainty and every mutation guard.
+
+Extend the existing runner management boundary with compiled phase and fixture
+callbacks under its campaign lock. Persist the C48 phase-pending flag before
+external continuation, rebuild only exact immutable journals and reload the
+common ledger before totals. Fixture recovery checks pending retained controls
+before constructing an adapter and uses at most two read-only passes while state
+progresses. Persist safe proof hashes only. Native acceptance and new paid work
+remain outside these management callbacks.
+
+Normalize condition timestamps per column's actual writer, using the existing
+validated app_config business timezone for deadlines, UTC for queued sends and
+the database timezone for CURRENT_TIMESTAMP fields. Preserve mixed-writer
+confirmed_at only as text. Exercise canonical business/quiet-hours writers with
+different database zones through the real read-only native snapshot owner.

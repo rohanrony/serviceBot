@@ -2239,14 +2239,20 @@ class BookingService:
                 "bypass_quiet_hours": bypass_qh,
             },
         }
+        from serviceBot.services.simulation_faults import bind_booking, has_booking_capability
         for event_type in ("calendar_projection", "booking_notification"):
+            bind_fault = event_type == "calendar_projection" and has_booking_capability()
             cursor.execute(
                 """
                 INSERT INTO outbox_notifications (event_type, request_id, payload, status, next_retry_at)
-                VALUES (%s, %s, %s, 'PENDING', CURRENT_TIMESTAMP);
-                """,
+                VALUES (%s, %s, %s, 'PENDING', CURRENT_TIMESTAMP)
+                """ + (" RETURNING id;" if bind_fault else ";"),
                 (event_type, request_id, json.dumps(payload)),
             )
+            if bind_fault:
+                bind_booking(cursor, request_id=request_id, reservation_id=reservation_id,
+                    outbox_id=cursor.fetchone()["id"], staff_agent_id=staff_agent_id,
+                    service_type=service_type, customer_phone=customer.get("phone"))
 
 
 # In-flight booking session tracking for call deduplication

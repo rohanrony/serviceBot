@@ -44,6 +44,7 @@ from .runner import (
     estimates,
     functional_checks,
     load_reference,
+    owned_campaign_scope,
     preview,
     stage_authorization,
 )
@@ -1388,6 +1389,19 @@ def execute(config, tier='minimal', *, live=False, check=False, run_id=None,
                            or config.get('campaign_authorization') or config.get('calibration')):
         if continue_unpaid or continue_remaining or continue_unsubmitted or repair_linked_visit:
             raise SimulationError('Deployed full C17-C50 does not reuse medium continuation authority')
+        if live:
+            if check:
+                raise SimulationError('Choose --check or --live, not both')
+            from .deployed_full import FULL_IDS
+            if requested is None or tuple(requested) != FULL_IDS:
+                raise SimulationError('Deployed full authorization requires explicit C17-C50 exactly once')
+            try:
+                stage_authorization(config,tier,requested,list(FULL_IDS),repeat,target='deployed')
+            except SimulationError:
+                raise SimulationError('Full authorization scope or numeric ceiling is invalid') from None
+            if config.get('stage_authorization') is None:
+                raise SimulationError('Deployed native full execution is unavailable without explicit numeric full-stage authorization')
+            return _execute(config,tier,live=True,run_id=run_id,requested=requested,repeat=repeat,**kwargs)
         return _full_delta_preflight(config, live=live, check=check, requested=requested, repeat=repeat)
     if repair_linked_visit:
         if continue_unpaid or continue_remaining or continue_unsubmitted:
@@ -1488,7 +1502,12 @@ def _full_delta_preflight(config, *, live, check, requested, repeat):
         with httpx.Client(timeout=45, trust_env=False, follow_redirects=False) as client:
             problems, _baseline = deployment_readiness(config, client)
             state, provider_problems = provider_readiness(config, client)
-        report['problems'].extend([*problems, *provider_problems])
+            from . import deployed_full_adapter, deployed_full_execution
+            try:
+                native_problems = deployed_full_execution.prerequisites(config,client,cases,_baseline,deployed_full_adapter)
+            except SimulationError:
+                native_problems = ['Full native prerequisite observer is unavailable']
+        report['problems'].extend([*problems, *provider_problems, *native_problems])
         report['native_readiness_checked'] = True
         if 'remaining' in state:
             remaining = state['remaining']
@@ -1561,7 +1580,7 @@ def _execute(config, tier='minimal', *, live=False, check=False, run_id=None,
     if stage is not None and not config.get('deployed_medium', {}).get('browser_readback'):
         missing = [*missing, 'reloaded browser portal']
     planned.update(target='deployed', deployed_url=url,
-                   acceptance_scope=('deployed_medium_native_state' if stage is not None else
+                   acceptance_scope=('deployed_full_native_state' if tier == 'full' and stage is not None else 'deployed_medium_native_state' if stage is not None else
                                      'single_case_calibration_smoke' if calibration is not None else 'conversation_and_api_smoke'),
                    unsupported_cases=unsupported, missing_acceptance_evidence=missing)
     if not live and not check:
@@ -1588,7 +1607,12 @@ def _execute(config, tier='minimal', *, live=False, check=False, run_id=None,
         if unsupported:
             problems.append('Isolated fixtures/state assertions are required for cases: ' + ', '.join(unsupported))
         if stage is not None and _admission is None:
-            problems.extend(deployed_medium.readiness(config, client, cases, baseline))
+            if tier == 'full':
+                from . import deployed_full_adapter, deployed_full_execution
+                problems.extend(deployed_medium.readiness(config, client, cases, baseline))
+                problems.extend(deployed_full_execution.prerequisites(config,client,cases,baseline,deployed_full_adapter))
+            else:
+                problems.extend(deployed_medium.readiness(config, client, cases, baseline))
         state, provider_problems = ((_admission['state'], []) if _admission is not None
                                     else provider_readiness(config, client))
         problems.extend(provider_problems)
@@ -1638,7 +1662,11 @@ def _execute(config, tier='minimal', *, live=False, check=False, run_id=None,
                 budget.spent = _admission.get('prior_stage_spent', number(0))
             case_estimates = ([number(calibration['case_upper_estimate'], positive=True)]
                               if calibration is not None else estimates(config, cases))
-            if not budget.can_start(sum(case_estimates) * repeat):
+            admission_estimate = sum(case_estimates) * repeat
+            if tier == 'full':
+                from . import deployed_full_execution
+                admission_estimate = deployed_full_execution.total_estimate(config,case_estimates)
+            if not budget.can_start(admission_estimate):
                 raise SimulationError('Current remaining allowance cannot admit selected coverage')
             values = fixtures.variables(config)
             values['customer_name'] = existing_name or values['customer_name'] + ' ' + campaign.run_id[:8]
@@ -1648,7 +1676,11 @@ def _execute(config, tier='minimal', *, live=False, check=False, run_id=None,
             previous, failed, group_ids = [], set(), set()
             if seed is not None:
                 previous, group_ids = [copy.deepcopy(seed)], {seed['id']}
-            adapter = deployed_medium.Adapter(campaign, client) if stage is not None else None
+            if tier == 'full':
+                from .deployed_full_adapter import Adapter as FullAdapter
+                adapter = FullAdapter(campaign,client)
+            else:
+                adapter = deployed_medium.Adapter(campaign, client) if stage is not None else None
             stage_blocked = False
             try:
                 manifest.update(attempted=True, status='running', agent_create_pending=False,
@@ -1708,6 +1740,41 @@ def _execute(config, tier='minimal', *, live=False, check=False, run_id=None,
                         case_started = False
                         read_stage = 'case admission'
                         try:
+                            if tier == 'full' and case['id'] == 'C50':
+                                case_started = True
+                                adapter.state['full_case_values']=copy.deepcopy(values)
+                                adapter._save()
+                                result = deployed_full_execution.run_c50(adapter,provider=provider,budget=budget,
+                                    ledger=ledger,campaign=campaign,estimate=estimate)
+                                verified = (result.get('history_verified') is True and result.get('full_case_verified') is True and result.get('global_stop') is False
+                                    and not budget.unknown and budget.spent <= budget.cap
+                                    and not any(e.get('unsettled') is not False for e in ledger['entries']))
+                                entry.update(status='incomplete' if verified else 'blocked',
+                                    functional_status='passed' if verified else 'blocked',
+                                    checks=deployed_full_execution.special_checks(case,result,verified,budget),
+                                    reason='C50 native proof verified; receiving inbox remains unverified' if verified else 'C50 native session/accounting requires reconciliation')
+                                stage_blocked = not verified
+                                if not verified:
+                                    failed.add(case['id'])
+                                continue
+                            if tier == 'full' and case['id'] == 'C48':
+                                case_started = True
+                                adapter.state['full_case_values']=copy.deepcopy(values)
+                                adapter._save()
+                                result = deployed_full_execution.run_c48(adapter,provider=provider,budget=budget,
+                                    ledger=ledger,campaign=campaign,estimate=estimate)
+                                verified = (result.get('recovery_verified') is True and result.get('full_case_verified') is True
+                                    and result.get('global_stop') is False
+                                    and not budget.unknown and budget.spent <= budget.cap
+                                    and not any(e.get('unsettled') is not False for e in ledger['entries']))
+                                entry.update(status='incomplete' if verified else 'blocked',
+                                    functional_status='passed' if verified else 'blocked',
+                                    checks=deployed_full_execution.special_checks(case,result,verified,budget),
+                                    reason='C48 native proof verified; receiving inbox remains unverified' if verified else 'C48 requires reconciliation before further paid work')
+                                stage_blocked = not verified
+                                if not verified:
+                                    failed.add(case['id'])
+                                continue
                             budget.remaining = min(budget.remaining, current_remaining(config, provider))
                             if not budget.can_start(estimate):
                                 raise SimulationError('Insufficient verified budget or unknown usage')
@@ -1720,7 +1787,13 @@ def _execute(config, tier='minimal', *, live=False, check=False, run_id=None,
                                     raise SimulationError('Existing customer records changed; stop before fixture setup')
                                 case_started = True
                                 read_stage = 'native fixture arrangement'
-                                adapted_case, fixture_ids = adapter.arrange(case, values)
+                                if tier=='full':
+                                    adapter.attach_provider(provider)
+                                    with owned_campaign_scope(campaign.root):
+                                        adapted_case,fixture_ids=adapter.arrange(case,values)
+                                    adapter.prepare_case_agent(case,provider)
+                                else:
+                                    adapted_case,fixture_ids=adapter.arrange(case,values)
                                 group_ids = set(fixture_ids)
                             read_stage = 'native booking context'
                             current = scoped(get(client, url, '/api/v1/portal/service-requests'), values['customer_phone'])
@@ -1736,6 +1809,8 @@ def _execute(config, tier='minimal', *, live=False, check=False, run_id=None,
                                            upcoming_appointments_summary=context, recent_history_summary='',
                                            system__call_sid=campaign.run_id + case['id'] + str(sample - 1),
                                            system__conversation_id=campaign.run_id + case['id'] + str(sample - 1))
+                            if tier=='full':
+                                dynamic.update(adapter.case_dynamic_variables(case))
                             manifest['test_create_pending'] = case['id']
                             manifest.setdefault('test_creation_intents', []).append({'case_id': case['id'],
                                 'attempt': attempt_number, 'repeat': sample, 'status': 'intent'})
@@ -1776,7 +1851,15 @@ def _execute(config, tier='minimal', *, live=False, check=False, run_id=None,
                             manifest['invocations'].append(invocation_id)
                             private_json(ledger_path, ledger)
                             campaign.save()
-                            result = provider.wait(invocation_id, config.get('timeout_seconds', 120))
+                            if tier == 'full':
+                                deployed_full_execution.bind_invocation(adapter,case,invocation_id,test_id)
+                            if tier=='full':
+                                def observe_native_case(case=case,values=values):
+                                    with owned_campaign_scope(campaign.root):
+                                        adapter.poll_during_call(case,values,provider)
+                                result=provider.wait(invocation_id,config.get('timeout_seconds',120),observe=observe_native_case)
+                            else:
+                                result=provider.wait(invocation_id,config.get('timeout_seconds',120))
                             credits = provider.credits(result)
                             budget.settle(invocation_id, credits)
                             charge.update(unsettled=credits is None, credits=None if credits is None else str(credits))
@@ -1788,7 +1871,8 @@ def _execute(config, tier='minimal', *, live=False, check=False, run_id=None,
                                 new_ids = {r['id'] for r in observed} - {r['id'] for r in current}
                                 group_ids.update(new_ids)
                                 after = [r for r in observed if r['id'] in group_ids]
-                                checks = (adapter.checks(case, values, previous, after) if adapter is not None else
+                                checks = (deployed_full_execution.case_checks(adapter,case,values,previous,after,provider)
+                                          if tier == 'full' else adapter.checks(case, values, previous, after) if adapter is not None else
                                           lifecycle_checks(case['id'], values, previous, after,
                                               config.get('app_config', {}).get('business_timezone', 'America/New_York')))
                                 checks.append(evidence.check('existing customer records unchanged',
@@ -1799,7 +1883,11 @@ def _execute(config, tier='minimal', *, live=False, check=False, run_id=None,
                             if adapter is not None:
                                 if not unchanged(baseline_index, observed):
                                     stage_blocked = True
-                                checks.extend(adapter.final_checks(case, values, after))
+                                if tier=='full':
+                                    with owned_campaign_scope(campaign.root):
+                                        checks.extend(adapter.final_checks(case,values,after))
+                                else:
+                                    checks.extend(adapter.final_checks(case,values,after))
                                 if 'email' in case.get('required_evidence', []):
                                     checks.append({'name': 'receiving inbox contains expected content', 'passed': False,
                                                    'status': 'unverified',
@@ -1831,11 +1919,21 @@ def _execute(config, tier='minimal', *, live=False, check=False, run_id=None,
                                 budget.unknown = True
                         finally:
                             if adapter is not None and case_started:
+                                if tier=='full' and not any(e.get('unsettled') for e in ledger['entries']):
+                                    try:
+                                        adapter.restore_case_agent(case,provider)
+                                    except (SimulationError,httpx.HTTPError):
+                                        stage_blocked=True
+                                        entry.update(status='blocked',functional_status='blocked',reason='Owned case agent restoration requires reconciliation')
                                 if any(e.get('unsettled') for e in ledger['entries']):
                                     stage_blocked = True
                                 elif not stage_blocked:
                                     try:
-                                        adapter.cleanup_case()
+                                        if tier=='full':
+                                            with owned_campaign_scope(campaign.root):
+                                                adapter.cleanup_case()
+                                        else:
+                                            adapter.cleanup_case()
                                     except (SimulationError, httpx.HTTPError) as exc:
                                         stage_blocked = True
                                         entry.update(status='blocked', functional_status='blocked', reason='Owned cleanup pending: ' + str(exc))
@@ -1887,7 +1985,11 @@ def manage(config, run_id, command, *, live=False):
         return 0
     if command == 'reconcile':
         from .runner import reconcile
-        reconcile(campaign)
+        from .deployed_full_session import reconcile_campaign
+        from .deployed_full_recovery import reconcile_campaign as reconcile_c48
+        from .deployed_full_fixture_recovery import reconcile_campaign as reconcile_fixtures
+        reconcile(campaign,native_reconcile=reconcile_campaign,phase_reconcile=reconcile_c48,
+                  fixture_reconcile=reconcile_fixtures)
         if campaign.manifest.get('continuation_ancestors'):
             campaign.manifest['aggregate_spent_credits'] = str(number(campaign.manifest['prior_spent_credits'])
                 + number(campaign.manifest['spent_credits']))

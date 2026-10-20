@@ -166,7 +166,8 @@ def _booking(observation, journal):
         start, end = (datetime.fromisoformat(expected[k]) for k in ('starts_at', 'ends_at'))
         if (not _positive_id(expected['customer_id']) or not _positive_id(expected['staff_agent_id'])
                 or start.tzinfo is None or end.tzinfo is None or start.second or start.microsecond or start.minute % 15
-                or expected['service_type'] != 'Oil Change' or expected['duration_minutes'] != 60
+                or not isinstance(expected['service_type'], str) or not expected['service_type'].strip()
+                or expected['duration_minutes'] != 60
                 or end - start != timedelta(minutes=60)
                 or not all(_positive_id(value) for value in (observation['customer_id'], request['id'],
                     request['customer_id'], request['staff_agent_id'], reservation['id'],
@@ -217,7 +218,8 @@ def _executed_booking(run, journal, booking):
                 or not isinstance(result.get('request_id'), str) or result['request_id'] != call['request_id']
                 or details.get('type') != 'webhook' or details.get('method') != 'POST'
                 or details.get('url') != journal['tool_url']
-                or not isinstance(arguments, dict) or arguments.get('service_type') != 'Oil Change'
+                or not isinstance(arguments, dict)
+                or arguments.get('service_type') != journal['expected_booking']['service_type']
                 or result.get('is_error') is not False or value.get('success') is not True
                 or not _positive_id(value.get('appointment_id')) or value['appointment_id'] != request_id
                 or not isinstance(value.get('appointments'), list) or len(value['appointments']) != 1):
@@ -233,7 +235,7 @@ def _executed_booking(run, journal, booking):
                 or not _positive_id(appointment.get('staff_agent_id'))
                 or appointment['staff_agent_id'] != expected['staff_agent_id']
                 or appointment.get('duration_minutes') != 60 or appointment.get('booking_type') != 'appointment'
-                or appointment.get('service_type') != 'Oil Change' or returned_start != expected_start):
+                or appointment.get('service_type') != expected['service_type'] or returned_start != expected_start):
             raise ValueError
         return {'provider_request_id': call['request_id'], 'native_request_id': request_id,
                 'native_reservation_id': reservation_id}

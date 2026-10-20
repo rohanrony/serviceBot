@@ -603,3 +603,109 @@ invocation and its separate recovery invocation (at least35 paid invocations for
 per-case estimates. Missing or invalid recovery estimates leave the full total,
 reserved ceiling and full shortfall unavailable; label any34-case subtotal as
 partial. Numeric projections remain unmeasured and cannot authorize live work.
+
+### Offline completion authorization (19 October 2026)
+
+The owner requested finishing the remaining harness fixes before live execution.
+Continue FR-062 and T128-T135 using synthetic transports and disposable PostgreSQL
+only. Implement executable ownership, causal evidence, reconciliation and cleanup
+contracts; configuration flags or supplied success receipts cannot establish
+native acceptance. Real phone identity/enrollment, operator replies, elapsed
+deadlines, quiet-hours policy and provider provenance remain operational gates.
+This phase authorizes no paid submission, deployment, live fixture mutation,
+production messaging change or system Gmail repair. Source completion and live
+verification must remain separately reportable.
+
+C23 may gain an explicitly disabled, authenticated internal lifecycle that creates
+its own service/technician pair and signs their exact server-generated identities.
+Cleanup must reject attachments or changed ownership atomically, never cascade
+through other records, and reuse catalog synchronization. C50 may add an additive
+authenticated-ingress audit: only verified HTTP callbacks can create it; direct
+payload/API-sync ingestion cannot assert authenticated callback provenance.
+
+C35/C36 controls must remain disabled by default and require authenticated,
+expiring, signed leases for a new owned service and designated technician/phone.
+Bind the actual model's validated consent/service/time/phone payload to the exact
+request, reservation and outbox item in the existing booking transaction. C35
+proves a controlled native worker failure and subsequent recovery, not a Google
+outage. C36 proves committed-response loss and same-lease reconciliation; report
+general production retry/idempotency behavior separately as unproven. Disarm
+before cleanup, retire booking and provider projection through existing owners,
+and retain the audit journal. Normal bookings keep their existing SQL behavior.
+
+C48's interrupted booking uses the exact run-owned canonical catalog service.
+Its baseline must preserve all original customer records while scoping the empty
+active-booking prerequisite to the new test service. Recovery requires an actual
+paired read-only appointment lookup in the provider's agent-testing response plus
+fresh independent native/calendar/message observations. Agent-testing invocation
+and test identifiers are not genuine conversation identifiers and cannot prove a
+post-call callback or native call history.
+
+C50 therefore requires a genuine bounded provider conversation with a durable
+actual conversation ID before connection, the independently resolved customer
+user_id, owned initiation nonce, authenticated callback audit and matching CRM
+transcript. Journal unknown charges before connection and reconcile known IDs by
+GET only. Never convert cost_fiat into credits or assume an undocumented credit
+unit; an independently verified credit reader is required before paid admission.
+These genuine-session accounting and native-provider outcomes remain unverified
+in the offline phase. Fault credentials use secret dynamic header variables,
+remain absent from saved clone tools/prompts and ordinary artifacts, and are
+restricted to an independently read-back campaign-owned clone. Restore that clone
+exactly; concurrent or unknown changes stop the campaign.
+
+### C50 compiled accounting completion (FR-069)
+
+- **FR-069**: Complete the native-session actual-total reader and normal execution/
+  reconciliation wiring according to `contracts/c50-credit-accounting.md`. Retain
+  independently verified account-specific credit units, pin the verified account
+  tier, refresh monthly quota before new effects, accept only an exact terminal
+  nonnegative integer total, preserve unknown/conflicting charges, and reconcile
+  known conversations by GET without replay. Code completion does not verify the
+  real account's native billing units or authorize paid sessions.
+
+### Publication review recovery contracts (FR-070)
+
+- **FR-070**: The supported deployed management reconciliation command must
+  settle a known C50 conversation through bounded, read-only native GETs under
+  its saved intent and full-stage authority, preserving unknown identities and
+  account-unit gates. Refresh the common ledger after settlement before writing
+  campaign totals; billing recovery must not replay a session or assert native
+  acceptance. C48 admission counts all current-run phases against that run's
+  ceiling, while historical settled use affects fresh quota deltas and every
+  unsettled entry blocks admission. Poll a pending recovery using its same
+  handle within bounded attempts; retain its binding for read-only continuation
+  after exhaustion. C33 records the exact other customer's booking and customer
+  baseline before submission, rejects subsequent drift, and never registers the
+  foreign request as campaign-owned or eligible for cleanup.
+
+  The management command must fail when its exact current-run native charge
+  remains unsettled after bounded GET recovery; persist truthful partial totals
+  and unknown-use state even on failure. Native projection observations must
+  serialize timezone-aware timestamps using the database timestamp owner's
+  timezone convention, and compose with transition validation against actual
+  PostgreSQL rows in UTC and a non-UTC session timezone.
+
+### Recover committed effects without replay (FR-071)
+
+- **FR-071**: Lost create, disarm, cleanup or paid invocation responses must
+  retain a supported same-intent management continuation. C23 stores its original
+  signed response and mapping baseline atomically in an immutable intent journal;
+  authenticated GET recovery returns that original receipt only after exact
+  ownership read-back, including one-way cleanup proof. C35/C36 use a private
+  pre-submission nonce and original journal digest to recover their exact lease
+  through authenticated GET, including expired leases for cleanup. Clear only
+  the exact operation's blocking owner after proof and only when no other pending
+  effect remains. Recovery cannot adopt current rows, repeat a create or paid
+  submission, enable a native acceptance flag, or expose private receipts/tokens.
+  C48 must reconstruct phase journals from an unambiguous provider GET discovery
+  bound to the original intent, test, agent and common ledger, then continue only
+  the same invocation. A verified source without a submitted recovery phase
+  explicitly requires separately authorized recovery; management never submits it.
+  The standard deployed reconciliation command dispatches these retained owners.
+
+Operational condition timestamps follow their actual writers: business-naive
+confirmation deadlines use the configured business zone, UTC-naive queued sends
+use UTC, and CURRENT_TIMESTAMP-written fields use the database session zone.
+Mixed-writer confirmed_at is retained as wall-clock text only, without a timing
+claim. Reject other naive timestamp guesses. Real PostgreSQL tests must cover
+different business and database zones and compare against provider timestamps.
