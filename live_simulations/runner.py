@@ -739,7 +739,7 @@ def cleanup(runtime, *, live=False):
         write_report(runtime)
 
 
-def reconcile(runtime,*,native_reconcile=None):
+def reconcile(runtime,*,native_reconcile=None,phase_reconcile=None,fixture_reconcile=None):
     """Read provider billing; never repeat a paid request to recover its identity."""
     with campaign_lock(runtime.root):
         path = runtime.root / 'usage-ledger.json'
@@ -747,6 +747,18 @@ def reconcile(runtime,*,native_reconcile=None):
         provider = ElevenLabs(secret(runtime.config, 'elevenlabs_key'))
         native_unverified=False
         try:
+            def phase_entry(entry):
+                return (entry.get('run_id')==runtime.run_id and entry.get('case_id')=='C48'
+                    and entry.get('phase') in ('interruption','recovery'))
+            if phase_reconcile is not None and any(phase_entry(e) for e in ledger['entries']):
+                # A settled invoice does not finish cancellation/native evidence.
+                # The phase owner restores journals and advances only retained handles.
+                runtime.manifest['phase_reconciliation_pending']=True
+                runtime.save()
+                with owned_campaign_scope(runtime.root):
+                    phase_reconcile(runtime,provider)
+                runtime.manifest['phase_reconciliation_pending']=False
+                ledger=json.loads(path.read_text())
             entries=sorted(ledger['entries'],key=lambda e:e.get('resource_type')!='conversation')
             for original in entries:
                 ledger=json.loads(path.read_text())
@@ -754,6 +766,8 @@ def reconcile(runtime,*,native_reconcile=None):
                 if entry is None:
                     continue
                 if entry.get('run_id') != runtime.run_id or not entry.get('unsettled'):
+                    continue
+                if phase_reconcile is not None and phase_entry(entry):
                     continue
                 if entry.get('resource_type') == 'conversation':
                     if native_reconcile is None:
@@ -796,6 +810,9 @@ def reconcile(runtime,*,native_reconcile=None):
                     raise SimulationError('Invocation charges are still unverified')
                 entry.update(unsettled=False, credits=str(credits))
                 private_json(path, ledger)
+            if fixture_reconcile is not None:
+                with owned_campaign_scope(runtime.root):
+                    fixture_reconcile(runtime,provider)
         finally:
             ledger=json.loads(path.read_text())
             relevant = [e for e in ledger['entries'] if e['run_id'] == runtime.run_id]

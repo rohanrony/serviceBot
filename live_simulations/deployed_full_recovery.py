@@ -884,3 +884,280 @@ def _executed_recovery_lookup(run, pre):
         "native_request_id": row["id"],
         "native_reservation_id": pre["native_booking"]["reservations"][0]["id"],
     }
+
+
+def recover_submission(root, *, identity, phase, provider):
+    """Recover an accepted submission from immutable intent using GETs only.
+
+    No callback for paid submission is available here. Discovery must identify
+    exactly one invocation and its detail must confirm the complete test binding
+    before a phase journal or common-ledger identity can be written.
+    """
+    from urllib.parse import quote
+
+    seed = _identity(identity)
+    if phase not in ("interruption", "recovery"):
+        raise SimulationError("Exact C48 submission phase required")
+    root = Path(root)
+    with campaign_lock(root):
+        folder = root / seed.run_id
+        prefix = f"C48-{seed.attempt}-"
+        recovery_phase = phase == "recovery"
+        pre = _read(
+            folder
+            / (prefix + ("recovery-" if recovery_phase else "") + "pre-invocation.json")
+        )
+        intent = _read(
+            folder
+            / (prefix + ("recovery-" if recovery_phase else "") + "submit-intent.json")
+        )
+        ledger = _read(root / "usage-ledger.json")
+        manifest = _read(folder / "manifest.json")
+        matches = [
+            e
+            for e in ledger.get("entries", [])
+            if e.get("phase") == phase
+            and _same_binding({k: e.get(k) for k in identity}, identity)
+        ]
+        if (
+            len(matches) != 1
+            or not _same_binding(pre.get("binding"), identity)
+            or not _same_binding(intent.get("binding"), identity)
+            or intent.get("pre_invocation_sha256") != fingerprint(pre)
+            or matches[0].get("pre_invocation_sha256") != fingerprint(pre)
+            or manifest.get("run_id") != seed.run_id
+            or manifest.get("campaign_agent_id") != seed.agent_id
+            or seed.test_id not in manifest.get("provider_tests", [])
+            or pre.get("test_definition", {}).get("id") != seed.test_id
+            or pre.get("invocation_request")
+            != {"tests": [{"test_id": seed.test_id}], "repeat_count": 1}
+        ):
+            raise SimulationError("Exact immutable C48 submission ownership required")
+        entry = matches[0]
+        if recovery_phase:
+            source_binding = Binding(**pre["source_binding"])
+            _context(root, source_binding)
+            source_proof = _read(folder / (prefix + "interruption.json"))
+            if (
+                source_binding.run_id != seed.run_id
+                or source_binding.attempt != seed.attempt
+                or source_binding.agent_id != seed.agent_id
+                or source_binding.test_id == seed.test_id
+                or source_proof.get("interruption_verified") is not True
+                or pre.get("source_proof_sha256") != fingerprint(source_proof)
+            ):
+                raise SimulationError("Exact verified C48 interruption proof required")
+        else:
+            preparations = [
+                p
+                for p in ledger.get("c48_preparations", [])
+                if _same_binding(p.get("binding"), identity)
+            ]
+            if (
+                len(preparations) != 1
+                or preparations[0].get("pre_invocation_sha256") != fingerprint(pre)
+                or type(intent.get("submitted_at_unix")) not in (int, float)
+                or number(intent["submitted_at_unix"], positive=True)
+                <= number(pre["baseline"]["observed_at_unix"], positive=True)
+            ):
+                raise SimulationError("Exact prior native C48 baseline required")
+        invocation = entry.get("invocation_id")
+        if not invocation:
+            found = _external(
+                provider.request,
+                "GET",
+                "/v1/convai/test-invocations?test_id=" + quote(seed.test_id, safe=""),
+            )
+            if not isinstance(found, dict):
+                raise SimulationError("C48 provider discovery unavailable")
+            results = found.get("results", [])
+            if (
+                found.get("has_more")
+                or not isinstance(results, list)
+                or len(results) != 1
+            ):
+                raise SimulationError(
+                    "Ambiguous C48 invocation; retain unknown submission without resubmission"
+                )
+            invocation = results[0].get("id")
+        binding = Binding(**identity, invocation_id=invocation)
+        binding.validate()
+        _provider_run(_external(provider.get, invocation), binding)
+        if any(
+            e is not entry and e.get("invocation_id") == invocation
+            for e in ledger["entries"]
+        ):
+            raise SimulationError(
+                "C48 invocation already belongs to another ledger entry"
+            )
+        if recovery_phase:
+            journal = {
+                "binding": binding.as_dict(),
+                "pre_invocation_sha256": fingerprint(pre),
+                "source_binding": pre["source_binding"],
+            }
+            suffix = "recovery-journal.json"
+            digest_key = "recovery_journal_sha256"
+        else:
+            journal = {
+                "schema_version": 1,
+                "binding": binding.as_dict(),
+                "submitted_at_unix": intent["submitted_at_unix"],
+                "pre_invocation_sha256": fingerprint(pre),
+                **{k: pre[k] for k in ("baseline", "expected_booking", "tool_url")},
+            }
+            suffix = "interruption-journal.json"
+            digest_key = "interruption_journal_sha256"
+        journal_path = folder / (prefix + suffix)
+        if digest_key in entry and entry[digest_key] != fingerprint(journal):
+            raise SimulationError("Retained C48 ledger journal fingerprint conflicts")
+        if journal_path.exists():
+            if _read(journal_path) != journal:
+                raise SimulationError(
+                    "Retained C48 phase journal conflicts with discovery"
+                )
+        else:
+            _intent(journal_path, journal)
+        entry.update(
+            **binding.as_dict(),
+            submission_unknown=False,
+            **{digest_key: fingerprint(journal)},
+        )
+        private_json(root / "usage-ledger.json", ledger)
+        if invocation not in manifest.setdefault("invocations", []):
+            manifest["invocations"].append(invocation)
+            private_json(folder / "manifest.json", manifest)
+        return binding
+
+
+def reconcile_campaign(campaign, provider):
+    """Continue retained C48 phases without a mutable fixture or paid submit hook."""
+    import httpx
+    from types import SimpleNamespace
+
+    from .core import secret
+    from .deployed_full_native import NativeBridge
+    from .runner import owned_campaign_scope
+
+    root = Path(campaign.root)
+    with campaign_lock(root), owned_campaign_scope(root):
+        ledger = _read(root / "usage-ledger.json")
+        entries = [
+            e
+            for e in ledger.get("entries", [])
+            if e.get("run_id") == campaign.run_id
+            and e.get("case_id") == "C48"
+            and e.get("phase") in ("interruption", "recovery")
+        ]
+        results = []
+        with httpx.Client(
+            timeout=30, trust_env=False, follow_redirects=False
+        ) as client:
+            for entry in entries:
+                identity = {
+                    k: entry[k]
+                    for k in ("run_id", "case_id", "attempt", "test_id", "agent_id")
+                }
+                # Read-only continuation has a separate guard; the mutable
+                # fixture's blocked flag is neither bypassed nor changed.
+                retained_manifest = _read(Path(campaign.folder) / "manifest.json")
+                if (
+                    retained_manifest.get("run_id") != campaign.run_id
+                    or retained_manifest.get("campaign_agent_id")
+                    != identity["agent_id"]
+                    or not retained_manifest.get("stage_authorization")
+                ):
+                    raise SimulationError("Retained C48 stage ownership required")
+                binding = recover_submission(
+                    root, identity=identity, phase=entry["phase"], provider=provider
+                )
+                pre = _read(
+                    Path(campaign.folder) / f"C48-{binding.attempt}-pre-invocation.json"
+                )
+
+                def guard():
+                    retained = _read(Path(campaign.folder) / "manifest.json")
+                    if (
+                        retained.get("run_id") != campaign.run_id
+                        or retained.get("campaign_agent_id") != binding.agent_id
+                        or not retained.get("stage_authorization")
+                    ):
+                        raise SimulationError("Retained C48 stage ownership required")
+
+                adapter = SimpleNamespace(
+                    campaign=campaign,
+                    config=campaign.config,
+                    state=campaign.manifest.get("deployed_medium", {}),
+                    _guard=guard,
+                )
+                options = {"google_client": client}
+                try:
+                    options.update(
+                        twilio_client=client,
+                        twilio_account_sid=secret(campaign.config, "twilio_sid"),
+                        twilio_auth=(
+                            secret(campaign.config, "twilio_sid"),
+                            secret(campaign.config, "twilio_token"),
+                        ),
+                    )
+                except SimulationError:
+                    pass
+                hooks = NativeBridge(adapter, provider, **options).c48_observers(
+                    identity=pre["binding"], expected_booking=pre["expected_booking"]
+                )
+                source_result_path = (
+                    Path(campaign.folder) / f"C48-{binding.attempt}-interruption.json"
+                )
+                prior_source = (
+                    _read(source_result_path) if source_result_path.exists() else {}
+                )
+                if (
+                    entry["phase"] == "interruption"
+                    and prior_source.get("interruption_verified") is True
+                    and _same_binding(prior_source.get("binding"), binding.as_dict())
+                ):
+                    _, source_journal, _, _ = _context(root, binding)
+                    if prior_source.get("proof", {}).get(
+                        "journal_sha256"
+                    ) != fingerprint(source_journal):
+                        raise SimulationError(
+                            "Retained C48 interruption proof conflicts"
+                        )
+                    result = prior_source
+                elif entry["phase"] == "interruption":
+                    result = advance_source(
+                        root,
+                        binding=binding,
+                        provider=hooks["provider"],
+                        observe_booking=hooks["observe_booking"],
+                    )
+                else:
+                    result = advance_recovery(
+                        root,
+                        binding=binding,
+                        provider=hooks["provider"],
+                        observe_booking=hooks["observe_booking"],
+                        observe_delivery=hooks["observe_delivery"],
+                    )
+                results.append({"binding": binding.as_dict(), **result})
+        # Read back manifest additions made by the phase owner before the runner
+        # saves its aggregate billing report. Never clear blocked fixture state.
+        retained = _read(Path(campaign.folder) / "manifest.json")
+        campaign.manifest["invocations"] = retained.get("invocations", [])
+        campaign.manifest["c48_reconciliation"] = results
+        campaign.save()
+        if any(
+            not (
+                r.get("interruption_verified") is True
+                or r.get("recovery_verified") is True
+            )
+            for r in results
+        ):
+            raise SimulationError(
+                "C48 phase identity or native evidence remains unverified; continue the same handle"
+            )
+        if results and not any(r.get("recovery_verified") is True for r in results):
+            raise SimulationError(
+                "C48 interruption verified; separately authorized recovery submission required"
+            )
+        return results

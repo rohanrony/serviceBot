@@ -12,7 +12,7 @@ import os
 import re
 import uuid
 
-from psycopg2 import sql
+from psycopg2 import errors, sql
 from psycopg2.extensions import cursor as tuple_cursor
 
 
@@ -62,22 +62,38 @@ def _row_digest(row):
     return hashlib.sha256(json.dumps(row, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
-def create(conn, run_id, secret):
+def create(conn, run_id, secret, *, intent_id=None):
     if not isinstance(run_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', run_id) or not secret:
         raise LifecycleDenied('Invalid run identity')
+    intent_id = intent_id or uuid.uuid4().hex
+    if not isinstance(intent_id, str) or not re.fullmatch('[0-9a-f]{32}', intent_id):
+        raise LifecycleDenied('Invalid creation intent')
     record = {'run_id': run_id, 'nonce': uuid.uuid4().hex}
     staff_name, service_name = _names(record)
-    with conn, conn.cursor(cursor_factory=tuple_cursor) as cur:
-        cur.execute("INSERT INTO staff_agents(name,role,is_active) VALUES (%s,'Technician',TRUE) RETURNING id", (staff_name,))
-        record['staff_id'] = cur.fetchone()[0]
-        cur.execute('INSERT INTO services(name,duration_minutes) VALUES (%s,60) RETURNING id', (service_name,))
-        record['service_id'] = cur.fetchone()[0]
-        cur.execute('INSERT INTO service_staff_agents(service_id,staff_agent_id) VALUES (%s,%s)', (record['service_id'], record['staff_id']))
-        cur.execute('SELECT to_jsonb(s) FROM staff_agents s WHERE id=%s', (record['staff_id'],))
-        record['staff_snapshot'] = _row_digest(cur.fetchone()[0])
-        cur.execute('SELECT to_jsonb(s) FROM services s WHERE id=%s', (record['service_id'],))
-        record['service_snapshot'] = _row_digest(cur.fetchone()[0])
-    return {'success': True, **record, 'name': staff_name, 'service_name': service_name, 'receipt': sign_receipt(record, secret)}
+    try:
+        with conn, conn.cursor(cursor_factory=tuple_cursor) as cur:
+            cur.execute('SELECT 1 FROM simulation_staff_intents WHERE run_id=%s OR intent_id=%s::uuid', (run_id,intent_id))
+            if cur.fetchone():
+                raise LifecycleDenied('Existing creation intent cannot be repeated or adopted')
+            cur.execute("INSERT INTO staff_agents(name,role,is_active) VALUES (%s,'Technician',TRUE) RETURNING id", (staff_name,))
+            record['staff_id'] = cur.fetchone()[0]
+            cur.execute('INSERT INTO services(name,duration_minutes) VALUES (%s,60) RETURNING id', (service_name,))
+            record['service_id'] = cur.fetchone()[0]
+            cur.execute('INSERT INTO service_staff_agents(service_id,staff_agent_id) VALUES (%s,%s)', (record['service_id'], record['staff_id']))
+            cur.execute('SELECT to_jsonb(s) FROM staff_agents s WHERE id=%s', (record['staff_id'],))
+            record['staff_snapshot'] = _row_digest(cur.fetchone()[0])
+            cur.execute('SELECT to_jsonb(s) FROM services s WHERE id=%s', (record['service_id'],))
+            record['service_snapshot'] = _row_digest(cur.fetchone()[0])
+            cur.execute('SELECT to_jsonb(m) FROM service_staff_agents m WHERE service_id=%s AND staff_agent_id=%s',
+                        (record['service_id'],record['staff_id']))
+            mapping_snapshot = _row_digest(cur.fetchone()[0])
+            response = {'success': True, **record, 'name': staff_name, 'service_name': service_name,
+                        'intent_id':intent_id, 'receipt': sign_receipt(record, secret)}
+            cur.execute('INSERT INTO simulation_staff_intents(run_id,intent_id,original_response,mapping_snapshot) VALUES (%s,%s::uuid,%s,%s)',
+                        (run_id,intent_id,json.dumps(response),mapping_snapshot))
+    except errors.UniqueViolation:
+        raise LifecycleDenied('Existing creation intent cannot be repeated or adopted') from None
+    return response
 
 
 def _reference_columns(cur):
@@ -102,6 +118,10 @@ def cleanup(conn, receipt, secret):
     staff_name, service_name = _names(record)
     with conn, conn.cursor(cursor_factory=tuple_cursor) as cur:
         cur.execute("SET LOCAL lock_timeout='2s'")
+        cur.execute("SELECT mapping_snapshot FROM simulation_staff_intents WHERE run_id=%s AND original_response->>'receipt'=%s", (record['run_id'],receipt))
+        journal = cur.fetchone()
+        if not journal:
+            raise LifecycleDenied('Cleanup requires the original journaled ownership receipt')
         refs = _reference_columns(cur)
         # Parent locks stop FK attachment and deletion; table locks additionally
         # cover legacy references without FKs and serialize mapping updates.
@@ -124,8 +144,9 @@ def cleanup(conn, receipt, secret):
         cur.execute('SELECT to_jsonb(s) FROM services s WHERE id=%s', (record['service_id'],))
         if _row_digest(cur.fetchone()[0]) != record['service_snapshot']:
             raise LifecycleDenied('Owned service was edited; cleanup refused')
-        cur.execute('SELECT service_id,staff_agent_id FROM service_staff_agents WHERE service_id=%s OR staff_agent_id=%s', (record['service_id'], record['staff_id']))
-        if cur.fetchall() != [(record['service_id'], record['staff_id'])]:
+        cur.execute('SELECT to_jsonb(m) FROM service_staff_agents m WHERE service_id=%s OR staff_agent_id=%s', (record['service_id'], record['staff_id']))
+        mappings = cur.fetchall()
+        if len(mappings) != 1 or _row_digest(mappings[0][0]) != journal[0]:
             raise LifecycleDenied('Owned mapping changed')
         cur.execute('SELECT 1 FROM service_requests WHERE service_type=%s LIMIT 1', (service_name,))
         if cur.fetchone():
@@ -143,4 +164,53 @@ def cleanup(conn, receipt, secret):
         cur.execute('DELETE FROM services WHERE id=%s AND name=%s', (record['service_id'], service_name))
         if cur.rowcount != 1:
             raise LifecycleDenied('Owned service deletion refused')
+        cur.execute('UPDATE simulation_staff_intents SET cleanup_complete=TRUE WHERE run_id=%s', (record['run_id'],))
     return {'success': True, 'staff_id': record['staff_id'], 'service_id': record['service_id']}
+
+
+
+def recover(conn, run_id, intent_id, secret):
+    """Read the original committed receipt under one immutable consistent snapshot.
+
+    This never adopts current rows, regenerates a nonce, resigns a receipt or
+    repeats a creation. Cleanup still revalidates ownership atomically later.
+    """
+    if (not isinstance(run_id,str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,80}',run_id)
+            or not isinstance(intent_id,str) or not re.fullmatch('[0-9a-f]{32}',intent_id)):
+        raise LifecycleDenied('Invalid creation intent identity')
+    with conn, conn.cursor(cursor_factory=tuple_cursor) as cur:
+        cur.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+        cur.execute('SELECT original_response,mapping_snapshot,cleanup_complete FROM simulation_staff_intents WHERE run_id=%s AND intent_id=%s::uuid',
+                    (run_id,intent_id))
+        original=cur.fetchone()
+        if original is None:
+            raise LifecycleDenied('Exact original creation intent is unavailable')
+        response,mapping_snapshot,cleaned=original
+        record=verify_receipt(response.get('receipt'),secret)
+        staff_name,service_name=_names(record)
+        if (record['run_id']!=run_id or response.get('intent_id')!=intent_id
+                or response.get('name')!=staff_name or response.get('service_name')!=service_name
+                or any(response.get(key)!=value for key,value in record.items())):
+            raise LifecycleDenied('Original creation claims differ')
+        for table,key,digest in (('staff_agents','staff_id','staff_snapshot'),('services','service_id','service_snapshot')):
+            cur.execute(sql.SQL('SELECT to_jsonb(t) FROM {} t WHERE id=%s').format(sql.Identifier(table)),(record[key],))
+            row=cur.fetchone()
+            if cleaned and row is not None:
+                raise LifecycleDenied('Retired owned resource identity was reused')
+            if not cleaned and (row is None or _row_digest(row[0])!=record[digest]):
+                raise LifecycleDenied('Original owned resource is missing or edited; recovery refused')
+        cur.execute('SELECT to_jsonb(m) FROM service_staff_agents m WHERE service_id=%s OR staff_agent_id=%s',
+                    (record['service_id'],record['staff_id']))
+        mappings=cur.fetchall()
+        if (cleaned and mappings) or (not cleaned and (len(mappings)!=1 or _row_digest(mappings[0][0])!=mapping_snapshot)):
+            raise LifecycleDenied('Original owned mapping changed; recovery refused')
+        cur.execute('SELECT 1 FROM service_requests WHERE service_type=%s LIMIT 1',(service_name,))
+        if cur.fetchone():
+            raise LifecycleDenied('Original fixture acquired requests; recovery refused')
+        for schema,table,column,identity in _reference_columns(cur):
+            if schema=='public' and table=='service_staff_agents':
+                continue
+            cur.execute(sql.SQL('SELECT 1 FROM {} WHERE {}=%s LIMIT 1').format(sql.Identifier(schema,table),sql.Identifier(column)),(record[identity],))
+            if cur.fetchone():
+                raise LifecycleDenied('Original fixture acquired attachments; recovery refused')
+    return {**response, 'cleanup_complete': True} if cleaned else response

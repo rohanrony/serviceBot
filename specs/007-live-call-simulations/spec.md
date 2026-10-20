@@ -684,3 +684,28 @@ exactly; concurrent or unknown changes stop the campaign.
   serialize timezone-aware timestamps using the database timestamp owner's
   timezone convention, and compose with transition validation against actual
   PostgreSQL rows in UTC and a non-UTC session timezone.
+
+### Recover committed effects without replay (FR-071)
+
+- **FR-071**: Lost create, disarm, cleanup or paid invocation responses must
+  retain a supported same-intent management continuation. C23 stores its original
+  signed response and mapping baseline atomically in an immutable intent journal;
+  authenticated GET recovery returns that original receipt only after exact
+  ownership read-back, including one-way cleanup proof. C35/C36 use a private
+  pre-submission nonce and original journal digest to recover their exact lease
+  through authenticated GET, including expired leases for cleanup. Clear only
+  the exact operation's blocking owner after proof and only when no other pending
+  effect remains. Recovery cannot adopt current rows, repeat a create or paid
+  submission, enable a native acceptance flag, or expose private receipts/tokens.
+  C48 must reconstruct phase journals from an unambiguous provider GET discovery
+  bound to the original intent, test, agent and common ledger, then continue only
+  the same invocation. A verified source without a submitted recovery phase
+  explicitly requires separately authorized recovery; management never submits it.
+  The standard deployed reconciliation command dispatches these retained owners.
+
+Operational condition timestamps follow their actual writers: business-naive
+confirmation deadlines use the configured business zone, UTC-naive queued sends
+use UTC, and CURRENT_TIMESTAMP-written fields use the database session zone.
+Mixed-writer confirmed_at is retained as wall-clock text only, without a timing
+claim. Reject other naive timestamp guesses. Real PostgreSQL tests must cover
+different business and database zones and compare against provider timestamps.

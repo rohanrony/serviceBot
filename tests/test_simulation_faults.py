@@ -99,3 +99,21 @@ def test_required_business_intake_blocks_before_fault_resources(monkeypatch, ope
             faults.begin_execute('00000000-0000-0000-0000-000000000001')
         else:
             faults.capabilities()
+
+
+@pytest.mark.parametrize('headers,enabled',[({},'true'),({'Authorization':'Bearer wrong'},'true'),
+    ({'Authorization':'Bearer local-only-cron'},'false')])
+def test_creation_recovery_auth_rejects_before_database(monkeypatch,headers,enabled):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from serviceBot.api.simulation_faults import router
+    from serviceBot.services import simulation_faults as faults
+    monkeypatch.setenv('SIMULATION_FAULTS_ENABLED',enabled)
+    monkeypatch.setenv('CRON_SECRET','local-only-cron')
+    monkeypatch.setattr(faults,'get_db_connection',lambda:pytest.fail('Unauthorized recovery must not query DB'))
+    app=FastAPI();app.include_router(router)
+    response=TestClient(app).get('/api/v1/portal/internal/simulation-faults/recover',headers=headers,
+        params={'run_id':'retained','mode':'calendar_once','technician_id':1,
+            'phone':'+15550100001','booking_time':'2030-01-01T10:00:00'})
+    assert response.status_code==403
+    assert 'lease_token' not in response.text

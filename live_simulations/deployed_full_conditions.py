@@ -13,6 +13,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .core import SimulationError, fingerprint, number
 from .deployed_full_interruption import (
@@ -96,8 +97,8 @@ def _timestamp(value):
             dt = parsedate_to_datetime(value)
     else:
         raise SimulationError("Native timestamp unavailable")
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)  # existing native UTC-naive columns
+    if dt.tzinfo is None or dt.utcoffset() is None:
+        raise SimulationError("Native timestamp timezone unavailable")
     return dt.timestamp()
 
 
@@ -157,7 +158,8 @@ def _safe_row(row):
 class Conditions:
     """Inject trusted read owners; optional monotonic clock is for offline capture tests."""
 
-    def __init__(self, root, *, reader, provider, monotonic=time.monotonic):
+    def __init__(self, root, *, reader, provider, monotonic=time.monotonic,
+                 business_timezone="America/New_York"):
         if (
             not callable(getattr(reader, "rows", None))
             or not callable(getattr(provider, "get_message", None))
@@ -170,6 +172,10 @@ class Conditions:
         self.reader = reader
         self.provider = provider
         self.monotonic = monotonic
+        try:
+            self.business_timezone = str(ZoneInfo(business_timezone))
+        except (TypeError, ValueError, ZoneInfoNotFoundError):
+            raise SimulationError("Native business timezone unavailable") from None
 
     def _paths(self, binding):
         binding.validate()
@@ -206,6 +212,9 @@ class Conditions:
         return normalized
 
     def _snapshot(self, b):
+        # The business-naive deadline writer differs from database CURRENT_TIMESTAMP
+        # and from UTC-naive queued-send timestamps. Preserve their actual contracts.
+        business_zone = self.business_timezone.replace("'", "''")
         customer_ids = [b.customer_id] + (
             [b.other_customer_id] if b.other_customer_id else []
         )
@@ -224,7 +233,7 @@ class Conditions:
             ),
             "requests": self._rows(
                 "requests",
-                "id,customer_id,staff_agent_id,service_type,status,confirmation_status,escalation_status,escalation_reason,confirmation_cutoff_at,confirmed_at FROM service_requests WHERE id=%s",
+                f"id,customer_id,staff_agent_id,service_type,status,confirmation_status,escalation_status,escalation_reason,confirmation_cutoff_at AT TIME ZONE '{business_zone}' AS confirmation_cutoff_at,confirmed_at::text AS confirmed_at_wall_clock FROM service_requests WHERE id=%s",
                 (b.request_id,),
             ),
             "staff": self._rows(
@@ -239,22 +248,22 @@ class Conditions:
             ),
             "logs": self._rows(
                 "logs",
-                "id,appointment_id,recipient_phone,recipient_type,status,error_code,twilio_message_sid,scheduled_send_at,sent_at,created_at FROM sms_log WHERE appointment_id=%s ORDER BY id",
+                "id,appointment_id,recipient_phone,recipient_type,status,error_code,twilio_message_sid,scheduled_send_at AT TIME ZONE 'UTC' AS scheduled_send_at,sent_at AT TIME ZONE current_setting('TimeZone') AS sent_at,created_at AT TIME ZONE current_setting('TimeZone') AS created_at FROM sms_log WHERE appointment_id=%s ORDER BY id",
                 (b.request_id,),
             ),
             "messages": self._rows(
                 "messages",
-                "m.id,c.context_appointment_id AS appointment_id,c.customer_phone,m.direction,m.body,m.twilio_message_sid,m.created_at FROM sms_messages m JOIN sms_conversations c ON c.id=m.conversation_id WHERE c.context_appointment_id=%s ORDER BY m.id",
+                "m.id,c.context_appointment_id AS appointment_id,c.customer_phone,m.direction,m.body,m.twilio_message_sid,m.created_at AT TIME ZONE current_setting('TimeZone') AS created_at FROM sms_messages m JOIN sms_conversations c ON c.id=m.conversation_id WHERE c.context_appointment_id=%s ORDER BY m.id",
                 (b.request_id,),
             ),
             "audit": self._rows(
                 "audit",
-                "id,request_id,event_type,triggered_by,metadata->>'agent_id' AS agent_id,metadata->>'phone' AS phone,metadata->>'reply' AS reply,created_at FROM service_request_audit_log WHERE request_id=%s ORDER BY id",
+                "id,request_id,event_type,triggered_by,metadata->>'agent_id' AS agent_id,metadata->>'phone' AS phone,metadata->>'reply' AS reply,created_at AT TIME ZONE current_setting('TimeZone') AS created_at FROM service_request_audit_log WHERE request_id=%s ORDER BY id",
                 (b.request_id,),
             ),
             "outbox": self._rows(
                 "outbox",
-                "id,request_id,event_type,status,payload,created_at,updated_at FROM outbox_notifications WHERE request_id=%s ORDER BY id",
+                "id,request_id,event_type,status,payload,created_at AT TIME ZONE current_setting('TimeZone') AS created_at,updated_at AT TIME ZONE current_setting('TimeZone') AS updated_at FROM outbox_notifications WHERE request_id=%s ORDER BY id",
                 (b.request_id,),
             ),
             "policy": self._rows(

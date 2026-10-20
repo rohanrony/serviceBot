@@ -95,11 +95,13 @@ def _require_supported_business_intake():
         raise FaultDenied('Native fault simulation does not support required business intake') from None
 
 
-def create(*, run_id, mode, technician_id, phone, booking_time, secret):
+def create(*, run_id, mode, technician_id, phone, booking_time, secret, recovery_nonce=None):
     if (not enabled() or not secret or not isinstance(run_id, str)
             or not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', run_id)
             or mode not in {'calendar_once','response_loss_once'} or type(technician_id) is not int):
         raise FaultDenied('Invalid simulation fixture')
+    if recovery_nonce is not None and (not isinstance(recovery_nonce,str) or not re.fullmatch('[0-9a-f]{64}',recovery_nonce)):
+        raise FaultDenied('Invalid simulation recovery identity')
     _allowed(technician_id, phone)
     _require_supported_business_intake()
     # Domain owner performs all appointment feasibility and lead-time validation.
@@ -136,9 +138,52 @@ def create(*, run_id, mode, technician_id, phone, booking_time, secret):
             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,CURRENT_TIMESTAMP+INTERVAL '15 minutes')""",
             (handle,run_id,mode,service_id,service_id,name,json.dumps(snapshot),technician_id,json.dumps(arguments),_digest(arguments)))
         _journal(cur,handle,'created')
+        if recovery_nonce is not None:
+            _journal(cur,handle,'create_intent:'+_digest(dict(run_id=run_id,mode=mode,technician_id=technician_id,
+                phone=phone,booking_time=booking_time,recovery_nonce=recovery_nonce)))
         conn.commit()
     return {'success':True,'handle':handle,'lease_token':_token(handle,secret),
             'service_id':service_id,'service_name':name,'technician_id':technician_id,'mode':mode}
+
+
+def recover_creation(*,run_id,mode,technician_id,phone,booking_time,recovery_nonce,secret):
+    """Read the original committed create identity; never claim or replay a lease."""
+    if (not enabled() or not secret or not isinstance(run_id,str)
+            or not re.fullmatch(r'[A-Za-z0-9_-]{1,80}',run_id)
+            or mode not in {'calendar_once','response_loss_once'} or type(technician_id) is not int
+            or not isinstance(phone,str) or not isinstance(booking_time,str)
+            or not isinstance(recovery_nonce,str) or not re.fullmatch('[0-9a-f]{64}',recovery_nonce)):
+        raise FaultDenied('Invalid original simulation recovery identity')
+    expected=dict(run_id=run_id,mode=mode,technician_id=technician_id,phone=phone,
+        booking_time=booking_time,recovery_nonce=recovery_nonce)
+    digest=_digest(expected)
+    with get_db_connection() as conn, dict_cursor(conn) as cur:
+        cur.execute('SELECT *, expires_at>CURRENT_TIMESTAMP AS unexpired FROM simulation_fault_leases WHERE run_id=%s AND mode=%s', (run_id,mode))
+        rows=cur.fetchall()
+        if len(rows)!=1:
+            raise FaultDenied('Original simulation creation unavailable')
+        lease=dict(rows[0])
+        cur.execute('SELECT event FROM simulation_fault_journal WHERE handle=%s AND event=%s',
+            (str(lease['handle']),'create_intent:'+digest))
+        if (len(cur.fetchall())!=1 or lease['phase']!='prepared'
+                or lease['technician_id']!=technician_id or lease['arguments']['phone']!=phone
+                or lease['arguments']['booking_time']!=booking_time
+                or _digest(lease['arguments'])!=lease['arguments_hash']
+                or lease['service_id']!=lease['original_service_id']):
+            raise FaultDenied('Original simulation creation identity changed')
+        cur.execute('SELECT to_jsonb(s) AS snapshot FROM services s WHERE id=%s',(lease['service_id'],))
+        row=cur.fetchone()
+        if not row or row['snapshot']!=lease['service_snapshot']:
+            raise FaultDenied('Original simulation service ownership changed')
+        cur.execute('SELECT staff_agent_id FROM service_staff_agents WHERE service_id=%s',(lease['service_id'],))
+        if [row['staff_agent_id'] for row in cur.fetchall()]!=[technician_id]:
+            raise FaultDenied('Original simulation qualification changed')
+        cur.execute('SELECT 1 FROM service_requests WHERE service_type=%s LIMIT 1',(lease['service_name'],))
+        if cur.fetchone():
+            raise FaultDenied('Original simulation service acquired a request')
+    return {'success':True,'handle':str(lease['handle']),'lease_token':_token(lease['handle'],secret),
+        'service_id':lease['service_id'],'service_name':lease['service_name'],'technician_id':technician_id,
+        'mode':mode,'create_intent_hash':digest,'recovered_creation':True}
 
 
 @contextmanager

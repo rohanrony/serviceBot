@@ -203,6 +203,7 @@ def test_cleanup_cancels_only_registered_owned_binding_then_waits_for_provider_r
     assert faults.cleanup(value,'C35')['cleanup_complete'] is True
     assert len(cancellations)==1 and value.current_ids==set()
     assert value.state['full_faults']['C35']['cleanup_complete'] is True
+    assert all(op['status']=='observed' for op in value.state['operations'])
     value.fault_client.close()
 
 
@@ -214,3 +215,69 @@ def test_pending_provider_retirement_prevents_lease_catalog_cleanup(tmp_path,mon
         faults.cleanup(value,'C35')
     assert not any(op.get('fault_action')=='cleanup' for op in value.state['operations'])
     value.fault_client.close()
+
+
+def test_blocked_fault_adapter_can_observe_but_cannot_mutate(tmp_path,monkeypatch):
+    value,_row,_provider,_call=bound_fixture(tmp_path,monkeypatch)
+    value.campaign.manifest['stage_authorization']={'tier':'full'}
+    value.state['blocked']=True
+    def guard():raise SimulationError('Global fixture mutation guard')
+    value._guard=guard
+    assert faults.observe(value,'C35')[0]['request_id']==41
+    with pytest.raises(SimulationError,match='Global fixture mutation guard'):
+        faults._request(value,'C35','POST','/'+value.state['full_faults']['C35']['handle']+'/disarm',body={})
+    assert len(value.state['operations'])==1
+    value.fault_client.close()
+
+
+def test_unknown_create_saves_private_recovery_identity_before_transport(tmp_path,monkeypatch):
+    def lost(request):
+        if request.method=='GET':return httpx.Response(200,json=capability())
+        body=json.loads(request.content)
+        retained=json.loads((tmp_path/'c35-fault-lease.json').read_text())
+        assert body['recovery_nonce']==retained['recovery_nonce'] and len(body['recovery_nonce'])==64
+        assert body['recovery_nonce'] not in json.dumps(value.state)
+        raise httpx.ReadTimeout('private lost response')
+    value=adapter(tmp_path,monkeypatch,lost)
+    with pytest.raises(SimulationError):
+        faults.arrange(value,'C35',{'customer_phone':'+14242704893','appointment_time':'2030-01-02T10:00:00-05:00'})
+    owner=value.state['blocked_operation_owner'];operation=value.state['operations'][0]
+    assert owner=={'kind':'fault','case_id':'C35','action':'create',
+        'operation_id':operation['operation_id'],'body_fingerprint':operation['body_fingerprint']}
+    value.fault_client.close()
+
+
+def test_recovered_cleanup_retires_current_request_and_preserves_owned_audit(tmp_path,monkeypatch):
+    value,row,_provider,_call=bound_fixture(tmp_path,monkeypatch)
+    faults.observe(value,'C35')
+    value.campaign.manifest['stage_authorization']={'tier':'full'}
+    operation={'fault_case':'C35','fault_action':'cleanup','operation_id':'owned-cleanup',
+        'body_fingerprint':faults.fingerprint({}),'status':'unknown'}
+    value.state['operations'].append(operation)
+    value.state['blocked']=True
+    value.state['blocked_operation_owner']={'kind':'fault','case_id':'C35','action':'cleanup',
+        'operation_id':'owned-cleanup','body_fingerprint':operation['body_fingerprint']}
+    row.update(phase='cleaned',service_id=None,request_id=None,reservation_id=None,outbox_id=None)
+    def status(request):
+        assert request.method=='GET'
+        return httpx.Response(200,json={'success':True,'handle':value.state['full_faults']['C35']['handle'],
+            'mode':'calendar_once','phase':row['phase'],'journal':['disarmed','owned_service_cleaned_journal_retained'],
+            **{key:row[key] for key in ('request_id','reservation_id','outbox_id','tool_payload_hash')}})
+    value.fault_client.close()
+    value.fault_client=httpx.Client(transport=httpx.MockTransport(status),trust_env=False,follow_redirects=False)
+    assert faults.recover_control(value,'C35')['cleanup_complete'] is True
+    assert value.current_ids==set() and value.owned_ids=={41}
+    assert operation['status']=='observed' and value.state['blocked'] is False
+    value.fault_client.close()
+
+
+def test_pending_predicate_keeps_exact_retained_fault_barrier_recoverable():
+    operation={'fault_case':'C35','fault_action':'create','operation_id':'original',
+        'body_fingerprint':'original-hash','status':'observed'}
+    owner={'kind':'fault','case_id':'C35','action':'create','operation_id':'original',
+        'body_fingerprint':'original-hash'}
+    value=SimpleNamespace(state={'blocked':True,'operations':[operation],'blocked_operation_owner':owner})
+    assert faults.pending_control(value,'C35') is True
+    assert faults.pending_control(value,'C36') is False
+    owner['kind']='staff'
+    assert faults.pending_control(value,'C35') is False

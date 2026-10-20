@@ -312,6 +312,8 @@ def _staff_lifecycle_request(adapter, action, body):
         raise SimulationError('Owned staff lifecycle cannot be replayed; reconcile existing intent')
     operation = {'owned_staff_action': action, 'status': 'intent',
                  'body_fingerprint': fingerprint(body)}
+    if action == 'create':
+        operation.update(run_id=body['run_id'], intent_id=body['intent_id'])
     operations.append(operation)
     adapter._save()
     supplied = getattr(adapter, 'simulation_staff_client', None)
@@ -332,8 +334,7 @@ def _staff_lifecycle_request(adapter, action, body):
             if not isinstance(result, dict) or result.get('success') is not True:
                 raise SimulationError('Owned staff lifecycle response is unknown')
     except Exception:  # noqa: BLE001 - retain unknown effects without replaying a write
-        operation['status'] = 'unknown'
-        _block(adapter, 'Owned staff lifecycle effect unknown; reconcile without replay')
+        _staff_unknown(adapter, operation, 'Owned staff lifecycle effect unknown; reconcile without replay')
     operation['status'] = 'response_received'
     adapter._save()
     return result, operation
@@ -343,25 +344,46 @@ def create_owned_staff(adapter):
     """Reviewed lifecycle building block; C23 admission guard remains separate."""
     from pathlib import Path
 
-    from .core import private_json
     if adapter.state.get('full_unconnected_staff'):
         raise SimulationError('Existing technician fixture cannot be adopted')
     path = Path(adapter.campaign.folder) / 'c23-owned-staff-receipt.json'
     if path.exists() or path.is_symlink():
         raise SimulationError('Existing owned fixture receipt requires reconciliation')
     run_id = adapter.campaign.manifest['run_id']
-    result, operation = _staff_lifecycle_request(adapter, 'create', {'run_id': run_id})
-    if (result.get('run_id') != run_id
+    from uuid import uuid4
+    intent_id = uuid4().hex
+    result, operation = _staff_lifecycle_request(adapter, 'create', {'run_id': run_id, 'intent_id': intent_id})
+    return _accept_staff(adapter, result, operation, path)
+
+
+def _staff_owner(operation):
+    return {key: operation.get(key) for key in ('owned_staff_action', 'run_id', 'intent_id', 'body_fingerprint')} | {'kind': 'staff'}
+
+
+def _staff_unknown(adapter, operation, message):
+    if not adapter.state.get('blocked'):
+        adapter.state['blocked_operation_owner'] = _staff_owner(operation)
+    operation['status'] = 'unknown'
+    _block(adapter, message)
+
+
+def _accept_staff(adapter, result, operation, path):
+    from .core import private_json
+    run_id = operation['run_id']
+    if (result.get('intent_id') != operation['intent_id'] or result.get('run_id') != run_id
             or any(type(result.get(k)) is not int or result[k] <= 0 for k in ('staff_id', 'service_id'))
             or any(not isinstance(result.get(k), str) or not result[k] for k in ('name','service_name','receipt'))
             or result['staff_id'] in adapter.config.get('deployed_medium', {}).get('technician_ids', [])):
-        operation['status'] = 'unknown'
-        _block(adapter, 'Owned fixture identity unknown; reconcile without replay')
+        _staff_unknown(adapter, operation, 'Owned fixture identity unknown; reconcile without replay')
     try:
-        private_json(path, {'receipt': result['receipt']})
+        if path.exists() or path.is_symlink():
+            import json
+            if path.is_symlink() or path.stat().st_mode & 0o077 or json.loads(path.read_text()) != {'receipt': result['receipt']}:
+                raise SimulationError('Existing private receipt does not match original intent')
+        else:
+            private_json(path, {'receipt': result['receipt']})
     except Exception:  # noqa: BLE001 - missing receipt prevents safe ownership adoption
-        operation['status'] = 'unknown'
-        _block(adapter, 'Owned fixture private receipt unavailable; reconcile without replay')
+        _staff_unknown(adapter, operation, 'Owned fixture private receipt unavailable; reconcile without replay')
     owned = {'id': result['staff_id'], 'name': result['name'], 'email': None, 'phone_number': None,
              'service_id': result['service_id'], 'service_name': result['service_name'],
              'receipt_fingerprint': fingerprint(result['receipt']), 'cleanup_complete': False}
@@ -383,9 +405,64 @@ def cleanup_owned_staff(adapter):
         raise SimulationError('Owned fixture receipt changed')
     result, operation = _staff_lifecycle_request(adapter, 'cleanup', {'receipt': receipt})
     if result.get('staff_id') != owned['id'] or result.get('service_id') != owned['service_id']:
-        operation['status'] = 'unknown'
-        _block(adapter, 'Owned fixture cleanup identity unknown; reconcile without replay')
+        _staff_unknown(adapter, operation, 'Owned fixture cleanup identity unknown; reconcile without replay')
     owned['cleanup_complete'] = True
     operation.update(status='observed', staff_id=owned['id'], service_id=owned['service_id'])
     adapter._save()
     return result
+
+
+def recover_owned_staff(adapter):
+    """Read only recovery of the exact durable create intent, never a create retry."""
+    from pathlib import Path
+    operations = adapter.state.get('operations', [])
+    candidates = [op for op in operations if op.get('owned_staff_action') == 'create']
+    if len(candidates) != 1:
+        raise SimulationError('Exactly one saved owned staff creation intent is required')
+    operation = candidates[0]
+    body = {key: operation.get(key) for key in ('run_id', 'intent_id')}
+    if (not isinstance(body['run_id'], str) or re.fullmatch(r'[A-Za-z0-9_-]{1,80}', body['run_id']) is None
+            or body['run_id'] != adapter.campaign.manifest['run_id']
+            or not isinstance(body['intent_id'], str)
+            or re.fullmatch(r'[0-9a-f]{32}', body['intent_id']) is None
+            or fingerprint(body) != operation.get('body_fingerprint')):
+        raise SimulationError('Saved owned staff creation intent changed')
+    supplied = getattr(adapter, 'simulation_staff_client', None)
+    context = nullcontext(supplied) if supplied is not None else httpx.Client(trust_env=False, follow_redirects=False)
+    auth = secret(adapter.config, 'simulation_staff_cron_secret')
+    with context as client:
+        if (client.follow_redirects or getattr(client, '_trust_env', True)
+                or 'authorization' in client.headers or 'xi-api-key' in client.headers):
+            raise SimulationError('Owned staff requires isolated per-request credentials')
+        response = client.get(adapter.config['deployed_url'].rstrip('/') +
+            '/api/v1/portal/internal/simulation-staff/recover/' + body['run_id'],
+            params={'intent_id': body['intent_id']}, headers={'Authorization': 'Bearer ' + auth},
+            timeout=medium._native_mutation_timeout(adapter.config))
+        response.raise_for_status()
+        result = response.json()
+    if not isinstance(result, dict) or result.get('success') is not True:
+        raise SimulationError('Original owned staff intent could not be recovered')
+    owned = _accept_staff(adapter, result, operation, Path(adapter.campaign.folder) / 'c23-owned-staff-receipt.json')
+    if result.get('cleanup_complete') is True:
+        owned['cleanup_complete'] = True
+        cleanups = [op for op in operations if op.get('owned_staff_action') == 'cleanup']
+        if len(cleanups) == 1 and cleanups[0].get('body_fingerprint') == fingerprint({'receipt': result['receipt']}):
+            cleanup = cleanups[0]
+            cleanup['status'] = 'observed'
+            if adapter.state.get('blocked_operation_owner') == _staff_owner(cleanup):
+                operation = cleanup
+    if (adapter.state.get('blocked_operation_owner') == _staff_owner(operation)
+            and not any(op.get('status') in {'intent', 'unknown', 'response_received', 'ambiguous'}
+                        for op in operations if op is not operation)):
+        adapter.state['blocked'] = False
+        adapter.state.pop('blocked_operation_owner', None)
+    adapter._save()
+    return owned
+
+
+def pending_owned_staff_recovery(adapter):
+    return any(op.get('owned_staff_action') in {'create', 'cleanup'}
+               and (op.get('status') in {'intent', 'unknown', 'response_received'}
+                    or (adapter.state.get('blocked') is True
+                        and adapter.state.get('blocked_operation_owner') == _staff_owner(op)))
+               for op in adapter.state.get('operations', []))

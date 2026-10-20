@@ -778,3 +778,26 @@ session or production mutation was performed.
 The 0d556f0 exact-candidate and hosted gates passed2348unit/integration+658API/
 browser tests (108browser subset). Hosted Codex review then found T167/T168;
 that candidate was not merged. Fresh source evidence and review are required.
+
+### Third hosted review: retained-intent recovery
+
+- [x] T169 Recover committed C35/C36 control responses through private-nonce,
+  authenticated GET proof; retain mutation guards and exact blocker provenance
+  through create/disarm/cleanup uncertainty (FR-071).
+- [x] T170 Journal C23's original response/mapping atomically, recover create and
+  cleanup through authenticated GET, and add migration0011 immutability,
+  verification and guarded rollback. Reject intervening full mapping edits.
+- [x] T171 Normalize operational timestamps by actual business/UTC/database
+  writer conventions and reject naive guesses; retain ambiguous confirmed_at as
+  wall-clock text without timing claims (FR-071).
+- [x] T172 Recover ambiguous C48 handles into their exact phase journals and
+  expose phase/fixture continuation through deployed management without replay.
+  Preserve billing totals, native-pending state and separate recovery authority.
+
+The 31f1b40 local and hosted gates passed2358unit/integration+658API/browser
+tests, but its hosted review identified T169-T172 before merge. Expected Red
+regressions covered committed-response loss, phase journal recovery and the
+timezone writer mismatch. Independent source review additionally found mapping
+drift and missing-trigger verification, both repaired with Red/Green tests.
+Integrated focused validation passed320 tests; full exact-candidate verification,
+hosted review and publication remain T166. No live calls or deployment occurred.

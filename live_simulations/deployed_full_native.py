@@ -712,6 +712,9 @@ class NativeBridge:
             reader=self.reader,
             provider=CompositeProvider(elevenlabs, twilio=self.twilio),
             monotonic=monotonic,
+            business_timezone=adapter.config.get("app_config", {}).get(
+                "business_timezone", "America/New_York"
+            ),
         )
 
     def c48_observers(self, *, identity, expected_booking):

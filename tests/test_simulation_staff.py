@@ -72,7 +72,7 @@ def test_owned_fixture_roundtrip_does_not_adopt_shared_staff(db):
 
 @pytest.mark.parametrize('attachment', ['oauth', 'oauth_state', 'slot', 'other_mapping', 'inline_token', 'future_fk'])
 def test_cleanup_refuses_attachments_without_cascading_or_partial_changes(db, attachment):
-    owned = staff.create(db, 'refusal', 'synthetic-secret')
+    owned = staff.create(db, 'refusal-' + attachment, 'synthetic-secret')
     with db.cursor(cursor_factory=tuple_cursor) as cur:
         if attachment == 'oauth':
             cur.execute("INSERT INTO user_google_accounts(agent_id,provider) VALUES (%s,'google')", (owned['staff_id'],))
@@ -178,7 +178,7 @@ def test_adapter_lifecycle_journal_excludes_bearer_and_receipt(tmp_path, monkeyp
         assert request.headers['authorization'] == 'Bearer offline-local-cron-key'
         if request.url.path.endswith('/cleanup'):
             return httpx.Response(200, json={'success': True, 'staff_id': 41, 'service_id': 51})
-        return httpx.Response(201, json={'success': True, 'run_id': 'run-test', 'nonce': 'a'*32,
+        return httpx.Response(201, json={'success': True, 'run_id': 'run-test', 'intent_id': json.loads(request.content)['intent_id'], 'nonce': 'a'*32,
             'staff_id': 41, 'service_id': 51, 'name': 'owned-staff', 'service_name': 'owned-service', 'receipt': 'private-receipt'})
     with httpx.Client(transport=httpx.MockTransport(respond), trust_env=False, follow_redirects=False) as client:
         adapter = SimpleNamespace(config={'deployed_url':'https://local.invalid', 'secrets':{'simulation_staff_cron_secret':'C23_TEST_CRON'}},
@@ -191,3 +191,103 @@ def test_adapter_lifecycle_journal_excludes_bearer_and_receipt(tmp_path, monkeyp
         assert negative.cleanup_owned_staff(adapter)['success'] is True
         assert len(captured) == 2
         assert (tmp_path/'c23-owned-staff-receipt.json').stat().st_mode & 0o777 == 0o600
+
+
+@pytest.mark.parametrize('barrier', ['foreign_owner', 'other_unknown', 'no_owner'])
+def test_staff_recovery_never_clears_unrelated_barriers(tmp_path, monkeypatch, barrier):
+    import json
+    from types import SimpleNamespace
+
+    import httpx
+
+    from live_simulations import deployed_full_negative as negative
+    from live_simulations.core import fingerprint
+    monkeypatch.setenv('C23_RECOVERY_SECRET', 'offline-local-key')
+    body = {'run_id': 'blocked-run', 'intent_id': 'a' * 32}
+    operation = {'owned_staff_action': 'create', 'status': 'unknown', **body, 'body_fingerprint': fingerprint(body)}
+    state = {'operations': [operation], 'blocked': True}
+    if barrier != 'no_owner':
+        state['blocked_operation_owner'] = negative._staff_owner(operation)
+    if barrier == 'foreign_owner':
+        state['blocked_operation_owner'] = {'kind': 'fault'}
+    if barrier == 'other_unknown':
+        state['operations'].append({'action': 'other', 'status': 'unknown'})
+    def respond(request):
+        assert request.method == 'GET'
+        return httpx.Response(200, json={'success': True, **body, 'staff_id': 41, 'service_id': 51,
+            'name': 'owned', 'service_name': 'owned-service', 'receipt': 'private-original'})
+    with httpx.Client(transport=httpx.MockTransport(respond), trust_env=False, follow_redirects=False) as client:
+        adapter = SimpleNamespace(config={'deployed_url': 'https://local.invalid',
+            'secrets': {'simulation_staff_cron_secret': 'C23_RECOVERY_SECRET'}}, state=state,
+            campaign=SimpleNamespace(folder=tmp_path, manifest={'run_id': body['run_id']}),
+            simulation_staff_client=client, _save=lambda: None)
+        negative.recover_owned_staff(adapter)
+        assert state['blocked'] is True
+        assert 'private-original' not in json.dumps(state)
+        assert 'synthetic-key' not in json.dumps(state)
+        assert operation['status'] == 'observed'
+
+
+def test_staff_intent_migration_immutable_claims_and_safe_rollback(db):
+    import json
+    import uuid
+    from pathlib import Path
+
+    import psycopg2
+    from psycopg2 import sql
+    root = Path(__file__).resolve().parents[1] / 'serviceBot' / 'db'
+    schema = 'staff_migration_' + uuid.uuid4().hex
+    with db.cursor() as cur:
+        cur.execute(sql.SQL('CREATE SCHEMA {}').format(sql.Identifier(schema)))
+        cur.execute(sql.SQL('SET LOCAL search_path TO {}').format(sql.Identifier(schema)))
+        cur.execute('CREATE TABLE staff_agents(id integer PRIMARY KEY); CREATE TABLE services(id integer PRIMARY KEY)')
+        cur.execute((root / 'migrations/0011_simulation_staff_intents.sql').read_text())
+        response = {'run_id': 'migration', 'intent_id': 'a' * 32, 'staff_id': 1, 'service_id': 2, 'receipt': 'original'}
+        cur.execute('INSERT INTO staff_agents VALUES(1); INSERT INTO services VALUES(2)')
+        cur.execute('INSERT INTO simulation_staff_intents(run_id,intent_id,original_response,mapping_snapshot) VALUES(%s,%s,%s,%s)',
+                    ('migration', 'a' * 32, json.dumps(response), 'b' * 64))
+        for statement in ["UPDATE simulation_staff_intents SET original_response='{}'", 'DELETE FROM simulation_staff_intents',
+                          (root / 'migrations/0011_simulation_staff_intents.down.sql').read_text()]:
+            cur.execute('SAVEPOINT refusal')
+            with pytest.raises(psycopg2.Error):
+                cur.execute(statement)
+            cur.execute('ROLLBACK TO SAVEPOINT refusal')
+        cur.execute('DELETE FROM staff_agents; DELETE FROM services')
+        cur.execute('UPDATE simulation_staff_intents SET cleanup_complete=TRUE')
+        cur.execute((root / 'migration_verification/0011_simulation_staff_intents.sql').read_text())
+        assert cur.fetchall() == []
+        cur.execute('SAVEPOINT missing_trigger')
+        cur.execute('DROP TRIGGER simulation_staff_intents_immutable ON simulation_staff_intents')
+        cur.execute((root / 'migration_verification/0011_simulation_staff_intents.sql').read_text())
+        assert cur.fetchall(), 'Missing required ownership immutability trigger must fail verification'
+        cur.execute('ROLLBACK TO SAVEPOINT missing_trigger')
+        cur.execute((root / 'migrations/0011_simulation_staff_intents.down.sql').read_text())
+        cur.execute((root / 'migrations/0011_simulation_staff_intents.sql').read_text())
+        cur.execute(sql.SQL('DROP SCHEMA {} CASCADE').format(sql.Identifier(schema)))
+    db.rollback()
+
+
+@pytest.mark.parametrize('owner_change,expected', [({}, True), ({'kind': 'fault'}, False),
+    ({'body_fingerprint': 'foreign'}, False), ({'intent_id': 'b' * 32}, False)])
+def test_observed_staff_recovery_pending_requires_exact_block_owner(owner_change, expected):
+    from types import SimpleNamespace
+    from live_simulations import deployed_full_negative as negative
+    operation = {'owned_staff_action': 'create', 'status': 'observed', 'run_id': 'run',
+                 'intent_id': 'a' * 32, 'body_fingerprint': 'original'}
+    owner = {**negative._staff_owner(operation), **owner_change}
+    adapter = SimpleNamespace(state={'operations': [operation], 'blocked': True,
+                                     'blocked_operation_owner': owner})
+    assert negative.pending_owned_staff_recovery(adapter) is expected
+
+
+def test_cleanup_refuses_mapping_edit_after_recovery(db):
+    owned = staff.create(db, 'mapping-edit-recovery', 'synthetic-secret')
+    assert staff.recover(db, owned['run_id'], owned['intent_id'], 'synthetic-secret') == owned
+    with db.cursor() as cur:
+        cur.execute("UPDATE service_staff_agents SET created_at=created_at+interval '1 second' WHERE service_id=%s", (owned['service_id'],))
+    db.commit()
+    with pytest.raises(staff.LifecycleDenied):
+        staff.cleanup(db, owned['receipt'], 'synthetic-secret')
+    with db.cursor() as cur:
+        cur.execute('SELECT 1 FROM service_staff_agents WHERE service_id=%s AND staff_agent_id=%s', (owned['service_id'], owned['staff_id']))
+        assert cur.fetchone() is not None

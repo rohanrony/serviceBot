@@ -13,7 +13,7 @@ from serviceBot.services import simulation_staff
 def test_owned_staff_cleanup_preserves_every_intervening_staff_edit(change):
     from serviceBot.db.connection import get_db_connection
     with get_db_connection() as conn:
-        owned = simulation_staff.create(conn, 'edited-staff', 'synthetic-key')
+        owned = simulation_staff.create(conn, 'edited-staff-' + str(abs(hash(change))), 'synthetic-key')
         with conn.cursor(cursor_factory=tuple_cursor) as cur:
             cur.execute('UPDATE staff_agents SET ' + change + ' WHERE id=%s', (owned['staff_id'],))
         conn.commit()
@@ -25,7 +25,7 @@ def test_owned_staff_cleanup_preserves_every_intervening_staff_edit(change):
 def test_owned_cleanup_preserves_every_intervening_service_edit(change):
     from serviceBot.db.connection import get_db_connection
     with get_db_connection() as conn:
-        owned = simulation_staff.create(conn, 'edited-service', 'synthetic-key')
+        owned = simulation_staff.create(conn, 'edited-service-' + str(abs(hash(change))), 'synthetic-key')
         with conn.cursor(cursor_factory=tuple_cursor) as cur:
             cur.execute('UPDATE services SET ' + change + ' WHERE id=%s', (owned['service_id'],))
         conn.commit()

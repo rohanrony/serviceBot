@@ -1986,7 +1986,10 @@ def manage(config, run_id, command, *, live=False):
     if command == 'reconcile':
         from .runner import reconcile
         from .deployed_full_session import reconcile_campaign
-        reconcile(campaign,native_reconcile=reconcile_campaign)
+        from .deployed_full_recovery import reconcile_campaign as reconcile_c48
+        from .deployed_full_fixture_recovery import reconcile_campaign as reconcile_fixtures
+        reconcile(campaign,native_reconcile=reconcile_campaign,phase_reconcile=reconcile_c48,
+                  fixture_reconcile=reconcile_fixtures)
         if campaign.manifest.get('continuation_ancestors'):
             campaign.manifest['aggregate_spent_credits'] = str(number(campaign.manifest['prior_spent_credits'])
                 + number(campaign.manifest['spent_credits']))

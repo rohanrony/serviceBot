@@ -6,11 +6,12 @@ provider invocation/URL correlation and observed native transitions.
 """
 import hashlib
 import json
+import secrets
 import uuid
 from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 import httpx
 
@@ -29,7 +30,11 @@ def _record(adapter,cid):
     return adapter.state.setdefault('full_faults',{}).setdefault(cid,{})
 
 
-def _block(adapter,message):
+def _block(adapter,message,operation=None):
+    if not adapter.state.get('blocked') and operation is not None:
+        adapter.state['blocked_operation_owner']={'kind':'fault','case_id':operation['fault_case'],
+            'action':operation['fault_action'],'operation_id':operation['operation_id'],
+            'body_fingerprint':operation['body_fingerprint']}
     adapter.state['blocked']=True
     adapter._save()
     raise SimulationError(message)
@@ -59,13 +64,18 @@ def _token(adapter,cid):
     return value
 
 
-def _request(adapter,cid,method,suffix='',body=None,*,action=None):
-    adapter._guard()
-    if adapter.state.get('blocked'):
+def _request(adapter,cid,method,suffix='',body=None,*,action=None,recovery_nonce=None):
+    if method=='GET' and adapter.state.get('blocked'):
+        _read_scope(adapter,cid)
+    else:
+        adapter._guard()
+    if method!='GET' and adapter.state.get('blocked'):
         raise SimulationError('Unknown owned fault effect must be reconciled before replay')
     auth=secret(adapter.config,'simulation_faults_cron_secret')
     headers={'Authorization':'Bearer '+auth}
-    if suffix:
+    if recovery_nonce is not None:
+        headers['X-Simulation-Recovery']=recovery_nonce
+    elif suffix:
         headers['X-Simulation-Lease']=_token(adapter,cid)
     operation=None
     if method!='GET':
@@ -73,7 +83,8 @@ def _request(adapter,cid,method,suffix='',body=None,*,action=None):
         if any(op.get('fault_case')==cid and op.get('fault_action')==action
                for op in adapter.state.setdefault('operations',[])):
             raise SimulationError('Fault control intent cannot be replayed')
-        operation={'fault_case':cid,'fault_action':action,'status':'intent','body_fingerprint':fingerprint(body)}
+        operation={'fault_case':cid,'fault_action':action,'operation_id':uuid.uuid4().hex,
+            'status':'intent','body_fingerprint':fingerprint(body)}
         adapter.state['operations'].append(operation)
         adapter._save()
     supplied=getattr(adapter,'fault_client',None)
@@ -82,7 +93,7 @@ def _request(adapter,cid,method,suffix='',body=None,*,action=None):
         with context as client:
             if (client.follow_redirects or getattr(client,'_trust_env',True)
                     or 'authorization' in client.headers or 'x-simulation-lease' in client.headers
-                    or 'xi-api-key' in client.headers):
+                    or 'xi-api-key' in client.headers or 'x-simulation-recovery' in client.headers):
                 raise SimulationError('Fault controls require isolated per-request credentials')
             response=client.request(method,_origin(adapter)+BASE+suffix,json=body,headers=headers,
                 timeout=medium._native_mutation_timeout(adapter.config))
@@ -93,7 +104,7 @@ def _request(adapter,cid,method,suffix='',body=None,*,action=None):
     except Exception:  # noqa: BLE001 - unknown effects must stop without replay
         if operation is not None:
             operation['status']='unknown'
-            _block(adapter,'Owned fault control effect unknown; reconcile without replay')
+            _block(adapter,'Owned fault control effect unknown; reconcile without replay',operation)
         raise SimulationError('Native fault read-back unavailable') from None
     if operation is not None:
         operation['status']='response_received'
@@ -118,25 +129,37 @@ def arrange(adapter,cid,values):
         'technician_id':technicians[0],'phone':phone,'booking_time':when}
     record.update(status='creating',expected=expected,observations=[])
     adapter._save()
-    result=_request(adapter,cid,'POST',body=expected,action='create')
+    nonce=secrets.token_hex(32)
+    private_json(_private_path(adapter,cid),{'recovery_nonce':nonce})
+    result=_request(adapter,cid,'POST',body={**expected,'recovery_nonce':nonce},action='create')
+    _accept_creation(adapter,cid,result)
+    adapter.state['operations'][-1]['status']='observed'
+    adapter._save()
+    return {'service_name':record['service_name'],'service_id':record['service_id'],
+            'customer_phone':phone,'appointment_time':when,'booking_type':'appointment'}
+
+
+def _accept_creation(adapter,cid,result):
+    record=_record(adapter,cid)
+    technicians=[record['expected']['technician_id']]
     try:
         handle=str(uuid.UUID(result['handle']))
-        if (result['mode']!=MODES[cid] or result['technician_id']!=technicians[0]
+        if (result['mode']!=MODES[cid] or type(result['technician_id']) is not int or result['technician_id']!=technicians[0]
                 or type(result['service_id']) is not int or result['service_id']<=0
                 or not isinstance(result['service_name'],str) or not result['service_name']
                 or not isinstance(result['lease_token'],str) or not result['lease_token']):
             raise ValueError
         if result['service_id'] in {v['id'] for v in adapter.state.get('services',{}).values()}:
             raise ValueError
-        private_json(_private_path(adapter,cid),{'lease_token':result['lease_token']})
+        path=_private_path(adapter,cid)
+        retained=json.loads(path.read_text()) if path.is_file() and not path.is_symlink() else {}
+        private_json(path,{**retained,'lease_token':result['lease_token']})
     except Exception:  # noqa: BLE001 - incomplete resource identity cannot be adopted
-        _block(adapter,'Fault fixture creation identity/token unknown; reconcile without replay')
+        _block(adapter,'Fault fixture creation identity/token unknown; reconcile without replay',
+            next((op for op in adapter.state['operations'] if op.get('fault_case')==cid and op.get('fault_action')=='create'),None))
     record.update(status='prepared',handle=handle,service_id=result['service_id'],service_name=result['service_name'],
         token_fingerprint=fingerprint(result['lease_token']))
-    adapter.state['operations'][-1]['status']='observed'
     adapter._save()
-    return {'service_name':record['service_name'],'service_id':record['service_id'],
-            'customer_phone':phone,'appointment_time':when,'booking_type':'appointment'}
 
 
 def tool_target_descriptor(adapter,cid):
@@ -191,6 +214,87 @@ def _database(adapter,cid):
     return row
 
 
+def _read_scope(adapter,cid):
+    record=_record(adapter,cid)
+    expected=record.get('expected',{})
+    if (not adapter.campaign.manifest.get('stage_authorization')
+            or expected.get('run_id')!=adapter.campaign.manifest.get('run_id')
+            or expected.get('mode')!=MODES[cid] or type(expected.get('technician_id')) is not int
+            or not isinstance(expected.get('phone'),str) or not isinstance(expected.get('booking_time'),str)):
+        raise SimulationError('Exact retained fault recovery ownership is unavailable')
+    return record,expected
+
+
+def pending_control(adapter,cid):
+    """Retained unresolved control intents only; never discover a remote fixture."""
+    operations=adapter.state.get('operations',[])
+    pending=any(op.get('fault_case')==cid and op.get('status') in {'unknown','intent','response_received'}
+        for op in operations)
+    owner=adapter.state.get('blocked_operation_owner',{})
+    retained_owner=(adapter.state.get('blocked') is True and isinstance(owner,dict)
+        and owner.get('kind')=='fault' and owner.get('case_id')==cid
+        and any(op.get('fault_case')==cid and op.get('operation_id')==owner.get('operation_id')
+            and op.get('body_fingerprint')==owner.get('body_fingerprint') for op in operations))
+    return pending or retained_owner
+
+
+def recover_control(adapter,cid):
+    """GET-only proof of committed create/disarm/cleanup; never replay a mutation."""
+    record,expected=_read_scope(adapter,cid)
+    operations=[op for op in adapter.state.get('operations',[]) if op.get('fault_case')==cid]
+    pending=[op for op in operations if op.get('status') in {'unknown','intent','response_received'}]
+    if not record.get('handle'):
+        creates=[op for op in pending if op.get('fault_action')=='create']
+        path=_private_path(adapter,cid)
+        if len(creates)!=1 or path.is_symlink() or not path.is_file() or path.stat().st_mode & 0o077:
+            raise SimulationError('Original private fault creation intent is unavailable')
+        try:
+            nonce=json.loads(path.read_text())['recovery_nonce']
+            body={**expected,'recovery_nonce':nonce}
+            if (not isinstance(nonce,str) or len(nonce)!=64 or creates[0]['body_fingerprint']!=fingerprint(body)):
+                raise ValueError
+        except (KeyError,TypeError,ValueError):
+            raise SimulationError('Original private fault creation identity changed') from None
+        result=_request(adapter,cid,'GET','/recover?'+urlencode(expected),recovery_nonce=nonce)
+        if result.get('recovered_creation') is not True or result.get('create_intent_hash')!=_native_payload_hash(body):
+            raise SimulationError('Native fault creation recovery does not match the original intent')
+        _accept_creation(adapter,cid,result)
+    row,status=observe(adapter,cid)
+    if (status.get('handle')!=record['handle'] or status.get('mode')!=MODES[cid]
+            or status.get('phase')!=row['phase']):
+        raise SimulationError('Native fault recovery status ownership differs')
+    for operation in pending:
+        action=operation.get('fault_action')
+        if action=='create':
+            proven=record.get('handle') and row['phase']=='prepared'
+        elif action=='disarm':
+            proven=row['phase'] in {'disarmed','cleaned'} and 'disarmed' in status.get('journal',[])
+            if proven:record['disarmed']=True
+        elif action=='cleanup':
+            proven=(row['phase']=='cleaned' and row.get('service_id') is None
+                and 'owned_service_cleaned_journal_retained' in status.get('journal',[]))
+            if proven:
+                record['cleanup_complete']=True
+                adapter.current_ids.discard(record.get('request_id'))
+        else:
+            proven=False
+        if not proven:
+            raise SimulationError('Owned fault control operation remains unverified')
+        operation['status']='observed'
+    owner=adapter.state.get('blocked_operation_owner')
+    owned_operations=[op for op in operations if owner=={'kind':'fault','case_id':cid,
+        'action':op.get('fault_action'),'operation_id':op.get('operation_id'),
+        'body_fingerprint':op.get('body_fingerprint')} and op.get('status')=='observed']
+    if (len(owned_operations)==1 and not any(op.get('status') in {'unknown','intent','response_received'}
+            for op in adapter.state.get('operations',[]))):
+        adapter.state['blocked']=False
+        adapter.state.pop('blocked_operation_owner',None)
+    adapter._save()
+    return {'recovered':True,'control_reconciled':True,'case_verified':False,'native_acceptance':'unverified',
+        'phase':row['phase'],'cleanup_complete':record.get('cleanup_complete') is True,
+        'mutation_blocked':adapter.state.get('blocked') is True}
+
+
 def observe(adapter,cid):
     """Call while provider.wait polls so FAILED cannot be replaced by a later snapshot."""
     record=_record(adapter,cid)
@@ -231,8 +335,11 @@ bind_invocation=bind
 
 
 def reconcile(adapter,cid):
+    control=recover_control(adapter,cid) if pending_control(adapter,cid) else None
     row,status=observe(adapter,cid)
     if cid!='C36' or not row['response_loss_consumed_at'] or not row['request_id']:
+        if control is not None:
+            return control
         raise SimulationError('Server commit/loss must be observed before lease reconciliation')
     if status.get('lease_reconciliation') is not True or status.get('core_generic_retry_proven') is not False:
         raise SimulationError('Native recovery must be labeled as lease reconciliation')
@@ -349,6 +456,10 @@ def cleanup(adapter,cid):
     if retired['phase']!='cleaned' or retired['service_id'] is not None:
         _block(adapter,'Owned native fault cleanup read-back differs')
     record['cleanup_complete']=True
+    for operation in adapter.state.get('operations',[]):
+        if (operation.get('fault_case')==cid and operation.get('fault_action') in {'disarm','cleanup'}
+                and operation.get('status')=='response_received'):
+            operation['status']='observed'
     adapter.current_ids.discard(request_id)
     adapter._save()
     return result

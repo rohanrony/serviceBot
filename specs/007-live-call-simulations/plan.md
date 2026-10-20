@@ -811,3 +811,28 @@ Convert the naive outbox timestamp using the database session timezone, matching
 its CURRENT_TIMESTAMP writer and the history observer convention. Validate the
 actual read/serialization/transition composition in a disposable PostgreSQL
 schema under UTC and America/Los_Angeles, with independent observation snapshots.
+
+### FR-071 retained-intent recovery
+
+Add migration0011 for C23's same-transaction original-response and mapping journal,
+an immutable ownership trigger, one-way cleanup state, explicit verification of
+the required trigger and a guarded rollback. Read-only authenticated recovery
+returns original claims after locked/snapshot ownership checks; cleanup rechecks
+the complete mapping snapshot under its existing locks. C35/C36 reuse their
+existing journal and a private nonce digest instead of another schema owner.
+Operation-specific blocker provenance permits proven recovery while preserving
+unrelated uncertainty and every mutation guard.
+
+Extend the existing runner management boundary with compiled phase and fixture
+callbacks under its campaign lock. Persist the C48 phase-pending flag before
+external continuation, rebuild only exact immutable journals and reload the
+common ledger before totals. Fixture recovery checks pending retained controls
+before constructing an adapter and uses at most two read-only passes while state
+progresses. Persist safe proof hashes only. Native acceptance and new paid work
+remain outside these management callbacks.
+
+Normalize condition timestamps per column's actual writer, using the existing
+validated app_config business timezone for deadlines, UTC for queued sends and
+the database timezone for CURRENT_TIMESTAMP fields. Preserve mixed-writer
+confirmed_at only as text. Exercise canonical business/quiet-hours writers with
+different database zones through the real read-only native snapshot owner.

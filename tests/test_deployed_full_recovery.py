@@ -816,3 +816,208 @@ def test_recovery_poll_bound_rejected_before_any_submission(tmp_path, polls):
             max_recovery_polls=polls,
         )
     assert not (tmp_path / "usage-ledger.json").exists()
+
+
+@pytest.mark.parametrize("phase", ["interruption", "recovery"])
+@pytest.mark.parametrize("uncertainty", [None, "ambiguous", "foreign", "pending"])
+def test_manage_recovers_accepted_lost_c48_response_without_resubmission(
+    tmp_path, monkeypatch, phase, uncertainty
+):
+    import copy
+    import runpy
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    from live_simulations import deployed, deployed_full_native, runner
+    from live_simulations.deployed_full_recovery import submit_recovery
+
+    args, _, booking, delivery = lifecycle(tmp_path)
+    folder = tmp_path / args["binding"].run_id
+    pre = json.loads((folder / "C48-1-pre-invocation.json").read_text())
+    source_identity = pre["binding"]
+    recovery_identity = {
+        k: v for k, v in args["binding"].as_dict().items() if k != "invocation_id"
+    }
+    recovery_receipt = copy.deepcopy(args["provider"].responses[0])
+    source_receipt = runpy.run_path(
+        str(Path(__file__).with_name("test_deployed_full_interruption.py"))
+    )["receipt"]
+    source_pending = source_receipt("pending")
+    source_terminal = source_receipt("cancelled", 17)
+    ledger_path = tmp_path / "usage-ledger.json"
+    ledger = json.loads(ledger_path.read_text())
+    manifest = json.loads((folder / "manifest.json").read_text())
+    manifest["stage_authorization"] = {"authorization_id": "owned-stage"}
+    manifest["deployed_medium"] = {
+        "blocked": True,
+        "services": {"oil": {"name": "Oil Change"}},
+    }
+    if phase == "interruption":
+        ledger["entries"] = []
+        manifest["invocations"] = []
+        for name in (
+            "submit-intent",
+            "interruption-journal",
+            "cancel-intent",
+            "interruption",
+            "recovery-submit-intent",
+            "recovery-journal",
+            "recovery-pre-invocation",
+        ):
+            (folder / ("C48-1-" + name + ".json")).unlink()
+    else:
+        ledger["entries"] = [
+            e for e in ledger["entries"] if e.get("phase") != "recovery"
+        ]
+        manifest["invocations"] = ["invocation-48"]
+        for name in ("recovery-submit-intent", "recovery-journal"):
+            (folder / ("C48-1-" + name + ".json")).unlink()
+    private_json(ledger_path, ledger)
+    private_json(folder / "manifest.json", manifest)
+    paid_calls = []
+
+    def lost_response(request):
+        paid_calls.append(request)
+        raise TimeoutError("accepted but response lost")
+
+    with pytest.raises(SimulationError):
+        if phase == "interruption":
+            submit_source(
+                tmp_path,
+                identity=source_identity,
+                submit=lost_response,
+                now=lambda: 101,
+            )
+        else:
+            submit_recovery(tmp_path, identity=recovery_identity, submit=lost_response)
+
+    class Provider:
+        cancelled = phase == "recovery"
+        requests = []
+        cancels = []
+        gets = []
+
+        def request(self, method, path):
+            assert method == "GET"
+            self.requests.append(path)
+            if uncertainty == "ambiguous":
+                return {"has_more": True, "results": []}
+            return {
+                "has_more": False,
+                "results": [
+                    {
+                        "id": "invocation-48"
+                        if phase == "interruption"
+                        else "recovery-invocation"
+                    }
+                ],
+            }
+
+        def get(self, invocation):
+            self.gets.append(invocation)
+            if invocation == "invocation-48":
+                receipt = copy.deepcopy(
+                    source_terminal
+                    if self.cancelled and uncertainty != "pending"
+                    else source_pending
+                )
+            else:
+                assert invocation == "recovery-invocation"
+                receipt = copy.deepcopy(recovery_receipt)
+                if uncertainty == "pending":
+                    receipt["test_runs"][0]["status"] = "pending"
+                    receipt["test_runs"][0]["credits_used"] = None
+            if uncertainty == "foreign":
+                receipt["agent_id"] = "foreign-agent"
+            return receipt
+
+        def cancel(self, invocation):
+            assert invocation == "invocation-48"
+            assert (folder / "C48-1-cancel-intent.json").exists()
+            self.cancels.append(invocation)
+            self.cancelled = True
+
+        @staticmethod
+        def credits(receipt):
+            from live_simulations.provider import ElevenLabs
+
+            return ElevenLabs.credits(receipt)
+
+        def get_calendar_event(self, *args):
+            return args_provider.get_calendar_event(*args)
+
+        def get_message(self, *args):
+            return args_provider.get_message(*args)
+
+    args_provider = args["provider"]
+    provider = Provider()
+    campaign = SimpleNamespace(
+        root=tmp_path,
+        folder=folder,
+        run_id=source_identity["run_id"],
+        config={},
+        manifest=manifest,
+        report=lambda: None,
+    )
+    campaign.save = lambda: private_json(folder / "manifest.json", campaign.manifest)
+
+    class Bridge:
+        def __init__(self, adapter, provider, **options):
+            self.adapter, self.provider = adapter, provider
+
+        def c48_observers(self, **kwargs):
+            self.adapter._guard()
+            assert self.adapter.state["blocked"] is True
+            assert kwargs["identity"] == source_identity
+            return {
+                "provider": self.provider,
+                "observe_booking": lambda: copy.deepcopy(booking),
+                "observe_delivery": lambda: copy.deepcopy(delivery),
+            }
+
+    monkeypatch.setattr(deployed, "Campaign", lambda *a, **kw: campaign)
+    monkeypatch.setattr(runner, "ElevenLabs", lambda *a: provider)
+    monkeypatch.setattr(runner, "secret", lambda *a: "offline")
+    monkeypatch.setattr(runner, "write_report", lambda *a: None)
+    monkeypatch.setattr(deployed_full_native, "NativeBridge", Bridge)
+    if uncertainty:
+        for _ in range(2):
+            with pytest.raises(SimulationError):
+                deployed.manage({}, campaign.run_id, "reconcile")
+        retained = json.loads(ledger_path.read_text())
+        entry = next(e for e in retained["entries"] if e["phase"] == phase)
+        assert entry["unsettled"] is True
+        assert entry["submission_unknown"] is (uncertainty != "pending")
+        assert len(paid_calls) == 1
+        assert campaign.manifest["deployed_medium"]["blocked"] is True
+        if uncertainty in ("ambiguous", "foreign"):
+            suffix = (
+                "interruption-journal"
+                if phase == "interruption"
+                else "recovery-journal"
+            )
+            assert not (folder / ("C48-1-" + suffix + ".json")).exists()
+        return
+    for _ in range(2):
+        if phase == "interruption":
+            with pytest.raises(SimulationError, match="separately authorized recovery"):
+                deployed.manage({}, campaign.run_id, "reconcile")
+        else:
+            assert deployed.manage({}, campaign.run_id, "reconcile") == 0
+    ledger = json.loads(ledger_path.read_text())
+    entry = next(e for e in ledger["entries"] if e["phase"] == phase)
+    suffix = "interruption-journal" if phase == "interruption" else "recovery-journal"
+    journal = json.loads((folder / ("C48-1-" + suffix + ".json")).read_text())
+    assert entry["submission_unknown"] is False and entry["unsettled"] is False
+    assert entry["invocation_id"] == journal["binding"]["invocation_id"]
+    assert entry["invocation_id"] in campaign.manifest["invocations"]
+    assert len(paid_calls) == 1
+    assert len(provider.requests) == 1
+    assert provider.cancels == (["invocation-48"] if phase == "interruption" else [])
+    assert campaign.manifest["deployed_medium"]["blocked"] is True
+    assert (
+        campaign.manifest["c48_reconciliation"][-1][
+            "interruption_verified" if phase == "interruption" else "recovery_verified"
+        ]
+        is True
+    )

@@ -17,6 +17,7 @@ class FixtureCreate(BaseModel):
     technician_id: StrictInt
     phone: StrictStr
     booking_time: StrictStr
+    recovery_nonce: StrictStr | None = None
 
 
 def _auth(request, handle=None):
@@ -52,6 +53,13 @@ def create_fixture(payload: FixtureCreate, request: Request, background_tasks: B
     from serviceBot.api.portal import sync_services_to_kb
     background_tasks.add_task(sync_services_to_kb)
     return result
+
+
+@router.get('/recover')
+def recover_fixture(request: Request,run_id: str,mode: str,technician_id: int,phone: str,booking_time: str):
+    secret=_auth(request)
+    return _call(faults.recover_creation,run_id=run_id,mode=mode,technician_id=technician_id,
+        phone=phone,booking_time=booking_time,recovery_nonce=request.headers.get('x-simulation-recovery'),secret=secret)
 
 
 @router.get('/{handle}')
