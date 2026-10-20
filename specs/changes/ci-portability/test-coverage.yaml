@@ -59,7 +59,8 @@ acceptance:
   invariants:
   - Observer remains read-only and bound to the same isolated database
   tests:
-  - e2e/test_deployed_full_fixtures.py::test_c23_quarantined_unconnected_component_preserves_originals_and_refuses_unsafe_cleanup
+  - e2e/test_deployed_full_fixtures.py::test_c23_signed_unconnected_pair_preserves_originals_and_cleans_safely
+  - e2e/test_deployed_full_fixtures.py::test_c23_external_change_refuses_cleanup_before_mapping_or_staff_writes
   layer:
   - database
   - composed
