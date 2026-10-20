@@ -21,6 +21,7 @@ def mail_config():
     config = dict(original)
     config.update(
         gmail_enabled=True,
+        gmail_routine_admin_copies_enabled=True,
         gmail_sender="sender@example.test",
         gmail_recipient="admin@example.test",
         gmail_auth_type="app_password",

@@ -7,6 +7,14 @@ from typing import Literal
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, TypeAdapter, field_validator
 
 
+def prefix_business_name(message: str, config: dict) -> str:
+    """Prefix a customer notification with a valid configured business name."""
+    name = (config or {}).get("business_name")
+    if not isinstance(name, str) or not name.strip():
+        return message
+    return f"{name.strip()}\n{message}"
+
+
 class IntakeField(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     key: str = Field(pattern=r"^[a-z][a-z0-9_]{0,39}$")

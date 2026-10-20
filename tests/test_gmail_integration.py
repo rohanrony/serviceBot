@@ -33,6 +33,7 @@ def test_get_gmail_config():
     assert response.status_code == 200
     data = response.json()
     assert "gmail_enabled" in data
+    assert data["gmail_routine_admin_copies_enabled"] is False
     assert "gmail_sender" in data
     assert "gmail_recipient" in data
     assert data["gmail_auth_type"] == "oauth2"
@@ -63,6 +64,27 @@ def test_post_gmail_config():
     assert response.json()["has_client_secret"] is True
     assert response.json()["gmail_client_id"] == "test-client-id"
     assert "test-client-secret" not in response.text
+
+
+def test_gmail_routine_copy_setting_persists_and_omitted_updates_preserve():
+    """The optional API field persists when present and survives older saves."""
+    payload = {
+        "gmail_enabled": True,
+        "gmail_sender": "test-sender@gmail.com",
+        "gmail_recipient": "test-recipient@gmail.com",
+        "gmail_routine_admin_copies_enabled": True,
+    }
+    response = client.post("/api/v1/portal/gmail-config", json=payload)
+    assert response.status_code == 200
+    assert load_config()["gmail_routine_admin_copies_enabled"] is True
+    assert client.get("/api/v1/portal/gmail-config").json()[
+        "gmail_routine_admin_copies_enabled"
+    ] is True
+
+    payload.pop("gmail_routine_admin_copies_enabled")
+    response = client.post("/api/v1/portal/gmail-config", json=payload)
+    assert response.status_code == 200
+    assert load_config()["gmail_routine_admin_copies_enabled"] is True
 
 
 @patch("serviceBot.services.gmail.send_gmail_api_email", return_value=True)

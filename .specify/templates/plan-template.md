@@ -27,9 +27,15 @@
 **Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]
 
 **Behavioral coverage**: Create/update `test-coverage.yaml` beside the spec before implementation.
-Map acceptance criteria to observable success/failure, preconditions, invariants, real collected
-test IDs, layers and remaining live requirements; explain omitted layers. Plan meaningful Red →
-Green → Refactor tests and review. Publication requires complete offline exact-candidate evidence
+Update or add one row per changed acceptance contract: observable success/failure, preconditions,
+invariants, real collected automated test IDs, layers and relevant live scenario IDs/definition
+paths (or an explicit `not_required` reason); explain omitted layers. Provider changes must
+update the actual live scenario, expected external effects, independent read-back, prerequisites,
+cleanup/recovery, credit/cost estimate and spending ceiling. Plan scenario maintenance separately
+from live execution, which requires its own authorization. Offline/mock passes cannot prove
+provider delivery. Plan meaningful Red → Green → Refactor tests and review, then report Offline
+and Live independently as verified, pending or not_required with reasons/evidence at handoff.
+Publication requires complete offline exact-candidate evidence
 from `./scripts/verify_change.sh --base <target-ref> --head <commit-sha>`.
 
 **Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]
@@ -58,6 +64,7 @@ specs/[###-feature]/
 ├── research.md          # Phase 0 output ($speckit-plan command)
 ├── data-model.md        # Phase 1 output ($speckit-plan command)
 ├── quickstart.md        # Phase 1 output ($speckit-plan command)
+├── test-coverage.yaml   # Changed contracts, real automated/live IDs, evidence and budgets
 ├── contracts/           # Phase 1 output ($speckit-plan command)
 └── tasks.md             # Phase 2 output ($speckit-tasks command - NOT created by $speckit-plan)
 ```

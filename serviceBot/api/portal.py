@@ -317,6 +317,7 @@ Speak the filler naturally as part of the conversation so the caller experiences
         "system_prompt": default_system_prompt,
         "first_message": "Hello! Thank you for calling Davidson Car Care. I am Rachel, AI voice Assistant. Please note that this conversation will be recorded. How can I help you today?",
         "gmail_enabled": False,
+        "gmail_routine_admin_copies_enabled": False,
         "gmail_sender": "",
         "gmail_recipient": "",
         "enable_agent_selection": False,
@@ -1953,6 +1954,7 @@ class GmailConfigPayload(BaseModel):
     model_config = {"extra": "forbid"}
 
     gmail_enabled: bool
+    gmail_routine_admin_copies_enabled: Optional[bool] = None
     enable_agent_selection: Optional[bool] = False
     gmail_auth_type: Literal["oauth2"] = "oauth2"
     gmail_sender: str
@@ -1983,6 +1985,9 @@ async def get_gmail_config():
     
     return {
         "gmail_enabled": config.get("gmail_enabled", False),
+        "gmail_routine_admin_copies_enabled": config.get(
+            "gmail_routine_admin_copies_enabled", False
+        ),
         "enable_agent_selection": config.get("enable_agent_selection", False),
         "gmail_auth_type": "oauth2",
         "gmail_sender": config.get("gmail_sender", ""),
@@ -1999,6 +2004,10 @@ async def update_gmail_config(payload: GmailConfigPayload):
     config = load_config()
     
     config["gmail_enabled"] = payload.gmail_enabled
+    if payload.gmail_routine_admin_copies_enabled is not None:
+        config["gmail_routine_admin_copies_enabled"] = (
+            payload.gmail_routine_admin_copies_enabled
+        )
     config["enable_agent_selection"] = payload.enable_agent_selection
     config["gmail_auth_type"] = "oauth2"
     if payload.gmail_sender:

@@ -9,7 +9,13 @@ from serviceBot.services.sms_reminders import (
     run_reminder_polling_worker_cycle,
 )
 from serviceBot.services.sms_router import SMSNotificationRouter
+from serviceBot.services.business_profile import prefix_business_name
 from serviceBot.main import app
+
+
+@pytest.mark.parametrize("business_name", [None, "", "   ", 42])
+def test_business_name_prefix_omits_missing_or_invalid_name(business_name):
+    assert prefix_business_name("Message body", {"business_name": business_name}) == "Message body"
 
 
 def test_format_time_slot_range():
@@ -147,6 +153,7 @@ def test_customer_reminder_messages_omit_appointment_number_and_include_details(
     mock_conn_context.__enter__.return_value = mock_conn
 
     cfg = {
+        "business_name": "Davidson Car Care",
         "business_address": "123 Main St, Springfield, NC 27513",
         "google_maps_url": "https://maps.app.goo.gl/davidson-car-care",
         "max_dispatch_retries": 3,
@@ -171,6 +178,7 @@ def test_customer_reminder_messages_omit_appointment_number_and_include_details(
     cust_imm = next(m for m in sent_messages if m["recipient_type"] == "customer" and m["template_type"] == "reminder_immediate")
     imm_body = cust_imm["body"]
     assert "🚗 [APPOINTMENT CONFIRMED]" in imm_body
+    assert imm_body.startswith("Davidson Car Care\n")
     assert "Hi Sarah Connor, your appointment is scheduled!" in imm_body
     assert "🔧 Service: Full Synthetic Oil Change" in imm_body
     assert "📅 When: Oct 20, 2026 (2:00 PM - 3:00 PM)" in imm_body
@@ -188,6 +196,7 @@ def test_customer_reminder_messages_omit_appointment_number_and_include_details(
     cust_24h = next(m for m in sent_messages if m["recipient_type"] == "customer" and m["template_type"] == "reminder_24h")
     fup_body = cust_24h["body"]
     assert "🗓️ [APPOINTMENT REMINDER]" in fup_body
+    assert fup_body.startswith("Davidson Car Care\n")
     assert "Hi Sarah Connor, reminding you of your upcoming appointment:" in fup_body
     assert "🔧 Service: Full Synthetic Oil Change" in fup_body
     assert "📍 Location: 123 Main St, Springfield, NC 27513" in fup_body
@@ -200,6 +209,7 @@ def test_customer_reminder_messages_omit_appointment_number_and_include_details(
     cust_2h = next(m for m in sent_messages if m["recipient_type"] == "customer" and m["template_type"] == "reminder_2h")
     pre_body = cust_2h["body"]
     assert "⏰ [UPCOMING APPOINTMENT]" in pre_body
+    assert pre_body.startswith("Davidson Car Care\n")
     assert "Hi Sarah Connor, your appointment is coming up in 2h!" in pre_body
     assert "🔧 Service: Full Synthetic Oil Change" in pre_body
     assert "📍 Location: 123 Main St, Springfield, NC 27513" in pre_body
@@ -211,6 +221,7 @@ def test_customer_reminder_messages_omit_appointment_number_and_include_details(
     # 4. Agent Immediate Booking DOES retain internal ID
     agent_imm = next(m for m in sent_messages if m["recipient_type"] == "agent")
     assert "Service request #42" in agent_imm["body"]
+    assert agent_imm["body"].startswith("Davidson Car Care\n")
 
 
 def test_sms_router_customer_messages_omit_appointment_number_and_include_map():
@@ -222,6 +233,7 @@ def test_sms_router_customer_messages_omit_appointment_number_and_include_map():
     rules = [
         {"event_type": "RESCHEDULED", "recipient_role": "customer", "channel": "WHATSAPP", "enabled": True},
         {"event_type": "RESCHEDULED", "recipient_role": "agent", "channel": "WHATSAPP", "enabled": True},
+        {"event_type": "RESCHEDULED", "recipient_role": "admin", "channel": "WHATSAPP", "enabled": True},
     ]
 
     details = {
@@ -235,6 +247,7 @@ def test_sms_router_customer_messages_omit_appointment_number_and_include_map():
     }
 
     with patch("serviceBot.services.sms_router.get_sms_matrix_rules", return_value=rules), \
+         patch("serviceBot.api.portal.load_config", return_value={"business_name": "Davidson Car Care"}), \
          patch("serviceBot.services.sms_router.get_customer_opt_in", return_value=True), \
          patch("serviceBot.services.sms_router.should_bypass_quiet_hours", return_value=False), \
          patch("serviceBot.services.sms_router.is_in_quiet_hours", return_value=False), \
@@ -248,6 +261,7 @@ def test_sms_router_customer_messages_omit_appointment_number_and_include_map():
             appointment_id=77,
             customer_phone="+19195551234",
             agent_phone="+19195559999",
+            admin_phone="+19195558888",
             booking_time="2026-10-25 15:00:00",
             details=details,
         )
@@ -256,6 +270,7 @@ def test_sms_router_customer_messages_omit_appointment_number_and_include_map():
     assert len(customer_calls) >= 1
     cust_body = customer_calls[0].kwargs["body"]
     assert "🗓️ [APPOINTMENT RESCHEDULED]" in cust_body
+    assert cust_body.startswith("Davidson Car Care\n")
     assert "Appt #77" not in cust_body
     assert "#77" not in cust_body
     assert "Location: 123 Main St" in cust_body
@@ -265,6 +280,13 @@ def test_sms_router_customer_messages_omit_appointment_number_and_include_map():
     assert len(agent_calls) >= 1
     agent_body = agent_calls[0].kwargs["body"]
     assert "Appt #77" in agent_body
+    assert agent_body.startswith("Davidson Car Care\n")
+
+    admin_calls = [call for call in mock_client.send_whatsapp.call_args_list if call.kwargs.get("recipient_type") == "admin"]
+    assert len(admin_calls) == 1
+    admin_body = admin_calls[0].kwargs["body"]
+    assert "[ADMIN ALERT] Appt #77 RESCHEDULED" in admin_body
+    assert admin_body.startswith("Davidson Car Care\n")
 
 
 def test_portal_config_endpoints_support_address_and_maps(tmp_path):
