@@ -444,12 +444,15 @@
       "failure": [
         "Malformed/missing/fiat-only/negative/noninteger total remains unknown",
         "Changed subscription tier/reset/counters or insufficient fresh quota stops before intent/signed URL/socket",
-        "Changed settled total raises an integrity error"
+        "Changed settled total raises an integrity error",
+        "Supported management reconciliation preserves unknown or mismatched native identities and persists partial billing settlement without enabling fixture mutations"
       ],
       "invariants": [
         "Never infer a formula from charge components, price, duration or subscription deltas",
         "No automatic verification of real account billing units or paid execution",
-        "Reconciliation never opens another session or depends on new-admission quota"
+        "Reconciliation never opens another session or depends on new-admission quota",
+        "Management reloads the common ledger before reporting totals; known native recovery never uses agent-test discovery",
+        "Financial recovery validates the original retained customer and provider identity without depending on current fixture database availability or subsequent customer edits"
       ],
       "tests": [
         "tests/test_native_session_credits.py::test_exact_terminal_native_total",
@@ -462,7 +465,15 @@
         "tests/test_deployed_full_session.py::test_compiled_reconcile_after_rollover_uses_only_existing_conversation_get",
         "tests/test_deployed_full_session.py::test_c50_reconciliation_uses_compiled_default_after_restart",
         "tests/test_deployed_full_integration.py::test_c50_default_reader_is_compiled_without_runtime_attribute_injection",
-        "tests/test_deployed_full_native.py::test_c50_account_preflight_observes_fresh_quota_and_pinned_tier"
+        "tests/test_deployed_full_native.py::test_c50_account_preflight_observes_fresh_quota_and_pinned_tier",
+        "tests/test_deployed_full_session.py::test_management_settles_native_charge_with_blocked_fixtures_and_preserves_other_entries",
+        "tests/test_deployed_full_session.py::test_management_native_recovery_fails_closed",
+        "tests/test_deployed_full_session.py::test_management_retains_partial_native_settlement_when_other_charge_is_pending",
+        "tests/test_deployed_full_session.py::test_management_rejects_changed_retained_intent_before_provider_get",
+        "tests/test_deployed_full_session.py::test_management_persists_discovered_invocation_before_pending_read",
+        "tests/test_deployed_full_session.py::test_management_financial_recovery_does_not_require_current_customer_database",
+        "tests/test_deployed_full_session.py::test_management_customer_drift_uses_original_provider_identity",
+        "tests/test_deployed_full_session.py::test_management_malformed_saved_customer_identity_stops_before_get"
       ],
       "layer": [
         "unit",
@@ -492,14 +503,112 @@
         "unknown_charge_handling": "Stop admission, retain common ledger and reconcile without replay",
         "reuse": "Reuse prior case evidence only while its source, bindings, prerequisites and assertions remain valid"
       }
+    },
+    {
+      "id": "FR-070-C33-foreign-baseline",
+      "behavior": "Observe an unchanged foreign booking and customer from an immutable pre-submission baseline without claiming ownership.",
+      "preconditions": [
+        "Exact distinct customer/request identity captured before paid submission"
+      ],
+      "success": [
+        "Repeated observation verifies unchanged request/customer while owned ID sets remain unchanged"
+      ],
+      "failure": [
+        "Missing, changed, same-customer, already-owned or reconfigured foreign baseline is rejected"
+      ],
+      "invariants": [
+        "Foreign request is never registered, modified or eligible for campaign cleanup"
+      ],
+      "tests": [
+        "tests/test_deployed_full_c33.py::test_c33_foreign_booking_binds_readonly_and_observes_twice",
+        "tests/test_deployed_full_c33.py::test_c33_rejects_foreign_baseline_drift_without_adoption",
+        "tests/test_deployed_full_c33.py::test_c33_rejects_invalid_foreign_pre_submission_baseline"
+      ],
+      "layer": [
+        "provider_contract",
+        "composed"
+      ],
+      "live_acceptance": {
+        "status": "pending",
+        "reason": "Captured offline review regressions do not establish native acceptance; paid execution remains deferred.",
+        "scenarios": [
+          "C33"
+        ],
+        "prerequisites": [
+          "Deployed exact candidate and additive migrations",
+          "Explicit campaign budget and verified provider credit units",
+          "Designated recipients and Google-connected calendars; scenario-specific native prerequisites"
+        ],
+        "expected_effects": [
+          "Case-specific persisted native effects joined to independent provider read-back"
+        ],
+        "cleanup_recovery": [
+          "Retain journals and unknown charges; GET-only reconciliation before retry; retire only owned effects"
+        ],
+        "estimated_credits": "Requires current measured case estimates and separate live authorization; native account credit equivalence remains unverified.",
+        "spending_ceiling": "No paid execution authorized by this publication request",
+        "unknown_charge_handling": "Stop admission, retain common ledger and reconcile without replay",
+        "reuse": "Reuse prior case evidence only while its source, bindings, prerequisites and assertions remain valid"
+      }
+    },
+    {
+      "id": "FR-070-C48-budget-and-recovery",
+      "behavior": "Apply run-scoped ceiling accounting and bounded same-handle recovery polling.",
+      "preconditions": [
+        "Validated run binding, settled shared ledger, retained quota baseline and explicit two-phase estimates"
+      ],
+      "success": [
+        "Historical settled spend does not consume the new run ceiling; every current-run case/phase does",
+        "Pending recovery reaches terminal state without a second submission; exhaustion retains a GET-only continuation binding"
+      ],
+      "failure": [
+        "Current-run ceiling overflow, any foreign unsettled use, insufficient fresh quota or invalid poll bounds stops admission"
+      ],
+      "invariants": [
+        "Historical shared usage continues to affect quota deltas",
+        "Recovery never repeats its paid submission"
+      ],
+      "tests": [
+        "tests/test_deployed_full_recovery.py::test_budget_ceiling_counts_current_run_all_phases_not_lifetime",
+        "tests/test_deployed_full_recovery.py::test_foreign_unsettled_usage_still_blocks_current_run",
+        "tests/test_deployed_full_recovery.py::test_runner_facade_dispatches_full_lifecycle",
+        "tests/test_deployed_full_recovery.py::test_recovery_poll_bound_rejected_before_any_submission"
+      ],
+      "layer": [
+        "unit",
+        "provider_contract",
+        "composed"
+      ],
+      "live_acceptance": {
+        "status": "pending",
+        "reason": "Captured offline review regressions do not establish native acceptance; paid execution remains deferred.",
+        "scenarios": [
+          "C48"
+        ],
+        "prerequisites": [
+          "Deployed exact candidate and additive migrations",
+          "Explicit campaign budget and verified provider credit units",
+          "Designated recipients and Google-connected calendars; scenario-specific native prerequisites"
+        ],
+        "expected_effects": [
+          "Case-specific persisted native effects joined to independent provider read-back"
+        ],
+        "cleanup_recovery": [
+          "Retain journals and unknown charges; GET-only reconciliation before retry; retire only owned effects"
+        ],
+        "estimated_credits": "Requires current measured case estimates and separate live authorization; native account credit equivalence remains unverified.",
+        "spending_ceiling": "No paid execution authorized by this publication request",
+        "unknown_charge_handling": "Stop admission, retain common ledger and reconcile without replay",
+        "reuse": "Reuse prior case evidence only while its source, bindings, prerequisites and assertions remain valid"
+      }
     }
   ],
   "omitted_layers": {
     "browser": "These repairs add internal APIs, campaign observers and migrations, with no new user interface. The complete existing browser subset still runs as regression coverage before publication."
   },
   "review": {
-    "red": "Historical failure evidence and the original offline repair package are retained in scratch/full-delta-20261019; this publication reconstructs those fixes onto current main. Publication intake regression: three expected database-forbidden failures captured before admission guard. C50 accounting: 64 intended failures before implementation, 20 existing session tests passing; retained c50-red.log.",
-    "green": "Focused native reader/session/adapter/causal/quota/Budget contracts pass; full offline and exact-candidate publication verification recorded separately.",
+    "red": "Historical failure evidence and the original offline repair package are retained in scratch/full-delta-20261019; this publication reconstructs those fixes onto current main. Publication intake regression: three expected database-forbidden failures captured before admission guard. C50 accounting: 64 intended failures before implementation, 20 existing session tests passing; retained c50-red.log. PR7 review repairs: C33 five intended failures and C48 seven intended failures preceded their fixes. C50 management command failed to settle known native charges before wiring; three further regressions reproduced its current-customer database dependency.",
+    "green": "Focused native reader/session/adapter/causal/quota/Budget contracts pass; full offline and exact-candidate publication verification recorded separately. PR7 C33/native/conditions:105 passed; C48:55 passed. Current-candidate full gate recorded separately. C50 session/credit contracts:105 passed; combined C33/C48/native/conditions:160 passed. Independent source review found no remaining actionable review repair.",
     "test_changes": "Preserve main future-date handling and migration0010; add migration0008/0009 assertions. Review the failure, ownership, concurrency, provenance and unknown-charge assertions; no skips or assertion weakening.",
     "sufficiency": "Native database/HTTP tests exercise transactional ownership, retry, cleanup and migration behavior; deterministic provider contracts cover actual payload shapes and negative evidence. Full paid provider acceptance remains pending, including independently verified real-account native credit units."
   }

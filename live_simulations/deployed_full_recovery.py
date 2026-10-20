@@ -39,7 +39,7 @@ def _identity(identity):
         raise SimulationError("Exact C48 preparation identity required") from None
 
 
-def _budget(budget, ledger, *, phase="source"):
+def _budget(budget, ledger, *, run_id, phase="source"):
     try:
         values = [
             budget[k]
@@ -61,11 +61,20 @@ def _budget(budget, ledger, *, phase="source"):
         ):
             raise ValueError
         spent = sum((number(e["credits"]) for e in entries), Decimal(0))
+        # A stage claim belongs to one run. Count every phase/case in that
+        # run, including spend preceding C48; historical runs only affect the
+        # fresh provider quota delta and the global unsettled-use barrier.
+        if not isinstance(run_id, str) or not re.fullmatch("[0-9a-f]{32}", run_id):
+            raise ValueError
+        stage_spent = sum(
+            (number(e["credits"]) for e in entries if e.get("run_id") == run_id),
+            Decimal(0),
+        )
         baseline = number(budget.get("quota_baseline_spent", spent))
         required = source + recovery if phase == "source" else recovery
         if (
             baseline > spent
-            or spent + required > ceiling * Decimal(".8")
+            or stage_spent + required > ceiling * Decimal(".8")
             or required > remaining - (spent - baseline)
         ):
             raise ValueError
@@ -140,7 +149,7 @@ def prepare_source(
     root = Path(root)
     with campaign_lock(root):
         ledger = _read(root / "usage-ledger.json")
-        retained_budget = _budget(budget, ledger)
+        retained_budget = _budget(budget, ledger, run_id=binding.run_id)
         folder = root / binding.run_id
         if folder.is_symlink() or not folder.is_dir():
             raise SimulationError("Owned source folder required")
@@ -256,7 +265,7 @@ def submit_source(root, *, identity, submit, now):
         if not _same_binding(pre.get("binding"), identity):
             raise SimulationError("Source preparation identity differs")
         ledger = _read(root / "usage-ledger.json")
-        _budget(pre["budget"], ledger)
+        _budget(pre["budget"], ledger, run_id=seed.run_id)
         owned = [
             p
             for p in ledger.get("c48_preparations", [])
@@ -362,7 +371,7 @@ def prepare_recovery(
         ):
             raise SimulationError("Recovery requires genuine owned cancellation proof")
         pre = _read(folder / f"C48-{candidate.attempt}-pre-invocation.json")
-        _budget(pre["budget"], ledger, phase="recovery")
+        _budget(pre["budget"], ledger, run_id=candidate.run_id, phase="recovery")
         manifest = _read(folder / "manifest.json")
         if (
             candidate.test_id not in manifest.get("provider_tests", [])
@@ -409,7 +418,7 @@ def submit_recovery(root, *, identity, submit):
         if not _same_binding(pre.get("binding"), identity):
             raise SimulationError("Recovery preparation identity differs")
         ledger = _read(root / "usage-ledger.json")
-        _budget(pre["budget"], ledger, phase="recovery")
+        _budget(pre["budget"], ledger, run_id=seed.run_id, phase="recovery")
         intent_path = folder / f"C48-{seed.attempt}-recovery-submit-intent.json"
         if intent_path.exists():
             raise SimulationError(
@@ -634,6 +643,7 @@ def execute(
     observe_booking,
     observe_delivery,
     max_source_polls=30,
+    max_recovery_polls=30,
     poll_interval=1,
     sleep=time.sleep,
 ):
@@ -648,13 +658,13 @@ def execute(
     if (
         type(max_source_polls) is not int
         or not 1 <= max_source_polls <= 100
+        or type(max_recovery_polls) is not int
+        or not 1 <= max_recovery_polls <= 100
         or type(poll_interval) not in (int, float)
         or not 0 <= number(poll_interval) <= 5
         or not callable(sleep)
     ):
-        raise SimulationError(
-            "Bounded same-handle C48 source observation options required"
-        )
+        raise SimulationError("Bounded same-handle C48 observation options required")
     if not isinstance(source, dict) or not isinstance(recovery, dict):
         raise SimulationError("Explicit source and recovery coordinator hooks required")
     source = dict(source)
@@ -699,13 +709,18 @@ def execute(
     recovered = submit_recovery(
         root, identity=recovery["identity"], submit=recovery["submit"]
     )
-    result = advance_recovery(
-        root,
-        binding=recovered,
-        provider=provider,
-        observe_booking=observe_booking,
-        observe_delivery=observe_delivery,
-    )
+    for poll in range(max_recovery_polls):
+        result = advance_recovery(
+            root,
+            binding=recovered,
+            provider=provider,
+            observe_booking=observe_booking,
+            observe_delivery=observe_delivery,
+        )
+        if result.get("status") != "awaiting_terminal":
+            break
+        if poll + 1 < max_recovery_polls:
+            _external(sleep, poll_interval)
     return {
         **result,
         "source_binding": binding.as_dict(),

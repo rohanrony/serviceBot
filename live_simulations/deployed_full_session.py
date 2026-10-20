@@ -28,8 +28,9 @@ def _paths(adapter):
     return root,folder,folder/'C50-native-session-intent.json'
 
 
-def _baseline(adapter):
-    adapter._guard()
+def _baseline(adapter,*,financial_only=False):
+    if not financial_only:
+        adapter._guard()
     baseline=adapter.state.get('full_history',{})
     manifest=adapter.campaign.manifest
     if (not isinstance(baseline.get('run_id'),str) or not re.fullmatch('[0-9a-f]{32}',baseline['run_id'])
@@ -40,6 +41,15 @@ def _baseline(adapter):
             or not isinstance(baseline.get('baseline_note_ids'),list)
             or not isinstance(baseline.get('baseline_event_ids'),list)):
         raise SimulationError('Native session requires saved pre-call owned history baseline')
+    if financial_only:
+        # Already incurred charges belong to the immutable session identity;
+        # current customer availability or profile edits cannot change it.
+        if (not isinstance(baseline.get('customer_phone'),str)
+                or not re.fullmatch(r'\+1[0-9]{10}',baseline['customer_phone'])
+                or not isinstance(baseline.get('customer_name'),str)
+                or not baseline['customer_name'].strip()):
+            raise SimulationError('Native session saved customer identity is malformed')
+        return baseline
     rows=causal.medium._read(adapter.config,'SELECT id,name,phone FROM customers WHERE id=%s',(baseline['customer_id'],))
     if len(rows)!=1:
         raise SimulationError('Native session customer identity is ambiguous')
@@ -95,8 +105,8 @@ def _save(root,folder,ledger,record):
     private_json(folder/'C50-native-session-state.json',record)
 
 
-def _known_context(adapter):
-    baseline=_baseline(adapter)
+def _known_context(adapter,*,financial_only=False):
+    baseline=_baseline(adapter,financial_only=financial_only)
     root,folder,path=_paths(adapter)
     intent=_read(path)
     if (intent.get('baseline')!=baseline or intent.get('run_id')!=baseline['run_id']
@@ -113,8 +123,8 @@ def _known_context(adapter):
     return baseline,root,folder,intent,ledger,entry,cid
 
 
-def _finish(adapter,provider,credit_reader,max_polls):
-    baseline,root,folder,intent,ledger,entry,cid=_known_context(adapter)
+def _finish(adapter,provider,credit_reader,max_polls,*,financial_only=False):
+    baseline,root,folder,intent,ledger,entry,cid=_known_context(adapter,financial_only=financial_only)
     result=_report('awaiting_native_history')
     for _ in range(max_polls):
         try:
@@ -147,6 +157,9 @@ def _finish(adapter,provider,credit_reader,max_polls):
             entry.update(credits=amount,unsettled=False,credit_units='credits',
                 credit_source='conversation.metadata.cost' if credit_reader is native_credit_reader else 'verified_injected_reader')
             private_json(root/'usage-ledger.json',ledger)
+            if financial_only:
+                result=_report('native_charge_settled')
+                break
             native=causal.observe_history(adapter,customer_id=baseline['customer_id'],conversation_id=cid)
             valid=(detail['status']=='done' and causal.verify_native_history(native,detail,
                 customer_id=baseline['customer_id'],conversation_id=cid,agent_id=intent['agent_id'],
@@ -356,3 +369,17 @@ def native_credit_remaining(config,provider):
         return current_remaining(config,SimpleNamespace(subscription=lambda:sub))
     except Exception:  # noqa: BLE001 - external diagnostics can contain credentials
         raise SimulationError('Native session current account quota is unavailable or changed') from None
+
+
+def reconcile_campaign(campaign,provider):
+    """Financial recovery from retained ownership evidence, independent of fixtures.
+
+    This capability does not construct a mutable fixture adapter or change its
+    blocked flag. Only the exact retained native conversation may be queried.
+    """
+    adapter=SimpleNamespace(campaign=campaign,config=campaign.config,
+        state=campaign.manifest.get('deployed_medium',{}))
+    _units(adapter,native_credit_reader)
+    root,_,_=_paths(adapter)
+    with campaign_lock(root):
+        return _finish(adapter,provider,native_credit_reader,3,financial_only=True)

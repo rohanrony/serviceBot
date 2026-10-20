@@ -739,40 +739,54 @@ def cleanup(runtime, *, live=False):
         write_report(runtime)
 
 
-def reconcile(runtime):
+def reconcile(runtime,*,native_reconcile=None):
     """Read provider billing; never repeat a paid request to recover its identity."""
     with campaign_lock(runtime.root):
         path = runtime.root / 'usage-ledger.json'
         ledger = json.loads(path.read_text())
         provider = ElevenLabs(secret(runtime.config, 'elevenlabs_key'))
-        for entry in ledger['entries']:
-            if entry.get('run_id') != runtime.run_id or not entry.get('unsettled'):
-                continue
-            if entry.get('resource_type') == 'conversation':
-                # Native-session accounting has a distinct provider identity and
-                # credit-unit contract; generic agent-test discovery cannot infer it.
-                continue
-            invocation = entry.get('invocation_id')
-            if not invocation:
-                result = provider.request('GET', '/v1/convai/test-invocations?test_id=' + quote(entry['test_id'], safe=''))
-                matches = result.get('results', [])
-                if result.get('has_more') or len(matches) != 1:
-                    raise SimulationError('Ambiguous invocation cannot yet be reconciled; do not resubmit it')
-                invocation = matches[0]['id']
-                entry['invocation_id'] = invocation
-                if invocation not in runtime.manifest['invocations']:
-                    runtime.manifest['invocations'].append(invocation)
-                    runtime.save()
-            result = provider.get(invocation)
-            if any(r.get('status') == 'pending' for r in result.get('test_runs', [])):
-                raise SimulationError('Invocation is still pending')
-            credits = provider.credits(result)
-            if credits is None:
-                raise SimulationError('Invocation charges are still unverified')
-            entry.update(unsettled=False, credits=str(credits))
-            private_json(path, ledger)
-        relevant = [e for e in ledger['entries'] if e['run_id'] == runtime.run_id]
-        runtime.manifest['unsettled_usage'] = any(e.get('unsettled') for e in relevant)
-        runtime.manifest['spent_credits'] = str(sum((number(e['credits']) for e in relevant if not e.get('unsettled')), Decimal(0)))
-        runtime.save()
-        write_report(runtime)
+        try:
+            entries=sorted(ledger['entries'],key=lambda e:e.get('resource_type')!='conversation')
+            for original in entries:
+                ledger=json.loads(path.read_text())
+                entry=next((e for e in ledger['entries'] if e==original),None)
+                if entry is None:
+                    continue
+                if entry.get('run_id') != runtime.run_id or not entry.get('unsettled'):
+                    continue
+                if entry.get('resource_type') == 'conversation':
+                    if native_reconcile is None:
+                        continue
+                    with owned_campaign_scope(runtime.root):
+                        native_reconcile(runtime,provider)
+                    # The native owner writes the same ledger; never overwrite it
+                    # with the pre-recovery snapshot.
+                    ledger = json.loads(path.read_text())
+                    continue
+                invocation = entry.get('invocation_id')
+                if not invocation:
+                    result = provider.request('GET', '/v1/convai/test-invocations?test_id=' + quote(entry['test_id'], safe=''))
+                    matches = result.get('results', [])
+                    if result.get('has_more') or len(matches) != 1:
+                        raise SimulationError('Ambiguous invocation cannot yet be reconciled; do not resubmit it')
+                    invocation = matches[0]['id']
+                    entry['invocation_id'] = invocation
+                    private_json(path, ledger)
+                    if invocation not in runtime.manifest['invocations']:
+                        runtime.manifest['invocations'].append(invocation)
+                        runtime.save()
+                result = provider.get(invocation)
+                if any(r.get('status') == 'pending' for r in result.get('test_runs', [])):
+                    raise SimulationError('Invocation is still pending')
+                credits = provider.credits(result)
+                if credits is None:
+                    raise SimulationError('Invocation charges are still unverified')
+                entry.update(unsettled=False, credits=str(credits))
+                private_json(path, ledger)
+        finally:
+            ledger=json.loads(path.read_text())
+            relevant = [e for e in ledger['entries'] if e['run_id'] == runtime.run_id]
+            runtime.manifest['unsettled_usage'] = any(e.get('unsettled') for e in relevant)
+            runtime.manifest['spent_credits'] = str(sum((number(e['credits']) for e in relevant if not e.get('unsettled')), Decimal(0)))
+            runtime.save()
+            write_report(runtime)

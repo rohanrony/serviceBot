@@ -788,3 +788,18 @@ charging-component formula or enable verification flags. Update focused captured
 REST/socket/Budget regression contracts and the feature coverage matrix; then
 review/converge and run the full exact-candidate gate once its workflow lands.
 No migration, product UI, provider write, saved-agent change or paid call is needed.
+
+### FR-070 publication review repairs
+
+Keep the existing campaign and common ledger as the ownership boundary. Route
+deployed management recovery to the native session's compiled GET-only reader
+with saved intent, stage claim and customer identity validation. Reload ledger
+state before aggregation so native settlement cannot be overwritten. Keep
+read-only financial recovery separate from permission to mutate blocked fixtures.
+Scope C48 ceiling accounting to its validated run and retain global unknown-use
+and fresh quota-delta checks. Bound same-handle recovery polling and preserve the
+resume binding. Snapshot C33's foreign request/customer before submission and
+compare subsequent reads without adding foreign IDs to ownership or cleanup.
+Add failure-first captured-provider and composed regressions, review source and
+assertions, then run the complete exact-candidate and hosted CI gates. No new UI
+journey is introduced; existing browser regressions remain mandatory.

@@ -375,3 +375,141 @@ def test_compiled_unknown_charge_blocks_outer_budget(fixture):
     assert result['global_stop'] is True and budget.unknown is True
     assert budget.spent == 0 and not budget.can_start(1)
     assert len(ledger['entries']) == 1 and ledger['entries'][0]['unsettled'] is True
+
+
+def _management_fixture(f, monkeypatch):
+    from live_simulations import deployed, runner
+    f.detail['metadata']['cost'] = None
+    session.execute(f.adapter, provider=f.provider, socket_factory=f.socket_factory,
+        credit_reader=session.native_credit_reader,
+        budget=Budget(1000, 'full', 1000, credit_ceiling=1000), estimate=10, script=['hello'])
+    config=f.adapter.config
+    config.update(artifact_root=str(f.tmp),deployed_url='https://synthetic.example')
+    manifest=f.adapter.campaign.manifest
+    manifest.update(target='deployed',deployed_url=config['deployed_url'],status='incomplete',
+        results=[],invocations=[],deployed_medium=f.adapter.state)
+    manifest['deployed_medium']['blocked']=True
+    (f.adapter.campaign.folder/'manifest.json').write_text(json.dumps(manifest))
+    monkeypatch.setattr(runner,'secret',lambda *a:'synthetic-key')
+    monkeypatch.setattr(runner,'ElevenLabs',lambda *a:f.provider)
+    f.provider.subscription=lambda:pytest.fail('Financial recovery must not fetch quota')
+    f.requests.clear()
+    return lambda:deployed.manage(config,manifest['run_id'],'reconcile')
+
+
+def test_management_settles_native_charge_with_blocked_fixtures_and_preserves_other_entries(fixture,monkeypatch):
+    f=fixture; manage=_management_fixture(f,monkeypatch)
+    path=f.tmp/'usage-ledger.json'; ledger=json.loads(path.read_text())
+    other={'run_id':'other','credits':'8','unsettled':False}
+    ledger['entries'].append(other);path.write_text(json.dumps(ledger))
+    f.detail['metadata']['cost']=0
+    assert manage()==0
+    assert manage()==0
+    ledger=json.loads(path.read_text())
+    assert ledger['entries'][0]['unsettled'] is False and ledger['entries'][0]['credits']=='0'
+    assert ledger['entries'][1]==other
+    manifest=json.loads((f.adapter.campaign.folder/'manifest.json').read_text())
+    assert manifest['spent_credits']=='0' and manifest['unsettled_usage'] is False
+    assert manifest['deployed_medium']['blocked'] is True
+    assert f.requests==[('GET','/v1/convai/conversations/actual-session')]
+
+
+@pytest.mark.parametrize('damage',['unknown_id','missing_units','claim_drift','cross_run','malformed','provider_error'])
+def test_management_native_recovery_fails_closed(fixture,monkeypatch,damage):
+    f=fixture; manage=_management_fixture(f,monkeypatch)
+    path=f.tmp/'usage-ledger.json';ledger=json.loads(path.read_text())
+    if damage=='unknown_id': ledger['entries'][0].pop('provider_conversation_id')
+    elif damage=='missing_units': f.adapter.config['budget']['verified_credit_units']=False
+    elif damage=='claim_drift': ledger['stage_authorizations'][0]['run_id']='foreign'
+    elif damage=='cross_run': ledger['entries'][0]['run_id']='foreign'
+    elif damage=='malformed': f.detail['metadata']['cost']=True
+    else:
+        def failed(*args): raise RuntimeError('private-provider-text')
+        f.provider.request=failed
+    path.write_text(json.dumps(ledger))
+    try: manage()
+    except SimulationError as error: assert 'private-provider-text' not in str(error)
+    ledger=json.loads(path.read_text())
+    assert ledger['entries'][0]['unsettled'] is True and 'credits' not in ledger['entries'][0]
+    assert all(method=='GET' and url=='/v1/convai/conversations/actual-session' for method,url in f.requests)
+
+
+def test_management_retains_partial_native_settlement_when_other_charge_is_pending(fixture,monkeypatch):
+    f=fixture;manage=_management_fixture(f,monkeypatch)
+    path=f.tmp/'usage-ledger.json';ledger=json.loads(path.read_text())
+    other={'run_id':f.adapter.campaign.run_id,'case_id':'C17','unsettled':True,'invocation_id':'pending-test'}
+    ledger['entries'].append(other);path.write_text(json.dumps(ledger))
+    f.detail['metadata']['cost']=7
+    f.provider.get=lambda invocation:{'test_runs':[{'status':'pending'}]}
+    with pytest.raises(SimulationError,match='still pending'):manage()
+    ledger=json.loads(path.read_text())
+    assert ledger['entries'][0]['credits']=='7' and ledger['entries'][0]['unsettled'] is False
+    assert ledger['entries'][1]==other
+    manifest=json.loads((f.adapter.campaign.folder/'manifest.json').read_text())
+    assert manifest['spent_credits']=='7' and manifest['unsettled_usage'] is True
+    assert manifest['deployed_medium']['blocked'] is True
+
+
+def test_management_rejects_changed_retained_intent_before_provider_get(fixture,monkeypatch):
+    f=fixture;manage=_management_fixture(f,monkeypatch)
+    path=f.adapter.campaign.folder/'C50-native-session-intent.json'
+    intent=json.loads(path.read_text());intent['baseline']['customer_id']=99
+    path.write_text(json.dumps(intent))
+    with pytest.raises(SimulationError):manage()
+    assert f.requests==[]
+    assert json.loads((f.tmp/'usage-ledger.json').read_text())['entries'][0]['unsettled'] is True
+
+
+def test_management_persists_discovered_invocation_before_pending_read(fixture,monkeypatch):
+    f=fixture;manage=_management_fixture(f,monkeypatch)
+    path=f.tmp/'usage-ledger.json';ledger=json.loads(path.read_text())
+    ledger['entries'].append({'run_id':f.adapter.campaign.run_id,'case_id':'C17',
+        'unsettled':True,'test_id':'owned-test'})
+    path.write_text(json.dumps(ledger));f.detail['metadata']['cost']=3
+    actual=f.provider.request;discoveries=[]
+    def request(method,url):
+        if 'test-invocations?' in url:
+            discoveries.append(url)
+            return {'results':[{'id':'discovered-invocation'}]}
+        return actual(method,url)
+    def get(invocation):
+        assert invocation=='discovered-invocation'
+        assert json.loads(path.read_text())['entries'][1]['invocation_id']==invocation
+        return {'test_runs':[{'status':'pending'}]}
+    f.provider.request=request;f.provider.get=get
+    for _ in range(2):
+        with pytest.raises(SimulationError,match='still pending'):manage()
+    assert discoveries==['/v1/convai/test-invocations?test_id=owned-test']
+    assert json.loads(path.read_text())['entries'][1]['invocation_id']=='discovered-invocation'
+
+
+def test_management_financial_recovery_does_not_require_current_customer_database(fixture,monkeypatch):
+    f=fixture;manage=_management_fixture(f,monkeypatch)
+    f.detail['metadata']['cost']=4
+    monkeypatch.setattr(session.causal.medium,'_read',lambda *a:pytest.fail('Financial recovery must not query current customer DB'))
+    assert manage()==0
+    entry=json.loads((f.tmp/'usage-ledger.json').read_text())['entries'][0]
+    assert entry['unsettled'] is False and entry['credits']=='4'
+
+
+@pytest.mark.parametrize('provider_phone',['+15550100001','+15550100002'])
+def test_management_customer_drift_uses_original_provider_identity(fixture,monkeypatch,provider_phone):
+    f=fixture;manage=_management_fixture(f,monkeypatch)
+    f.detail['metadata']['cost']=4
+    f.detail['user_id']=provider_phone
+    monkeypatch.setattr(session.causal.medium,'_read',lambda *a:[{'id':7,'name':'Changed','phone':'+15550109999'}])
+    assert manage()==0
+    entry=json.loads((f.tmp/'usage-ledger.json').read_text())['entries'][0]
+    assert entry['unsettled'] is (provider_phone!='+15550100001')
+
+
+@pytest.mark.parametrize('key,value',[('customer_phone','15550100001'),('customer_phone',True),
+    ('customer_phone','+1555010000'),('customer_name','   '),('customer_name',None)])
+def test_management_malformed_saved_customer_identity_stops_before_get(fixture,monkeypatch,key,value):
+    f=fixture;manage=_management_fixture(f,monkeypatch)
+    path=f.adapter.campaign.folder/'manifest.json'
+    manifest=json.loads(path.read_text());manifest['deployed_medium']['full_history'][key]=value
+    path.write_text(json.dumps(manifest))
+    monkeypatch.setattr(session.causal.medium,'_read',lambda *a:pytest.fail('No customer DB needed'))
+    with pytest.raises(SimulationError,match='saved customer identity'):manage()
+    assert f.requests==[]

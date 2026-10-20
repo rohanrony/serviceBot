@@ -662,3 +662,18 @@ exactly; concurrent or unknown changes stop the campaign.
   nonnegative integer total, preserve unknown/conflicting charges, and reconcile
   known conversations by GET without replay. Code completion does not verify the
   real account's native billing units or authorize paid sessions.
+
+### Publication review recovery contracts (FR-070)
+
+- **FR-070**: The supported deployed management reconciliation command must
+  settle a known C50 conversation through bounded, read-only native GETs under
+  its saved intent and full-stage authority, preserving unknown identities and
+  account-unit gates. Refresh the common ledger after settlement before writing
+  campaign totals; billing recovery must not replay a session or assert native
+  acceptance. C48 admission counts all current-run phases against that run's
+  ceiling, while historical settled use affects fresh quota deltas and every
+  unsettled entry blocks admission. Poll a pending recovery using its same
+  handle within bounded attempts; retain its binding for read-only continuation
+  after exhaustion. C33 records the exact other customer's booking and customer
+  baseline before submission, rejects subsequent drift, and never registers the
+  foreign request as campaign-owned or eligible for cleanup.

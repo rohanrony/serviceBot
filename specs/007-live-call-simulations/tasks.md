@@ -744,3 +744,24 @@ finding. The source models do not establish the real account's native credit
 equivalence; no real verification flag was enabled and no provider calls were made.
 Full offline execution and publication verification remain separate gates; the
 other chat's verifier/CI workflow must reach main before scoped publication.
+
+## Phase 33: PR 7 review repairs
+
+- [x] T163 Add failing C33 pre-submission foreign identity and drift regressions;
+  bind read-only snapshots without adopting foreign bookings (FR-070).
+- [x] T164 Add failing C48 shared-ledger ceiling and pending-recovery regressions;
+  scope ceilings to the run and poll the same recovery handle with bounded
+  attempts and a retained continuation binding (FR-070).
+- [x] T165 Cover the supported deployed C50 management command and implement
+  GET-only native reconciliation with exact authority and ledger aggregation
+  (FR-069/070).
+- [ ] T166 Review all four PR findings, run fresh exact-candidate full offline
+  verification and hosted CI, resolve review threads and publish/merge the
+  authorized branch. Preserve deferred deployment and native acceptance.
+
+Phase33 focused evidence: C33/native/conditions and C48 together pass160 tests;
+C50 session/credit contracts pass105 tests. Expected Red failures preceded all
+four fixes, including three database-independence regressions from independent
+review. Source re-review found no remaining actionable issue. Exact-candidate
+verification, hosted CI and publication are tracked by T166 and PR7; no new paid
+session or production mutation was performed.

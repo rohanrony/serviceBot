@@ -361,7 +361,8 @@ def test_recovery_requires_actual_testing_lookup_provenance(tmp_path, change):
 
 
 @pytest.mark.parametrize("delayed", [False, True])
-def test_runner_facade_dispatches_full_lifecycle(tmp_path, delayed):
+@pytest.mark.parametrize("recovery_pending", [0, 2, 4])
+def test_runner_facade_dispatches_full_lifecycle(tmp_path, delayed, recovery_pending):
     import runpy
     from pathlib import Path
 
@@ -412,7 +413,10 @@ def test_runner_facade_dispatches_full_lifecycle(tmp_path, delayed):
         ],
     }
 
+    recovery_submissions = []
+
     def recovery_submit(request):
+        recovery_submissions.append(request)
         assert request == {"tests": [{"test_id": "recovery-test"}], "repeat_count": 1}
         assert (
             json.loads((folder / "C48-1-interruption.json").read_text())[
@@ -420,7 +424,12 @@ def test_runner_facade_dispatches_full_lifecycle(tmp_path, delayed):
             ]
             is True
         )
-        provider.responses = [recovery_receipt]
+        import copy
+
+        pending = copy.deepcopy(recovery_receipt)
+        pending["test_runs"][0]["status"] = "pending"
+        pending["test_runs"][0]["credits_used"] = None
+        provider.responses = [pending] * recovery_pending + [recovery_receipt]
         return {"id": "recovery-invocation"}
 
     source = {
@@ -478,6 +487,7 @@ def test_runner_facade_dispatches_full_lifecycle(tmp_path, delayed):
             raise SimulationError("Booking has not committed yet")
         return booking
 
+    sleeps = []
     result = execute(
         root,
         source=source,
@@ -489,7 +499,36 @@ def test_runner_facade_dispatches_full_lifecycle(tmp_path, delayed):
         provider=provider,
         observe_booking=observe_booking,
         observe_delivery=lambda: delivery,
+        max_recovery_polls=3,
+        poll_interval=0,
+        sleep=sleeps.append,
     )
+    assert len(recovery_submissions) == 1
+    assert sleeps == [0] * (min(recovery_pending, 2) + int(delayed))
+    if recovery_pending == 4:
+        assert result["status"] == "awaiting_terminal"
+        assert result["global_stop"] is True
+        from live_simulations.deployed_full_recovery import advance_recovery
+        from live_simulations.deployed_full_interruption import Binding
+
+        resumed = advance_recovery(
+            root,
+            binding=Binding(**result["recovery_binding"]),
+            provider=provider,
+            observe_booking=observe_booking,
+            observe_delivery=lambda: delivery,
+        )
+        assert resumed["status"] == "awaiting_terminal"
+        resumed = advance_recovery(
+            root,
+            binding=Binding(**result["recovery_binding"]),
+            provider=provider,
+            observe_booking=observe_booking,
+            observe_delivery=lambda: delivery,
+        )
+        assert resumed["recovery_verified"] is True
+        assert len(json.loads((root / "usage-ledger.json").read_text())["entries"]) == 2
+        return
     assert (
         result["recovery_verified"] is True
         and result["native_acceptance"] == "unverified"
@@ -549,6 +588,7 @@ def test_recovery_deducts_actual_source_cost_from_retained_quota(tmp_path):
                 "quota_baseline_spent": 0,
             },
             {"entries": [{"unsettled": False, "credits": 9}]},
+            run_id="a" * 32,
             phase="recovery",
         )
 
@@ -718,3 +758,61 @@ def test_coordinator_accepts_exact_owned_canonical_oil_service(tmp_path):
     args["expected_booking"]["service_type"] = "owner123 Oil Change"
     prepared = prepare_source(**args)
     assert prepared["expected_booking"]["service_type"] == "owner123 Oil Change"
+
+
+@pytest.mark.parametrize("current_spend,accepted", [(25, True), (55, False)])
+def test_budget_ceiling_counts_current_run_all_phases_not_lifetime(
+    tmp_path, current_spend, accepted
+):
+    args = inputs(tmp_path)
+    private_json(
+        tmp_path / "usage-ledger.json",
+        {
+            "entries": [
+                {"run_id": "b" * 32, "credits": 500, "unsettled": False},
+                {
+                    "run_id": args["identity"]["run_id"],
+                    "case_id": "C17",
+                    "credits": current_spend,
+                    "unsettled": False,
+                },
+            ]
+        },
+    )
+    if accepted:
+        prepared = prepare_source(**args)
+        assert prepared["budget"]["quota_baseline_spent"] == str(500 + current_spend)
+    else:
+        with pytest.raises(SimulationError):
+            prepare_source(**args)
+
+
+def test_foreign_unsettled_usage_still_blocks_current_run(tmp_path):
+    args = inputs(tmp_path)
+    private_json(
+        tmp_path / "usage-ledger.json",
+        {
+            "entries": [
+                {"run_id": "b" * 32, "unsettled": True},
+            ]
+        },
+    )
+    with pytest.raises(SimulationError):
+        prepare_source(**args)
+
+
+@pytest.mark.parametrize("polls", [0, 101, True, 1.5])
+def test_recovery_poll_bound_rejected_before_any_submission(tmp_path, polls):
+    from live_simulations.deployed_full_recovery import execute
+
+    with pytest.raises(SimulationError, match="Bounded same-handle"):
+        execute(
+            tmp_path,
+            source={},
+            recovery={},
+            provider=None,
+            observe_booking=lambda: None,
+            observe_delivery=lambda: None,
+            max_recovery_polls=polls,
+        )
+    assert not (tmp_path / "usage-ledger.json").exists()

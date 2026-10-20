@@ -760,35 +760,56 @@ class NativeBridge:
         return value
 
     def _condition_identity(self, cid, values):
+        if cid == "C33":
+            pre = self._condition_pre(cid)
+            configured = {
+                "customer_id": medium._identity_id(self.adapter.config),
+                "other_request_id": values.get("other_request_id"),
+                "other_customer_id": values.get("other_customer_id"),
+                "attempt": values.get("attempt", 1),
+            }
+            if configured != pre.get("foreign_identity"):
+                raise SimulationError("C33 foreign observation configuration differs")
+            row = pre["snapshot"]["requests"][0]
+            binding = Identity(
+                run_id=pre["run_id"],
+                case_id=cid,
+                attempt=pre["attempt"],
+                customer_id=pre["customer_id"],
+                request_id=row["id"],
+                staff_agent_id=row["staff_agent_id"],
+                other_customer_id=configured["other_customer_id"],
+            )
+            binding.validate()
+            current = self.conditions._snapshot(binding)
+            if any(
+                current[key] != pre["snapshot"][key]
+                for key in ("requests", "customers")
+            ):
+                raise SimulationError("C33 foreign booking/customer baseline differs")
+            records = self.adapter.state.setdefault("full_condition_bindings", {})
+            if cid in records and records[cid] != asdict(binding):
+                raise SimulationError("C33 foreign observation binding differs")
+            records[cid] = asdict(binding)
+            self.adapter._save()
+            return binding
         records = self.adapter.state.get("full_condition_bindings", {})
         if cid in records:
             binding = Identity(**records[cid])
             binding.validate()
             return binding
         pre = self._condition_pre(cid)
-        if cid == "C33":
-            request_id = values.get("other_request_id")
-            if request_id not in self.adapter.owned_ids:
-                return None
-            candidates = _external(self.reader.request_rows, [request_id])
-            candidates = [
-                r
-                for r in candidates
-                if r.get("customer_id") == values.get("other_customer_id")
-            ]
-        else:
-            rows = self._condition_rows(pre["customer_id"])
-            candidates = [
-                r
-                for r in rows
-                if r.get("id") not in pre["candidate_request_ids"]
-                and r.get("id") not in self.adapter.original_ids
-                and r.get("customer_id") == pre["customer_id"]
-                and r.get("service_type")
-                == self.adapter.state["services"]["oil"]["name"]
-                and medium._digits(r.get("customer_phone"))
-                == medium._digits(values.get("customer_phone"))
-            ]
+        rows = self._condition_rows(pre["customer_id"])
+        candidates = [
+            r
+            for r in rows
+            if r.get("id") not in pre["candidate_request_ids"]
+            and r.get("id") not in self.adapter.original_ids
+            and r.get("customer_id") == pre["customer_id"]
+            and r.get("service_type") == self.adapter.state["services"]["oil"]["name"]
+            and medium._digits(r.get("customer_phone"))
+            == medium._digits(values.get("customer_phone"))
+        ]
         if not candidates:
             return None
         if len(candidates) != 1:
@@ -880,6 +901,29 @@ class NativeBridge:
             replacement_staff_agent_id=values.get("replacement_staff_agent_id"),
         )
         snapshot = self.conditions._snapshot(provisional)
+        if cid == "C33":
+            request_id = values.get("other_request_id")
+            other_customer_id = values.get("other_customer_id")
+            if (
+                not _positive_id(request_id)
+                or not _positive_id(other_customer_id)
+                or other_customer_id == customer_id
+                or request_id in self.adapter.owned_ids
+            ):
+                raise SimulationError("Exact foreign C33 request/customer required")
+            provisional.request_id = request_id
+            snapshot = self.conditions._snapshot(provisional)
+            customers = {r["id"]: r for r in snapshot["customers"]}
+            if (
+                len(snapshot["requests"]) != 1
+                or snapshot["requests"][0].get("id") != request_id
+                or snapshot["requests"][0].get("customer_id") != other_customer_id
+                or not _positive_id(snapshot["requests"][0].get("staff_agent_id"))
+                or set(customers) != {customer_id, other_customer_id}
+                or customers[customer_id]["phone"]
+                == customers[other_customer_id]["phone"]
+            ):
+                raise SimulationError("Exact distinct C33 foreign baseline unavailable")
         rows = self._condition_rows(customer_id)
         value = {
             "run_id": self.adapter.campaign.manifest["run_id"],
@@ -889,6 +933,13 @@ class NativeBridge:
             "candidate_request_ids": [r["id"] for r in rows],
             "snapshot": snapshot,
         }
+        if cid == "C33":
+            value["foreign_identity"] = {
+                "customer_id": customer_id,
+                "other_request_id": request_id,
+                "other_customer_id": other_customer_id,
+                "attempt": attempt,
+            }
         name = f"{cid}-{attempt}-condition-pre-request.json"
         _intent(Path(self.adapter.campaign.folder) / name, value)
         self.adapter.state.setdefault("full_condition_prepared", {})[cid] = {
@@ -913,7 +964,7 @@ class NativeBridge:
         folder = Path(self.adapter.campaign.folder)
         baseline = folder / f"{cid}-{binding.attempt}-conditions-baseline.json"
         if not baseline.exists():
-            if cid in ("C37", "C38", "C39", "C40"):
+            if cid in ("C33", "C37", "C38", "C39", "C40"):
                 pre = self._condition_pre(cid)
                 _intent(
                     baseline,
