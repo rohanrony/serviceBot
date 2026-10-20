@@ -75,8 +75,14 @@ def test_booking_does_not_duplicate_messages_to_customer_and_agent():
     mock_cursor = MagicMock()
     # When polling worker selects PENDING due reminders:
     def mock_fetchall():
-        now = dt_mod.datetime.now()
-        return [r for r in stored_reminders if r["status"] == "PENDING" and r["scheduled_at"] <= now]
+        query, params = mock_cursor.execute.call_args.args
+        query = str(query).lower()
+        if "from sms_log" in query:
+            return []
+        if "from sms_reminders" in query:
+            cutoff = params[0]
+            return [r for r in stored_reminders if r["status"] == "PENDING" and r["scheduled_at"] <= cutoff]
+        return []
     mock_cursor.fetchall.side_effect = mock_fetchall
     mock_cursor_ctx = MagicMock()
     mock_cursor_ctx.__enter__.return_value = mock_cursor

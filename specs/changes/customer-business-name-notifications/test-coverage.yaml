@@ -1,0 +1,86 @@
+schema: 1
+feature: changes/customer-business-name-notifications
+acceptance:
+  - id: AC1
+    behavior: Customer appointment lifecycle and reminder messages include the configured business name, while staff messages and name-less configurations preserve their existing format.
+    preconditions:
+      - Configured business name and synthetic notification recipients
+      - Deterministic mocked SMS and WhatsApp transports
+    success:
+      - Customer message bodies include the configured name
+      - Staff message bodies do not gain the customer-facing name prefix
+    failure:
+      - Missing or blank business name does not introduce an empty or placeholder prefix
+    invariants:
+      - Routing, opt-in, persisted delivery status, retries, and unrelated message content remain unchanged
+    tests:
+      - tests/test_no_duplicate_booking_messages.py::test_booking_does_not_duplicate_messages_to_customer_and_agent
+      - tests/test_customer_notification_details.py::test_business_name_prefix_omits_missing_or_invalid_name
+      - tests/test_customer_notification_details.py::test_customer_reminder_messages_omit_appointment_number_and_include_details
+      - tests/test_customer_notification_details.py::test_sms_router_customer_messages_omit_appointment_number_and_include_map
+    layer: [unit, database, provider_contract]
+    live_acceptance:
+      status: pending
+      reason: Existing customer notification scenario must confirm the delivered message body with independent provider read-back; no live execution was authorized.
+      scenarios: [C01]
+      scenario_source: live_simulations/scenarios.json
+      prerequisites: ["Target environment/revision and scenario-owned business configuration", "Synthetic recipient, consent, and provider access"]
+      expected_effects: ["One booking confirmation includes the configured business name", "No duplicate message or unintended recipient"]
+      independent_read_back: ["Read the provider message for the scenario-owned booking and correlate its provider/message ID and body"]
+      cleanup_recovery: ["Use scenario-owned booking and recipient cleanup; retain provider evidence and reconcile any ambiguous send before retry"]
+      estimated_credits: unknown
+      estimated_cost: unknown
+      spending_ceiling: "Not proposed; live acceptance is not authorized"
+      unknown_charge_handling: "Stop, retain ledger, reconcile before retry"
+      reuse: "C01 may be reused only when the target, recipient consent, business configuration, and retained message-body assertion match this change"
+      evidence: []
+  - id: AC2
+    behavior: Agent and admin lifecycle/reminder SMS and WhatsApp messages include the configured business name.
+    preconditions:
+      - Configured business name and synthetic staff/admin recipients
+      - Enabled notification matrix rules and deterministic mocked transports
+    success:
+      - Agent and admin message bodies include the configured name
+      - Agent reminder messages include the configured name
+    failure:
+      - Missing or invalid configured name leaves the message body without an added prefix
+    invariants:
+      - Existing recipients, routing, event details, and delivery state remain unchanged
+    tests:
+      - tests/test_no_duplicate_booking_messages.py::test_booking_does_not_duplicate_messages_to_customer_and_agent
+      - tests/test_customer_notification_details.py::test_customer_reminder_messages_omit_appointment_number_and_include_details
+      - tests/test_customer_notification_details.py::test_sms_router_customer_messages_omit_appointment_number_and_include_map
+    layer: [unit, provider_contract]
+    live_acceptance:
+      status: pending
+      reason: Existing booking scenario can verify internal recipient message bodies with independent provider read-back; live execution is not authorized.
+      scenarios: [C01]
+      scenario_source: live_simulations/scenarios.json
+      prerequisites: ["Target environment/revision and scenario-owned business configuration", "Synthetic staff/admin recipients and provider access"]
+      expected_effects: ["Agent and admin booking messages include the configured business name", "No duplicate or unintended notification"]
+      independent_read_back: ["Read provider messages for the scenario-owned booking and correlate recipient, provider/message ID, and body"]
+      cleanup_recovery: ["Use scenario-owned booking and recipient cleanup; retain provider evidence and reconcile any ambiguous send before retry"]
+      estimated_credits: unknown
+      estimated_cost: unknown
+      spending_ceiling: "Not proposed; live acceptance is not authorized"
+      unknown_charge_handling: "Stop, retain ledger, reconcile before retry"
+      reuse: "C01 may be reused only when target, recipients, business configuration, and retained message-body assertions match this change"
+      evidence: []
+omitted_layers:
+  http: "Message formatting occurs after the internal event handler; this change adds no HTTP request or response contract."
+  browser: "This change does not alter a browser-visible flow; the changed contract is the notification body at the mocked provider boundary."
+  composed: "The body-formatting contract is directly asserted at the mocked SMS/WhatsApp boundary; no additional multi-service composition behavior changes."
+  migration: "No schema or stored-record changes."
+  targeted: "All changed behavior is covered by the focused unit and provider-boundary tests above."
+review:
+  red: "The missing/invalid-name regression first failed at collection before the helper existed; customer, agent, and admin prefix assertions then failed before internal message prefixes were implemented."
+  green: "6 focused notification/name cases passed; the complete notification test file passed 10/10; complete offline verification passed all unit/integration and 680 E2E cases."
+  test_changes: "Business-name assertions are additive. The duplicate-booking test double now applies the queried SMS-log table and due-time cutoff instead of returning reminder rows for every SELECT; existing no-duplicate assertions remain."
+  sufficiency: "Covers configured names in customer, agent, and admin lifecycle/reminder bodies plus missing, blank, whitespace-only, and non-string names. The complete offline suite also exercises notification delivery workflows."
+  offline:
+    status: verified
+    reason: Focused notification tests and required complete offline verification passed.
+    evidence:
+      - "./run_tests.sh --file tests/test_customer_notification_details.py: 10 passed"
+      - "./run_tests.sh --verify: unit/integration and 680 E2E passed"
+      - "JSON/YAML parsing, Python compilation, and git diff --check passed"
