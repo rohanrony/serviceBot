@@ -22,13 +22,13 @@ CASES = {c['id']: c for c in load_catalog()}
 
 @pytest.fixture
 def native_full(api, live_server, db, scenario, tmp_path, freeze_business_clock, monkeypatch):
-    from serviceBot.db.connection import get_db_connection
+    from serviceBot.db.connection import get_db_url
     from serviceBot.services import outbox_worker
 
     now = freeze_business_clock(scenario['start'] - timedelta(days=2))
     monkeypatch.setattr(medium, '_now', lambda config: now)
-    with get_db_connection() as conn:
-        monkeypatch.setenv('FULL_E2E_OBSERVER_DSN', conn.dsn)
+    # psycopg2 connection.dsn masks passwords; retain the fixture-owned authenticated URL.
+    monkeypatch.setenv('FULL_E2E_OBSERVER_DSN', get_db_url())
     assert db('SELECT current_database() AS name')[0]['name'].startswith('voice_e2e_')
     db("UPDATE service_requests SET status='cancelled' WHERE id=1")
     db("INSERT INTO user_google_accounts(agent_id,email,granted_scopes) VALUES(1,'taylor@example.test','https://www.googleapis.com/auth/calendar'),(2,'morgan@example.test','https://www.googleapis.com/auth/calendar')")

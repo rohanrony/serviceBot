@@ -1,4 +1,5 @@
 import datetime as dt_mod
+from zoneinfo import ZoneInfo
 from unittest.mock import patch, MagicMock
 import pytest
 
@@ -11,7 +12,16 @@ from serviceBot.db.connection import get_db_connection, dict_cursor
 
 
 @pytest.fixture
-def sample_appointment():
+def business_clock(monkeypatch):
+    from serviceBot.services import timezone_service
+
+    now = dt_mod.datetime(2026, 10, 12, 10, 0, tzinfo=ZoneInfo("America/New_York"))
+    monkeypatch.setattr(timezone_service, "now_in_business_tz", lambda: now)
+    return now.replace(tzinfo=None)
+
+
+@pytest.fixture
+def sample_appointment(business_clock):
     """Creates a sample appointment in the test DB for reminder testing."""
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
@@ -28,19 +38,19 @@ def sample_appointment():
             cursor.execute(
                 """
                 INSERT INTO service_requests (customer_id, staff_agent_id, service_type, issue_description, status, booking_time, booking_type)
-                VALUES (%s, %s, 'Brake Inspection', 'Squeaking brakes', 'pending', '2026-10-10 14:00:00', 'appointment')
+                VALUES (%s, %s, 'Brake Inspection', 'Squeaking brakes', 'pending', %s, 'appointment')
                 RETURNING id;
                 """,
-                (cust_id, agent_id),
+                (cust_id, agent_id, (business_clock + dt_mod.timedelta(days=8)).replace(hour=14)),
             )
             appt_id = cursor.fetchone()["id"]
             conn.commit()
             return appt_id, "+19195550111", "+19195550222"
 
 
-def test_schedule_appointment_reminders_queues_attempts_and_persists_cutoff(sample_appointment):
+def test_schedule_appointment_reminders_queues_attempts_and_persists_cutoff(sample_appointment, business_clock):
     appt_id, cust_phone, agent_phone = sample_appointment
-    booking_time = (dt_mod.datetime.now() + dt_mod.timedelta(days=3)).strftime("%Y-%m-%d 14:00:00")
+    booking_time = (business_clock + dt_mod.timedelta(days=3)).strftime("%Y-%m-%d 14:00:00")
 
     schedule_appointment_reminders(
         appointment_id=appt_id,
@@ -74,12 +84,12 @@ def test_schedule_appointment_reminders_queues_attempts_and_persists_cutoff(samp
             assert "agent" in recipients
 
 
-def test_polling_worker_handles_carrier_error_retry_backoff(sample_appointment):
+def test_polling_worker_handles_carrier_error_retry_backoff(sample_appointment, business_clock):
     appt_id, cust_phone, agent_phone = sample_appointment
 
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
-            past_time = dt_mod.datetime.now() - dt_mod.timedelta(minutes=5)
+            past_time = business_clock - dt_mod.timedelta(minutes=5)
             cursor.execute(
                 """
                 INSERT INTO sms_reminders (appointment_id, recipient_type, recipient_phone, reminder_type, scheduled_at, status, attempt_number, attempt_kind, retry_count)
@@ -103,15 +113,15 @@ def test_polling_worker_handles_carrier_error_retry_backoff(sample_appointment):
             assert row["retry_count"] == 1
             assert row["status"] == "PENDING"
             assert "30008" in (row["last_error"] or "")
-            assert row["scheduled_at"] > dt_mod.datetime.now()
+            assert row["scheduled_at"] == business_clock + dt_mod.timedelta(minutes=1)
 
 
-def test_polling_worker_max_retries_marks_failed(sample_appointment):
+def test_polling_worker_max_retries_marks_failed(sample_appointment, business_clock):
     appt_id, cust_phone, agent_phone = sample_appointment
 
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
-            past_time = dt_mod.datetime.now() - dt_mod.timedelta(minutes=5)
+            past_time = business_clock - dt_mod.timedelta(minutes=5)
             cursor.execute(
                 """
                 INSERT INTO sms_reminders (appointment_id, recipient_type, recipient_phone, reminder_type, scheduled_at, status, attempt_number, attempt_kind, retry_count)

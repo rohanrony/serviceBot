@@ -1,3 +1,4 @@
 # Install after the application requirements; pytest is already included there.
 playwright>=1.50,<2
 python-dotenv>=1.2,<2
+PyYAML>=6,<7

@@ -1,12 +1,15 @@
 <!--
 Sync Impact Report
-Version change: 1.1.0 -> 1.2.0
-Modified principles:
-- IV. Strict Test-First Development and Contract Coverage (require test selection for every behavioral update, including browser-level coverage where user journeys cross the browser)
+Version change: 1.2.0 -> 1.3.0
+Modified principles: none (strict behavioral TDD and offline isolation retained)
 Modified sections:
-- Development Workflow and Quality Gates (require the complete Spec-Kit lifecycle and an iterative converge-to-implementation feedback loop)
-Added sections: none
-Removed sections: none
+- Development Workflow and Quality Gates: add bug-fix, small-change and full Spec-Kit routes;
+  restore custom checklist review in the full path; share complete offline publication gates.
+- Governance: record route-selection rationale and compatibility with existing feature artifacts.
+Templates reviewed: spec-template.md, plan-template.md, tasks-template.md and
+test-coverage-template.yaml remain applicable; small records reuse the coverage template.
+Compatibility: existing features retain their artifacts; bounded changes need no new full cycle.
+Diagnostic setup uses existing read access only; no new access grants or production mutations.
 Deferred fields and follow-up TODOs: none
 -->
 
@@ -102,14 +105,34 @@ All behavioral changes MUST follow the mandatory TDD execution protocol:
 4. **Refactor & Verification**: Refactor for clarity, efficiency, and resource cleanup. Validate
    locally using `./run_tests.sh` (e.g., `--file <path>`, `--service <name>`, or `--all`).
 
-Changes managed through Spec-Kit MUST follow the project-level iterative workflow in
-`docs/SPECKIT_WORKFLOW.md`: specify and clarify requirements, plan, generate tasks, analyze
-artifact consistency, implement test-first, then converge against the implemented behavior.
-Converge feedback MUST be routed to its source: implementation or test gaps become appended tasks
-for another test-first implementation pass; requirement changes return to specify/clarify; design
-changes return to plan. When an upstream artifact changes, its downstream artifacts MUST be
-reconciled and analyzed again before implementation resumes. Repeat implementation and convergence
-until converge reports no actionable findings.
+Development MUST use a route proportional to intent, uncertainty and impact, as documented in
+`docs/SPECKIT_WORKFLOW.md`. The workflow MUST announce the chosen route and reason:
+- Bug fixes restoring established behavior use systematic investigation, a failing regression,
+  the bounded fix/refactor and review. Reuse current relevant initialization and diagnosis.
+- Small clear changes use a concise acceptance/test record, appropriate test updates,
+  implementation and review; a full PRD or new feature directory is not required.
+- Complex or consequential features use the full Spec-Kit path: read constitution, specify,
+  clarify, plan, reviewer-owned checklist, tasks, read-only analyze, implement and converge.
+  Unknown root cause alone requires investigation; new intent or substantial design decisions
+  discovered during investigation require escalation. Explicit full-path requests MUST be honored.
+
+Every route MUST retain meaningful tests and acceptance-to-test mapping. Before publication,
+the exact candidate and current target MUST pass static checks and the complete offline
+`./run_tests.sh --verify` through `./scripts/verify_change.sh --base <target-ref> --head <commit-sha>`.
+Changed source/target invalidates evidence. Current CI/review remain required before merge.
+Only pure documentation changes without behavioral impact may use the documented reviewed exemption;
+configuration, prompts, workflows and test infrastructure are not automatically exempt.
+
+Diagnostic log/database access MUST be bounded, read-only and relevant to the task. Keep it
+separate from offline test credentials/data. No production repair or paid/provider mutation
+is authorized by initialization. Missing access MUST remain an explicit evidence limitation.
+
+For Spec-Kit runs, custom checklists MUST remain reviewer-owned; implementation MUST NOT change
+checklist markers and MUST ask before proceeding with unchecked items. Specify/Clarify may
+maintain the built-in requirements checklist. Converge MUST remain append-only: implementation
+or test gaps return to tasks/implementation, requirement changes to Specify/Clarify, and design
+changes to Plan. Reconcile downstream artifacts and rerun Analyze after upstream changes.
+Repeat implementation/convergence until all tasks complete and no actionable findings remain.
 
 Before declaring any behavioral change complete:
 - Contributors MUST run focused test validation for the affected service and ensure the full
@@ -140,8 +163,9 @@ Constitution versions MUST follow semantic versioning:
 - MINOR increments apply to new principles, new sections, or substantive guidance additions.
 - PATCH increments apply to clarifications and other changes that do not alter obligations.
 
-Version 1.2.0 expands Principle IV and Development Workflow to require changed-contract test
-coverage, browser-level end-to-end coverage for user-visible browser journeys, and the complete
-iterative Spec-Kit workflow, including routing converge feedback to the appropriate upstream stage.
+Version 1.3.0 adds proportional development routes and scoped diagnostic initialization while
+retaining strict behavioral TDD, browser contract coverage and complete exact-candidate offline
+publication verification. Full Spec-Kit runs include reviewer-owned checklist review and iterative
+convergence; existing feature artifacts and valid evidence remain reusable where still applicable.
 
-**Version**: 1.2.0 | **Ratified**: 2026-10-03 | **Last Amended**: 2026-10-07
+**Version**: 1.3.0 | **Ratified**: 2026-10-03 | **Last Amended**: 2026-10-19

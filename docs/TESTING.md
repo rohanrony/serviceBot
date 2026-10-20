@@ -112,6 +112,10 @@ database sessions are terminated and no setup failures are swallowed.
 
 Application behavior changes follow [SPECKIT_WORKFLOW.md](SPECKIT_WORKFLOW.md).
 Test maintenance does not authorize product changes, live messages or deployment.
+Before publication, use the exact-commit gate in [MERGE_READINESS.md](MERGE_READINESS.md):
+`./scripts/verify_change.sh --base <target-ref> --head <commit-sha>`. Focused runs and old
+JUnit files do not establish publication readiness. Store acceptance obligations in the
+feature's `test-coverage.yaml` before implementation and review assertion quality afterward.
 
 ## Multi-service booking regression contracts
 

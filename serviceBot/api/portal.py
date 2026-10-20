@@ -1471,6 +1471,9 @@ def _load_service_requests(
                     duration = (svc_fields.get("duration_minutes") or 60) if svc_fields else 60
                 r["duration_minutes"] = duration
 
+                # Preserve legacy wall-clock fields while exposing unambiguous browser instants.
+                r["booking_start_iso"] = None
+                r["booking_end_iso"] = None
                 raw_time = r.get("booking_time") or r.get("time_slot")
                 if raw_time:
                     raw_str = str(raw_time).strip()
@@ -1488,6 +1491,10 @@ def _load_service_requests(
                             end_dt = dt + dt_mod.timedelta(minutes=duration)
                             r["booking_start_time"] = dt.strftime("%Y-%m-%d %H:%M:%S")
                             r["booking_end_time"] = end_dt.strftime("%Y-%m-%d %H:%M:%S")
+                            from serviceBot.services.timezone_service import to_business_tz
+
+                            r["booking_start_iso"] = to_business_tz(dt).isoformat()
+                            r["booking_end_iso"] = to_business_tz(end_dt).isoformat()
                         else:
                             r["booking_start_time"] = raw_str
                             r["booking_end_time"] = None

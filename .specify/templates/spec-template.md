@@ -119,6 +119,10 @@
 
 ## Assumptions
 
+Before implementation, accompany this spec with `test-coverage.yaml` from the coverage template.
+Every acceptance criterion needs observable success/failure, preconditions, invariants, tests,
+layers and live acceptance. Omitted layers require reasons. Counts alone do not prove coverage.
+
 <!--
   ACTION REQUIRED: The content in this section represents placeholders.
   Fill them out with the right assumptions based on reasonable defaults

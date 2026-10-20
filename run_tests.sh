@@ -76,13 +76,16 @@ create_template() {
     
     echo -e "${BLUE}Generating template test file at tests/test_${name}.py...${NC}"
     
+    if [[ ! "$name" =~ ^[a-zA-Z0-9_]+$ ]]; then
+        echo "Error: use letters, digits and underscores for the test name." >&2
+        exit 2
+    fi
     cat <<EOF > "$filepath"
 import pytest
-from unittest.mock import patch, MagicMock
 
-def test_placeholder():
-    """Verify standard placeholder assertion."""
-    assert True
+def test_acceptance_contract():
+    """Replace with observable success, failure and invariant assertions."""
+    pytest.fail("Implement acceptance assertions before this feature can pass")
 EOF
 
     echo -e "${GREEN}${BOLD}Success!${NC} Created test file template at tests/test_${name}.py"
@@ -210,7 +213,11 @@ case "$1" in
     --e2e)
         shift
         echo -e "${BLUE}${BOLD}Running Playwright headless browser E2E tests...${NC}"
-        PYTHONUNBUFFERED=1 "$PYTEST_BIN" "$WORKSPACE_DIR/e2e" -v -o cache_dir="$CACHE_DIR" --junitxml="$SCRATCH_DIR/e2e-results.xml" "$@"
+        EVIDENCE_ARGS=()
+        if [ -n "${VERIFY_EVIDENCE_DIR:-}" ]; then
+            EVIDENCE_ARGS=(-p anyio.pytest_plugin -p scripts.verification_plugin --e2e-artifacts="$VERIFY_EVIDENCE_DIR/browser")
+        fi
+        VERIFY_SUITE=e2e PYTHONUNBUFFERED=1 "$PYTEST_BIN" "$WORKSPACE_DIR/e2e" -v -o cache_dir="$CACHE_DIR" --junitxml="$SCRATCH_DIR/e2e-results.xml" "${EVIDENCE_ARGS[@]}" "$@"
         ;;
     --e2e-headed)
         shift
@@ -228,7 +235,9 @@ case "$1" in
     --all|"")
         if [ "$#" -gt 0 ]; then shift; fi
         echo -e "${BLUE}${BOLD}Running entire test suite...${NC}"
-        PYTHONUNBUFFERED=1 "$PYTEST_BIN" tests/ -q -o cache_dir="$CACHE_DIR" --junitxml="$SCRATCH_DIR/unit-results.xml" "$@"
+        EVIDENCE_ARGS=()
+        if [ -n "${VERIFY_EVIDENCE_DIR:-}" ]; then EVIDENCE_ARGS=(-p anyio.pytest_plugin -p scripts.verification_plugin); fi
+        VERIFY_SUITE=tests PYTHONUNBUFFERED=1 "$PYTEST_BIN" tests/ -q -o cache_dir="$CACHE_DIR" --junitxml="$SCRATCH_DIR/unit-results.xml" "${EVIDENCE_ARGS[@]}" "$@"
         ;;
     *)
         echo -e "${RED}${BOLD}Error:${NC} Unknown option: $1"

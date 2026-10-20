@@ -1,0 +1,32 @@
+# Copy to specs/<feature>/test-coverage.yaml before implementation.
+# Add one row per acceptance criterion; reference real collected pytest node IDs.
+schema: 1
+feature: "<feature-directory>"
+acceptance:
+  - id: "US1/AC1"
+    behavior: "Observable outcome"
+    preconditions: ["Data, ownership/permissions, configuration and deterministic clock"]
+    success: ["Expected response/visible result and fresh persisted state"]
+    failure: ["Malformed, unauthorized, stale, concurrent and interrupted cases as applicable"]
+    invariants: ["No duplicates, unrelated writes or premature success"]
+    tests: ["tests/test_feature.py::test_observable_contract"]
+    layer: [unit, database, http, browser, provider_contract, composed, migration, targeted]
+    live_acceptance:
+      status: pending # Use not_required with a concrete reason where appropriate.
+      reason: "Real provider effects require separately authorized acceptance"
+      scenarios: ["live_simulations scenario identifiers or not applicable with reason"]
+      prerequisites: ["Recipient, calendar, account and permissions"]
+      expected_effects: ["Provider effect and independent read-back"]
+      cleanup_recovery: ["Cleanup and recovery after partial failure"]
+      estimated_credits: "Estimate or unknown"
+      spending_ceiling: "Explicit authorized cap required before live execution"
+      unknown_charge_handling: "Stop, retain ledger, reconcile before retry"
+      reuse: "Existing valid case/evidence and what change invalidates it"
+omitted_layers:
+  # Remove layers used above; include a reason for every omitted layer.
+  example_layer: "Reason this acceptance contract does not cross this boundary"
+review:
+  red: "Command and observed intended failure before implementation"
+  green: "Command and resulting observable behavior"
+  test_changes: "Review removals, weakened assertions, skips/xfails and fixture realism"
+  sufficiency: "Explain behavioral and failure-mode coverage; counts support this judgment"
