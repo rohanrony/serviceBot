@@ -71,14 +71,13 @@ acceptance:
 omitted_layers:
   database: "The preference is stored in the existing JSON config file; no relational persistence is introduced."
   migration: "No database schema changes are planned."
+  targeted: "The acceptance contracts are fully observable through the mapped automated pytest layers; no separate manual probe is required."
 review:
   red: "Run the new focused tests before sender/API/UI implementation and record the intended failures."
   green: "Run focused unit, API, browser, and captured-provider tests after implementation."
   test_changes: "Review updated existing fixtures for their intended mail mode; no assertions may be weakened."
   sufficiency: "Cover defaults, all routine event categories, opt-in, persistence, escalation, and the independent Calendar boundary."
   offline:
-    status: passed
-    reason: "Required offline verification completed successfully."
-    evidence:
-      - command: "./run_tests.sh --verify"
-        result: "680 passed in 236.52s; unit/integration exit 0; E2E exit 0"
+    status: pending
+    reason: "The integrated feature candidate must pass exact-head offline verification before these results are recorded."
+    evidence: []

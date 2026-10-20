@@ -65,17 +65,17 @@ acceptance:
       reuse: "C01 may be reused only when target, recipients, business configuration, and retained message-body assertions match this change"
       evidence: []
 omitted_layers:
+  http: "The notification body prefix is applied in the existing message composer/router; this change adds no API endpoint or HTTP contract."
   browser: "This change does not alter a browser-visible flow; the changed contract is the notification body at the mocked provider boundary."
+  composed: "The named tests exercise the message composition and dispatch boundary directly; no additional multi-service composition contract changes here."
   migration: "No schema or stored-record changes."
+  targeted: "The acceptance contracts are observable through the mapped automated pytest tests; no separate manual probe is required."
 review:
   red: "The missing/invalid-name regression first failed at collection before the helper existed; customer, agent, and admin prefix assertions then failed before internal message prefixes were implemented."
   green: "6 focused notification/name cases passed; the complete notification test file passed 10/10; complete offline verification passed all unit/integration and 680 E2E cases."
   test_changes: "Assertions are additive; review for unintended weakening or skipped coverage."
   sufficiency: "Covers configured names in customer, agent, and admin lifecycle/reminder bodies plus missing, blank, whitespace-only, and non-string names. The complete offline suite also exercises notification delivery workflows."
   offline:
-    status: verified
-    reason: Focused notification tests and required complete offline verification passed.
-    evidence:
-      - "./run_tests.sh --file tests/test_customer_notification_details.py: 10 passed"
-      - "./run_tests.sh --verify: unit/integration and 680 E2E passed"
-      - "JSON/YAML parsing, Python compilation, and git diff --check passed"
+    status: pending
+    reason: The integrated feature candidate must pass exact-head offline verification before these results are recorded.
+    evidence: []
