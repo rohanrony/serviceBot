@@ -14,7 +14,7 @@ from serviceBot.db.queries import match_catalog_service_names
 def _with_notification_delivery_guidance(tool_name: str, result: dict) -> dict:
     """Give the voice agent explicit boundaries for booking and delivery claims."""
     if tool_name in {
-        "check_availability", "create_service_request", "book_appointment", "request_callback",
+        "check_availability", "create_service_request", "book_appointment", "request_callback", "reschedule_appointment",
     } and result.get("success") is False:
         return {
             **result,
@@ -236,6 +236,98 @@ def _session_capacity_evidence(request_ids):
             ORDER BY sr.id
         """, (request_ids,))
         return [dict(row) for row in cursor.fetchall()]
+
+
+def _reschedule_snapshot(phone, identifier, rows=None):
+    """Resolve an owned visit and verify each window against native capacity."""
+    from serviceBot.services.booking import parse_reservation_start, reservation_segments
+
+    rows = get_customer_appointments(phone) if rows is None else rows
+    owned = {row["id"]: row for row in rows}
+    target = owned[identifier]
+    group_id = target.get("visit_group_id")
+    members = target.get("visit_member_ids") if group_id else [identifier]
+    if (not isinstance(members, list) or not members or identifier not in members
+            or any(type(value) is not int or value <= 0 for value in members)
+            or len(set(members)) != len(members)):
+        raise ValueError("Incomplete visit membership")
+    states = {}
+    for member in members:
+        row = owned[member]
+        duration = row.get("duration_minutes")
+        if (type(duration) is not int or duration <= 0
+                or row.get("status") not in {"pending", "confirmed", "in_progress"}
+                or row.get("visit_group_id") != group_id
+                or (group_id and set(row.get("visit_member_ids") or []) != set(members))):
+            raise ValueError("Incomplete saved appointment")
+        states[member] = (parse_reservation_start(row["appointment_datetime"]), duration,
+                          row.get("service_type"), row.get("service_components"), row.get("booking_type"))
+    evidence = _session_capacity_evidence(members)
+    if len(evidence) != len(members) or {row.get("id") for row in evidence} != set(members):
+        raise ValueError("Incomplete native capacity")
+    receipts = []
+    for row in evidence:
+        start, duration, service_type, _, _ = states[row["id"]]
+        if (any(type(row.get(key)) is not int or row[key] <= 0
+                for key in ("request_staff", "reservation_id", "service_request_id", "staff_agent_id"))
+                or row["id"] != row["service_request_id"] or row["request_staff"] != row["staff_agent_id"]
+                or row.get("status") != "ACTIVE" or row.get("request_status") not in {"pending", "confirmed", "in_progress"}
+                or clean_and_validate_phone(row.get("phone")) != clean_and_validate_phone(phone)
+                or row.get("duration_minutes") != duration
+                or parse_reservation_start(row["booking_time"]) != start
+                or parse_reservation_start(str(row["starts_at"])) != start
+                or parse_reservation_start(str(row["ends_at"])) != start + timedelta(minutes=duration)):
+            raise ValueError("Native reservation does not match saved appointment")
+        segments = row.get("segments")
+        expected = reservation_segments(start, duration)
+        if (not isinstance(segments, list) or len(segments) != len(expected)
+                or any(not isinstance(seg, dict) or seg.get("reservation_id") != row["reservation_id"]
+                       or seg.get("staff_agent_id") != row["staff_agent_id"] for seg in segments)
+                or {parse_reservation_start(seg["segment_start"]) for seg in segments} != set(expected)):
+            raise ValueError("Native reservation segments do not match saved duration")
+        receipts.append({"service_request_id": row["id"], "reservation_id": row["reservation_id"],
+                         "staff_agent_id": row["staff_agent_id"], "service_type": service_type,
+                         "booking_time": start.strftime("%Y-%m-%d %H:%M:%S"), "duration_minutes": duration,
+                         "expected_end_time": (start + timedelta(minutes=duration)).strftime("%Y-%m-%d %H:%M:%S")})
+    receipts.sort(key=lambda row: (row["booking_time"], row["service_request_id"]))
+    return group_id, states, receipts
+
+
+def _reschedule_with_saved_outcome(phone, identifier, requested_time, rows):
+    from serviceBot.services.booking import BookingError, BookingServiceScopeError, parse_reservation_start
+
+    failure = {"success": False, "error_code": "RESCHEDULE_UNVERIFIED",
+               "message": "The reschedule could not be verified. Check the saved appointment before retrying; do not assume its time or duration changed."}
+    try:
+        group_id, before, _ = _reschedule_snapshot(phone, identifier, rows)
+        requested = parse_reservation_start(requested_time)
+        delta = requested - before[identifier][0]
+        if delta and reschedule_appointment(appointment_id=identifier, new_datetime=requested_time,
+                customer_consent_obtained=True, triggered_by="voice_agent") is not True:
+            return failure
+        after_group, after, receipts = _reschedule_snapshot(phone, identifier)
+        if (after_group != group_id or set(after) != set(before)
+                or any(after[key][0] != before[key][0] + delta or after[key][1:] != before[key][1:]
+                       for key in before)):
+            return failure
+        total = sum(row[1] for row in after.values())
+        end = max(row[0] + timedelta(minutes=row[1]) for row in after.values())
+        saved_time = after[identifier][0].strftime("%Y-%m-%d %H:%M:%S")
+        return {"success": True, "appointment_id": identifier, "visit_group_id": group_id,
+                "appointments": receipts, "booking_time": saved_time, "duration_minutes": total,
+                "expected_end_time": end.strftime("%Y-%m-%d %H:%M:%S"), "is_update": bool(delta),
+                "message": (f"Saved appointment rescheduled to {saved_time}. Recorded service duration: {total} minutes. "
+                            "Calendar projection and notifications are queued; delivery is unverified."
+                            if delta else f"Existing appointment verified. Recorded service duration: {total} minutes. No scheduling change was made.")}
+    except BookingServiceScopeError as exc:
+        return {"success": False, "error_code": "BOOKING_SERVICE_SCOPE_MISMATCH",
+                "recorded_duration_minutes": exc.recorded_duration,
+                "catalog_duration_minutes": exc.catalog_duration, "message": str(exc),
+                "agent_instruction": "Explain the recorded duration mismatch honestly. Offer advisor review; do not claim the full catalogue duration is reserved or invent a check-in slot."}
+    except BookingError as exc:
+        return {"success": False, "message": str(exc)}
+    except Exception:  # noqa: BLE001 - uncertain read-back must not expose diagnostics or promise success
+        return failure
 
 
 def _update_cached_session_booking(*, session_key, session, phone, requested_time,
@@ -2069,7 +2161,7 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                             issue = u.get("issue_description") or ""
                             dt_str = u.get("appointment_datetime")
                             issue_part = f" ({issue})" if issue and issue.lower() != srv.lower() else ""
-                            parts.append(f"{idx}) {kind_label} at {dt_str} for {v_str} regarding {srv}{issue_part}.")
+                            parts.append(f"{idx}) {kind_label} at {dt_str} for {v_str} regarding {srv}{issue_part}. Recorded duration: {u.get('duration_minutes')} minutes.")
                     if past:
                         past_source = f" {source_prefix}".rstrip() if not upcoming and source_prefix else ""
                         parts.append(f"Also found {len(past)} prior uncompleted record(s) on file{past_source}.")
@@ -2096,6 +2188,11 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                     "past_count": len(past),
                     "message": msg,
                     "summary_for_agent": summary_for_agent,
+                    "agent_guidance": (
+                        "duration_minutes is the recorded appointment duration. A catalog estimate does not change saved reservations. "
+                        "If these differ, explain the mismatch and offer advisor review. Never describe a shorter booking as an initial "
+                        "check-in slot or claim hidden time is reserved. Verify all saved components before confirming a visit duration."
+                    ),
                 }
 
         elif tool_name == "consolidate_appointment_service":
@@ -2296,23 +2393,7 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                     if not appt_id:
                         appt_id = appts[0]["id"]
                     
-                    try:
-                        reschedule_appointment(
-                            appointment_id=appt_id, 
-                            new_datetime=new_datetime, 
-                            customer_consent_obtained=True, 
-                            triggered_by="voice_agent"
-                        )
-                        result = {
-                            "success": True,
-                            "appointment_id": appt_id,
-                            "message": f"Appointment rescheduled to {new_datetime} successfully. Calendar projection and notifications are queued."
-                        }
-                    except Exception as e:
-                        result = {
-                            "success": False,
-                            "message": f"Failed to reschedule: {str(e)}"
-                        }
+                    result = _reschedule_with_saved_outcome(phone, appt_id, new_datetime, appts)
 
         elif tool_name == "cancel_appointment":
             phone = args.get("phone")

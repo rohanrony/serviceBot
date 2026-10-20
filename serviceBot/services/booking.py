@@ -112,6 +112,19 @@ class BookingValidationError(BookingError):
     """Raised when a booking request is incomplete or outside operating hours."""
 
 
+class BookingServiceScopeError(BookingValidationError):
+    """A legacy generic request does not establish the listed service scope."""
+
+    def __init__(self, recorded_duration: int, catalog_duration: int):
+        self.recorded_duration = recorded_duration
+        self.catalog_duration = catalog_duration
+        super().__init__(
+            f"This appointment records {recorded_duration} minutes, while its listed "
+            f"catalogue services total {catalog_duration} minutes. Its service assignments "
+            "need advisor review before rescheduling. No scheduling change was made."
+        )
+
+
 class BookingHorizonError(BookingError):
     """Raised when an appointment is requested with insufficient advance lead time."""
 
@@ -1788,6 +1801,21 @@ class BookingService:
         request = cursor.fetchone()
         if not request:
             raise BookingValidationError(f"Service request {request_id} was not found.")
+        if (allow_replace and booking_type == "appointment"
+                and request.get("service_components") is None
+                and str(request.get("service_type") or "").strip().casefold() == "repair"):
+            # Older intake stored complete service labels only in free text. A
+            # time move must not turn that text into proof of specialist capacity.
+            from serviceBot.db.queries import match_catalog_service_names
+
+            cursor.execute("SELECT name,duration_minutes FROM services ORDER BY id")
+            catalog = {row["name"]: row["duration_minutes"] for row in cursor.fetchall()}
+            names = match_catalog_service_names(request.get("issue_description"), list(catalog))
+            if len(names) > 1:
+                raise BookingServiceScopeError(
+                    request["duration_minutes"],
+                    sum(normalize_reservation_duration(catalog[name]) for name in names),
+                )
         if not customer:
             customer = {"name": request.get("customer_name"), "phone": request.get("phone")}
 

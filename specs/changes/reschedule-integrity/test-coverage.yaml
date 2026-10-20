@@ -1,0 +1,228 @@
+{
+  "schema": 1,
+  "feature": "changes/reschedule-integrity",
+  "acceptance": [
+    {
+      "id": "AC1",
+      "behavior": "Reject incomplete legacy multi-service bookings atomically before rescheduling",
+      "preconditions": [
+        "Exact owned active request; deterministic business clock; synthetic fixtures"
+      ],
+      "success": [
+        "Reject incomplete legacy multi-service bookings atomically before rescheduling"
+      ],
+      "failure": [
+        "Unknown/mismatched evidence cannot produce confirmation"
+      ],
+      "invariants": [
+        "No unrelated booking changes, duplicates or invented capacity"
+      ],
+      "tests": [
+        "e2e/test_reschedule_integrity.py::test_legacy_description_cannot_move_one_hour_as_two_services",
+        "e2e/test_reschedule_integrity.py::test_domain_rejects_legacy_description_without_partial_effects",
+        "e2e/test_reschedule_integrity.py::test_portal_reload_shows_only_actual_saved_reschedule_windows[True]",
+        "e2e/test_reschedule_integrity.py::test_portal_edit_cannot_bypass_legacy_scope_validation",
+        "e2e/test_reschedule_integrity.py::test_reschedule_worker_sends_only_actual_saved_component_windows[True]"
+      ],
+      "layer": [
+        "database",
+        "http",
+        "browser",
+        "composed"
+      ],
+      "live_acceptance": {
+        "status": "pending",
+        "reason": "Maintained manual provider scenarios have not run; deployment/prompt publication, explicit authorization and target-specific estimates remain pending.",
+        "scenario_source": "specs/changes/reschedule-integrity/live-scenarios.json",
+        "prerequisites": [
+          "Deployed candidate revision and matching voice prompt",
+          "Owned non-production customer/appointments and two specialist calendars",
+          "Explicitly authorized test call recipients, provider access and total spending cap"
+        ],
+        "expected_effects": [
+          "Rejected scope mismatch leaves requests, capacity, audit, outbox, Google events and messages unchanged"
+        ],
+        "independent_read_back": [
+          "Correlate provider conversation/tool IDs with request/reservation IDs",
+          "Read Google event IDs, start/end, technician calendar and old event removal independently",
+          "Compare fresh portal/SQL rows and reservation segments with each component receipt",
+          "Inspect recipient inbox/message provider IDs for any expected messages; reject false delivery claims"
+        ],
+        "cleanup_recovery": [
+          "Retain redacted before/after evidence and provider IDs",
+          "Delete only test-owned events/requests after pending outbox work settles",
+          "On partial/unknown effects stop and reconcile IDs before retrying"
+        ],
+        "estimated_credits": "unknown: requires current account per-call estimate for each selected scenario; blocks readiness",
+        "estimated_cost": "unknown USD: requires current voice, telephony and message estimates; blocks readiness",
+        "spending_ceiling": "No spending authorized; obtain an explicit total credit and USD cap after estimates",
+        "unknown_charge_handling": "Stop; retain ledger and invocation IDs; reconcile before any retry",
+        "reuse": "No historical run reused. Changed response, prompt and provider assertions invalidate prior evidence.",
+        "evidence": [],
+        "scenarios": [
+          "RS01"
+        ]
+      }
+    },
+    {
+      "id": "AC2",
+      "behavior": "Verify every saved reschedule component and native capacity before reporting exact durations",
+      "preconditions": [
+        "Exact owned active request; deterministic business clock; synthetic fixtures"
+      ],
+      "success": [
+        "Verify every saved reschedule component and native capacity before reporting exact durations"
+      ],
+      "failure": [
+        "Unknown/mismatched evidence cannot produce confirmation"
+      ],
+      "invariants": [
+        "No unrelated booking changes, duplicates or invented capacity"
+      ],
+      "tests": [
+        "tests/test_reschedule_saved_outcomes.py::test_unmoved_or_ambiguous_domain_outcome_cannot_report_success[False]",
+        "tests/test_reschedule_saved_outcomes.py::test_unmoved_or_ambiguous_domain_outcome_cannot_report_success[None]",
+        "tests/test_reschedule_saved_outcomes.py::test_unmoved_or_ambiguous_domain_outcome_cannot_report_success[1]",
+        "tests/test_reschedule_saved_outcomes.py::test_unmoved_or_ambiguous_domain_outcome_cannot_report_success[outcome3]",
+        "tests/test_reschedule_saved_outcomes.py::test_unmoved_or_ambiguous_domain_outcome_cannot_report_success[True]",
+        "tests/test_reschedule_saved_outcomes.py::test_saved_duration_and_native_capacity_must_agree[none]",
+        "tests/test_reschedule_saved_outcomes.py::test_saved_duration_and_native_capacity_must_agree[missing]",
+        "tests/test_reschedule_saved_outcomes.py::test_saved_duration_and_native_capacity_must_agree[wrong_end]",
+        "tests/test_reschedule_saved_outcomes.py::test_saved_duration_and_native_capacity_must_agree[missing_segment]",
+        "tests/test_reschedule_saved_outcomes.py::test_saved_duration_and_native_capacity_must_agree[wrong_staff]",
+        "tests/test_reschedule_saved_outcomes.py::test_saved_duration_and_native_capacity_must_agree[read_error]",
+        "tests/test_reschedule_saved_outcomes.py::test_saved_duration_and_native_capacity_must_agree[duration_changed]",
+        "e2e/test_reschedule_integrity.py::test_reschedule_returns_both_persisted_specialist_windows",
+        "e2e/test_reschedule_integrity.py::test_second_specialist_conflict_rolls_back_entire_reschedule",
+        "e2e/test_reschedule_integrity.py::test_portal_reload_shows_only_actual_saved_reschedule_windows[False]",
+        "tests/test_reschedule_saved_outcomes.py::test_same_saved_time_is_verified_without_another_mutation",
+        "tests/test_reschedule_saved_outcomes.py::test_unknown_native_capacity_prevents_mutation",
+        "e2e/test_reschedule_integrity.py::test_reschedule_worker_sends_only_actual_saved_component_windows[False]"
+      ],
+      "layer": [
+        "unit",
+        "database",
+        "http",
+        "browser",
+        "provider_contract",
+        "composed"
+      ],
+      "live_acceptance": {
+        "status": "pending",
+        "reason": "Maintained manual provider scenarios have not run; deployment/prompt publication, explicit authorization and target-specific estimates remain pending.",
+        "scenario_source": "specs/changes/reschedule-integrity/live-scenarios.json",
+        "prerequisites": [
+          "Deployed candidate revision and matching voice prompt",
+          "Owned non-production customer/appointments and two specialist calendars",
+          "Explicitly authorized test call recipients, provider access and total spending cap"
+        ],
+        "expected_effects": [
+          "Exactly the two moved specialist events preserve 90/120-minute windows; no duplicate events or messages",
+          "Each message uses its corresponding saved specialist window; no unsupported delivery claims"
+        ],
+        "independent_read_back": [
+          "Correlate provider conversation/tool IDs with request/reservation IDs",
+          "Read Google event IDs, start/end, technician calendar and old event removal independently",
+          "Compare fresh portal/SQL rows and reservation segments with each component receipt",
+          "Inspect recipient inbox/message provider IDs for any expected messages; reject false delivery claims"
+        ],
+        "cleanup_recovery": [
+          "Retain redacted before/after evidence and provider IDs",
+          "Delete only test-owned events/requests after pending outbox work settles",
+          "On partial/unknown effects stop and reconcile IDs before retrying"
+        ],
+        "estimated_credits": "unknown: requires current account per-call estimate for each selected scenario; blocks readiness",
+        "estimated_cost": "unknown USD: requires current voice, telephony and message estimates; blocks readiness",
+        "spending_ceiling": "No spending authorized; obtain an explicit total credit and USD cap after estimates",
+        "unknown_charge_handling": "Stop; retain ledger and invocation IDs; reconcile before any retry",
+        "reuse": "No historical run reused. Changed response, prompt and provider assertions invalidate prior evidence.",
+        "evidence": [],
+        "scenarios": [
+          "RS02"
+        ]
+      }
+    },
+    {
+      "id": "AC3",
+      "behavior": "Summaries and voice instructions distinguish recorded duration from catalogue estimates",
+      "preconditions": [
+        "Exact owned active request; deterministic business clock; synthetic fixtures"
+      ],
+      "success": [
+        "Summaries and voice instructions distinguish recorded duration from catalogue estimates"
+      ],
+      "failure": [
+        "Unknown/mismatched evidence cannot produce confirmation"
+      ],
+      "invariants": [
+        "No unrelated booking changes, duplicates or invented capacity"
+      ],
+      "tests": [
+        "e2e/test_reschedule_integrity.py::test_lookup_calls_out_recorded_duration_instead_of_catalog_estimate",
+        "tests/test_reschedule_saved_outcomes.py::test_prompt_requires_admitting_recorded_duration_mismatch"
+      ],
+      "layer": [
+        "http",
+        "database",
+        "targeted"
+      ],
+      "live_acceptance": {
+        "status": "pending",
+        "reason": "Maintained manual provider scenarios have not run; deployment/prompt publication, explicit authorization and target-specific estimates remain pending.",
+        "scenario_source": "specs/changes/reschedule-integrity/live-scenarios.json",
+        "prerequisites": [
+          "Deployed candidate revision and matching voice prompt",
+          "Owned non-production customer/appointments and two specialist calendars",
+          "Explicitly authorized test call recipients, provider access and total spending cap"
+        ],
+        "expected_effects": [
+          "Read-only lookup and spoken explanation distinguish the recorded 60 minutes from the 210-minute catalogue estimate",
+          "No invented initial check-in slot, silent repair or unsolicited callback"
+        ],
+        "independent_read_back": [
+          "Correlate provider conversation/tool IDs with request/reservation IDs",
+          "Read Google event IDs, start/end, technician calendar and old event removal independently",
+          "Compare fresh portal/SQL rows and reservation segments with each component receipt",
+          "Inspect recipient inbox/message provider IDs for any expected messages; reject false delivery claims"
+        ],
+        "cleanup_recovery": [
+          "Retain redacted before/after evidence and provider IDs",
+          "Delete only test-owned events/requests after pending outbox work settles",
+          "On partial/unknown effects stop and reconcile IDs before retrying"
+        ],
+        "estimated_credits": "unknown: requires current account per-call estimate for each selected scenario; blocks readiness",
+        "estimated_cost": "unknown USD: requires current voice, telephony and message estimates; blocks readiness",
+        "spending_ceiling": "No spending authorized; obtain an explicit total credit and USD cap after estimates",
+        "unknown_charge_handling": "Stop; retain ledger and invocation IDs; reconcile before any retry",
+        "reuse": "No historical run reused. Changed response, prompt and provider assertions invalidate prior evidence.",
+        "evidence": [],
+        "scenarios": [
+          "RS03"
+        ]
+      }
+    }
+  ],
+  "omitted_layers": {
+    "migration": "No schema change or automatic data repair"
+  },
+  "review": {
+    "red": "Before application changes: 11 focused unit failures and 7 HTTP/database/browser failures on intended false-success, missing-duration and legacy-move assertions. scratch/reschedule-red.log retains database/browser Red.",
+    "green": "15 focused unit and 10 HTTP/database/browser/provider-worker regressions passed; full final ./run_tests.sh --verify passed 2416 unit/integration and 689 E2E cases with zero failures/errors/skips.",
+    "test_changes": "No tests removed, skipped or weakened. Existing boolean-only success mocks now include fresh owned native capacity. A pre-existing closing-time test failed on clean c25e99f; its slot fixture now uses the longest (90-minute) service while preserving all assertions.",
+    "sufficiency": "Tests cover the exact legacy shape, atomic rollback, truthful totals, corrupted/missing read-back, queued provider payloads and browser reload.",
+    "offline": {
+      "status": "verified",
+      "reason": "Complete final offline verification passed on the uncommitted isolated worktree based on c25e99f; external boundaries mocked and credentials synthetic.",
+      "evidence": [
+        "./run_tests.sh --verify: unit/integration exit 0, E2E exit 0",
+        "scratch/reschedule-final-verify.log",
+        "scratch/unit-results.xml: 2416 passed, 0 errors/failures/skips",
+        "scratch/e2e-results.xml: 689 passed, 0 errors/failures/skips",
+        "./run_tests.sh --file tests/test_reschedule_saved_outcomes.py: 15 passed",
+        "./run_tests.sh --file e2e/test_reschedule_integrity.py: 10 passed including Chromium and captured provider worker",
+        "python scripts/check_static.py: 335 Python files, 8 shell files and application JavaScript passed",
+        "git diff --check passed; collected acceptance IDs and maintained scenario references validated"
+      ]
+    }
+  }
+}

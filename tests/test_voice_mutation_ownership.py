@@ -33,10 +33,14 @@ def test_explicit_foreign_or_invalid_target_has_no_effect(monkeypatch, tool, tar
 
 @pytest.mark.parametrize('tool', ['cancel_appointment', 'reschedule_appointment'])
 @pytest.mark.parametrize('target', [1, '1'])
-def test_owned_target_and_caller_fallback_reach_domain(monkeypatch, tool, target):
-    monkeypatch.setattr(telephony, 'get_customer_appointments', lambda phone: [{'id': 1}])
+def test_owned_target_and_caller_fallback_reach_domain(monkeypatch, tool, target, saved_reschedule_boundary):
+    lookup = Mock(return_value=[{'id': 1}])
+    monkeypatch.setattr(telephony, 'get_customer_appointments', lookup)
     effect = Mock(return_value={'success': True})
     monkeypatch.setattr(telephony, tool, effect)
+    if tool == 'reschedule_appointment':
+        saved_reschedule_boundary(lookup, effect, identifier=1, phone='4242704893',
+                                  old_time='2026-11-20T09:00:00', new_time='2026-11-20T10:00:00')
     result = asyncio.run(telephony.voice_tools({'name': tool, 'arguments': {
         'caller_phone': '+1 (424) 270-4893', 'appointment_id': target,
         'new_appointment_datetime': '2026-11-20T10:00:00',
