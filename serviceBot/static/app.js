@@ -78,6 +78,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
   let activeBusinessProfile = { industry: 'Service business', collect_vehicle_details: true, intake_fields: [] };
+  function isLegacyAutomotiveConfig(config, profile) {
+    if (!config || !config.business_profile) return true;
+    const ind = (profile?.industry || config.business_profile?.industry || '').toLowerCase();
+    const name = (config?.business_name || '').toLowerCase();
+    return ind.includes('auto') || ind.includes('car') || ind.includes('vehicle') || ind.includes('motor') || name.includes('car care');
+  }
   function agentRole(value) {
     return String(value || 'Agent').replace(/technicians/gi, 'Agents').replace(/technician/gi, 'Agent');
   }
@@ -87,18 +93,27 @@ document.addEventListener('DOMContentLoaded', () => {
     return element.innerHTML;
   }
   function renderCatalogAssetDetails() {
-    const fields = (activeBusinessProfile && activeBusinessProfile.intake_fields && activeBusinessProfile.intake_fields.length > 0)
+    const isLegacyAuto = isLegacyAutomotiveConfig(window._activeConfig, activeBusinessProfile);
+    const fields = (activeBusinessProfile && Array.isArray(activeBusinessProfile.intake_fields) && activeBusinessProfile.intake_fields.length > 0)
       ? activeBusinessProfile.intake_fields
-      : [
+      : (isLegacyAuto ? [
           { key: 'make', label: 'Make', detail_type: 'brand', type: 'text' },
           { key: 'model', label: 'Model', detail_type: 'model', type: 'text' },
           { key: 'year', label: 'Year', detail_type: 'general', type: 'number' }
-        ];
+        ] : []);
 
     ['add-service-intake-badges', 'edit-service-intake-badges'].forEach(id => {
       const container = document.getElementById(id);
       if (!container) return;
       container.replaceChildren();
+      if (!fields.length) {
+        const span = document.createElement('span');
+        span.className = 'text-muted';
+        span.style.fontSize = '11px';
+        span.textContent = 'No intake fields configured.';
+        container.appendChild(span);
+        return;
+      }
       fields.forEach(f => {
         const span = document.createElement('span');
         span.className = 'badge neutral';
@@ -109,6 +124,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
   function applyBusinessProfile(config) {
+    if (config) {
+      window._activeConfig = config;
+      if (config.business_profile) {
+        window._configuredBusinessProfile = true;
+      }
+    }
     activeBusinessProfile = config.business_profile || activeBusinessProfile;
     const section = document.getElementById('sr-vehicle-section');
     if (section) {
@@ -221,13 +242,14 @@ document.addEventListener('DOMContentLoaded', () => {
       const intakeContainer = document.getElementById('business-intake-fields');
       if (intakeContainer) {
         intakeContainer.replaceChildren();
+        const isLegacyAuto = isLegacyAutomotiveConfig(config, activeBusinessProfile);
         const intakeFields = (activeBusinessProfile.intake_fields && activeBusinessProfile.intake_fields.length > 0)
           ? activeBusinessProfile.intake_fields
-          : [
+          : (isLegacyAuto ? [
               { key: 'make', label: 'Make', detail_type: 'brand', type: 'text', required: false },
               { key: 'model', label: 'Model', detail_type: 'model', type: 'text', required: false },
               { key: 'year', label: 'Year', detail_type: 'general', type: 'number', required: false }
-            ];
+            ] : []);
         intakeFields.forEach(addBusinessIntakeRow);
       }
       renderCatalogAssetDetails();
@@ -3708,17 +3730,12 @@ document.addEventListener('DOMContentLoaded', () => {
   if (smsGlobalForm) {
     smsGlobalForm.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const supportPhoneEl = document.getElementById('sms-config-support-phone');
       const payload = {
-        support_phone_number: supportPhoneEl ? supportPhoneEl.value.trim() : null,
         admin_phone_number: document.getElementById('sms-config-admin-phone') ? document.getElementById('sms-config-admin-phone').value.trim() : null,
         environment: document.getElementById('sms-config-environment') ? document.getElementById('sms-config-environment').value : 'TEST',
         quiet_start_time: document.getElementById('sms-config-quiet-start') ? document.getElementById('sms-config-quiet-start').value : '21:00',
         quiet_end_time: document.getElementById('sms-config-quiet-end') ? document.getElementById('sms-config-quiet-end').value : '08:00',
-        auto_responder_template: document.getElementById('sms-config-auto-responder') ? document.getElementById('sms-config-auto-responder').value : '',
-        business_address: document.getElementById('sms-config-shop-address') ? document.getElementById('sms-config-shop-address').value.trim() : '',
-        google_maps_url: document.getElementById('sms-config-maps-url') ? document.getElementById('sms-config-maps-url').value.trim() : '',
-        business_timezone: document.getElementById('sms-config-timezone') ? document.getElementById('sms-config-timezone').value : activeBusinessTimezone
+        auto_responder_template: document.getElementById('sms-config-auto-responder') ? document.getElementById('sms-config-auto-responder').value : ''
       };
       await fetch('/api/v1/portal/sms/config', {
         method: 'PUT',
@@ -4928,9 +4945,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let staffSlotLookupVersion = 0;
   function clearStaffSlotChoices(message) {
-    const selected = slotsDropdown?.value;
+    if (srForm) {
+      srForm.dataset.selectedSlot = '';
+    }
     const timeInput = document.getElementById('sr-booking-time');
-    if (selected && timeInput && timeInput.value.replace('T', ' ').slice(0, 16) === selected.slice(0, 16)) {
+    if (timeInput) {
       timeInput.value = '';
     }
     if (slotsDropdown) {
@@ -4947,6 +4966,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function invalidateStaffSlotLookup() {
     staffSlotLookupVersion += 1;
+    if (srForm) {
+      srForm.dataset.selectedSlot = '';
+    }
+    const timeInput = document.getElementById('sr-booking-time');
+    if (timeInput) {
+      timeInput.value = '';
+    }
     clearStaffSlotChoices('Check availability for the current form...');
     if (checkSlotsBtn) {
       checkSlotsBtn.disabled = false;
@@ -5016,6 +5042,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch {
       if (!isCurrent()) return;
+      if (srForm) srForm.dataset.selectedSlot = '';
       clearStaffSlotChoices('Calendar availability could not be verified. Check again to retry.');
       showToast('Calendar availability could not be verified. Please retry.', 'danger');
     } finally {
@@ -5055,12 +5082,14 @@ document.addEventListener('DOMContentLoaded', () => {
   const bookingDateInput = document.getElementById('sr-booking-date');
   if (bookingDateInput) {
     bookingDateInput.addEventListener('change', async () => {
+      invalidateStaffSlotLookup();
       if (bookingDateInput.value) {
         await checkStaffSlots(bookingDateInput.value);
       }
     });
   } else if (datePickerEl) {
     datePickerEl.addEventListener('change', async () => {
+      invalidateStaffSlotLookup();
       if (datePickerEl.value) {
         await checkStaffSlots(datePickerEl.value);
       }
@@ -5314,7 +5343,32 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('sr-veh-model').value = req.model || '';
     document.getElementById('sr-veh-year').value = req.year || '';
     document.getElementById('sr-veh-vin').value = req.vin || '';
-    renderRequestIntake(req.intake_data);
+
+    // Normalize legacy asset values into intake values so generic fields are populated
+    const intakeValues = { ...(req.intake_data || {}) };
+    const veh = req.vehicle || {};
+    const legacyMake = req.make || veh.make;
+    const legacyModel = req.model || veh.model;
+    const legacyYear = req.year || veh.year;
+    const legacyVin = req.vin || veh.vin;
+
+    if (activeBusinessProfile && Array.isArray(activeBusinessProfile.intake_fields)) {
+      activeBusinessProfile.intake_fields.forEach(f => {
+        if (intakeValues[f.key] === undefined || intakeValues[f.key] === null || intakeValues[f.key] === '') {
+          if (f.key === 'make' || f.detail_type === 'brand') {
+            if (legacyMake) intakeValues[f.key] = legacyMake;
+          } else if (f.key === 'model' || f.detail_type === 'model') {
+            if (legacyModel) intakeValues[f.key] = legacyModel;
+          } else if (f.key === 'year' || (f.detail_type === 'general' && f.type === 'number' && (f.label || '').toLowerCase() === 'year')) {
+            if (legacyYear) intakeValues[f.key] = Number(legacyYear);
+          } else if (f.key === 'vin' || (f.detail_type === 'serial_number' && (f.label || '').toLowerCase() === 'vin')) {
+            if (legacyVin) intakeValues[f.key] = legacyVin;
+          }
+        }
+      });
+    }
+
+    renderRequestIntake(intakeValues);
     const svcSelect = document.getElementById('sr-service-type');
     const rawValToSet = req.service_type || '';
     const valToSet = formatIssueDescription(rawValToSet);
@@ -5474,8 +5528,15 @@ document.addEventListener('DOMContentLoaded', () => {
       const isEdit = !!reqId;
       
       const timeInput = document.getElementById('sr-booking-time');
-      let bookingTimeStr = timeInput ? timeInput.value : (slotsDropdown?.value || srForm.dataset.selectedSlot || (isEdit ? (srForm.dataset.originalBookingTime || '') : ''));
+      const bDateInput = document.getElementById('sr-booking-date') || datePickerEl;
       let origBt = (srForm.dataset.originalBookingTime || '').replace(' ', 'T');
+      const origDate = origBt ? origBt.substring(0, 10) : '';
+      const dateChanged = isEdit && bDateInput && bDateInput.value && origDate && bDateInput.value !== origDate;
+
+      let bookingTimeStr = (slotsDropdown && slotsDropdown.value) || (timeInput ? timeInput.value : '') || (srForm?.dataset?.selectedSlot || '');
+      if (!bookingTimeStr && isEdit && !dateChanged) {
+        bookingTimeStr = origBt;
+      }
       if (bookingTimeStr) {
          bookingTimeStr = bookingTimeStr.replace('T', ' ') + (bookingTimeStr.length === 16 ? ':00' : ''); // formatting to YYYY-MM-DD HH:MM:SS
       }

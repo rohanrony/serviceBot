@@ -61,7 +61,14 @@ def get_business_profile(config=None) -> dict:
     if config is None:
         from serviceBot.api.portal import load_config
         config = load_config()
-    return BusinessProfile.model_validate(config.get("business_profile") or {}).model_dump()
+    raw = config.get("business_profile")
+    if raw is None:
+        return {
+            "industry": "Automotive service",
+            "collect_vehicle_details": True,
+            "intake_fields": get_legacy_intake_defaults(),
+        }
+    return BusinessProfile.model_validate(raw).model_dump()
 
 
 def validate_intake_data(data, profile=None) -> dict:
@@ -90,13 +97,47 @@ def validate_intake_data(data, profile=None) -> dict:
     return clean
 
 
-def parse_voice_intake(args, profile) -> dict:
-    data = args.get("intake_data")
-    if data is None and args.get("intake_data_json") is not None:
+def normalize_legacy_intake_args(args: dict, profile: dict) -> dict:
+    """Normalize legacy asset inputs (make, model, year, vin) into configured intake fields."""
+    if not isinstance(args, dict):
+        return {}
+    raw = args.get("intake_data")
+    if raw is None and args.get("intake_data_json") is not None:
         try:
-            data = json.loads(args["intake_data_json"])
+            raw = json.loads(args["intake_data_json"])
         except (ValueError, TypeError) as exc:
             raise ValueError("Intake details must be valid JSON") from exc
+    data = dict(raw) if isinstance(raw, dict) else {}
+
+    fields = profile.get("intake_fields") or []
+    for field in fields:
+        k = field["key"]
+        if k in data and data[k] is not None and data[k] != "":
+            continue
+        dtype = field.get("detail_type")
+        val = None
+        if k == "make" or dtype == "brand":
+            val = args.get("make")
+        elif k == "model" or dtype == "model":
+            val = args.get("model")
+        elif k == "year" or (dtype == "general" and field.get("type") == "number" and field.get("label", "").lower() == "year"):
+            val = args.get("year")
+            if val is not None:
+                try:
+                    val = int(val)
+                except (ValueError, TypeError):
+                    val = None
+        elif k == "vin" or (dtype == "serial_number" and field.get("label", "").lower() == "vin"):
+            val = args.get("vin")
+
+        if val is not None and val != "":
+            data[k] = val
+
+    return data
+
+
+def parse_voice_intake(args, profile) -> dict:
+    data = normalize_legacy_intake_args(args, profile)
     return validate_intake_data(data, profile)
 
 

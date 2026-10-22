@@ -321,9 +321,15 @@ class BookingService:
 
     @staticmethod
     def _intake_details(vehicle_details):
-        from serviceBot.services.business_profile import validate_intake_data
+        from serviceBot.services.business_profile import validate_intake_data, normalize_legacy_intake_args, get_business_profile
         details = vehicle_details or {}
-        return validate_intake_data(details.get("intake_data"))
+        profile = get_business_profile()
+        raw = details.get("intake_data")
+        args_to_normalize = dict(details)
+        if isinstance(raw, dict):
+            args_to_normalize["intake_data"] = raw
+        normalized = normalize_legacy_intake_args(args_to_normalize, profile)
+        return validate_intake_data(normalized, profile)
 
     @staticmethod
     def _persist_intake(cursor, request_id, intake_data):

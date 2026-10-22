@@ -426,7 +426,7 @@ async def sync_prompt_to_elevenlabs(prompt_text: str, first_message: str = None)
     agent_id = os.getenv("ELEVENLABS_AGENT_ID", "")
 
     if not api_key or not agent_id:
-        return
+        return {"status": "unavailable", "message": "Voice provider credentials not configured."}
 
     log_file = os.path.join(os.path.dirname(CONFIG_PATH), "elevenlabs_sync.log")
     
@@ -459,27 +459,23 @@ async def sync_prompt_to_elevenlabs(prompt_text: str, first_message: str = None)
     
     async with httpx.AsyncClient() as client:
         for target_id in target_agents:
+            response = await client.patch(
+                f"https://api.elevenlabs.io/v1/convai/agents/{target_id}",
+                json=el_payload,
+                headers=headers
+            )
             try:
-                response = await client.patch(
-                    f"https://api.elevenlabs.io/v1/convai/agents/{target_id}",
-                    json=el_payload,
-                    headers=headers
-                )
-                try:
-                    with open(log_file, "a") as lf:
-                        lf.write(f"Target: {target_id} - Status Code: {response.status_code}\n")
-                        lf.write(f"Response: {response.text}\n")
-                except Exception:
-                    pass
-                if response.status_code != 200:
-                    print(f"ElevenLabs prompt sync for {target_id} returned status code {response.status_code}: {response.text}")
-            except Exception as e:
-                try:
-                    with open(log_file, "a") as lf:
-                        lf.write(f"Target {target_id} Exception: {str(e)}\n")
-                except Exception:
-                    pass
-                print(f"Failed to sync prompt to ElevenLabs agent {target_id}: {str(e)}")
+                with open(log_file, "a") as lf:
+                    lf.write(f"Target: {target_id} - Status Code: {response.status_code}\n")
+                    lf.write(f"Response: {response.text}\n")
+            except Exception:
+                pass
+            if response.status_code != 200:
+                err_msg = f"ElevenLabs prompt sync for {target_id} returned status code {response.status_code}: {response.text}"
+                logger.warning(err_msg)
+                raise RuntimeError(err_msg)
+
+    return {"status": "synced", "message": "Voice provider instructions synchronized successfully."}
 
 from serviceBot.services.business_profile import (
     BusinessProfile, build_business_prompt, get_business_profile, normalize_portal_base_url, validate_intake_data,
@@ -647,11 +643,16 @@ async def update_config(payload: ConfigUpdatePayload):
 
     provider_sync = {"status": "synced", "message": "Voice provider instructions synchronized successfully."}
     try:
-        await sync_prompt_to_elevenlabs(prompt_to_sync, config_data["first_message"] if payload.regenerate_business_prompt else payload.first_message)
+        sync_result = await sync_prompt_to_elevenlabs(
+            prompt_to_sync,
+            config_data["first_message"] if payload.regenerate_business_prompt else payload.first_message
+        )
         api_key = os.getenv("ELEVENLABS_API_KEY", "")
         agent_id = os.getenv("ELEVENLABS_AGENT_ID", "")
         is_mocked = hasattr(sync_prompt_to_elevenlabs, "mock_calls") or hasattr(sync_prompt_to_elevenlabs, "await_count")
-        if not (api_key and agent_id) and not is_mocked:
+        if isinstance(sync_result, dict):
+            provider_sync = sync_result
+        elif not (api_key and agent_id) and not is_mocked:
             provider_sync = {
                 "status": "unavailable",
                 "message": "Voice provider credentials not configured.",
@@ -2557,12 +2558,13 @@ async def update_sms_config_endpoint(payload: SMSConfigPayload):
     for loc_key in ("business_name", "business_address", "google_maps_url", "business_timezone", "support_phone_number"):
         if loc_key in data:
             val = data[loc_key] if loc_key == "support_phone_number" else data.pop(loc_key)
-            if loc_key == "business_timezone" and val:
-                from serviceBot.services.timezone_service import validate_timezone
-                if not validate_timezone(str(val).strip()):
-                    raise HTTPException(status_code=400, detail=f"Invalid IANA timezone identifier: {val}")
-                val = str(val).strip()
-            loc_updates[loc_key] = val
+            if val is not None and str(val).strip() != "":
+                if loc_key == "business_timezone":
+                    from serviceBot.services.timezone_service import validate_timezone
+                    if not validate_timezone(str(val).strip()):
+                        raise HTTPException(status_code=400, detail=f"Invalid IANA timezone identifier: {val}")
+                    val = str(val).strip()
+                loc_updates[loc_key] = val
     if loc_updates:
         cfg = load_config()
         cfg.update(loc_updates)

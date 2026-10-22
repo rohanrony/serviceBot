@@ -324,3 +324,53 @@ def test_generic_service_request_does_not_fabricate_vehicle(profile_config):
         vehicle_count_after = cursor.fetchone()["cnt"]
         # No vehicle rows should be fabricated
         assert vehicle_count_after == vehicle_count_before
+
+
+def test_unconfigured_legacy_profile_defaults():
+    """US2/AC6: Installations without business_profile default to legacy automotive intake."""
+    from serviceBot.services.business_profile import get_business_profile, get_legacy_intake_defaults
+
+    # When config is empty or missing business_profile
+    profile = get_business_profile({})
+    assert profile["collect_vehicle_details"] is True
+    assert len(profile["intake_fields"]) == 3
+    defaults = get_legacy_intake_defaults()
+    assert [f["key"] for f in profile["intake_fields"]] == [f["key"] for f in defaults]
+
+
+def test_legacy_asset_inputs_normalized_into_generic_fields():
+    """US2/AC7: Compatibility normalization maps legacy make/model/year into matching generic intake fields."""
+    from serviceBot.services.business_profile import normalize_legacy_intake_args
+
+    generic_profile = {
+        "industry": "Equipment Rental",
+        "collect_vehicle_details": False,
+        "intake_fields": [
+            {"key": "equip_brand", "detail_type": "brand", "label": "Brand", "type": "text", "required": True},
+            {"key": "equip_model", "detail_type": "model", "label": "Model", "type": "text", "required": True},
+            {"key": "equip_year", "detail_type": "general", "label": "Year", "type": "number", "required": False},
+        ],
+    }
+
+    raw_args = {"make": "Caterpillar", "model": "320D", "year": "2021"}
+    normalized = normalize_legacy_intake_args(raw_args, generic_profile)
+    assert normalized["equip_brand"] == "Caterpillar"
+    assert normalized["equip_model"] == "320D"
+    assert normalized["equip_year"] == 2021
+
+
+def test_explicit_empty_intake_profile_preserved(profile_config):
+    """US2/AC8: An explicitly empty intake configuration is preserved without restoring automotive defaults."""
+    client, _ = profile_config
+    empty_profile = {
+        "industry": "Consulting",
+        "collect_vehicle_details": False,
+        "intake_fields": [],
+    }
+    res = client.post("/api/v1/portal/config", json={"business_profile": empty_profile})
+    assert res.status_code == 200
+
+    saved = client.get("/api/v1/portal/config").json()
+    assert saved["business_profile"]["industry"] == "Consulting"
+    assert saved["business_profile"]["collect_vehicle_details"] is False
+    assert saved["business_profile"]["intake_fields"] == []
