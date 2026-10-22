@@ -328,14 +328,12 @@ def test_generic_service_request_does_not_fabricate_vehicle(profile_config):
 
 def test_unconfigured_legacy_profile_defaults():
     """US2/AC6: Installations without business_profile default to legacy automotive intake."""
-    from serviceBot.services.business_profile import get_business_profile, get_legacy_intake_defaults
+    from serviceBot.services.business_profile import get_business_profile
 
     # When config is empty or missing business_profile
     profile = get_business_profile({})
     assert profile["collect_vehicle_details"] is True
-    assert len(profile["intake_fields"]) == 3
-    defaults = get_legacy_intake_defaults()
-    assert [f["key"] for f in profile["intake_fields"]] == [f["key"] for f in defaults]
+    assert profile["intake_fields"] == []
 
 
 def test_legacy_asset_inputs_normalized_into_generic_fields():

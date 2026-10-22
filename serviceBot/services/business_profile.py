@@ -66,7 +66,7 @@ def get_business_profile(config=None) -> dict:
         return {
             "industry": "Automotive service",
             "collect_vehicle_details": True,
-            "intake_fields": get_legacy_intake_defaults(),
+            "intake_fields": [],
         }
     return BusinessProfile.model_validate(raw).model_dump()
 
@@ -108,6 +108,10 @@ def normalize_legacy_intake_args(args: dict, profile: dict) -> dict:
         except (ValueError, TypeError) as exc:
             raise ValueError("Intake details must be valid JSON") from exc
     data = dict(raw) if isinstance(raw, dict) else {}
+
+    # If collect_vehicle_details is True, make/model/year belong to vehicles table, not intake_data
+    if profile.get("collect_vehicle_details"):
+        return data
 
     fields = profile.get("intake_fields") or []
     for field in fields:
