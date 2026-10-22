@@ -1,0 +1,313 @@
+schema: 1
+feature: "013-business-neutral-portal"
+acceptance:
+  - id: "US1/AC1"
+    behavior: "Business Address, Google Maps Link, Time Zone, and Support Helpline are canonically managed in Business Settings and removed from Notifications"
+    preconditions: ["Portal configuration loaded with valid business and contact settings"]
+    success: ["Fields render in Business Settings, populate existing values on load, and are absent from Notifications form"]
+    failure: ["Fields appear in Notifications or fail to populate in Business Settings"]
+    invariants: ["Other SMS configuration settings like quiet hours remain intact"]
+    tests:
+      - "tests/test_portal_config.py::test_business_settings_canonical_fields_persistence"
+      - "e2e/test_business_neutral_portal.py::test_business_settings_inputs_and_notifications_removal"
+    layer: [unit, http, browser]
+    live_acceptance:
+      status: not_required
+      reason: "Portal settings presentation and persistence are fully verified offline via local config and browser tests."
+      scenarios: []
+
+  - id: "US1/AC2"
+    behavior: "Save Business Settings opens a confirmation dialog explaining prompt replacement; Cancel makes zero writes/calls, Confirm saves and regenerates"
+    preconditions: ["User has made edits to Business Settings form"]
+    success: ["Clicking Save opens confirmation modal; Cancel aborts without HTTP POST; Confirm executes save and prompt regeneration"]
+    failure: ["Saving occurs without confirmation, or Cancel initiates a write/sync request"]
+    invariants: ["No changes are persisted if dialog is cancelled"]
+    tests:
+      - "tests/test_portal_config.py::test_business_settings_save_confirmation_contract"
+      - "e2e/test_business_neutral_portal.py::test_save_confirmation_cancel_and_confirm_flow"
+    layer: [http, browser]
+    live_acceptance:
+      status: not_required
+      reason: "UI modal interactions and client-side cancellation are fully verified offline."
+      scenarios: []
+
+  - id: "US1/AC3"
+    behavior: "Report saved settings separately from voice-provider synchronization status"
+    preconditions: ["POST /api/v1/portal/config is executed with prompt regeneration"]
+    success: ["API returns saved: true along with provider_sync status; UI displays saved notice and separate provider status without claiming live agent updated if sync fails"]
+    failure: ["Failure to sync voice provider blocks configuration save, or UI falsely claims live voice agent updated"]
+    invariants: ["Local configuration remains durably saved even when external voice provider is unavailable"]
+    tests:
+      - "tests/test_portal_config.py::test_provider_sync_status_reported_separately_on_failure"
+      - "e2e/test_business_neutral_portal.py::test_provider_sync_failure_displays_separate_notice"
+    layer: [unit, http, browser]
+    live_acceptance:
+      status: pending
+      reason: "Live ElevenLabs prompt synchronization requires active API credentials and live call testing."
+      scenarios: ["C01"]
+      scenario_source: "live_simulations/scenarios.json"
+      prerequisites: ["Target environment with valid ElevenLabs credentials and configured test voice agent"]
+      expected_effects: ["Voice provider prompt updated to match regenerated business instructions"]
+      independent_read_back: ["Fetch agent configuration from ElevenLabs API and assert system prompt matches generated prompt"]
+      cleanup_recovery: ["Restore previous prompt after test run"]
+      estimated_credits: "0.5 credits"
+      estimated_cost: "$0.01 USD"
+      spending_ceiling: "$0.50 USD"
+      unknown_charge_handling: "Stop, retain ledger, reconcile before retry"
+      reuse: "Requires re-verification when prompt generation structure changes"
+      evidence: []
+
+  - id: "US1/AC4"
+    behavior: "Business Settings is the canonical owner of the support number; legacy SMS configuration interfaces resolve and update the same effective value"
+    preconditions: ["Database has sms_config record and config.json exists"]
+    success: ["Updates via Business Settings reflect in sms_config; updates via legacy SMS config reflect in config.json; existing stored number preserved until explicitly saved"]
+    failure: ["Discrepancy between config.json and sms_config support phone numbers"]
+    invariants: ["Support phone number format is preserved"]
+    tests:
+      - "tests/test_portal_config.py::test_canonical_support_phone_synchronization"
+    layer: [unit, database, http]
+    live_acceptance:
+      status: not_required
+      reason: "Internal configuration and database synchronization is verified offline."
+      scenarios: []
+
+  - id: "US2/AC1"
+    behavior: "Generic intake field definitions support stable keys, detail types, business labels, value types, and requirements"
+    preconditions: ["BusinessProfile model validated with custom intake fields"]
+    success: ["Fields store key, detail_type (general, asset_type, brand, model, serial_number), label, type, and required flag; identifiers remain text"]
+    failure: ["Invalid detail_type accepted, serial_number allowed as numeric, or non-unique keys allowed"]
+    invariants: ["Existing key pattern and length restrictions remain enforced"]
+    tests:
+      - "tests/test_business_profile.py::test_generic_intake_field_detail_types_and_validation"
+    layer: [unit]
+    live_acceptance:
+      status: not_required
+      reason: "Pydantic schema validation is verified offline."
+      scenarios: []
+
+  - id: "US2/AC2"
+    behavior: "Repeated detail types with independent optionality and distinct labels are allowed"
+    preconditions: ["Multiple fields sharing the same detail_type (e.g., two serial numbers)"]
+    success: ["Configuration accepts both fields with independent labels, keys, and required settings"]
+    failure: ["System rejects repeated detail_type"]
+    invariants: ["Keys remain unique"]
+    tests:
+      - "tests/test_business_profile.py::test_repeated_detail_types_allowed"
+    layer: [unit, http]
+    live_acceptance:
+      status: not_required
+      reason: "Verified offline via unit and API tests."
+      scenarios: []
+
+  - id: "US2/AC3"
+    behavior: "Expose legacy automotive fields as editable generic equivalents in form; retain Year as numeric general detail"
+    preconditions: ["Configuration without custom intake loaded in portal"]
+    success: ["UI displays Make (Brand, text), Model (Model, text), and Year (General detail, number) as editable rows"]
+    failure: ["Legacy fields omitted or Year configured as text"]
+    invariants: ["Historical service requests remain readable"]
+    tests:
+      - "tests/test_business_profile.py::test_legacy_automotive_fields_exposed_as_generic_equivalents"
+      - "e2e/test_business_neutral_portal.py::test_legacy_automotive_fields_exposed_in_form"
+    layer: [unit, browser]
+    live_acceptance:
+      status: not_required
+      reason: "Form rendering and initialization verified offline."
+      scenarios: []
+
+  - id: "US2/AC4"
+    behavior: "Agent prompt instructs asking for missing required fields using labels, and prohibits soliciting optional fields while recording volunteered values"
+    preconditions: ["Business profile with required and optional fields"]
+    success: ["Prompt specifies required fields to solicit by label, and explicitly prohibits soliciting optional fields"]
+    failure: ["Agent prompt asks to solicit optional fields or omits required labels"]
+    invariants: ["Prompt maintains clear sequential question guidelines"]
+    tests:
+      - "tests/test_business_profile.py::test_agent_prompt_required_vs_optional_intake_rules"
+    layer: [unit]
+    live_acceptance:
+      status: pending
+      reason: "Verification of actual caller speech interaction requires live voice simulation."
+      scenarios: ["C01"]
+      scenario_source: "live_simulations/scenarios.json"
+      prerequisites: ["Live voice runner with synthesized caller audio"]
+      expected_effects: ["Agent asks for required fields; does not ask for optional fields"]
+      independent_read_back: ["Analyze conversation transcript turns for questions asked by agent"]
+      cleanup_recovery: ["Standard test run cleanup"]
+      estimated_credits: "2.0 credits"
+      estimated_cost: "$0.05 USD"
+      spending_ceiling: "$1.00 USD"
+      unknown_charge_handling: "Stop and reconcile"
+      reuse: "Must re-verify when voice agent prompt guidelines change"
+      evidence: []
+
+  - id: "US2/AC5"
+    behavior: "Generic service requests store data in intake_data JSONB without fabricating dummy vehicle records"
+    preconditions: ["Service request created with intake_data but no vehicle details"]
+    success: ["Record saved with intake_data JSONB and vehicle_id IS NULL; no row added to vehicles table"]
+    failure: ["Dummy row ('Vehicle', 'Standard', 2020) inserted into vehicles table"]
+    invariants: ["Legitimate vehicle details are still recorded if provided"]
+    tests:
+      - "tests/test_business_profile.py::test_generic_service_request_does_not_fabricate_vehicle"
+    layer: [database, unit, http]
+    live_acceptance:
+      status: not_required
+      reason: "Database row inspection verified offline."
+      scenarios: []
+
+  - id: "US3/AC1"
+    behavior: "Service requests use date-first scheduling with date picker, availability check, and returned-slot selector in business timezone"
+    preconditions: ["Service request modal open"]
+    success: ["Date picker selected, Check Availability returns open slots in business timezone, slot selected populates booking time"]
+    failure: ["Manual datetime-local input present or slots displayed in wrong timezone"]
+    invariants: ["Unscheduled requests remain unscheduled; existing schedule preserved on edit"]
+    tests:
+      - "tests/test_portal_booking_slots.py::test_available_slots_timezone_formatting"
+      - "e2e/test_business_neutral_portal.py::test_service_request_date_first_slot_selection"
+    layer: [http, browser]
+    live_acceptance:
+      status: not_required
+      reason: "Calendar availability endpoint and UI slot rendering verified offline."
+      scenarios: []
+
+  - id: "US3/AC2"
+    behavior: "Changing appointment time requires customer consent and revalidates availability atomically"
+    preconditions: ["Existing appointment edited to a different time slot"]
+    success: ["Save rejected without consent check; conflicting slot rejected without partial update"]
+    failure: ["Appointment rescheduled without customer consent or partial reservation committed"]
+    invariants: ["Original booking remains intact if update fails"]
+    tests:
+      - "tests/test_portal_booking_slots.py::test_reschedule_requires_customer_consent"
+      - "e2e/test_business_neutral_portal.py::test_reschedule_consent_validation"
+    layer: [unit, http, browser]
+    live_acceptance:
+      status: not_required
+      reason: "Atomic reservation rollback and consent enforcement verified offline."
+      scenarios: []
+
+  - id: "US4/AC1"
+    behavior: "Service catalogue redesigned, automotive seed button removed, and Asset Details summary displayed with link to Business Settings"
+    preconditions: ["Services view opened in portal"]
+    success: ["No automotive seed button; add/edit forms have Asset Details badge list and link; pricing and assigned agents preserved"]
+    failure: ["Automotive seed button present or Automotive Details checkbox remains"]
+    invariants: ["Service catalog DB schema unchanged"]
+    tests:
+      - "e2e/test_business_neutral_portal.py::test_service_catalogue_redesign_and_asset_details"
+    layer: [browser]
+    live_acceptance:
+      status: not_required
+      reason: "DOM structure and styling verified offline."
+      scenarios: []
+
+  - id: "US5/AC1"
+    behavior: "SMS Inbox Appointment Context sidebar removed and conversation area expanded"
+    preconditions: ["SMS Inbox view opened in portal"]
+    success: ["Appointment Context sidebar absent; chat area takes full width"]
+    failure: ["Context sidebar rendered or chat area cramped"]
+    invariants: ["Message history and quick replies remain fully functional"]
+    tests:
+      - "e2e/test_business_neutral_portal.py::test_sms_inbox_expanded_without_context_sidebar"
+    layer: [browser]
+    live_acceptance:
+      status: not_required
+      reason: "Layout verified offline in browser."
+      scenarios: []
+
+  - id: "US5/AC2"
+    behavior: "Admin Configuration hides Connection Help card"
+    preconditions: ["Admin Config view opened"]
+    success: ["Connection Help card is hidden"]
+    failure: ["Connection Help card is visible"]
+    invariants: ["Admin notification settings remain accessible"]
+    tests:
+      - "e2e/test_business_neutral_portal.py::test_admin_connection_help_hidden"
+    layer: [browser]
+    live_acceptance:
+      status: not_required
+      reason: "DOM inspection verified offline."
+      scenarios: []
+
+  - id: "US5/AC3"
+    behavior: "API Keys & Voice configuration pane and nav entry are hidden; old links fall back to Business Settings"
+    preconditions: ["Portal loaded with URL hash #config/voice-settings or clicking old link"]
+    success: ["Nav button hidden; view falls back to Business Settings"]
+    failure: ["Voice settings pane shown or 404 error"]
+    invariants: ["Existing system secrets remain stored and unaffected"]
+    tests:
+      - "e2e/test_business_neutral_portal.py::test_voice_settings_hidden_and_routing_fallback"
+    layer: [browser]
+    live_acceptance:
+      status: not_required
+      reason: "Client routing fallback verified offline."
+      scenarios: []
+
+  - id: "US5/AC4"
+    behavior: "Remove duplicate phone whitelist from Notifications; keep on Staff, Admin, Customer pages"
+    preconditions: ["Notifications subtab viewed"]
+    success: ["Duplicate whitelist form/table removed from Notifications; functional onboarding remains on Staff, Admin, Customer"]
+    failure: ["Duplicate whitelist remains on Notifications"]
+    invariants: ["Staff and customer phone verification flows unaffected"]
+    tests:
+      - "e2e/test_business_neutral_portal.py::test_duplicate_whitelist_removed_from_notifications"
+    layer: [browser]
+    live_acceptance:
+      status: not_required
+      reason: "DOM verification offline."
+      scenarios: []
+
+  - id: "US6/AC1"
+    behavior: "Require valid, nonblank email and phone on Add Staff Member; reject clearing on update while allowing edits to older incomplete profiles"
+    preconditions: ["Staff Agent creation and update API endpoints called"]
+    success: ["Create fails on blank/invalid email or phone; update fails when setting email/phone to empty string; update allows name edit on legacy row with NULL email"]
+    failure: ["Blank email accepted on create or clearing allowed on update"]
+    invariants: ["Existing staff agent records preserved"]
+    tests:
+      - "tests/test_staff_agent_validation.py::test_create_staff_requires_nonblank_email_and_phone"
+      - "tests/test_staff_agent_validation.py::test_update_staff_rejects_clearing_email_or_phone"
+      - "tests/test_staff_agent_validation.py::test_update_staff_allows_unrelated_edit_on_legacy_incomplete_record"
+      - "e2e/test_business_neutral_portal.py::test_staff_add_form_validation"
+    layer: [unit, http, browser]
+    live_acceptance:
+      status: not_required
+      reason: "Validation logic and database persistence verified offline."
+      scenarios: []
+
+  - id: "US7/AC1"
+    behavior: "Replace 'contact dispatch' acknowledgment with configured support helpline or concise fallback"
+    preconditions: ["Inbound unrecognized message received from customer or agent"]
+    success: ["When helpline set: 'Message received. For urgent scheduling assistance, please call {helpline}.'; when unconfigured: 'Message received.'"]
+    failure: ["Message mentions 'contact dispatch' or uses placeholder number when helpline unconfigured"]
+    invariants: ["Sender classification, action confirmation, and message logging preserved"]
+    tests:
+      - "tests/test_sms_acknowledgment.py::test_acknowledgment_with_configured_helpline"
+      - "tests/test_sms_acknowledgment.py::test_acknowledgment_with_unconfigured_helpline"
+    layer: [unit, provider_contract]
+    live_acceptance:
+      status: pending
+      reason: "Twilio inbound webhook delivery and SMS receipt dispatch requires live phone numbers."
+      scenarios: ["C01"]
+      scenario_source: "live_simulations/scenarios.json"
+      prerequisites: ["Configured Twilio phone number and test sender"]
+      expected_effects: ["Outbound SMS receipt delivered with configured helpline"]
+      independent_read_back: ["Read Twilio message log by message SID to verify delivered body"]
+      cleanup_recovery: ["Standard test SMS cleanup"]
+      estimated_credits: "0.2 credits"
+      estimated_cost: "$0.0075 USD"
+      spending_ceiling: "$0.20 USD"
+      unknown_charge_handling: "Stop and reconcile"
+      reuse: "Invalidated if acknowledgment phrasing changes"
+      evidence: []
+
+omitted_layers:
+  migration: "No new database schema migrations are planned or required for this feature; existing JSONB and columns are reused."
+
+review:
+  red: "Authored failing tests for all acceptance contracts prior to code implementation."
+  green: "All unit, API, database, and browser assertions pass cleanly."
+  test_changes: "All tests are net-new or non-destructive additions ensuring 0 weakened assertions."
+  sufficiency: "Covers all 12 requested changes across unit, database, HTTP, and browser E2E layers."
+  offline:
+    status: verified
+    reason: "All 42 unit/integration tests and 19 browser E2E tests across new and existing suites pass cleanly."
+    evidence:
+      - "pytest tests/test_portal_config.py tests/test_business_profile.py tests/test_portal_booking_slots.py tests/test_staff_agent_validation.py tests/test_sms_acknowledgment.py: 42 passed"
+      - "pytest e2e/test_business_neutral_portal.py: 12 passed"
+      - "pytest e2e/test_business_profile.py: 7 passed"

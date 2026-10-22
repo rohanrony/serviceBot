@@ -86,20 +86,44 @@ document.addEventListener('DOMContentLoaded', () => {
     element.textContent = String(value ?? '');
     return element.innerHTML;
   }
+  function renderCatalogAssetDetails() {
+    const fields = (activeBusinessProfile && activeBusinessProfile.intake_fields && activeBusinessProfile.intake_fields.length > 0)
+      ? activeBusinessProfile.intake_fields
+      : [
+          { key: 'make', label: 'Make', detail_type: 'brand', type: 'text' },
+          { key: 'model', label: 'Model', detail_type: 'model', type: 'text' },
+          { key: 'year', label: 'Year', detail_type: 'general', type: 'number' }
+        ];
+
+    ['add-service-intake-badges', 'edit-service-intake-badges'].forEach(id => {
+      const container = document.getElementById(id);
+      if (!container) return;
+      container.replaceChildren();
+      fields.forEach(f => {
+        const span = document.createElement('span');
+        span.className = 'badge neutral';
+        span.style.cssText = 'padding: 4px 8px; border-radius: 4px; font-size: 11px;';
+        span.textContent = `${f.label} (${f.detail_type || 'general'})`;
+        container.appendChild(span);
+      });
+    });
+  }
   function applyBusinessProfile(config) {
     activeBusinessProfile = config.business_profile || activeBusinessProfile;
     const section = document.getElementById('sr-vehicle-section');
     if (section) {
-      section.hidden = !activeBusinessProfile.collect_vehicle_details;
+      const collect = !!activeBusinessProfile.collect_vehicle_details;
+      section.hidden = !collect;
       section.querySelectorAll('input').forEach(input => {
-        input.disabled = !activeBusinessProfile.collect_vehicle_details;
-        input.required = activeBusinessProfile.collect_vehicle_details && input.id !== 'sr-veh-vin';
+        input.disabled = !collect;
+        input.required = collect && input.id !== 'sr-veh-vin';
       });
     }
     ['new-service-req-vehicle-details', 'edit-service-req-vehicle-details'].forEach(id => {
       const checkbox = document.getElementById(id);
-      if (checkbox) checkbox.closest('label').hidden = !activeBusinessProfile.collect_vehicle_details;
+      if (checkbox && checkbox.closest('label')) checkbox.closest('label').hidden = !activeBusinessProfile.collect_vehicle_details;
     });
+    renderCatalogAssetDetails();
   }
   function renderRequestIntake(values = {}) {
     const container = document.getElementById('sr-intake-fields');
@@ -146,11 +170,29 @@ document.addEventListener('DOMContentLoaded', () => {
     row.dataset.key = field.key || '';
     row.style.cssText = 'display:flex;flex-direction:row;gap:12px;align-items:center;flex-wrap:wrap';
     row.innerHTML = '<label>Field label<input class="intake-label form-input" required maxlength="80"></label>' +
+      '<label>Detail type<select class="intake-detail-type form-input">' +
+      '<option value="general">General</option>' +
+      '<option value="asset_type">Asset Type</option>' +
+      '<option value="brand">Brand</option>' +
+      '<option value="model">Model</option>' +
+      '<option value="serial_number">Serial Number</option>' +
+      '</select></label>' +
       '<label>Type<select class="intake-type form-input"><option value="text">Text</option><option value="number">Number</option></select></label>' +
       '<label class="checkbox-item"><input type="checkbox" class="intake-required">Required</label>' +
       '<button type="button" class="btn btn-secondary intake-remove">Remove</button>';
     row.querySelector('.intake-label').value = field.label || '';
-    row.querySelector('.intake-type').value = field.type || 'text';
+    const detailTypeSelect = row.querySelector('.intake-detail-type');
+    const typeSelect = row.querySelector('.intake-type');
+    detailTypeSelect.value = field.detail_type || 'general';
+    typeSelect.value = field.type || 'text';
+    if (detailTypeSelect.value !== 'general') {
+      typeSelect.value = 'text';
+    }
+    detailTypeSelect.addEventListener('change', () => {
+      if (detailTypeSelect.value !== 'general') {
+        typeSelect.value = 'text';
+      }
+    });
     row.querySelector('.intake-required').checked = !!field.required;
     row.querySelector('.intake-remove').addEventListener('click', () => row.remove());
     document.getElementById('business-intake-fields').appendChild(row);
@@ -161,45 +203,132 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!response.ok) throw new Error('Could not load business settings');
       const config = await response.json();
       applyBusinessProfile(config);
-      document.getElementById('business-name').value = config.business_name || '';
-      document.getElementById('business-portal-url').value = config.portal_base_url || '';
-      document.getElementById('business-industry').value = activeBusinessProfile.industry;
-      document.getElementById('business-collect-vehicle').checked = activeBusinessProfile.collect_vehicle_details;
-      document.getElementById('business-regenerate-prompt').checked = false;
-      document.getElementById('business-intake-fields').replaceChildren();
-      activeBusinessProfile.intake_fields.forEach(addBusinessIntakeRow);
+      const bName = document.getElementById('business-name');
+      if (bName) bName.value = config.business_name || '';
+      const bUrl = document.getElementById('business-portal-url');
+      if (bUrl) bUrl.value = config.portal_base_url || '';
+      const bIndustry = document.getElementById('business-industry');
+      if (bIndustry) bIndustry.value = activeBusinessProfile.industry || 'Service business';
+      const bAddr = document.getElementById('business-address');
+      if (bAddr) bAddr.value = config.business_address || '';
+      const bMaps = document.getElementById('business-maps-url');
+      if (bMaps) bMaps.value = config.google_maps_url || '';
+      const bTz = document.getElementById('business-timezone');
+      if (bTz) bTz.value = config.business_timezone || 'America/New_York';
+      const bPhone = document.getElementById('business-support-phone');
+      if (bPhone) bPhone.value = config.support_phone_number || '';
+
+      const intakeContainer = document.getElementById('business-intake-fields');
+      if (intakeContainer) {
+        intakeContainer.replaceChildren();
+        const intakeFields = (activeBusinessProfile.intake_fields && activeBusinessProfile.intake_fields.length > 0)
+          ? activeBusinessProfile.intake_fields
+          : [
+              { key: 'make', label: 'Make', detail_type: 'brand', type: 'text', required: false },
+              { key: 'model', label: 'Model', detail_type: 'model', type: 'text', required: false },
+              { key: 'year', label: 'Year', detail_type: 'general', type: 'number', required: false }
+            ];
+        intakeFields.forEach(addBusinessIntakeRow);
+      }
+      renderCatalogAssetDetails();
     } catch (error) { showToast(error.message, 'error'); }
   }
   document.getElementById('add-intake-field')?.addEventListener('click', () => {
     if (document.querySelectorAll('.business-intake-row').length >= 20) return showToast('Up to 20 intake fields are supported.', 'warning');
     addBusinessIntakeRow();
   });
-  document.getElementById('business-profile-form')?.addEventListener('submit', async event => {
+
+  const businessModal = document.getElementById('business-save-modal');
+  const businessModalOverlay = document.getElementById('business-save-modal-overlay');
+  const businessCancelBtn = document.getElementById('business-save-cancel-btn');
+  const businessConfirmBtn = document.getElementById('business-save-confirm-btn');
+
+  function openBusinessSaveModal() {
+    if (businessModal) businessModal.style.display = 'block';
+    if (businessModalOverlay) businessModalOverlay.style.display = 'block';
+  }
+  function closeBusinessSaveModal() {
+    if (businessModal) businessModal.style.display = 'none';
+    if (businessModalOverlay) businessModalOverlay.style.display = 'none';
+  }
+
+  if (businessCancelBtn) {
+    businessCancelBtn.addEventListener('click', () => {
+      closeBusinessSaveModal();
+    });
+  }
+
+  document.getElementById('business-profile-form')?.addEventListener('submit', event => {
     event.preventDefault();
-    const form = event.currentTarget;
-    const button = form.querySelector('button[type="submit"]');
-    button.disabled = true;
-    try {
-      const fields = Array.from(document.querySelectorAll('.business-intake-row')).map(row => {
-        const label = row.querySelector('.intake-label').value.trim();
-        const key = row.dataset.key || label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
-        return { key, label, type: row.querySelector('.intake-type').value, required: row.querySelector('.intake-required').checked };
-      });
-      const response = await fetch('/api/v1/portal/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-        business_name: document.getElementById('business-name').value.trim(),
-        portal_base_url: document.getElementById('business-portal-url').value.trim(),
-        business_profile: { industry: document.getElementById('business-industry').value.trim(), collect_vehicle_details: document.getElementById('business-collect-vehicle').checked, intake_fields: fields },
-        regenerate_business_prompt: document.getElementById('business-regenerate-prompt').checked
-      }) });
-      if (!response.ok) {
-        const body = await response.json();
-        throw new Error(typeof body.detail === 'string' ? body.detail : 'Check field labels and ensure each field has a unique name beginning with a letter.');
-      }
-      await loadBusinessProfile();
-      showToast('Business settings saved.');
-    } catch (error) { showToast(error.message, 'error'); }
-    finally { button.disabled = false; }
+    openBusinessSaveModal();
   });
+
+  if (businessConfirmBtn) {
+    businessConfirmBtn.addEventListener('click', async () => {
+      businessConfirmBtn.disabled = true;
+      try {
+        const fields = Array.from(document.querySelectorAll('.business-intake-row')).map(row => {
+          const label = row.querySelector('.intake-label').value.trim();
+          const key = row.dataset.key || label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
+          const detail_type = row.querySelector('.intake-detail-type')?.value || 'general';
+          let type = row.querySelector('.intake-type')?.value || 'text';
+          if (detail_type !== 'general') type = 'text';
+          return { key, label, detail_type, type, required: !!row.querySelector('.intake-required')?.checked };
+        });
+        const payload = {
+          business_name: document.getElementById('business-name')?.value.trim() || '',
+          portal_base_url: document.getElementById('business-portal-url')?.value.trim() || '',
+          business_address: document.getElementById('business-address')?.value.trim() || '',
+          google_maps_url: document.getElementById('business-maps-url')?.value.trim() || '',
+          business_timezone: document.getElementById('business-timezone')?.value.trim() || 'America/New_York',
+          support_phone_number: document.getElementById('business-support-phone')?.value.trim() || '',
+          business_profile: {
+            industry: document.getElementById('business-industry')?.value.trim() || 'Service business',
+            intake_fields: fields
+          },
+          regenerate_business_prompt: true
+        };
+        const response = await fetch('/api/v1/portal/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(typeof body.detail === 'string' ? body.detail : 'Check field labels and ensure each field has a unique name beginning with a letter.');
+        }
+        const resData = await response.json();
+        closeBusinessSaveModal();
+
+        const notice = document.getElementById('business-sync-status-notice');
+        if (notice) {
+          if (resData.provider_sync && resData.provider_sync.status === 'failed') {
+            notice.style.display = 'block';
+            notice.style.background = 'rgba(239, 68, 68, 0.15)';
+            notice.style.color = '#ef4444';
+            notice.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+            notice.textContent = `Saved locally, but voice provider sync failed: ${resData.provider_sync.message || 'Service unavailable'}`;
+            showToast('Business settings saved locally. Voice provider sync failed.', 'warning');
+          } else if (resData.provider_sync && resData.provider_sync.status === 'synced') {
+            notice.style.display = 'block';
+            notice.style.background = 'rgba(34, 197, 94, 0.15)';
+            notice.style.color = '#22c55e';
+            notice.style.border = '1px solid rgba(34, 197, 94, 0.3)';
+            notice.textContent = 'Settings saved and live voice agent synchronized successfully.';
+            showToast('Business settings saved and voice provider synchronized.');
+          } else {
+            notice.style.display = 'none';
+            showToast('Business settings saved.');
+          }
+        }
+        await loadBusinessProfile();
+      } catch (error) {
+        showToast(error.message, 'error');
+      } finally {
+        businessConfirmBtn.disabled = false;
+      }
+    });
+  }
 
   // Elements
   const appContainer = document.querySelector('.app-container');
@@ -347,7 +476,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (documentDrawerOverlay) documentDrawerOverlay.addEventListener('click', closeDocumentDrawer);
   
   // Mapped View Titles & Subtitles
-  const CONFIG_SUBTABS = ['business', 'staff', 'gmail', 'sms-config', 'customer-onboarding', 'intents', 'keys', 'analytics'];
+  const CONFIG_SUBTABS = ['business', 'staff', 'gmail', 'sms-config', 'customer-onboarding', 'intents', 'analytics'];
   let activeConfigSubtab = 'staff';
 
   const TAB_METADATA = {
@@ -405,6 +534,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const viewSubtitle = document.getElementById('current-view-subtitle');
 
   function switchTab(tabName, updateHash = true) {
+    if (tabName === 'voice-settings' || tabName === 'keys') {
+      tabName = 'business';
+    }
     let isConfig = false;
     let targetSubtab = null;
 
@@ -534,8 +666,11 @@ document.addEventListener('DOMContentLoaded', () => {
   window.handleUrlHash = function() {
     const rawHash = (window.location.hash || '').replace(/^#/, '').trim();
     if (rawHash.startsWith('config/')) {
-      const sub = rawHash.split('/')[1];
-      switchTab(sub || 'staff', false);
+      let sub = rawHash.split('/')[1];
+      if (sub === 'voice-settings' || sub === 'keys') {
+        sub = 'business';
+      }
+      switchTab(sub || 'business', false);
     } else if (rawHash && TAB_METADATA[rawHash]) {
       switchTab(rawHash, false);
     } else {
@@ -1661,7 +1796,8 @@ document.addEventListener('DOMContentLoaded', () => {
     
     document.getElementById('edit-service-req-customer-name').checked = svc.req_customer_name !== undefined ? !!svc.req_customer_name : true;
     document.getElementById('edit-service-req-phone-number').checked = svc.req_phone_number !== undefined ? !!svc.req_phone_number : true;
-    document.getElementById('edit-service-req-vehicle-details').checked = svc.req_vehicle_details !== undefined ? !!svc.req_vehicle_details : true;
+    const editVehDetails = document.getElementById('edit-service-req-vehicle-details');
+    if (editVehDetails) editVehDetails.checked = svc.req_vehicle_details !== undefined ? !!svc.req_vehicle_details : true;
     document.getElementById('edit-service-req-issue-description').checked = svc.req_issue_description !== undefined ? !!svc.req_issue_description : true;
     document.getElementById('edit-service-req-location').checked = svc.req_location !== undefined ? !!svc.req_location : true;
     
@@ -1704,7 +1840,7 @@ document.addEventListener('DOMContentLoaded', () => {
         duration_minutes: isNaN(durationVal) ? null : durationVal,
         req_customer_name: document.getElementById('edit-service-req-customer-name').checked,
         req_phone_number: document.getElementById('edit-service-req-phone-number').checked,
-        req_vehicle_details: document.getElementById('edit-service-req-vehicle-details').checked,
+        req_vehicle_details: document.getElementById('edit-service-req-vehicle-details') ? document.getElementById('edit-service-req-vehicle-details').checked : false,
         req_issue_description: document.getElementById('edit-service-req-issue-description').checked,
         req_location: document.getElementById('edit-service-req-location').checked,
         agent_ids: selectedAgentIds
@@ -1759,7 +1895,7 @@ document.addEventListener('DOMContentLoaded', () => {
         duration_minutes: parseInt(document.getElementById('new-service-duration').value, 10),
         req_customer_name: document.getElementById('new-service-req-customer-name').checked,
         req_phone_number: document.getElementById('new-service-req-phone-number').checked,
-        req_vehicle_details: document.getElementById('new-service-req-vehicle-details').checked,
+        req_vehicle_details: document.getElementById('new-service-req-vehicle-details') ? document.getElementById('new-service-req-vehicle-details').checked : false,
         req_issue_description: document.getElementById('new-service-req-issue-description').checked,
         req_location: document.getElementById('new-service-req-location').checked,
         agent_ids: selectedAgentIds
@@ -3572,13 +3708,14 @@ document.addEventListener('DOMContentLoaded', () => {
   if (smsGlobalForm) {
     smsGlobalForm.addEventListener('submit', async (e) => {
       e.preventDefault();
+      const supportPhoneEl = document.getElementById('sms-config-support-phone');
       const payload = {
-        support_phone_number: document.getElementById('sms-config-support-phone').value,
+        support_phone_number: supportPhoneEl ? supportPhoneEl.value.trim() : null,
         admin_phone_number: document.getElementById('sms-config-admin-phone') ? document.getElementById('sms-config-admin-phone').value.trim() : null,
-        environment: document.getElementById('sms-config-environment').value,
-        quiet_start_time: document.getElementById('sms-config-quiet-start').value,
-        quiet_end_time: document.getElementById('sms-config-quiet-end').value,
-        auto_responder_template: document.getElementById('sms-config-auto-responder').value,
+        environment: document.getElementById('sms-config-environment') ? document.getElementById('sms-config-environment').value : 'TEST',
+        quiet_start_time: document.getElementById('sms-config-quiet-start') ? document.getElementById('sms-config-quiet-start').value : '21:00',
+        quiet_end_time: document.getElementById('sms-config-quiet-end') ? document.getElementById('sms-config-quiet-end').value : '08:00',
+        auto_responder_template: document.getElementById('sms-config-auto-responder') ? document.getElementById('sms-config-auto-responder').value : '',
         business_address: document.getElementById('sms-config-shop-address') ? document.getElementById('sms-config-shop-address').value.trim() : '',
         google_maps_url: document.getElementById('sms-config-maps-url') ? document.getElementById('sms-config-maps-url').value.trim() : '',
         business_timezone: document.getElementById('sms-config-timezone') ? document.getElementById('sms-config-timezone').value : activeBusinessTimezone
@@ -4777,7 +4914,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  const datePickerEl = document.getElementById('sr-check-date-picker');
+  const datePickerEl = document.getElementById('sr-booking-date') || document.getElementById('sr-check-date-picker');
 
   function getNextBusinessDateString() {
     const d = new Date();
@@ -4804,7 +4941,8 @@ document.addEventListener('DOMContentLoaded', () => {
       slotsDropdown.value = '';
     }
     if (consentCheck) consentCheck.checked = false;
-    if (consentWrapper) consentWrapper.style.display = 'none';
+    const isEdit = !!document.getElementById('sr-form-id')?.value;
+    if (consentWrapper) consentWrapper.style.display = isEdit ? 'block' : 'none';
   }
 
   function invalidateStaffSlotLookup() {
@@ -4831,11 +4969,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalVersion = serviceRequestModalVersion;
     clearStaffSlotChoices('Checking live availability...');
     if (slotsContainer) slotsContainer.style.display = 'block';
-    if (datePickerEl) datePickerEl.value = targetDate;
+    const dateInput = document.getElementById('sr-booking-date') || datePickerEl;
+    if (dateInput) dateInput.value = targetDate;
+    const tzLabel = document.getElementById('sr-slots-timezone-label');
+    if (tzLabel) tzLabel.textContent = activeBusinessTimezone || 'America/New_York';
     const agentSelect = document.getElementById('sr-agent-select');
     const timeInput = document.getElementById('sr-booking-time');
     const formState = () => JSON.stringify([document.getElementById('sr-form-id')?.value,
-      datePickerEl?.value, srBookingTypeSelect?.value, srDurationSelect?.value,
+      dateInput?.value, srBookingTypeSelect?.value, srDurationSelect?.value,
       agentSelect?.value, timeInput?.value, srForm?.dataset.bookingType,
       srForm?.dataset.durationMinutes, srForm?.dataset.staffAgentId]);
     const capturedState = formState();
@@ -4891,40 +5032,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (checkSlotsBtn) {
     checkSlotsBtn.addEventListener('click', async () => {
-      let currentVal = document.getElementById('sr-booking-time').value;
-      let targetDate = '';
-      if (currentVal) {
-        let matchISO = currentVal.match(/\d{4}-\d{2}-\d{2}/);
-        if (matchISO) {
-          targetDate = matchISO[0];
-        } else {
-          let matchSlash = currentVal.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-          if (matchSlash) {
-            let m = matchSlash[1].padStart(2, '0');
-            let d = matchSlash[2].padStart(2, '0');
-            let y = matchSlash[3];
-            targetDate = `${y}-${m}-${d}`;
-          } else {
-            targetDate = currentVal.substring(0, 10);
-          }
-        }
-      } else {
-        const origTime = (srForm && srForm.dataset.originalBookingTime) || '';
-        let matchOrig = origTime ? origTime.match(/\d{4}-\d{2}-\d{2}/) : null;
-        if (matchOrig) {
-          targetDate = matchOrig[0];
-        } else if (datePickerEl && datePickerEl.value) {
-          targetDate = datePickerEl.value;
-        } else {
-          targetDate = getNextBusinessDateString();
+      const dateInput = document.getElementById('sr-booking-date') || datePickerEl;
+      let targetDate = dateInput ? dateInput.value : '';
+      if (!targetDate) {
+        const timeInput = document.getElementById('sr-booking-time');
+        const currentVal = timeInput ? timeInput.value : '';
+        if (currentVal) {
+          let matchISO = currentVal.match(/\d{4}-\d{2}-\d{2}/);
+          if (matchISO) targetDate = matchISO[0];
         }
       }
-      
+      if (!targetDate) {
+        const origTime = (srForm && srForm.dataset.originalBookingTime) || '';
+        let matchOrig = origTime ? origTime.match(/\d{4}-\d{2}-\d{2}/) : null;
+        targetDate = matchOrig ? matchOrig[0] : getNextBusinessDateString();
+      }
+      if (dateInput) dateInput.value = targetDate;
       await checkStaffSlots(targetDate);
     });
   }
 
-  if (datePickerEl) {
+  const bookingDateInput = document.getElementById('sr-booking-date');
+  if (bookingDateInput) {
+    bookingDateInput.addEventListener('change', async () => {
+      if (bookingDateInput.value) {
+        await checkStaffSlots(bookingDateInput.value);
+      }
+    });
+  } else if (datePickerEl) {
     datePickerEl.addEventListener('change', async () => {
       if (datePickerEl.value) {
         await checkStaffSlots(datePickerEl.value);
@@ -4935,9 +5070,12 @@ document.addEventListener('DOMContentLoaded', () => {
   if (slotsDropdown) {
     slotsDropdown.addEventListener('change', () => {
       const selectedSlot = slotsDropdown.value;
-      if (selectedSlot && selectedSlot.length >= 16) {
-        document.getElementById('sr-booking-time').value = selectedSlot.substring(0, 16).replace(' ', 'T');
-        if (datePickerEl) datePickerEl.value = selectedSlot.substring(0, 10);
+      if (selectedSlot) {
+        if (srForm) srForm.dataset.selectedSlot = selectedSlot;
+        const timeInput = document.getElementById('sr-booking-time');
+        if (timeInput) timeInput.value = selectedSlot.substring(0, 16).replace(' ', 'T');
+        const bDateInput = document.getElementById('sr-booking-date') || datePickerEl;
+        if (bDateInput) bDateInput.value = selectedSlot.substring(0, 10);
         triggerConsentCheckIfNeeded();
       }
     });
@@ -4955,11 +5093,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!srForm) return;
     const isEdit = !!document.getElementById('sr-form-id').value;
     const origTime = srForm.dataset.originalBookingTime || '';
-    const curTime = (document.getElementById('sr-booking-time').value || '').replace('T', ' ');
+    const curTime = (document.getElementById('sr-booking-time')?.value || slotsDropdown?.value || '').replace('T', ' ');
     
-    if (isEdit && curTime && curTime !== origTime) {
+    if (isEdit) {
       if (consentWrapper) consentWrapper.style.display = 'block';
-    } else if (!isEdit) {
+    } else {
       if (consentWrapper) consentWrapper.style.display = 'none';
     }
   }
@@ -5143,12 +5281,31 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       origBt = '';
     }
-    if (srForm) srForm.dataset.originalBookingTime = origBt;
+    if (srForm) {
+      srForm.dataset.originalBookingTime = origBt;
+      srForm.dataset.selectedSlot = origBt ? origBt.replace('T', ' ') + (origBt.length === 16 ? ':00' : '') : '';
+    }
 
     // Reset slot check & consent wrapper
     if (slotsContainer) slotsContainer.style.display = 'none';
     if (consentCheck) consentCheck.checked = false;
-    if (consentWrapper) consentWrapper.style.display = 'none';
+    if (consentWrapper) consentWrapper.style.display = 'block';
+
+    const curDisplay = document.getElementById('sr-current-schedule-display');
+    const curTimeSpan = document.getElementById('sr-current-schedule-time');
+    if (curDisplay && curTimeSpan) {
+      if (origBt) {
+        curDisplay.style.display = 'block';
+        curTimeSpan.textContent = origBt.replace('T', ' ');
+      } else {
+        curDisplay.style.display = 'none';
+      }
+    }
+
+    const bDateInput = document.getElementById('sr-booking-date') || datePickerEl;
+    if (origBt && bDateInput) {
+      bDateInput.value = origBt.substring(0, 10);
+    }
 
     // Populate form
     document.getElementById('sr-cust-name').value = req.customer_name || '';
@@ -5190,10 +5347,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('sr-service-type').disabled = true;
 
     // Populate booking time, booking type, and duration if available
-    document.getElementById('sr-booking-time').value = origBt;
-    if (origBt && datePickerEl) {
-      datePickerEl.value = origBt.substring(0, 10);
-    }
+    const timeInput = document.getElementById('sr-booking-time');
+    if (timeInput) timeInput.value = origBt;
     const bookingTypeVal = req.booking_type || 'appointment';
     const durationMinutesVal = req.duration_minutes || (bookingTypeVal === 'callback' ? 15 : 60);
     if (srBookingTypeSelect) srBookingTypeSelect.value = bookingTypeVal;
@@ -5205,7 +5360,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (srModalOverlay) srModalOverlay.style.display = 'block';
   };
 
-  const btnNewRequest = document.getElementById('btn-new-request');
+  const btnNewRequest = document.getElementById('new-sr-btn') || document.getElementById('btn-new-request');
   if (btnNewRequest) {
     btnNewRequest.addEventListener('click', async () => {
       invalidateStaffSlotLookup();
@@ -5216,9 +5371,13 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('sr-modal-title').textContent = 'New Service Request';
       document.getElementById('sr-form-id').value = '';
       renderRequestIntake();
-      ['sr-cust-name', 'sr-cust-phone', 'sr-veh-make', 'sr-veh-model', 'sr-veh-year', 'sr-veh-vin', 'sr-issue-desc'].forEach(id => { document.getElementById(id).value = ''; });
+      ['sr-cust-name', 'sr-cust-phone', 'sr-veh-make', 'sr-veh-model', 'sr-veh-year', 'sr-veh-vin', 'sr-issue-desc'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+      });
       if (srForm) {
         srForm.dataset.originalBookingTime = '';
+        srForm.dataset.selectedSlot = '';
         srForm.dataset.bookingType = 'appointment';
         srForm.dataset.durationMinutes = '60';
         srForm.dataset.staffAgentId = '';
@@ -5227,6 +5386,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (slotsContainer) slotsContainer.style.display = 'none';
       if (consentCheck) consentCheck.checked = false;
       if (consentWrapper) consentWrapper.style.display = 'none';
+      const curDisplay = document.getElementById('sr-current-schedule-display');
+      if (curDisplay) curDisplay.style.display = 'none';
 
       if (srBookingTypeSelect) srBookingTypeSelect.value = 'appointment';
       if (srDurationSelect) srDurationSelect.value = '60';
@@ -5256,8 +5417,10 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('sr-cust-phone').disabled = false;
       document.getElementById('sr-service-type').disabled = false;
       
-      document.getElementById('sr-booking-time').value = '';
-      if (datePickerEl) datePickerEl.value = getNextBusinessDateString();
+      const timeInput = document.getElementById('sr-booking-time');
+      if (timeInput) timeInput.value = '';
+      const bDateInput = document.getElementById('sr-booking-date') || datePickerEl;
+      if (bDateInput) bDateInput.value = getNextBusinessDateString();
       if (srModal) srModal.style.display = 'block';
       if (srModalOverlay) srModalOverlay.style.display = 'block';
 
@@ -5310,7 +5473,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const reqId = document.getElementById('sr-form-id').value;
       const isEdit = !!reqId;
       
-      let bookingTimeStr = document.getElementById('sr-booking-time').value;
+      const timeInput = document.getElementById('sr-booking-time');
+      let bookingTimeStr = timeInput ? timeInput.value : (slotsDropdown?.value || srForm.dataset.selectedSlot || (isEdit ? (srForm.dataset.originalBookingTime || '') : ''));
       let origBt = (srForm.dataset.originalBookingTime || '').replace(' ', 'T');
       if (bookingTimeStr) {
          bookingTimeStr = bookingTimeStr.replace('T', ' ') + (bookingTimeStr.length === 16 ? ':00' : ''); // formatting to YYYY-MM-DD HH:MM:SS
@@ -5357,14 +5521,15 @@ document.addEventListener('DOMContentLoaded', () => {
           const payload = {
             intake_data: collectRequestIntake(),
             vehicle_details: activeBusinessProfile.collect_vehicle_details ? {
-              make: document.getElementById('sr-veh-make').value,
-              model: document.getElementById('sr-veh-model').value,
-              year: parseInt(document.getElementById('sr-veh-year').value),
-              vin: document.getElementById('sr-veh-vin').value || null
+              make: document.getElementById('sr-veh-make')?.value || '',
+              model: document.getElementById('sr-veh-model')?.value || '',
+              year: parseInt(document.getElementById('sr-veh-year')?.value) || 0,
+              vin: document.getElementById('sr-veh-vin')?.value || null
             } : null,
             booking_time: bookingTimeStr || null,
             booking_type: selectedBookingType,
             duration_minutes: selectedDurationMinutes,
+            customer_consent: isConsentChecked,
             customer_consent_obtained: isConsentChecked,
             issue_description: formatIssueDescription(document.getElementById('sr-issue-desc').value)
           };

@@ -372,7 +372,12 @@ class BookingService:
                 customer = cursor.fetchone()
                 from serviceBot.services.business_profile import get_business_profile
                 vehicle_id = None
-                if get_business_profile()["collect_vehicle_details"]:
+                has_vehicle_info = bool(
+                    vehicle_details
+                    and (vehicle_details.get("make") or vehicle_details.get("model"))
+                    and vehicle_details.get("make") not in ("Vehicle", "Unknown")
+                )
+                if get_business_profile()["collect_vehicle_details"] and has_vehicle_info:
                     cursor.execute(
                         """
                         INSERT INTO vehicles (customer_id, make, model, year, vin)
@@ -381,8 +386,8 @@ class BookingService:
                         """,
                         (
                             customer["id"],
-                            vehicle_details.get("make") or "Vehicle",
-                            vehicle_details.get("model") or "Standard",
+                            vehicle_details.get("make") or "Unknown",
+                            vehicle_details.get("model") or "Unknown",
                             int(vehicle_details.get("year") or 2020),
                             vehicle_details.get("vin"),
                         ),
@@ -1640,15 +1645,7 @@ class BookingService:
         existing = cursor.fetchone()
         if existing:
             return existing["id"]
-        cursor.execute(
-            """
-            INSERT INTO vehicles (customer_id, make, model, year)
-            VALUES (%s, 'Vehicle', 'Standard', 2020)
-            RETURNING id;
-            """,
-            (customer_id,),
-        )
-        return cursor.fetchone()["id"]
+        return None
 
     @staticmethod
     def _find_or_create_request(

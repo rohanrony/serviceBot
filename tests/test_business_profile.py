@@ -12,8 +12,8 @@ PROFILE = {
     "industry": "Salon",
     "collect_vehicle_details": False,
     "intake_fields": [
-        {"key": "preference", "label": "Style preference", "type": "text", "required": True},
-        {"key": "guests", "label": "Additional guests", "type": "number", "required": False},
+        {"key": "preference", "detail_type": "general", "label": "Style preference", "type": "text", "required": True},
+        {"key": "guests", "detail_type": "general", "label": "Additional guests", "type": "number", "required": False},
     ],
 }
 
@@ -190,3 +190,137 @@ def test_invalid_portal_url_does_not_save_or_sync(profile_config, url):
     assert response.status_code == 422
     assert portal.load_config() == before
     sync.assert_not_awaited()
+
+
+def test_generic_intake_field_detail_types_and_validation():
+    """US2/AC1: Generic intake field definitions support detail types and enforce text for serial numbers."""
+    from pydantic import ValidationError
+    from serviceBot.services.business_profile import IntakeField
+
+    # Valid detail types
+    for dt in ("general", "asset_type", "brand", "model", "serial_number"):
+        f = IntakeField(key=f"k_{dt}", label=f"Label {dt}", detail_type=dt, type="text")
+        assert f.detail_type == dt
+
+    # Number type on general detail is valid
+    f_num = IntakeField(key="qty", label="Quantity", detail_type="general", type="number")
+    assert f_num.type == "number"
+
+    # Serial number cannot be numeric
+    with pytest.raises(ValidationError):
+        IntakeField(key="sn", label="Serial number", detail_type="serial_number", type="number")
+
+    # Invalid detail type rejected
+    with pytest.raises(ValidationError):
+        IntakeField(key="bad", label="Bad", detail_type="invalid_type")
+
+
+def test_repeated_detail_types_allowed():
+    """US2/AC2: Repeated detail types with distinct keys, labels, and requirements are allowed."""
+    from serviceBot.services.business_profile import BusinessProfile, IntakeField
+
+    profile = BusinessProfile(
+        industry="Field Service",
+        collect_vehicle_details=False,
+        intake_fields=[
+            IntakeField(key="chassis_sn", label="Chassis serial number", detail_type="serial_number", type="text", required=True),
+            IntakeField(key="engine_sn", label="Engine serial number", detail_type="serial_number", type="text", required=False),
+            IntakeField(key="unit_brand", label="Equipment brand", detail_type="brand", type="text", required=True),
+            IntakeField(key="component_brand", label="Attachment brand", detail_type="brand", type="text", required=False),
+        ],
+    )
+    assert len(profile.intake_fields) == 4
+    assert profile.intake_fields[0].required is True
+    assert profile.intake_fields[1].required is False
+
+
+def test_legacy_automotive_fields_exposed_as_generic_equivalents():
+    """US2/AC3: Expose legacy automotive fields as editable generic equivalents (Make as Brand, Model as Model, Year as General number)."""
+    from serviceBot.services.business_profile import get_legacy_intake_defaults
+
+    defaults = get_legacy_intake_defaults()
+    assert len(defaults) == 3
+    make_field = next(f for f in defaults if f["key"] == "make")
+    assert make_field["detail_type"] == "brand"
+    assert make_field["label"] == "Make"
+    assert make_field["type"] == "text"
+
+    model_field = next(f for f in defaults if f["key"] == "model")
+    assert model_field["detail_type"] == "model"
+    assert model_field["label"] == "Model"
+    assert model_field["type"] == "text"
+
+    year_field = next(f for f in defaults if f["key"] == "year")
+    assert year_field["detail_type"] == "general"
+    assert year_field["label"] == "Year"
+    assert year_field["type"] == "number"
+
+
+def test_agent_prompt_required_vs_optional_intake_rules():
+    """US2/AC4: Agent prompt instructs soliciting missing required fields and prohibits asking for optional fields."""
+    from serviceBot.services.business_profile import build_business_prompt
+
+    config = {
+        "business_name": "Neutral Repair",
+        "business_profile": {
+            "industry": "Equipment Repair",
+            "collect_vehicle_details": False,
+            "intake_fields": [
+                {"key": "serial_num", "label": "Serial Number", "detail_type": "serial_number", "type": "text", "required": True},
+                {"key": "color_pref", "label": "Color Preference", "detail_type": "general", "type": "text", "required": False},
+            ],
+        },
+    }
+    prompt, greeting = build_business_prompt(config)
+    # Must instruct agent to ask for required fields by label
+    assert "Serial Number" in prompt
+    assert "required" in prompt.lower()
+    # Must prohibit soliciting optional fields
+    assert "do not solicit" in prompt.lower() or "never ask" in prompt.lower() or "prohibit" in prompt.lower() or "do not ask" in prompt.lower()
+    assert "Color Preference" in prompt
+
+
+def test_generic_service_request_does_not_fabricate_vehicle(profile_config):
+    """US2/AC5: Generic service requests store data in intake_data without fabricating dummy vehicle records."""
+    from serviceBot.db.connection import get_db_connection, dict_cursor
+    from serviceBot.services.booking import BookingService
+
+    client, _ = profile_config
+    client.post("/api/v1/portal/config", json={
+        "business_profile": {
+            "industry": "Appliance Repair",
+            "collect_vehicle_details": False,
+            "intake_fields": [
+                {"key": "model_num", "label": "Model Number", "detail_type": "model", "type": "text", "required": True},
+            ],
+        }
+    })
+
+    with get_db_connection() as conn, dict_cursor(conn) as cursor:
+        cursor.execute("SELECT COUNT(*) AS cnt FROM vehicles;")
+        vehicle_count_before = cursor.fetchone()["cnt"]
+
+    booking = BookingService()
+    receipt = booking.create_portal_request(
+        customer_name="Jordan Generic",
+        phone="+15559870001",
+        vehicle_details={"intake_data": {"model_num": "X100-PRO"}},
+        request_details={
+            "issue_description": "Appliance buzzing sound",
+            "service_type": "Diagnostics",
+            "booking_type": "appointment",
+            "duration_minutes": 60,
+        },
+    )
+    request_id = receipt["request_id"]
+
+    with get_db_connection() as conn, dict_cursor(conn) as cursor:
+        cursor.execute("SELECT vehicle_id, intake_data FROM service_requests WHERE id = %s;", (request_id,))
+        row = cursor.fetchone()
+        assert row["vehicle_id"] is None
+        assert row["intake_data"] == {"model_num": "X100-PRO"}
+
+        cursor.execute("SELECT COUNT(*) AS cnt FROM vehicles;")
+        vehicle_count_after = cursor.fetchone()["cnt"]
+        # No vehicle rows should be fabricated
+        assert vehicle_count_after == vehicle_count_before

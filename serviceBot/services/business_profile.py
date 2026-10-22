@@ -18,15 +18,34 @@ def prefix_business_name(message: str, config: dict) -> str:
 class IntakeField(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     key: str = Field(pattern=r"^[a-z][a-z0-9_]{0,39}$")
+    detail_type: Literal["general", "asset_type", "brand", "model", "serial_number"] = "general"
     label: str = Field(min_length=1, max_length=80)
     type: Literal["text", "number"] = "text"
     required: bool = False
+
+    @field_validator("type")
+    @classmethod
+    def validate_type_for_detail(cls, v, info):
+        # Identifiers (serial_number) remain text
+        detail_type = info.data.get("detail_type")
+        if detail_type in ("serial_number", "brand", "model", "asset_type") and v == "number":
+            if detail_type == "serial_number":
+                raise ValueError("Serial numbers must be text")
+        return v
+
+
+def get_legacy_intake_defaults() -> list[dict]:
+    return [
+        {"key": "make", "detail_type": "brand", "label": "Make", "type": "text", "required": False},
+        {"key": "model", "detail_type": "model", "label": "Model", "type": "text", "required": False},
+        {"key": "year", "detail_type": "general", "label": "Year", "type": "number", "required": False},
+    ]
 
 
 class BusinessProfile(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     industry: str = Field(default="Service business", min_length=1, max_length=100)
-    collect_vehicle_details: bool = True
+    collect_vehicle_details: bool = False
     intake_fields: list[IntakeField] = Field(default_factory=list, max_length=20)
 
     @field_validator("intake_fields")
@@ -88,15 +107,32 @@ def build_business_prompt(config) -> tuple[str, str]:
     name = config.get("business_name") or "our business"
     schedule = format_business_schedule(config.get("business_hours_start", 7), config.get("business_hours_end", 18),
         config.get("business_days"), config.get("business_timezone"))
+    req_fields = [f for f in profile["intake_fields"] if f.get("required")]
+    opt_fields = [f for f in profile["intake_fields"] if not f.get("required")]
     fields = "\n".join(f"- {f['label']} ({f['type']}, {'required' if f['required'] else 'optional'}), key: {f['key']}"
         for f in profile["intake_fields"]) or "No additional intake fields are configured."
+
+    req_instruction = ""
+    if req_fields:
+        req_labels = ", ".join(f"'{f['label']}'" for f in req_fields)
+        req_instruction = f"Ask for missing required intake details one at a time using their configured labels: {req_labels}."
+
+    opt_instruction = ""
+    if opt_fields:
+        opt_labels = ", ".join(f"'{f['label']}'" for f in opt_fields)
+        opt_instruction = f"Optional intake fields: {opt_labels}. Prohibit soliciting or asking questions for optional fields; do not ask for them, but record any volunteered details into intake_data_json."
+
+    rules_block = "\n".join(r for r in (req_instruction, opt_instruction) if r)
+    if rules_block:
+        rules_block = f"\n{rules_block}"
+
     automotive = "Collect vehicle make, model and year when required by the selected service." if profile["collect_vehicle_details"] else ""
     prompt = f"""You are a professional AI voice assistant for {name}, a {profile['industry']} business.
 Be friendly, concise, and ask one question at a time. Use Agent for staff members.
 Collect and confirm customer name, valid phone number, requested service and a concise issue description.
 {automotive}
 Configured additional intake:
-{fields}
+{fields}{rules_block}
 Call get_service_fields before intake. Pass collected configured values as intake_data_json (a JSON object encoded as a string) to create_service_request, book_appointment or request_callback. Never invent values.
 Use caller ID only after confirmation. Call get_customer_appointments after confirming the phone number, before scheduling; offer to update an existing visit when appropriate.
 Use the service catalog and knowledge base for prices, durations and business information; never invent services or quotes. Review every requested service, quote its rate and duration, and obtain explicit consent before booking.

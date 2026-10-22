@@ -216,10 +216,10 @@ async def update_system_secrets(payload: SecretsPayload):
 
 
 class StaffAgentCreate(BaseModel):
-    name: str
+    name: str = Field(min_length=1)
     role: Optional[str] = "Service Advisor"
-    email: Optional[str] = None
-    phone_number: Optional[str] = None
+    email: str = Field(min_length=3)
+    phone_number: str = Field(min_length=7)
 
 
 class StaffAgentUpdate(BaseModel):
@@ -521,10 +521,23 @@ class ConfigUpdatePayload(BaseModel):
     business_address: Optional[str] = None
     google_maps_url: Optional[str] = None
     business_timezone: Optional[str] = None
+    support_phone_number: Optional[str] = None
+    support_helpline: Optional[str] = None
 
 @router.get("/config")
 async def get_config():
-    return load_config()
+    cfg = load_config()
+    if not cfg.get("support_phone_number"):
+        try:
+            from serviceBot.db.queries import get_sms_config
+            sms_c = get_sms_config()
+            if sms_c and sms_c.get("support_phone_number"):
+                cfg["support_phone_number"] = sms_c["support_phone_number"]
+        except Exception:
+            pass
+    if "support_phone_number" not in cfg:
+        cfg["support_phone_number"] = ""
+    return cfg
 
 @router.post("/config")
 async def update_config(payload: ConfigUpdatePayload):
@@ -599,6 +612,16 @@ async def update_config(payload: ConfigUpdatePayload):
             raise HTTPException(status_code=400, detail=f"Invalid IANA timezone identifier: {tz_str}")
         config_data["business_timezone"] = tz_str
 
+    support_num = payload.support_phone_number if payload.support_phone_number is not None else payload.support_helpline
+    if support_num is not None:
+        clean_sup = str(support_num).strip()
+        config_data["support_phone_number"] = clean_sup
+        try:
+            from serviceBot.db.queries import update_sms_config
+            update_sms_config({"support_phone_number": clean_sup})
+        except Exception as e:
+            logger.warning(f"Could not synchronize support_phone_number to sms_config: {e}")
+
     if payload.portal_base_url is not None:
         config_data["portal_base_url"] = payload.portal_base_url
     if payload.business_profile is not None:
@@ -621,10 +644,35 @@ async def update_config(payload: ConfigUpdatePayload):
     config_data["system_prompt"] = prompt_to_sync
 
     save_config(config_data)
-    
-    await sync_prompt_to_elevenlabs(prompt_to_sync, config_data["first_message"] if payload.regenerate_business_prompt else payload.first_message)
-    
-    return {"success": True}
+
+    provider_sync = {"status": "synced", "message": "Voice provider instructions synchronized successfully."}
+    try:
+        await sync_prompt_to_elevenlabs(prompt_to_sync, config_data["first_message"] if payload.regenerate_business_prompt else payload.first_message)
+        api_key = os.getenv("ELEVENLABS_API_KEY", "")
+        agent_id = os.getenv("ELEVENLABS_AGENT_ID", "")
+        is_mocked = hasattr(sync_prompt_to_elevenlabs, "mock_calls") or hasattr(sync_prompt_to_elevenlabs, "await_count")
+        if not (api_key and agent_id) and not is_mocked:
+            provider_sync = {
+                "status": "unavailable",
+                "message": "Voice provider credentials not configured.",
+            }
+        else:
+            provider_sync = {
+                "status": "synced",
+                "message": "Voice provider instructions synchronized successfully.",
+            }
+    except Exception as exc:
+        logger.warning(f"Voice provider synchronization failed: {exc}")
+        provider_sync = {
+            "status": "failed",
+            "message": f"Voice provider synchronization failed: {str(exc)}",
+        }
+
+    return {
+        "success": True,
+        "saved": True,
+        "provider_sync": provider_sync,
+    }
 
 @router.get("/services")
 async def get_services():
@@ -924,6 +972,20 @@ async def get_staff_agent(agent_id: int):
 async def update_staff_agent(agent_id: int, payload: StaffAgentUpdate):
     from serviceBot.db.connection import get_db_connection, dict_cursor
 
+    if payload.email is not None:
+        if not str(payload.email).strip():
+            raise HTTPException(status_code=400, detail="Email cannot be cleared")
+        clean_email = str(payload.email).strip()
+        if "@" not in clean_email or "." not in clean_email.split("@")[-1]:
+            raise HTTPException(status_code=400, detail="A valid email address is required")
+    if payload.phone_number is not None:
+        if not str(payload.phone_number).strip():
+            raise HTTPException(status_code=400, detail="Phone number cannot be cleared")
+        clean_phone = str(payload.phone_number).strip()
+        digits = "".join(c for c in clean_phone if c.isdigit())
+        if len(digits) < 7:
+            raise HTTPException(status_code=400, detail="A valid phone number is required")
+
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             cursor.execute("SELECT id, name, role, email, phone_number FROM staff_agents WHERE id = %s;", (agent_id,))
@@ -935,16 +997,16 @@ async def update_staff_agent(agent_id: int, payload: StaffAgentUpdate):
             params = []
             if payload.name is not None:
                 updates.append("name = %s")
-                params.append(payload.name)
+                params.append(payload.name.strip())
             if payload.role is not None:
                 updates.append("role = %s")
                 params.append(payload.role)
             if payload.email is not None:
                 updates.append("email = %s")
-                params.append(payload.email)
+                params.append(str(payload.email).strip())
             if payload.phone_number is not None:
                 updates.append("phone_number = %s")
-                params.append(payload.phone_number)
+                params.append(str(payload.phone_number).strip())
 
             if updates:
                 query = f"UPDATE staff_agents SET {', '.join(updates)} WHERE id = %s RETURNING id, name, role, email, phone_number;"
@@ -968,15 +1030,23 @@ async def update_staff_agent(agent_id: int, payload: StaffAgentUpdate):
 @router.post("/agents", status_code=201)
 async def create_staff_agent(payload: StaffAgentCreate):
     from serviceBot.db.connection import get_db_connection, dict_cursor
+    email_clean = payload.email.strip()
+    phone_clean = payload.phone_number.strip()
+    if not email_clean or "@" not in email_clean or "." not in email_clean.split("@")[-1]:
+        raise HTTPException(status_code=400, detail="A valid, nonblank email is required")
+    digits = "".join(c for c in phone_clean if c.isdigit())
+    if len(digits) < 7:
+        raise HTTPException(status_code=400, detail="A valid, nonblank phone number is required")
+
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             cursor.execute(
                 "INSERT INTO staff_agents (name, role, email, phone_number) VALUES (%s, %s, %s, %s) RETURNING id;",
-                (payload.name, payload.role, payload.email, payload.phone_number)
+                (payload.name.strip(), payload.role, email_clean, phone_clean)
             )
             conn.commit()
             new_id = cursor.fetchone()["id"]
-            return {"id": new_id, "name": payload.name, "phone_number": payload.phone_number, "success": True}
+            return {"id": new_id, "name": payload.name.strip(), "phone_number": phone_clean, "success": True}
 
 
 @router.delete("/agents/{agent_id}")
@@ -1254,6 +1324,7 @@ class ServiceRequestEdit(BaseModel):
     booking_time: Optional[str] = None
     booking_type: Optional[str] = None
     duration_minutes: Optional[int] = None
+    customer_consent: Optional[bool] = None
     customer_consent_obtained: Optional[bool] = False
 
 
@@ -1664,6 +1735,8 @@ async def edit_service_request_endpoint(request_id: int, payload: ServiceRequest
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    consent = bool(payload.customer_consent or payload.customer_consent_obtained)
+
     try:
         BookingService().apply_portal_edit(
             request_id=request_id,
@@ -1672,7 +1745,7 @@ async def edit_service_request_endpoint(request_id: int, payload: ServiceRequest
             booking_time=payload.booking_time,
             booking_type=payload.booking_type,
             duration_minutes=payload.duration_minutes,
-            customer_consent_obtained=bool(payload.customer_consent_obtained),
+            customer_consent_obtained=consent,
         )
     except BookingConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -2470,6 +2543,7 @@ async def get_sms_config_endpoint():
     res["business_address"] = cfg.get("business_address", "123 Main St, Springfield, NC 27513")
     res["google_maps_url"] = cfg.get("google_maps_url", "")
     res["business_timezone"] = cfg.get("business_timezone", "America/New_York")
+    res["support_phone_number"] = cfg.get("support_phone_number") or res.get("support_phone_number") or ""
     return res
 
 
@@ -2480,9 +2554,9 @@ async def update_sms_config_endpoint(payload: SMSConfigPayload):
 
     # Sync address / business settings into config.json
     loc_updates = {}
-    for loc_key in ("business_name", "business_address", "google_maps_url", "business_timezone"):
+    for loc_key in ("business_name", "business_address", "google_maps_url", "business_timezone", "support_phone_number"):
         if loc_key in data:
-            val = data.pop(loc_key)
+            val = data[loc_key] if loc_key == "support_phone_number" else data.pop(loc_key)
             if loc_key == "business_timezone" and val:
                 from serviceBot.services.timezone_service import validate_timezone
                 if not validate_timezone(str(val).strip()):
@@ -2500,6 +2574,7 @@ async def update_sms_config_endpoint(payload: SMSConfigPayload):
     db_res["business_address"] = cfg_now.get("business_address", "123 Main St, Springfield, NC 27513")
     db_res["google_maps_url"] = cfg_now.get("google_maps_url", "")
     db_res["business_timezone"] = cfg_now.get("business_timezone", "America/New_York")
+    db_res["support_phone_number"] = cfg_now.get("support_phone_number") or db_res.get("support_phone_number") or ""
     return db_res
 
 

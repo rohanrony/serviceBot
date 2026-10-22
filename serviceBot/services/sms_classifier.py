@@ -117,6 +117,35 @@ def parse_agent_confirmation_intent(body: str) -> dict:
     return {"action": "UNKNOWN", "selector_type": "none", "value": None}
 
 
+def get_support_helpline() -> str:
+    """Fetch canonical support helpline from configuration or database."""
+    try:
+        from serviceBot.api.portal import load_config
+        cfg = load_config()
+        val = cfg.get("support_phone_number")
+        if val and str(val).strip():
+            return str(val).strip()
+    except Exception:
+        pass
+    try:
+        from serviceBot.db.queries import get_sms_config
+        sms_cfg = get_sms_config()
+        if sms_cfg:
+            val = sms_cfg.get("support_phone_number")
+            if val and str(val).strip():
+                return str(val).strip()
+    except Exception:
+        pass
+    return ""
+
+
+def get_unrecognized_message_acknowledgment() -> str:
+    helpline = get_support_helpline()
+    if helpline:
+        return f"Message received. For urgent scheduling assistance, please call {helpline}."
+    return "Message received."
+
+
 def handle_agent_confirmation_action(staff_agent: dict, body: str, twilio_message_sid: str = None, from_phone: str = None) -> dict:
     """
     Handles inbound SMS replies from staff agents:
@@ -145,7 +174,7 @@ def handle_agent_confirmation_action(staff_agent: dict, body: str, twilio_messag
 
     if action == "UNKNOWN":
         # Free-text from staff agent
-        reply_text = "Message received. For urgent scheduling assistance, please contact dispatch."
+        reply_text = get_unrecognized_message_acknowledgment()
         dispatch_agent_receipt(reply_text)
         return {"status": "processed", "category": "agent_free_text", "reply": reply_text}
 
@@ -464,8 +493,7 @@ def process_inbound_sms(from_phone: str, body: str, twilio_message_sid: str = No
         return handle_agent_confirmation_action(staff_agent, body, twilio_message_sid, from_phone=from_phone)
 
     client = TwilioSMSClient()
-    config = get_sms_config()
-    support_number = config.get("support_phone_number") or "+18005550199"
+    support_number = get_support_helpline()
 
     # Get or create conversation record
     conv = get_or_create_sms_conversation(from_phone)
@@ -500,7 +528,10 @@ def process_inbound_sms(from_phone: str, body: str, twilio_message_sid: str = No
         return {"status": "processed", "category": category, "reply": reply_text}
 
     elif category == "help":
-        reply_text = f"BayFull Support: For help, please contact our support team at {support_number}."
+        if support_number:
+            reply_text = f"BayFull Support: For help, please contact our support team at {support_number}."
+        else:
+            reply_text = "BayFull Support: How can we assist you with your appointment?"
         if get_customer_opt_in(from_phone):
             client.send_sms(to=from_phone, body=reply_text, template_type="help_reply")
             add_sms_message(conv_id, "outbound", "system", "System", reply_text)

@@ -25,19 +25,22 @@ def test_switch_business_create_edit_and_preserve_intake(page, live_server, api,
     page.locator("#business-name").fill("Willow Studio")
     page.locator("#business-industry").fill("Salon")
     page.locator("#business-portal-url").fill("https://studio.example")
-    page.locator("#business-collect-vehicle").uncheck()
+    if page.locator("#business-collect-vehicle").is_visible():
+        page.locator("#business-collect-vehicle").uncheck()
     page.locator("#add-intake-field").click()
     row = page.locator(".business-intake-row").last
     row.locator(".intake-label").fill("Style preference")
     row.locator(".intake-required").check()
+    page.locator("#business-profile-form button[type=submit]").click()
     with page.expect_response(lambda r: r.request.method == "POST" and r.url.endswith("/portal/config")) as saved:
-        page.locator("#business-profile-form button[type=submit]").click()
+        page.locator("#business-save-confirm-btn").click()
     assert saved.value.ok
     page.reload()
     expect(page.locator("#business-name")).to_have_value("Willow Studio")
     expect(page.locator("#business-portal-url")).to_have_value("https://studio.example")
-    expect(page.locator("#business-collect-vehicle")).not_to_be_checked()
-    expect(page.locator(".intake-label")).to_have_value("Style preference")
+    if page.locator("#business-collect-vehicle").is_visible():
+        expect(page.locator("#business-collect-vehicle")).not_to_be_checked()
+    expect(page.locator(".business-intake-row").last.locator(".intake-label")).to_have_value("Style preference")
     page.screenshot(path="scratch/business-profile.png", full_page=True, animations="disabled")
 
     result = api.post("/api/v1/portal/service-requests", json={

@@ -342,9 +342,6 @@
                   <h3>Services Catalog</h3>
                   <p class="text-muted">Current services and standard pricing database.</p>
                 </div>
-                <button type="button" class="btn btn-secondary btn-sm" id="seed-default-services-btn" style="white-space: nowrap;">
-                  <i class="fas fa-database"></i> Load Automotive Example Catalog
-                </button>
               </div>
               
               <div class="table-container">
@@ -405,7 +402,20 @@
                 </div>
                 
                 <div class="form-group">
-                  <label>Required Intake Fields</label>
+                  <label>Asset &amp; Intake Details</label>
+                  <div id="add-service-asset-details-summary" class="asset-details-summary mt-2 mb-2 p-3" style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color, rgba(255,255,255,0.1)); border-radius: 6px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                      <span style="font-size: 11px; color: var(--text-muted);">Configured business-wide fields:</span>
+                      <a href="#config/business" class="text-muted" style="font-size: 11px; text-decoration: underline;">Manage in Business Settings</a>
+                    </div>
+                    <div id="add-service-intake-badges" class="intake-badges-list" style="display: flex; flex-wrap: wrap; gap: 6px;">
+                      <span class="badge" style="font-size: 11px;">Loading business intake...</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label>Required Standard Fields</label>
                   <div class="checkbox-group" style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
                     <label class="checkbox-item">
                       <input type="checkbox" id="new-service-req-customer-name" checked>
@@ -414,10 +424,6 @@
                     <label class="checkbox-item">
                       <input type="checkbox" id="new-service-req-phone-number" checked>
                       <span>Phone Number</span>
-                    </label>
-                    <label class="checkbox-item">
-                      <input type="checkbox" id="new-service-req-vehicle-details" checked>
-                      <span>Automotive Details</span>
                     </label>
                     <label class="checkbox-item">
                       <input type="checkbox" id="new-service-req-issue-description" checked>
@@ -563,19 +569,6 @@
                 </button>
               </div>
             </div>
-
-            <!-- Appointment Context Sidebar -->
-            <div class="sms-context-col">
-              <div class="context-card-header">
-                <h4>Appointment Context</h4>
-                <svg class="context-icon" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
-              </div>
-              <div id="sms-context-details" class="context-details-body">
-                <div class="context-empty-state text-muted">
-                  <p>No thread selected.</p>
-                </div>
-              </div>
-            </div>
           </div>
         </section>
 
@@ -604,7 +597,7 @@
               <svg class="ribbon-icon" viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/></svg>
               <span>AI Agent Config</span>
             </button>
-            <button type="button" class="config-ribbon-item" data-subtab="keys">
+            <button type="button" class="config-ribbon-item" data-subtab="keys" style="display: none;">
               <svg class="ribbon-icon" viewBox="0 0 24 24"><path d="M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>
               <span>API Keys & Voice</span>
             </button>
@@ -761,12 +754,12 @@
                     <input type="text" id="new-agent-role" class="form-input" placeholder="e.g. Agent" value="Agent">
                   </div>
                   <div class="form-group mt-4">
-                    <label for="new-agent-email">Email (Optional)</label>
-                    <input type="email" id="new-agent-email" class="form-input" placeholder="e.g. alice@example.com">
+                    <label for="new-agent-email">Email</label>
+                    <input type="email" id="new-agent-email" class="form-input" placeholder="e.g. alice@example.com" required>
                   </div>
                   <div class="form-group mt-4">
-                    <label for="new-agent-phone">Phone Number (Optional)</label>
-                    <input type="text" id="new-agent-phone" class="form-input" placeholder="e.g. +14242704893">
+                    <label for="new-agent-phone">Phone Number</label>
+                    <input type="text" id="new-agent-phone" class="form-input" placeholder="e.g. +14242704893" required>
                   </div>
 
                   <!-- WhatsApp Sandbox Test Helper (Clean & Unobtrusive) -->
@@ -799,20 +792,66 @@
 
           <div id="business-view" class="config-subtab-pane" data-subtab-pane="business">
             <div class="content-card">
-              <div class="card-header"><h3>Business &amp; Intake</h3><p class="text-muted">Set your business identity and the details customers provide when requesting a service.</p></div>
+              <div class="card-header"><h3>Business &amp; Intake</h3><p class="text-muted">Set your business identity, location, support helpline, and the details customers provide when requesting a service.</p></div>
               <form id="business-profile-form">
                 <div class="form-group"><label for="business-name">Business Name</label><input id="business-name" class="form-input" required maxlength="200"></div>
                 <div class="form-group mt-4"><label for="business-industry">Business Type</label><input id="business-industry" class="form-input" placeholder="e.g. Salon, Consulting, Home Services" required maxlength="100"></div>
+                
+                <div class="form-group mt-4">
+                  <label for="business-address">Business Address</label>
+                  <input type="text" id="business-address" class="form-input" placeholder="e.g. 123 Main St, Springfield, NC 27513">
+                  <small class="text-muted">Physical address sent in appointment reminders and confirmations to customers.</small>
+                </div>
+
+                <div class="form-group mt-4">
+                  <label for="business-maps-url">Google Maps Address / Link</label>
+                  <input type="text" id="business-maps-url" class="form-input" placeholder="e.g. https://maps.app.goo.gl/... or leave blank to auto-generate">
+                  <small class="text-muted">Custom Google Maps link. If left blank, a navigation link is auto-generated from the business address.</small>
+                </div>
+
+                <div class="form-group mt-4">
+                  <label for="business-timezone">Business Time Zone</label>
+                  <select id="business-timezone" class="form-input">
+                    <option value="America/New_York" selected>Eastern Time (America/New_York)</option>
+                    <option value="America/Chicago">Central Time (America/Chicago)</option>
+                    <option value="America/Denver">Mountain Time (America/Denver)</option>
+                    <option value="America/Phoenix">Mountain Time - Arizona (America/Phoenix)</option>
+                    <option value="America/Los_Angeles">Pacific Time (America/Los_Angeles)</option>
+                    <option value="America/Anchorage">Alaska Time (America/Anchorage)</option>
+                    <option value="Pacific/Honolulu">Hawaii Time (Pacific/Honolulu)</option>
+                    <option value="UTC">UTC (Coordinated Universal Time)</option>
+                  </select>
+                  <small class="text-muted">All appointment schedules, reminders, quiet hours, and portal displays link to this timezone.</small>
+                </div>
+
+                <div class="form-group mt-4">
+                  <label for="business-support-phone">Support Helpline Number</label>
+                  <input type="text" id="business-support-phone" class="form-input" placeholder="+18005550199">
+                  <small class="text-muted">Canonical business phone number included in SMS and notifications for customer assistance.</small>
+                </div>
+
                 <div class="form-group mt-4"><label for="business-portal-url">Portal URL (for notification links)</label><input id="business-portal-url" type="url" class="form-input" placeholder="https://your-app.example.com"><small class="text-muted">Leave blank to omit links from escalation notifications.</small></div>
-                <label class="checkbox-item mt-4"><input type="checkbox" id="business-collect-vehicle"><span>Collect automotive details (make, model, year and optional VIN)</span></label>
+                
                 <h4 class="mt-4">Additional Intake Fields</h4>
                 <p class="text-muted">Add the details your business needs. Field labels can change; existing answers are kept.</p>
                 <div id="business-intake-fields"></div>
                 <button type="button" id="add-intake-field" class="btn btn-secondary mt-4">Add Intake Field</button>
-                <label class="checkbox-item mt-4"><input type="checkbox" id="business-regenerate-prompt"><span>Regenerate the AI greeting and instructions for this business</span></label>
-                <p class="text-muted">Regeneration replaces the current greeting and instructions. You can review and edit them in AI Agent Config. Review your services, knowledge documents and custom notification templates when switching businesses.</p>
                 <button type="submit" class="btn btn-primary mt-4">Save Business Settings</button>
+                <div id="business-sync-status-notice" style="display: none; margin-top: 16px; padding: 12px; border-radius: 6px; font-size: 13px;"></div>
               </form>
+            </div>
+          </div>
+
+          <!-- Business Save Confirmation Modal -->
+          <div class="drawer-overlay" id="business-save-modal-overlay" style="display: none;"></div>
+          <div class="modal-card" id="business-save-modal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1200; max-width: 480px; width: 90%; background: var(--bg-card); border: 1px solid var(--border-card); border-radius: 12px; padding: 24px; box-shadow: 0 20px 50px rgba(0,0,0,0.6);">
+            <h3 style="margin: 0 0 12px 0; font-size: 18px; color: #fff;">Confirm Prompt Regeneration</h3>
+            <p style="color: var(--text-muted); font-size: 14px; line-height: 1.5; margin-bottom: 20px;">
+              Saving these business settings means your AI greeting and instructions will be replaced to reflect your updated business identity, schedule, and intake rules.
+            </p>
+            <div style="display: flex; justify-content: flex-end; gap: 12px;">
+              <button type="button" class="btn btn-secondary" id="business-save-cancel-btn">Cancel</button>
+              <button type="button" class="btn btn-primary" id="business-save-confirm-btn">Confirm &amp; Save</button>
             </div>
           </div>
 
@@ -919,8 +958,8 @@
               </form>
             </div>
             
-            <!-- Instructions/Help Card -->
-            <div class="content-card flex-1">
+            <!-- Instructions/Help Card (Hidden) -->
+            <div class="content-card flex-1" style="display: none;">
               <div class="card-header">
                 <h3>Connection Help</h3>
                 <p class="text-muted">How to configure email notifications.</p>
@@ -953,39 +992,6 @@
             </div>
 
             <form id="sms-global-config-form" class="sms-config-form mt-4">
-              <div class="form-group">
-                <label class="form-label" for="sms-config-support-phone">Support Helpline Number</label>
-                <input type="text" id="sms-config-support-phone" class="form-input" placeholder="+18005550199">
-                <small class="text-muted">Primary phone number included in SMS customer auto-replies.</small>
-              </div>
-
-              <div class="form-group">
-                <label class="form-label" for="sms-config-shop-address">Business Address</label>
-                <input type="text" id="sms-config-shop-address" class="form-input" placeholder="e.g. 123 Main St, Springfield, NC 27513">
-                <small class="text-muted">Physical address sent in appointment reminders and confirmations to customers.</small>
-              </div>
-
-              <div class="form-group">
-                <label class="form-label" for="sms-config-maps-url">Google Maps Address / Link</label>
-                <input type="text" id="sms-config-maps-url" class="form-input" placeholder="e.g. https://maps.app.goo.gl/... or leave blank to auto-generate">
-                <small class="text-muted">Custom Google Maps link. If left blank, a navigation link is auto-generated from the business address.</small>
-              </div>
-
-              <div class="form-group">
-                <label class="form-label" for="sms-config-timezone">Business Time Zone</label>
-                <select id="sms-config-timezone" class="form-input">
-                  <option value="America/New_York" selected>Eastern Time (America/New_York)</option>
-                  <option value="America/Chicago">Central Time (America/Chicago)</option>
-                  <option value="America/Denver">Mountain Time (America/Denver)</option>
-                  <option value="America/Phoenix">Mountain Time - Arizona (America/Phoenix)</option>
-                  <option value="America/Los_Angeles">Pacific Time (America/Los_Angeles)</option>
-                  <option value="America/Anchorage">Alaska Time (America/Anchorage)</option>
-                  <option value="Pacific/Honolulu">Hawaii Time (Pacific/Honolulu)</option>
-                  <option value="UTC">UTC (Coordinated Universal Time)</option>
-                </select>
-                <small class="text-muted">All appointment schedules, reminders, quiet hours, and portal displays link to this timezone.</small>
-              </div>
-
               <div class="form-group">
                 <label class="form-label" for="sms-config-environment">Environment Dispatch Mode</label>
                 <select id="sms-config-environment" class="form-input">
@@ -1131,40 +1137,6 @@
             </div>
           </div>
 
-          <!-- Test Whitelist Section -->
-          <div class="content-card sms-config-card">
-            <div class="card-header">
-              <h3>Test Environment Phone Whitelist</h3>
-              <p class="text-muted">Phone numbers permitted to send and receive real Twilio SMS in STAGING/TEST modes.</p>
-            </div>
-
-            <form id="sms-add-whitelist-form" class="whitelist-add-form mt-4 mb-4">
-              <input type="text" id="whitelist-phone-input" class="form-input flex-1" placeholder="Phone (+15550192831)" required>
-              <input type="text" id="whitelist-name-input" class="form-input flex-1" placeholder="Friendly Name / Agent Name">
-              <button type="submit" class="btn btn-secondary">
-                Add Whitelist Entry
-              </button>
-            </form>
-
-            <div class="table-container">
-              <table class="data-table whitelist-table">
-                <thead>
-                  <tr>
-                    <th>Phone Number</th>
-                    <th>Friendly Name</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="sms-whitelist-tbody">
-                  <tr>
-                    <td colspan="4" class="text-center text-muted py-4">Loading phone whitelist...</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
           </div>
 
           <!-- SUBTAB 4: CUSTOMER CONFIG -->
@@ -1288,8 +1260,8 @@
           </div>
           </div>
 
-          <!-- SUBTAB 6: API KEYS & VOICE SETTINGS -->
-          <div id="keys-view" class="config-subtab-pane" data-subtab-pane="keys">
+          <!-- SUBTAB 6: API KEYS & VOICE SETTINGS (Hidden) -->
+          <div id="keys-view" class="config-subtab-pane" data-subtab-pane="keys" style="display: none;">
           <div class="layout-split">
             
             <!-- Voice selection and models -->
@@ -1668,7 +1640,20 @@
         </div>
 
         <div class="form-group mt-4">
-          <label>Required Intake Fields</label>
+          <label>Asset &amp; Intake Details</label>
+          <div id="edit-service-asset-details-summary" class="asset-details-summary mt-2 mb-2 p-3" style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-color, rgba(255,255,255,0.1)); border-radius: 6px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <span style="font-size: 11px; color: var(--text-muted);">Configured business-wide fields:</span>
+              <a href="#config/business" class="text-muted" style="font-size: 11px; text-decoration: underline;">Manage in Business Settings</a>
+            </div>
+            <div id="edit-service-intake-badges" class="intake-badges-list" style="display: flex; flex-wrap: wrap; gap: 6px;">
+              <span class="badge" style="font-size: 11px;">Loading business intake...</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group mt-4">
+          <label>Required Standard Fields</label>
           <div class="checkbox-group" style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
             <label class="checkbox-item">
               <input type="checkbox" id="edit-service-req-customer-name">
@@ -1677,10 +1662,6 @@
             <label class="checkbox-item">
               <input type="checkbox" id="edit-service-req-phone-number">
               <span>Phone Number</span>
-            </label>
-            <label class="checkbox-item">
-              <input type="checkbox" id="edit-service-req-vehicle-details">
-              <span>Automotive Details</span>
             </label>
             <label class="checkbox-item">
               <input type="checkbox" id="edit-service-req-issue-description">
@@ -1929,21 +1910,24 @@
           <textarea id="sr-issue-desc" class="form-input" rows="3" required></textarea>
         </div>
         <div>
-          <label for="sr-booking-time">Select Time Slot</label>
+          <label for="sr-booking-date">Schedule Appointment</label>
           <div style="display: flex; gap: 8px; margin-bottom: 8px;">
-            <input type="datetime-local" id="sr-booking-time" class="form-input" style="flex: 1;">
+            <input type="date" id="sr-booking-date" class="form-input" style="flex: 1;">
             <button type="button" id="sr-check-slots-btn" class="btn btn-secondary" style="font-size: 12px; white-space: nowrap;">Check Availability</button>
           </div>
           <div id="sr-available-slots-container" style="display: none; margin-bottom: 10px; background: #0f1219; border: 1px solid var(--border-card, #2a2f3d); border-radius: 6px; padding: 10px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-              <label style="font-size: 11px; color: var(--text-muted, #94a3b8); margin: 0;">Available Staff Calendar Slots:</label>
-              <input type="date" id="sr-check-date-picker" class="form-input" style="font-size: 11px; padding: 2px 6px; width: auto; height: 26px;" title="Check a different date">
+              <label for="sr-slots-dropdown" style="font-size: 11px; color: var(--text-muted, #94a3b8); margin: 0;">Available Slots (<span id="sr-slots-timezone-label">Business Timezone</span>):</label>
             </div>
             <select id="sr-slots-dropdown" class="form-input" style="font-size: 12px; margin-bottom: 4px;">
               <option value="">Select an available slot...</option>
             </select>
+            <div id="sr-slots-status-message" class="text-muted" style="font-size: 11px; margin-top: 4px;"></div>
           </div>
-          <p class="text-muted" style="font-size: 11px; margin-bottom: 8px;">Agent will be automatically assigned based on Google Calendar availability.</p>
+          <div id="sr-current-schedule-display" style="display: none; margin-bottom: 8px; font-size: 12px; color: var(--text-muted);">
+            Current scheduled time: <strong id="sr-current-schedule-time" style="color: var(--text-main);"></strong>
+          </div>
+          <p class="text-muted" style="font-size: 11px; margin-bottom: 8px;">Staff agent will be automatically assigned based on calendar availability.</p>
 
           <div id="sr-consent-wrapper" style="display: none; margin-top: 10px; padding: 10px; background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px;">
             <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12px; font-weight: 500; color: var(--text-main); margin: 0;">
