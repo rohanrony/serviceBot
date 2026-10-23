@@ -5066,7 +5066,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  [srBookingTypeSelect, srDurationSelect, document.getElementById('sr-agent-select')].forEach(control => {
+  [srBookingTypeSelect, srDurationSelect, document.getElementById('sr-agent-select'), document.getElementById('sr-service-type')].forEach(control => {
     control?.addEventListener('change', invalidateStaffSlotLookup);
   });
 
@@ -5118,6 +5118,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (timeInput) timeInput.value = selectedSlot.substring(0, 16).replace(' ', 'T');
         const bDateInput = document.getElementById('sr-booking-date') || datePickerEl;
         if (bDateInput) bDateInput.value = selectedSlot.substring(0, 10);
+        triggerConsentCheckIfNeeded();
+      } else {
+        if (srForm) srForm.dataset.selectedSlot = '';
+        const timeInput = document.getElementById('sr-booking-time');
+        if (timeInput) timeInput.value = '';
+        if (consentCheck) consentCheck.checked = false;
         triggerConsentCheckIfNeeded();
       }
     });
@@ -5325,7 +5331,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (srForm) {
       srForm.dataset.originalBookingTime = origBt;
-      srForm.dataset.selectedSlot = origBt ? origBt.replace('T', ' ') + (origBt.length === 16 ? ':00' : '') : '';
+      srForm.dataset.selectedSlot = '';
     }
 
     // Reset slot check & consent wrapper
@@ -5546,8 +5552,12 @@ document.addEventListener('DOMContentLoaded', () => {
       const origDate = origBt ? origBt.substring(0, 10) : '';
       const dateChanged = isEdit && bDateInput && bDateInput.value && origDate && bDateInput.value !== origDate;
 
-      let bookingTimeStr = (slotsDropdown && slotsDropdown.value) || (timeInput ? timeInput.value : '') || (srForm?.dataset?.selectedSlot || '');
-      if (!bookingTimeStr && isEdit && !dateChanged) {
+      let bookingTimeStr = '';
+      if (slotsDropdown && slotsDropdown.value) {
+        bookingTimeStr = slotsDropdown.value;
+      } else if (timeInput && timeInput.value) {
+        bookingTimeStr = timeInput.value;
+      } else if (isEdit) {
         bookingTimeStr = origBt;
       }
       if (bookingTimeStr) {

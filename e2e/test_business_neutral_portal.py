@@ -321,3 +321,84 @@ def test_provider_sync_unavailable_displays_warning_notice(page, live_server):
     expect(notice).to_contain_text("unavailable")
     expect(notice).not_to_contain_text("synchronized successfully")
 
+
+def test_clearing_selected_slot_does_not_submit_cached_time(page, live_server, api, db, scenario):
+    """Review Finding 1: Clearing slot dropdown clears cached slot time and submits unscheduled request."""
+    assert api.post('/api/v1/portal/config', json={
+        'business_profile': {'industry': 'Consulting', 'intake_fields': []}
+    }).status_code == 200
+    chosen = scenario['start'].strftime('%Y-%m-%d %H:%M:%S')
+    page.route('**/api/v1/portal/available-slots?*', lambda route: route.fulfill(
+        status=200, json={'success': True, 'available_slots': [
+            {'start_time': chosen, 'end_time': chosen, 'available_agents_count': 1}
+        ]}
+    ))
+    page.goto(f'{live_server}/portal/#dashboard')
+    page.locator('#btn-new-request').click()
+    page.locator('#sr-cust-name').fill('Review Slot Clear')
+    page.locator('#sr-cust-phone').fill('5550100099')
+    page.locator('#sr-service-type').select_option('Oil Change')
+    page.locator('#sr-issue-desc').fill('Save this request without scheduling')
+    page.locator('#sr-check-slots-btn').click()
+    slots = page.locator('#sr-slots-dropdown')
+    expect(slots.locator('option')).to_have_count(2)
+    slots.select_option(chosen)
+    slots.select_option('')
+    expect(slots).to_have_value('')
+    page.locator('#sr-save-btn').click()
+    with page.expect_response(lambda response: response.request.method == 'POST' and response.url.endswith('/service-requests')) as saved:
+        page.locator('#confirm-modal-yes').click()
+    assert saved.value.status == 201, saved.value.text()
+    actual = saved.value.request.post_data_json['service_request']['booking_time']
+    request_id = saved.value.json()['request_id']
+    stored = db('SELECT booking_time FROM service_requests WHERE id = %s', (request_id,))[0]
+    reservations = db('SELECT starts_at FROM appointment_reservations WHERE service_request_id = %s AND status = %s', (request_id, 'ACTIVE'))
+    assert actual is None, 'A visibly cleared slot must not submit the previous selection'
+    assert stored['booking_time'] is None
+    assert not reservations
+
+
+def test_clearing_replacement_slot_preserves_original_schedule_for_existing_appointment(page, live_server, api, db, scenario):
+    """Review Finding 1: Clearing a replacement slot preserves original appointment schedule and active reservation."""
+    from e2e.test_workflows import book
+    req_id = book(api, scenario)
+    orig_row = db('SELECT booking_time FROM service_requests WHERE id = %s', (req_id,))[0]
+    orig_time_str = str(orig_row['booking_time'])
+
+    replacement_time = (scenario['start'].replace(hour=14)).strftime('%Y-%m-%d %H:%M:%S')
+    page.route('**/api/v1/portal/available-slots?*', lambda route: route.fulfill(
+        status=200, json={'success': True, 'available_slots': [
+            {'start_time': replacement_time, 'end_time': replacement_time, 'available_agents_count': 1}
+        ]}
+    ))
+
+    page.goto(f'{live_server}/portal/#dashboard')
+    page.locator(f'.edit-sr-btn[data-id="{req_id}"]').click()
+    expect(page.locator('#sr-form')).to_be_visible()
+
+    # Check slots and select replacement
+    page.locator('#sr-check-slots-btn').click()
+    slots = page.locator('#sr-slots-dropdown')
+    expect(slots.locator('option')).to_have_count(2)
+    slots.select_option(replacement_time)
+
+    # Now clear the replacement selection
+    slots.select_option('')
+    expect(slots).to_have_value('')
+
+    # Make an unrelated edit
+    page.locator('#sr-issue-desc').fill('Updated issue without rescheduling')
+
+    # Save edit (should NOT require consent because time did not change)
+    page.locator('#sr-save-btn').click()
+    with page.expect_response(lambda r: r.request.method == 'PUT' and r.url.endswith(f'/service-requests/{req_id}')) as updated:
+        page.locator('#confirm-modal-yes').click()
+    assert updated.value.status == 200, updated.value.text()
+
+    stored = db('SELECT booking_time, issue_description FROM service_requests WHERE id = %s', (req_id,))[0]
+    assert str(stored['booking_time'])[:19] == orig_time_str[:19], 'Original schedule must be preserved when replacement is cleared'
+    assert stored['issue_description'] == 'Updated issue without rescheduling'
+
+    reservations = db('SELECT starts_at FROM appointment_reservations WHERE service_request_id = %s AND status = %s', (req_id, 'ACTIVE'))
+    assert len(reservations) > 0, 'Original reservation must remain active'
+
