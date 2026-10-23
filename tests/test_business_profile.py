@@ -372,3 +372,120 @@ def test_explicit_empty_intake_profile_preserved(profile_config):
     assert saved["business_profile"]["industry"] == "Consulting"
     assert saved["business_profile"]["collect_vehicle_details"] is False
     assert saved["business_profile"]["intake_fields"] == []
+
+
+@pytest.mark.parametrize("bad_val", [
+    ["SERIAL-001"],
+    "SERIAL-001",
+    123,
+    True,
+    False,
+])
+def test_malformed_intake_shapes_rejected_in_legacy_normalization(bad_val):
+    """Review Finding 5: Reject arrays, strings, numbers and booleans before legacy normalization."""
+    from serviceBot.services.business_profile import normalize_legacy_intake_args, parse_voice_intake
+
+    optional_profile = {
+        "industry": "Consulting",
+        "collect_vehicle_details": False,
+        "intake_fields": [
+            {"key": "notes", "detail_type": "general", "label": "Notes", "type": "text", "required": False}
+        ],
+    }
+
+    # Test via intake_data directly
+    with pytest.raises(ValueError, match="Intake details must be an object"):
+        normalize_legacy_intake_args({"intake_data": bad_val}, optional_profile)
+
+    with pytest.raises(ValueError, match="Intake details must be an object"):
+        parse_voice_intake({"intake_data": bad_val}, optional_profile)
+
+    # Test via intake_data_json string
+    json_str = json.dumps(bad_val)
+    with pytest.raises(ValueError, match="Intake details must be an object"):
+        normalize_legacy_intake_args({"intake_data_json": json_str}, optional_profile)
+
+    with pytest.raises(ValueError, match="Intake details must be an object"):
+        parse_voice_intake({"intake_data_json": json_str}, optional_profile)
+
+
+def test_valid_and_absent_intake_shapes_preserved():
+    """Review Finding 5: Preserve existing valid-object and absent/null behavior."""
+    from serviceBot.services.business_profile import normalize_legacy_intake_args, parse_voice_intake
+
+    profile = {
+        "industry": "Consulting",
+        "collect_vehicle_details": False,
+        "intake_fields": [
+            {"key": "notes", "detail_type": "general", "label": "Notes", "type": "text", "required": False}
+        ],
+    }
+
+    # Absent
+    assert normalize_legacy_intake_args({}, profile) == {}
+    assert parse_voice_intake({}, profile) == {}
+
+    # None / null
+    assert normalize_legacy_intake_args({"intake_data": None}, profile) == {}
+    assert parse_voice_intake({"intake_data": None}, profile) == {}
+    assert normalize_legacy_intake_args({"intake_data_json": "null"}, profile) == {}
+    assert parse_voice_intake({"intake_data_json": "null"}, profile) == {}
+
+    # Valid object
+    assert normalize_legacy_intake_args({"intake_data": {"notes": "Call first"}}, profile) == {"notes": "Call first"}
+    assert parse_voice_intake({"intake_data": {"notes": "Call first"}}, profile) == {"notes": "Call first"}
+    assert normalize_legacy_intake_args({"intake_data_json": '{"notes": "Call first"}'}, profile) == {"notes": "Call first"}
+    assert parse_voice_intake({"intake_data_json": '{"notes": "Call first"}'}, profile) == {"notes": "Call first"}
+
+
+def test_voice_tool_malformed_intake_rejects_without_mutations(profile_config):
+    """Review Finding 5: Verify rejected malformed intake produces no customer, booking, reservation or notification mutations."""
+    client, _ = profile_config
+    from serviceBot.db.connection import get_db_connection, dict_cursor
+
+    # Configure profile with optional-only field
+    client.post("/api/v1/portal/config", json={
+        "business_profile": {
+            "industry": "Consulting",
+            "collect_vehicle_details": False,
+            "intake_fields": [
+                {"key": "topic", "detail_type": "general", "label": "Topic", "type": "text", "required": False}
+            ]
+        }
+    })
+
+    with get_db_connection() as conn, dict_cursor(conn) as cur:
+        cur.execute("SELECT COUNT(*) AS c FROM customers;")
+        cust_before = cur.fetchone()["c"]
+        cur.execute("SELECT COUNT(*) AS c FROM service_requests;")
+        req_before = cur.fetchone()["c"]
+        cur.execute("SELECT COUNT(*) AS c FROM appointment_reservations;")
+        resv_before = cur.fetchone()["c"]
+        cur.execute("SELECT COUNT(*) AS c FROM outbox_notifications;")
+        notif_before = cur.fetchone()["c"]
+
+    # Attempt voice tool call with malformed intake shape
+    tool_payload = {
+        "call_sid": "test-malformed-sid",
+        "customer_name": "Ghost Tester",
+        "phone": "+15559990001",
+        "service_name": "Diagnostics",
+        "intake_data_json": '["SERIAL-001"]',
+    }
+    resp = client.post("/api/v1/voice/tools?name=create_service_request", json=tool_payload)
+    assert resp.status_code == 200
+    res_data = resp.json()["result"]
+    assert res_data["success"] is False
+    assert "Intake details must be an object" in res_data["message"]
+
+    # Verify no mutations occurred
+    with get_db_connection() as conn, dict_cursor(conn) as cur:
+        cur.execute("SELECT COUNT(*) AS c FROM customers;")
+        assert cur.fetchone()["c"] == cust_before
+        cur.execute("SELECT COUNT(*) AS c FROM service_requests;")
+        assert cur.fetchone()["c"] == req_before
+        cur.execute("SELECT COUNT(*) AS c FROM appointment_reservations;")
+        assert cur.fetchone()["c"] == resv_before
+        cur.execute("SELECT COUNT(*) AS c FROM outbox_notifications;")
+        assert cur.fetchone()["c"] == notif_before
+

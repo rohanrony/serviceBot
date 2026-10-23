@@ -107,6 +107,8 @@ def normalize_legacy_intake_args(args: dict, profile: dict) -> dict:
             raw = json.loads(args["intake_data_json"])
         except (ValueError, TypeError) as exc:
             raise ValueError("Intake details must be valid JSON") from exc
+    if raw is not None and not isinstance(raw, dict):
+        raise ValueError("Intake details must be an object")
     data = dict(raw) if isinstance(raw, dict) else {}
 
     # If collect_vehicle_details is True, make/model/year belong to vehicles table, not intake_data
