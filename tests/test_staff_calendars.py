@@ -80,7 +80,8 @@ def test_create_and_delete_staff_agent_endpoint():
     payload = {
         "name": "Alice Williams",
         "role": "Technician",
-        "email": "alice.w@example.com"
+        "email": "alice.w@example.com",
+        "phone_number": "+15550100099"
     }
     response = client.post("/api/v1/portal/agents", json=payload)
     assert response.status_code == 201

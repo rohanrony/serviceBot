@@ -48,8 +48,8 @@ def open_settings(page, live_server, tab):
             expect(page.locator("#staff-agent-selector")).to_contain_text("No agents available")
         expect(page.locator("#staff-bhours-start")).to_have_value(str(config.get("business_hours_start", 7)))
         expect(page.locator("#staff-bhours-end")).to_have_value(str(config.get("business_hours_end", 18)))
-    elif tab == "sms-config":
-        expect(page.locator("#sms-config-timezone")).to_have_value(config["business_timezone"])
+    elif tab == "business":
+        expect(page.locator("#business-timezone")).to_have_value(config["business_timezone"])
     elif tab == "intents":
         expect(page.locator("#prompt-first-message")).to_have_value(config.get("first_message") or "")
 
@@ -68,7 +68,7 @@ def test_settings_reload_reads_updated_staff_with_pending_background_request(
     try:
         created = api.post(f"{PORTAL}/agents", json={
             "name": "Pending Background Staff", "role": "Technician",
-            "email": "pending@example.test",
+            "email": "pending@example.test", "phone_number": "+15550100099",
         })
         assert created.status_code == 201, created.text
         agent_id = created.json()["id"]
@@ -94,6 +94,7 @@ def test_browser_create_edit_staff_persists_after_reload(page, live_server, api)
     page.locator("#new-agent-name").fill("Casey Browser")
     page.locator("#new-agent-role").fill("Technician")
     page.locator("#new-agent-email").fill("casey@example.test")
+    page.locator("#new-agent-phone").fill("+15550100099")
     with page.expect_response(
         lambda r: r.request.method == "POST" and r.url.endswith("/portal/agents")
     ) as created:
@@ -161,12 +162,13 @@ def test_business_timezone_save_controls_runtime_and_survives_reload(
 ):
     from serviceBot.services import quiet_hours, timezone_service
 
-    open_settings(page, live_server, "sms-config")
-    page.locator("#sms-config-timezone").select_option(timezone)
+    open_settings(page, live_server, "business")
+    page.locator("#business-timezone").select_option(timezone)
+    page.locator('#business-profile-form button[type="submit"]').click()
     with page.expect_response(
-        lambda r: r.request.method == "PUT" and r.url.endswith("/sms/config")
+        lambda r: r.request.method == "POST" and r.url.endswith("/portal/config")
     ) as saved:
-        page.locator('#sms-global-config-form button[type="submit"]').click()
+        page.locator("#business-save-confirm-btn").click()
     assert saved.value.status == 200
     assert api.get(f"{PORTAL}/config").json()["business_timezone"] == timezone
     assert timezone_service.get_business_zoneinfo().key == timezone
@@ -179,8 +181,8 @@ def test_business_timezone_save_controls_runtime_and_survives_reload(
             "quiet_end_time": "08:00",
         },
     )
-    open_settings(page, live_server, "sms-config")
-    expect(page.locator("#sms-config-timezone")).to_have_value(timezone)
+    open_settings(page, live_server, "business")
+    expect(page.locator("#business-timezone")).to_have_value(timezone)
 
 
 def test_browser_business_hours_save_changes_booking_boundary(
@@ -294,7 +296,9 @@ def test_browser_booking_to_captured_delivery_and_visible_log(
     ):
         page.locator(selector).fill(value)
     page.locator("#sr-service-type").select_option("Oil Change")
-    page.locator("#sr-booking-time").fill(scenario["start"].strftime("%Y-%m-%dT%H:%M"))
+    page.locator("#sr-booking-date").fill(scenario["date"])
+    page.locator("#sr-check-slots-btn").click()
+    page.locator("#sr-slots-dropdown").select_option(scenario["start"].strftime("%Y-%m-%d %H:%M:%S"))
     page.locator("#sr-save-btn").click()
     with page.expect_response(
         lambda r: (

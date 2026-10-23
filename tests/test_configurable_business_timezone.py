@@ -228,7 +228,7 @@ def test_index_html_has_timezone_controls_and_badge():
     html_path = pathlib.Path(__file__).parent.parent / "serviceBot" / "static" / "index.html"
     content = html_path.read_text(encoding="utf-8")
 
-    assert 'id="sms-config-timezone"' in content
+    assert 'id="business-timezone"' in content
     assert 'id="business-tz-badge"' in content
     assert 'id="business-tz-badge-text"' in content
 

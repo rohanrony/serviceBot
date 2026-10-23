@@ -157,24 +157,24 @@ def test_inbox_search_reply_and_resolve_persist(page, live_server, api):
 
 def test_sms_global_configuration_survives_reload(page, live_server, api):
     open_config(page, live_server, "sms-config")
-    expect(page.locator("#sms-config-support-phone")).to_have_value("+15550100005")
-    page.locator("#sms-config-support-phone").fill("+15550100008")
+    expect(page.locator("#sms-config-quiet-start")).to_have_value(re.compile(r"^\d\d:\d\d"))
     page.locator("#sms-config-auto-responder").fill("E2E team received your message.")
+    page.locator("#sms-config-quiet-start").fill("22:00")
     with page.expect_response(
         lambda r: r.url.endswith("/sms/config") and r.request.method == "PUT"
     ) as saved:
         page.locator('#sms-global-config-form button[type="submit"]').click()
     assert saved.value.status == 200
     assert (
-        api.get(f"{PORTAL}/sms/config").json()["support_phone_number"] == "+15550100008"
+        api.get(f"{PORTAL}/sms/config").json()["auto_responder_template"] == "E2E team received your message."
     )
     page.reload()
     page.locator('.nav-item[data-tab="config"]').click()
     page.locator('.config-ribbon-item[data-subtab="sms-config"]').click()
-    expect(page.locator("#sms-config-support-phone")).to_have_value("+15550100008")
     expect(page.locator("#sms-config-auto-responder")).to_have_value(
         "E2E team received your message."
     )
+    expect(page.locator("#sms-config-quiet-start")).to_have_value(re.compile(r"^22:00"))
 
 
 def test_failed_matrix_save_must_not_announce_success(page, live_server, api):
@@ -216,12 +216,12 @@ def test_failed_matrix_save_must_not_announce_success(page, live_server, api):
 @pytest.mark.parametrize(
     "subtab",
     [
+        "business",
         "staff",
         "gmail",
         "sms-config",
         "customer-onboarding",
         "intents",
-        "keys",
         "analytics",
     ],
 )
@@ -229,6 +229,13 @@ def test_every_config_subtab_opens_its_own_pane(page, live_server, subtab):
     open_config(page, live_server, subtab)
     expect(page.locator(f'[data-subtab-pane="{subtab}"]')).to_be_visible()
     expect(page.locator(".config-subtab-pane.active")).to_have_count(1)
+
+
+def test_keys_subtab_is_hidden(page, live_server):
+    page.goto(f"{live_server}/portal/")
+    page.locator('.nav-item[data-tab="config"]').click()
+    expect(page.locator('.config-ribbon-item[data-subtab="keys"]')).not_to_be_visible()
+    expect(page.locator('[data-subtab-pane="keys"]')).not_to_be_visible()
 
 
 def test_knowledge_upload_preview_and_delete_through_browser(page, live_server, api):
@@ -279,7 +286,9 @@ def test_new_request_form_creates_booking_after_confirmation(
     page.locator("#sr-veh-year").fill("2021")
     page.locator("#sr-service-type").select_option("Oil Change")
     page.locator("#sr-issue-desc").fill("Routine oil change")
-    page.locator("#sr-booking-time").fill(scenario["start"].strftime("%Y-%m-%dT%H:%M"))
+    page.locator("#sr-booking-date").fill(scenario["date"])
+    page.locator("#sr-check-slots-btn").click()
+    page.locator("#sr-slots-dropdown").select_option(scenario["start"].strftime("%Y-%m-%d %H:%M:%S"))
     page.locator("#sr-save-btn").click()
     expect(page.locator("#confirm-modal")).to_be_visible()
     with page.expect_response(

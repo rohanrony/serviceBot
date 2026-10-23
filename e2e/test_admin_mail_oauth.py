@@ -43,7 +43,7 @@ def test_legacy_settings_render_google_only_and_save_after_reload(
         expect(page.locator(selector)).to_have_count(0)
     expect(page.locator("#gmail-oauth-status-badge")).to_have_text("Disconnected")
     expect(page.locator("#connect-gmail-btn")).to_be_visible()
-    expect(page.locator("#oauth-help-text")).to_be_visible()
+    expect(page.locator("#oauth-help-text")).not_to_be_visible()
     page.locator("#gmail-recipient").fill("new-admin@example.test")
     page.locator("#gmail-enabled").check()
     page.locator("#gmail-routine-admin-copies-enabled").check()

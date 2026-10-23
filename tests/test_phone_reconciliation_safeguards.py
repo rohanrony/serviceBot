@@ -1,4 +1,5 @@
 import pytest
+from datetime import datetime, timedelta
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
@@ -51,10 +52,14 @@ def test_create_service_request_reconciles_acoustic_area_code_to_caller_id():
 
 def test_get_customer_appointments_merges_caller_phone_and_suffix():
     """Verify get_customer_appointments merges appointments from caller_phone and falls back to 7-digit suffix."""
+    future_1 = (datetime.now() + timedelta(days=5)).strftime("%Y-%m-%d %H:%M:%S")
+    future_2 = (datetime.now() + timedelta(days=6)).strftime("%Y-%m-%d %H:%M:%S")
+    future_3 = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
+
     appts_for_444 = [
         {
             "id": 23,
-            "appointment_datetime": "2026-10-20 07:00:00",
+            "appointment_datetime": future_1,
             "booking_type": "appointment",
             "service_type": "Repair",
             "issue_description": "Windshield",
@@ -68,7 +73,7 @@ def test_get_customer_appointments_merges_caller_phone_and_suffix():
     appts_for_caller = [
         {
             "id": 27,
-            "appointment_datetime": "2026-10-21 12:00:00",
+            "appointment_datetime": future_2,
             "booking_type": "appointment",
             "service_type": "Engine Diagnostic",
             "issue_description": "Heating",
@@ -115,7 +120,7 @@ def test_get_customer_appointments_merges_caller_phone_and_suffix():
     mock_cursor.fetchall.return_value = [
         {
             "id": 28,
-            "appointment_datetime": "2026-10-22 10:00:00",
+            "appointment_datetime": future_3,
             "booking_type": "appointment",
             "service_type": "Repair",
             "issue_description": "Battery inspection",

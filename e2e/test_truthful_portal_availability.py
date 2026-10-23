@@ -46,7 +46,7 @@ def test_current_failure_clears_previous_slot_time_and_consent(page, db, scenari
     else: held[1].abort('failed')
     expect(page.locator('#sr-slots-dropdown')).to_contain_text('could not be verified')
     expect(page.locator('#sr-slots-dropdown option')).to_have_count(1)
-    expect(page.locator('#sr-booking-time')).to_have_value('')
+    expect(page.locator('#sr-slots-dropdown')).to_have_value('')
     expect(page.locator('#sr-customer-consent-check')).not_to_be_checked()
     expect(page.locator('#sr-check-slots-btn')).to_be_enabled()
     assert capacity_snapshot(db) == before
@@ -58,8 +58,8 @@ def test_old_date_response_cannot_change_new_pending_result_or_button(page, scen
     check(page)
     expect(page.locator('#sr-check-slots-btn')).to_be_disabled()
     newer_date = (scenario['start'] + timedelta(days=1)).date().isoformat()
-    page.locator('#sr-check-date-picker').fill(newer_date)
-    page.locator('#sr-check-date-picker').dispatch_event('change')
+    page.locator('#sr-booking-date').fill(newer_date)
+    page.locator('#sr-booking-date').dispatch_event('change')
     # New intent queues behind old request; no concurrent provider availability.
     assert len(held) == 1
     with page.expect_request(lambda req: '/available-slots?' in req.url and newer_date in req.url):
@@ -69,7 +69,7 @@ def test_old_date_response_cannot_change_new_pending_result_or_button(page, scen
     newer_start = scenario['start'] + timedelta(days=1, hours=1)
     response(held[1], newer_start)
     expect(page.locator('#sr-slots-dropdown option')).to_have_count(2)
-    expect(page.locator('#sr-check-date-picker')).to_have_value(newer_date)
+    expect(page.locator('#sr-booking-date')).to_have_value(newer_date)
     expect(page.locator('#sr-slots-dropdown option').nth(1)).to_have_attribute('value', newer_start.strftime('%Y-%m-%d %H:%M:%S'))
 
 
@@ -80,12 +80,12 @@ def test_old_closed_modal_response_cannot_overwrite_reopened_appointment(page, s
     check(page)
     page.locator('#close-sr-modal-btn').click()
     page.locator(f'.edit-sr-btn[data-id="{second}"]').click()
-    original = page.locator('#sr-booking-time').input_value()
+    original = page.locator('#sr-current-schedule-time').text_content()
     page.locator('#sr-issue-desc').fill('Newer appointment edit')
     response(held[0], scenario['start'], failure=failure)
     page.wait_for_timeout(30)
     expect(page.locator('#sr-form-id')).to_have_value(str(second))
-    expect(page.locator('#sr-booking-time')).to_have_value(original)
+    expect(page.locator('#sr-current-schedule-time')).to_have_text(original)
     expect(page.locator('#sr-issue-desc')).to_have_value('Newer appointment edit')
     expect(page.locator('#sr-available-slots-container')).not_to_be_visible()
     expect(page.locator('#sr-check-slots-btn')).to_be_enabled()
@@ -94,14 +94,13 @@ def test_old_closed_modal_response_cannot_overwrite_reopened_appointment(page, s
 def test_changed_booking_time_invalidates_old_lookup(page, scenario, grouped_visit, live_server):
     held = hold(page, live_server, grouped_visit[0])
     check(page)
-    newer = (scenario['start'] + timedelta(hours=3)).strftime('%Y-%m-%dT%H:%M')
-    page.locator('#sr-booking-time').fill(newer)
-    page.locator('#sr-booking-time').dispatch_event('change')
+    page.locator('#sr-booking-date').fill('')
+    page.locator('#sr-booking-date').dispatch_event('change')
     response(held[0], scenario['start'])
     page.wait_for_timeout(30)
     expect(page.locator('#sr-slots-dropdown option')).to_have_count(1)
     expect(page.locator('#sr-slots-dropdown')).to_contain_text('Check availability')
-    expect(page.locator('#sr-booking-time')).to_have_value(newer)
+    expect(page.locator('#sr-booking-date')).to_have_value('')
     expect(page.locator('#sr-check-slots-btn')).to_be_enabled()
 
 

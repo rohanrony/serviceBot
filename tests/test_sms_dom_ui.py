@@ -26,18 +26,17 @@ def test_html_dom_structure_for_sms_components():
     assert 'id="sms-reply-input"' in html_content
     assert 'id="send-sms-reply-btn"' in html_content
     assert 'id="mark-resolved-btn"' in html_content
-    assert 'id="sms-context-details"' in html_content
 
     # 4. SMS Configuration DOM elements
     assert 'id="sms-global-config-form"' in html_content
-    assert 'id="sms-config-support-phone"' in html_content
+    assert 'id="business-support-phone"' in html_content
     assert 'id="sms-config-environment"' in html_content
     assert 'id="sms-config-quiet-start"' in html_content
     assert 'id="sms-config-quiet-end"' in html_content
     assert 'id="sms-config-auto-responder"' in html_content
     assert 'id="sms-matrix-rules-tbody"' in html_content
-    assert 'id="sms-whitelist-tbody"' in html_content
-    assert 'id="sms-add-whitelist-form"' in html_content
+    assert 'id="onboarded-customers-tbody"' in html_content
+    assert 'id="customer-onboard-form"' in html_content
 
     # 5. SMS Log Drawer DOM elements
     assert 'id="sms-log-drawer"' in html_content

@@ -45,11 +45,23 @@ def test_save_new_service_request_with_booking_time_dom():
         page.fill("#sr-veh-model", "Mustang")
         page.fill("#sr-veh-year", "2022")
         page.fill("#sr-veh-vin", "1FA6P8CF0R5100000")
-        page.select_option("#sr-service-type", "Oil Change")
+        page.wait_for_selector("#sr-service-type option:not([value=''])", state="attached")
+        page.select_option("#sr-service-type", index=1)
         page.fill("#sr-issue-desc", "Regular oil change and tire inspection")
         
-        # Fill Booking Time slot
-        page.fill("#sr-booking-time", _future_business_datetime())
+        # Select booking slot via date-first availability controls
+        dt_str = _future_business_datetime()
+        target_date = dt_str[:10]
+        slot_time = f"{target_date} 10:00:00"
+        page.route("**/api/v1/portal/available-slots?*", lambda route: route.fulfill(
+            status=200, json={"success": True, "available_slots": [
+                {"start_time": slot_time, "end_time": f"{target_date} 11:00:00", "available_agents_count": 1}
+            ]}
+        ))
+        page.fill("#sr-booking-date", target_date)
+        page.click("#sr-check-slots-btn")
+        page.wait_for_selector(f"#sr-slots-dropdown option[value='{slot_time}']", state="attached")
+        page.select_option("#sr-slots-dropdown", slot_time)
         
         # Click Save Request button
         page.click("#sr-save-btn")
