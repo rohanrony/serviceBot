@@ -154,19 +154,13 @@ def test_get_customer_appointments_merges_caller_phone_and_suffix():
         assert result["upcoming_count"] == 1
 
 
-def test_reschedule_appointment_reconciles_typo_via_caller_phone():
+def test_reschedule_appointment_reconciles_typo_via_caller_phone(saved_reschedule_boundary):
     """Verify reschedule_appointment falls back to caller_phone if spoken phone yields no appointments."""
     with patch("serviceBot.api.telephony.get_customer_appointments") as mock_get_appts, \
          patch("serviceBot.api.telephony.reschedule_appointment") as mock_resched:
 
-        def side_effect(ph):
-            if ph == "4442704893":
-                return []
-            if ph == "4242704893":
-                return [{"id": 28, "appointment_datetime": "2026-10-02 10:00:00"}]
-            return []
-
-        mock_get_appts.side_effect = side_effect
+        saved_reschedule_boundary(mock_get_appts, mock_resched, identifier=28, phone="4242704893",
+                                  old_time="2026-10-02 10:00:00", new_time="2026-10-02 14:00:00")
 
         payload = {
             "name": "reschedule_appointment",

@@ -1,6 +1,8 @@
 """Offline legacy-suite harness: owned database, synthetic secrets, isolated files."""
 
 import builtins
+from copy import deepcopy
+from datetime import timedelta
 import hashlib
 import io
 import os
@@ -17,6 +19,38 @@ import psycopg2
 import pytest
 from psycopg2 import sql
 from psycopg2.extensions import make_dsn, parse_dsn
+
+
+@pytest.fixture
+def saved_reschedule_boundary(monkeypatch):
+    """Model lookup and native capacity at the persistence boundary for voice tests."""
+    from serviceBot.api import telephony
+    from serviceBot.services.booking import parse_reservation_start, reservation_segments
+
+    def configure(lookup, mutation, *, identifier, phone, old_time, new_time, duration=60):
+        rows = [{"id": identifier, "booking_type": "appointment", "status": "pending",
+                 "appointment_datetime": old_time, "duration_minutes": duration,
+                 "service_type": "Inspection", "service_components": None,
+                 "visit_group_id": None, "visit_member_ids": []}]
+        lookup.side_effect = lambda supplied: deepcopy(rows) if supplied == phone else []
+        def move(**kwargs):
+            assert kwargs["appointment_id"] == identifier
+            assert kwargs["new_datetime"] == new_time
+            rows[0]["appointment_datetime"] = new_time
+            return True
+        mutation.side_effect = move
+        def evidence(ids):
+            assert ids == [identifier]
+            start = parse_reservation_start(rows[0]["appointment_datetime"])
+            return [{"id": identifier, "request_staff": 7, "reservation_id": 101,
+                     "service_request_id": identifier, "staff_agent_id": 7, "status": "ACTIVE",
+                     "request_status": "pending", "phone": phone, "duration_minutes": duration,
+                     "booking_time": rows[0]["appointment_datetime"], "starts_at": start,
+                     "ends_at": start + timedelta(minutes=duration),
+                     "segments": [{"reservation_id": 101, "staff_agent_id": 7, "segment_start": segment}
+                                  for segment in reservation_segments(start, duration)]}]
+        monkeypatch.setattr(telephony, "_session_capacity_evidence", evidence)
+    return configure
 
 ROOT = Path(__file__).resolve().parents[1]
 _artifact_parent = Path(os.getenv("TEST_ARTIFACTS_DIR") or tempfile.gettempdir())

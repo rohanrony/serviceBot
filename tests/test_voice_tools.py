@@ -422,9 +422,9 @@ def test_voice_tools_request_callback(mock_create_cb, mock_lookup):
 
 @patch("serviceBot.api.telephony.get_customer_appointments")
 @patch("serviceBot.api.telephony.reschedule_appointment")
-def test_voice_tools_reschedule_appointment(mock_resched, mock_get_appts):
-    mock_get_appts.return_value = [{"id": 52, "appointment_datetime": "2026-06-14 10:00:00"}]
-    mock_resched.return_value = True
+def test_voice_tools_reschedule_appointment(mock_resched, mock_get_appts, saved_reschedule_boundary):
+    saved_reschedule_boundary(mock_get_appts, mock_resched, identifier=52, phone="5551234567",
+                              old_time="2026-06-14 10:00:00", new_time="2026-06-14 11:00:00")
     
     payload = {
         "tool_call_id": "call_resched",
@@ -440,6 +440,7 @@ def test_voice_tools_reschedule_appointment(mock_resched, mock_get_appts):
     assert data["tool_call_id"] == "call_resched"
     assert data["result"]["success"] is True
     assert data["result"]["appointment_id"] == 52
+    assert data["result"]["duration_minutes"] == 60
 
 
 @patch("serviceBot.api.telephony.get_customer_appointments")

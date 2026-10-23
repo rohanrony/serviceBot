@@ -1,0 +1,53 @@
+{
+  "execution": "Manual provider acceptance in an owned test environment; not included in the fixed C01-C50 automated campaign. These steps do not authorize execution.",
+  "scenarios": [
+    {
+      "id": "RS01",
+      "title": "Legacy two-service request stored as one hour",
+      "prerequisites": [
+        "Owned disposable test environment with candidate code and prompt",
+        "Exact catalogue labels Brake Repair & Pad Replacement (90 min, technician A) and Suspension Repair (Shocks & Struts) (120 min, technician B)"
+      ],
+      "setup": [
+        "Create a native 60-minute Oil Change appointment in the owned test environment; record request/reservation/provider IDs and the original time.",
+        "With the test app stopped, change only that owned request to service_type=Repair, issue_description=Brake Repair & Pad Replacement and Suspension Repair (Shocks & Struts), service_components=NULL; retain 60-minute capacity and no group.",
+        "Restart the test app; retain a fresh before snapshot including outbox, audit and calendar events."
+      ],
+      "caller": "Ask to reschedule that visit; consent to the proposed time, then ask whether all three and a half hours are reserved.",
+      "expected": [
+        "Tool rejects BOOKING_SERVICE_SCOPE_MISMATCH with recorded 60 and catalogue 210 minutes.",
+        "Agent admits the mismatch and offers advisor review without booking it absent consent.",
+        "Every original request, reservation, segment, slot, audit row and outbox item remains unchanged.",
+        "No new or updated provider event/message. No invented check-in or hidden full reservation."
+      ]
+    },
+    {
+      "id": "RS02",
+      "title": "Correct specialist visit moves with exact persisted windows",
+      "setup": [
+        "Use the same 90/120-minute specialist catalogue to book both exact labels in one native booking tool request.",
+        "Retain linked request/reservation IDs and independently read original Google event IDs/windows."
+      ],
+      "caller": "Ask to move the whole visit to an available start; explicitly consent; ask the agent to verify the total and both appointments.",
+      "expected": [
+        "One reschedule mutation; same two linked requests with 90 and 120 minutes and correct technician ownership.",
+        "Two receipts match fresh database reservations and complete 15-minute capacity segments; total service duration 210 minutes.",
+        "Independent Google read-back shows exactly the two moved windows; old events are removed/reconciled with no duplicates.",
+        "Any messages contain the corresponding saved component window. Agent reports only receipt-supported delivery."
+      ]
+    },
+    {
+      "id": "RS03",
+      "title": "Caller challenges a conflicting duration",
+      "setup": [
+        "Reuse the owned RS01 legacy fixture before mutation."
+      ],
+      "caller": "Ask for the saved duration, compare the one-hour notification with the catalogue estimate, and ask Are you sure?",
+      "expected": [
+        "Lookup states recorded duration 60 minutes.",
+        "Agent explicitly distinguishes the 210-minute service estimate from the 60 minutes recorded and admits the discrepancy.",
+        "No claim of an initial check-in slot or hidden technician reservation. No silent repair, replacement booking or unsolicited callback."
+      ]
+    }
+  ]
+}
