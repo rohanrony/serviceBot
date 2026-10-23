@@ -69,3 +69,19 @@
 - [x] T032 Update `live_simulations/scenarios.json` and `test-coverage.yaml` with accurate scenario assertions, prerequisites, read-back mechanisms, and spending ceilings.
 - [x] T033 Run complete offline test suite via `./run_tests.sh --verify` and resolve any regressions.
 - [x] T034 Complete `speckit-converge` review and generate consistency report.
+
+---
+
+## Phase 5: Review Findings Resolution (Correctness Defects)
+
+- [x] T035 [Finding 1] Refresh application timezone dynamically after Business Settings saves (`loadBusinessProfile`, `applyBusinessProfile`, `setAppBusinessTimezone`).
+- [x] T036 [Finding 2] Keep support helpline consistent across configuration (`config.json`) and database (`sms_config`), treating legacy empty/null/whitespace updates as omitted while updating both stores on explicit changes and avoiding resurrected values or placeholder fallbacks in handoff/acknowledgment.
+- [x] T037 [Finding 3] Detect legacy intake using configuration state (`collect_vehicle_details=true`, generic profile state, or absent persisted profile) rather than industry/name substring heuristics.
+- [x] T038 [Finding 4] Attempt ElevenLabs prompt synchronization for every configured target agent (development and production) with per-agent outcome reporting and overall synced/failed status without automatic retries.
+- [x] T039 [Finding 5] Reject malformed intake shapes (arrays, strings, numbers, booleans) before normalization in `normalize_legacy_intake_args` and `parse_voice_intake`, preventing mutations.
+- [x] T040 [Finding 6] Display voice provider synchronization unavailable status with persistent warning styling and notice text without claiming the live voice agent was updated.
+- [x] T041 Author and verify failing regressions (Red phase) for all 6 findings before implementation, then verify all tests turn Green.
+- [x] T042 [Finding 7] Fix handoff templates when helpline is cleared: replace fragile sentence removal with neutral fallback "Message received." when template needs missing support number, preserve custom templates without placeholders, and render configured helpline normally.
+- [x] T043 [Finding 8] Make handoff honor canonical helpline resolver consistently: blank canonical value means cleared, fall back to database only when canonical setting is absent, and prevent in-hours/out-of-hours resurrection.
+- [x] T044 Author and verify failing regressions (Red phase) in `tests/test_handoff_regressions.py` covering all template wordings, custom templates, canonical clearing sync failures, and legacy fallbacks; then verify all tests turn Green.
+- [x] T045 [Finding 9] Fix handoff template rendering defect for customer_name: resolve customer_name from existing customer/conversation data, render all supported variables consistently, fallback to neutral "Message received." on missing required variables/unsupported placeholders/malformed templates without partial rendering, and maintain comprehensive regressions in `tests/test_handoff_regressions.py`.

@@ -10,6 +10,7 @@ acceptance:
     tests:
       - "tests/test_portal_config.py::test_business_settings_canonical_fields_persistence"
       - "e2e/test_business_neutral_portal.py::test_business_settings_inputs_and_notifications_removal"
+      - "e2e/test_business_neutral_portal.py::test_business_settings_timezone_refresh_updates_scheduling_labels"
     layer: [unit, http, browser]
     live_acceptance:
       status: not_required
@@ -39,7 +40,10 @@ acceptance:
     invariants: ["Local configuration remains durably saved even when external voice provider is unavailable"]
     tests:
       - "tests/test_portal_config.py::test_provider_sync_status_reported_separately_on_failure"
+      - "tests/test_portal_config.py::test_provider_http_500_reported_as_failed_sync"
+      - "tests/test_portal_config.py::test_sync_prompt_to_elevenlabs_multi_agent_resilience"
       - "e2e/test_business_neutral_portal.py::test_provider_sync_failure_displays_separate_notice"
+      - "e2e/test_business_neutral_portal.py::test_provider_sync_unavailable_displays_warning_notice"
     layer: [unit, http, browser]
     live_acceptance:
       status: pending
@@ -65,6 +69,22 @@ acceptance:
     invariants: ["Support phone number format is preserved"]
     tests:
       - "tests/test_portal_config.py::test_canonical_support_phone_synchronization"
+      - "tests/test_portal_config.py::test_saving_sms_config_does_not_erase_business_settings"
+      - "tests/test_portal_config.py::test_helpline_consistency_across_stores_and_logic"
+      - "tests/test_handoff_regressions.py::test_cleared_helpline_does_not_send_unresolved_template"
+      - "tests/test_handoff_regressions.py::test_failed_database_sync_does_not_resurrect_cleared_canonical_helpline"
+      - "tests/test_handoff_regressions.py::test_cleared_helpline_with_different_template_wordings"
+      - "tests/test_handoff_regressions.py::test_custom_template_without_helpline_placeholder"
+      - "tests/test_handoff_regressions.py::test_configured_helpline_rendering_in_and_out_of_hours"
+      - "tests/test_handoff_regressions.py::test_legacy_fallback_when_canonical_setting_is_absent"
+      - "tests/test_handoff_regressions.py::test_customer_name_template_is_not_dispatched_unresolved"
+      - "tests/test_handoff_regressions.py::test_customer_name_and_helpline_both_available"
+      - "tests/test_handoff_regressions.py::test_customer_name_only_template"
+      - "tests/test_handoff_regressions.py::test_missing_or_unknown_customer_name_falls_back_to_neutral"
+      - "tests/test_handoff_regressions.py::test_unsupported_placeholder_template_falls_back"
+      - "tests/test_handoff_regressions.py::test_malformed_template_syntax_falls_back"
+      - "tests/test_handoff_regressions.py::test_plain_text_template_preserved"
+      - "tests/test_handoff_regressions.py::test_missing_helpline_when_template_requires_it_falls_back"
     layer: [unit, database, http]
     live_acceptance:
       status: not_required
@@ -79,6 +99,9 @@ acceptance:
     invariants: ["Existing key pattern and length restrictions remain enforced"]
     tests:
       - "tests/test_business_profile.py::test_generic_intake_field_detail_types_and_validation"
+      - "tests/test_business_profile.py::test_malformed_intake_shapes_rejected_in_legacy_normalization"
+      - "tests/test_business_profile.py::test_valid_and_absent_intake_shapes_preserved"
+      - "tests/test_business_profile.py::test_voice_tool_malformed_intake_rejects_without_mutations"
     layer: [unit]
     live_acceptance:
       status: not_required
@@ -108,6 +131,7 @@ acceptance:
     tests:
       - "tests/test_business_profile.py::test_legacy_automotive_fields_exposed_as_generic_equivalents"
       - "e2e/test_business_neutral_portal.py::test_legacy_automotive_fields_exposed_in_form"
+      - "e2e/test_business_neutral_portal.py::test_legacy_intake_detection_configuration_state"
     layer: [unit, browser]
     live_acceptance:
       status: not_required
@@ -300,14 +324,14 @@ omitted_layers:
   migration: "No new database schema migrations are planned or required for this feature; existing JSONB and columns are reused."
 
 review:
-  red: "Authored failing tests for all acceptance contracts prior to code implementation."
+  red: "Authored failing tests for all acceptance contracts prior to code implementation, demonstrating the defects in Red state."
   green: "All unit, API, database, and browser assertions pass cleanly."
   test_changes: "All tests are net-new or non-destructive additions ensuring 0 weakened assertions."
-  sufficiency: "Covers all 12 requested changes across unit, database, HTTP, and browser E2E layers."
+  sufficiency: "Covers all requested review findings and functional acceptance criteria across unit, database, HTTP, and browser E2E layers."
   offline:
     status: verified
-    reason: "All 42 unit/integration tests and 19 browser E2E tests across new and existing suites pass cleanly."
+    reason: "All 70 focused unit/integration tests and 22 browser E2E tests across new and existing suites pass cleanly."
     evidence:
-      - "pytest tests/test_portal_config.py tests/test_business_profile.py tests/test_portal_booking_slots.py tests/test_staff_agent_validation.py tests/test_sms_acknowledgment.py: 42 passed"
-      - "pytest e2e/test_business_neutral_portal.py: 12 passed"
+      - "pytest tests/test_portal_config.py tests/test_business_profile.py tests/test_portal_booking_slots.py tests/test_staff_agent_validation.py tests/test_sms_acknowledgment.py tests/test_handoff_regressions.py: 70 passed"
+      - "pytest e2e/test_business_neutral_portal.py: 15 passed"
       - "pytest e2e/test_business_profile.py: 7 passed"
