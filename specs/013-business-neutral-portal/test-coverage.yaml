@@ -327,6 +327,8 @@ acceptance:
 
 omitted_layers:
   migration: "No new database schema migrations are planned or required for this feature; existing JSONB and columns are reused."
+  composed: "Multi-service workflow composition contracts are tested across end-to-end browser and HTTP journeys; no dedicated composite runner needed."
+  targeted: "The acceptance contracts are fully observable through the mapped automated pytest unit and browser E2E layers; no separate manual probe is required."
 
 review:
   red: "Authored failing tests for all acceptance contracts prior to code implementation, demonstrating the defects in Red state."
