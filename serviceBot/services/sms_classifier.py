@@ -122,9 +122,9 @@ def get_support_helpline() -> str:
     try:
         from serviceBot.api.portal import load_config
         cfg = load_config()
-        val = cfg.get("support_phone_number")
-        if val and str(val).strip():
-            return str(val).strip()
+        if "support_phone_number" in cfg:
+            val = cfg.get("support_phone_number")
+            return str(val).strip() if val else ""
     except Exception:
         pass
     try:
