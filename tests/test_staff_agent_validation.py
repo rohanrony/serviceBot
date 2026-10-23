@@ -114,3 +114,65 @@ def test_update_staff_allows_unrelated_edit_on_legacy_incomplete_record():
     assert res.status_code == 200
     assert res.json()["success"] is True
     assert res.json()["agent"]["name"] == "Updated Legacy Agent"
+
+
+@pytest.mark.parametrize("email", ["jane@@example.com", "@example.com", "jane@example.com other", "jane..doe@example.com", "jane@example"])
+def test_malformed_staff_email_is_rejected_on_create_and_update(email):
+    """Review Finding 2: Reject malformed staff emails consistently before persistence."""
+    # 1. Create rejection
+    res_create = client.post("/api/v1/portal/agents", json={
+        "name": "Invalid Email Agent",
+        "role": "Advisor",
+        "email": email,
+        "phone_number": "+15550100077"
+    })
+    assert res_create.status_code in (400, 422), "Malformed staff email must be rejected before persistence"
+    with get_db_connection() as conn, dict_cursor(conn) as cursor:
+        cursor.execute("SELECT id FROM staff_agents WHERE name = %s;", ("Invalid Email Agent",))
+        assert cursor.fetchone() is None, "Rejected creation must not insert a staff record"
+
+    # 2. Setup a valid agent for update test
+    res_valid = client.post("/api/v1/portal/agents", json={
+        "name": "Valid Email Agent",
+        "role": "Advisor",
+        "email": "valid.staff@example.com",
+        "phone_number": "+15550100088"
+    })
+    assert res_valid.status_code == 201
+    agent_id = res_valid.json()["id"]
+
+    # 3. Update rejection
+    res_update = client.put(f"/api/v1/portal/agents/{agent_id}", json={
+        "email": email
+    })
+    assert res_update.status_code in (400, 422), "Malformed email update must be rejected"
+    with get_db_connection() as conn, dict_cursor(conn) as cursor:
+        cursor.execute("SELECT email FROM staff_agents WHERE id = %s;", (agent_id,))
+        row = cursor.fetchone()
+        assert row["email"] == "valid.staff@example.com", "Rejected update must preserve original email"
+
+
+def test_staff_email_trims_whitespace_and_stores_cleanly():
+    """Review Finding 2: Valid email with surrounding whitespace is accepted and stored cleanly."""
+    res_create = client.post("/api/v1/portal/agents", json={
+        "name": "Whitespace Agent",
+        "role": "Advisor",
+        "email": "   whitespace.agent@example.com   ",
+        "phone_number": "+15550100099"
+    })
+    assert res_create.status_code == 201
+    agent_id = res_create.json()["id"]
+
+    with get_db_connection() as conn, dict_cursor(conn) as cursor:
+        cursor.execute("SELECT email FROM staff_agents WHERE id = %s;", (agent_id,))
+        row = cursor.fetchone()
+        assert row["email"] == "whitespace.agent@example.com", "Surrounding whitespace must be trimmed on creation"
+
+    res_update = client.put(f"/api/v1/portal/agents/{agent_id}", json={
+        "email": "   updated.whitespace@example.com   "
+    })
+    assert res_update.status_code == 200
+    with get_db_connection() as conn, dict_cursor(conn) as cursor:
+        cursor.execute("SELECT email FROM staff_agents WHERE id = %s;", (agent_id,))
+        row = cursor.fetchone()
+        assert row["email"] == "updated.whitespace@example.com", "Surrounding whitespace must be trimmed on update"

@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import tempfile
 import httpx
@@ -1004,17 +1005,58 @@ async def get_staff_agent(agent_id: int):
                 "whatsapp_connected": is_agent_whatsapp_connected(row["phone_number"])
             }
 
+STAFF_EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+$")
+
+
+def validate_staff_email(email: Optional[str], *, required: bool = True) -> Optional[str]:
+    """
+    Validates staff email addresses consistently for creation and updates.
+    - Trims surrounding whitespace before validation.
+    - Requires a valid, nonblank email during creation (required=True).
+    - If required=False and email is None, returns None (allowing unrelated edits to legacy profiles).
+    - If email is empty/blank, raises 400 ('Email cannot be cleared' if not required, else 'A valid, nonblank email is required').
+    - Rejects malformed addresses such as jane@@example.com, @example.com, 'jane@example.com other'.
+    """
+    if email is None:
+        if required:
+            raise HTTPException(status_code=400, detail="A valid, nonblank email is required")
+        return None
+
+    clean_email = str(email).strip()
+    if not clean_email:
+        if required:
+            raise HTTPException(status_code=400, detail="A valid, nonblank email is required")
+        raise HTTPException(status_code=400, detail="Email cannot be cleared")
+
+    local_part, sep, domain_part = clean_email.partition("@")
+    if not sep or not local_part or not domain_part:
+        detail = "A valid, nonblank email is required" if required else "A valid email address is required"
+        raise HTTPException(status_code=400, detail=detail)
+
+    if (
+        ".." in clean_email
+        or local_part.startswith(".")
+        or local_part.endswith(".")
+        or domain_part.startswith(".")
+        or domain_part.endswith(".")
+        or not STAFF_EMAIL_REGEX.match(clean_email)
+    ):
+        detail = "A valid, nonblank email is required" if required else "A valid email address is required"
+        raise HTTPException(status_code=400, detail=detail)
+
+    return clean_email
+
+
 @router.put("/agents/{agent_id}")
 @router.patch("/agents/{agent_id}")
 async def update_staff_agent(agent_id: int, payload: StaffAgentUpdate):
     from serviceBot.db.connection import get_db_connection, dict_cursor
 
+    clean_email = None
     if payload.email is not None:
-        if not str(payload.email).strip():
-            raise HTTPException(status_code=400, detail="Email cannot be cleared")
-        clean_email = str(payload.email).strip()
-        if "@" not in clean_email or "." not in clean_email.split("@")[-1]:
-            raise HTTPException(status_code=400, detail="A valid email address is required")
+        clean_email = validate_staff_email(payload.email, required=False)
+
+    clean_phone = None
     if payload.phone_number is not None:
         if not str(payload.phone_number).strip():
             raise HTTPException(status_code=400, detail="Phone number cannot be cleared")
@@ -1038,12 +1080,12 @@ async def update_staff_agent(agent_id: int, payload: StaffAgentUpdate):
             if payload.role is not None:
                 updates.append("role = %s")
                 params.append(payload.role)
-            if payload.email is not None:
+            if clean_email is not None:
                 updates.append("email = %s")
-                params.append(str(payload.email).strip())
-            if payload.phone_number is not None:
+                params.append(clean_email)
+            if clean_phone is not None:
                 updates.append("phone_number = %s")
-                params.append(str(payload.phone_number).strip())
+                params.append(clean_phone)
 
             if updates:
                 query = f"UPDATE staff_agents SET {', '.join(updates)} WHERE id = %s RETURNING id, name, role, email, phone_number;"
@@ -1052,8 +1094,8 @@ async def update_staff_agent(agent_id: int, payload: StaffAgentUpdate):
                 updated_agent = dict(cursor.fetchone())
 
                 # If email changed, update connected user_google_accounts if present
-                if payload.email is not None:
-                    cursor.execute("UPDATE user_google_accounts SET email = %s WHERE agent_id = %s;", (payload.email, agent_id))
+                if clean_email is not None:
+                    cursor.execute("UPDATE user_google_accounts SET email = %s WHERE agent_id = %s;", (clean_email, agent_id))
 
                 conn.commit()
             else:
@@ -1067,10 +1109,8 @@ async def update_staff_agent(agent_id: int, payload: StaffAgentUpdate):
 @router.post("/agents", status_code=201)
 async def create_staff_agent(payload: StaffAgentCreate):
     from serviceBot.db.connection import get_db_connection, dict_cursor
-    email_clean = payload.email.strip()
-    phone_clean = payload.phone_number.strip()
-    if not email_clean or "@" not in email_clean or "." not in email_clean.split("@")[-1]:
-        raise HTTPException(status_code=400, detail="A valid, nonblank email is required")
+    email_clean = validate_staff_email(payload.email, required=True)
+    phone_clean = payload.phone_number.strip() if payload.phone_number else ""
     digits = "".join(c for c in phone_clean if c.isdigit())
     if len(digits) < 7:
         raise HTTPException(status_code=400, detail="A valid, nonblank phone number is required")
