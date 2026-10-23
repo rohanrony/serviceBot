@@ -58,7 +58,10 @@ document.addEventListener('DOMContentLoaded', () => {
   function setAppBusinessTimezone(tz) {
     if (!tz) return;
     activeBusinessTimezone = tz;
+    window.activeBusinessTimezone = tz;
     updateTimezoneBadges(tz);
+    const tzLabel = document.getElementById('sr-slots-timezone-label');
+    if (tzLabel) tzLabel.textContent = tz;
   }
 
   async function initBusinessTimezone() {
@@ -79,10 +82,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let activeBusinessProfile = { industry: 'Service business', collect_vehicle_details: true, intake_fields: [] };
   function isLegacyAutomotiveConfig(config, profile) {
-    if (!config || !config.business_profile) return true;
-    const ind = (profile?.industry || config.business_profile?.industry || '').toLowerCase();
-    const name = (config?.business_name || '').toLowerCase();
-    return ind.includes('auto') || ind.includes('car') || ind.includes('vehicle') || ind.includes('motor') || name.includes('car care');
+    if (!config || (!config.business_profile && !window._configuredBusinessProfile)) return true;
+    const prof = profile || config.business_profile;
+    if (!prof) return true;
+    return !!prof.collect_vehicle_details;
   }
   function agentRole(value) {
     return String(value || 'Agent').replace(/technicians/gi, 'Agents').replace(/technician/gi, 'Agent');
@@ -128,6 +131,9 @@ document.addEventListener('DOMContentLoaded', () => {
       window._activeConfig = config;
       if (config.business_profile) {
         window._configuredBusinessProfile = true;
+      }
+      if (config.business_timezone) {
+        setAppBusinessTimezone(config.business_timezone);
       }
     }
     activeBusinessProfile = config.business_profile || activeBusinessProfile;
@@ -331,6 +337,13 @@ document.addEventListener('DOMContentLoaded', () => {
             notice.style.border = '1px solid rgba(239, 68, 68, 0.3)';
             notice.textContent = `Saved locally, but voice provider sync failed: ${resData.provider_sync.message || 'Service unavailable'}`;
             showToast('Business settings saved locally. Voice provider sync failed.', 'warning');
+          } else if (resData.provider_sync && resData.provider_sync.status === 'unavailable') {
+            notice.style.display = 'block';
+            notice.style.background = 'rgba(245, 158, 11, 0.15)';
+            notice.style.color = '#f59e0b';
+            notice.style.border = '1px solid rgba(245, 158, 11, 0.3)';
+            notice.textContent = `Settings saved locally, but voice provider synchronization is unavailable: ${resData.provider_sync.message || 'Voice provider credentials not configured.'}`;
+            showToast('Business settings saved locally. Voice provider sync unavailable.', 'warning');
           } else if (resData.provider_sync && resData.provider_sync.status === 'synced') {
             notice.style.display = 'block';
             notice.style.background = 'rgba(34, 197, 94, 0.15)';

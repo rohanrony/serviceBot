@@ -85,8 +85,8 @@ def test_provider_sync_failure_displays_separate_notice(page, live_server):
 
 def test_legacy_automotive_fields_exposed_in_form(page, live_server, api):
     """US2/AC3: Expose legacy automotive fields as editable generic equivalents."""
-    # Reset business profile to empty intake fields
-    api.post("/api/v1/portal/config", json={"business_profile": {"industry": "Auto Service", "intake_fields": []}})
+    # Reset business profile to empty intake fields with collect_vehicle_details=True
+    api.post("/api/v1/portal/config", json={"business_profile": {"industry": "Auto Service", "collect_vehicle_details": True, "intake_fields": []}})
 
     page.goto(f"{live_server}/portal/#config/business")
     expect(page.locator("#business-view")).to_be_visible()
@@ -217,3 +217,107 @@ def test_staff_add_form_validation(page, live_server):
 
     expect(email_input).to_have_attribute("required", "")
     expect(phone_input).to_have_attribute("required", "")
+
+
+def test_business_settings_timezone_refresh_updates_scheduling_labels(page, live_server, api):
+    """Review Finding 1: Refresh the application timezone after Business Settings saves."""
+    # Ensure starting in New York
+    api.post("/api/v1/portal/config", json={"business_timezone": "America/New_York"})
+
+    page.goto(f"{live_server}/portal/#config/business")
+    expect(page.locator("#business-view")).to_be_visible()
+
+    # Change to Los Angeles and save
+    page.locator("#business-timezone").select_option("America/Los_Angeles")
+    page.locator("#business-profile-form button[type=submit]").click()
+    expect(page.locator("#business-save-modal")).to_be_visible()
+    page.locator("#business-save-confirm-btn").click()
+    expect(page.locator("#business-save-modal")).not_to_be_visible()
+
+    # Timezone badge and application state must update without page reload
+    badge = page.locator("#business-tz-badge-text")
+    expect(badge).to_contain_text("Pacific Time (PT)")
+
+    # Navigate to dashboard and open service request modal
+    page.locator("#nav-dashboard, a[href='#dashboard']").click()
+    expect(page.locator("#dashboard-view")).to_be_visible()
+    page.locator("#btn-new-request, #new-sr-btn").click()
+    expect(page.locator("#sr-modal")).to_be_visible()
+
+    # Scheduling slot timezone label must reflect Los Angeles
+    tz_label = page.locator("#sr-slots-timezone-label")
+    expect(tz_label).to_have_text("America/Los_Angeles")
+
+
+def test_legacy_intake_detection_configuration_state(page, live_server, api):
+    """Review Finding 3: Detect legacy intake using configuration state rather than substring heuristics."""
+    # 1. Carpet cleaning with collect_vehicle_details=False and arbitrary business name
+    api.post("/api/v1/portal/config", json={
+        "business_name": "Carpet Care Specialists",
+        "business_profile": {
+            "industry": "Carpet cleaning",
+            "collect_vehicle_details": False,
+            "intake_fields": [],
+        }
+    })
+
+    page.goto(f"{live_server}/portal/#config/business")
+    expect(page.locator("#business-view")).to_be_visible()
+
+    # Must NOT inject Make/Model/Year
+    rows = page.locator(".business-intake-row")
+    expect(rows).to_have_count(0)
+
+    # Save and reload must keep intake fields empty
+    page.locator("#business-profile-form button[type=submit]").click()
+    page.locator("#business-save-confirm-btn").click()
+    expect(page.locator("#business-save-modal")).not_to_be_visible()
+
+    page.reload()
+    expect(page.locator("#business-view")).to_be_visible()
+    expect(page.locator(".business-intake-row")).to_have_count(0)
+
+    # 2. Equipment service with collect_vehicle_details=True
+    api.post("/api/v1/portal/config", json={
+        "business_name": "Apex Rentals",
+        "business_profile": {
+            "industry": "Equipment service",
+            "collect_vehicle_details": True,
+            "intake_fields": [],
+        }
+    })
+
+    page.reload()
+    expect(page.locator("#business-view")).to_be_visible()
+
+    # Must inject Make/Model/Year as generic equivalents
+    expect(page.locator(".business-intake-row")).to_have_count(3)
+
+
+def test_provider_sync_unavailable_displays_warning_notice(page, live_server):
+    """Review Finding 6: Display unavailable provider synchronization clearly."""
+    # Mock /api/v1/portal/config POST to return provider_sync unavailable
+    def handle_post_config(route):
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body='{"success": true, "saved": true, "provider_sync": {"status": "unavailable", "message": "Voice provider credentials not configured."}}'
+        )
+
+    page.route("**/api/v1/portal/config", lambda route: handle_post_config(route) if route.request.method == "POST" else route.continue_())
+
+    page.goto(f"{live_server}/portal/#config/business")
+    expect(page.locator("#business-view")).to_be_visible()
+
+    page.locator("#business-name").fill("Updated Name")
+    page.locator("#business-profile-form button[type=submit]").click()
+    expect(page.locator("#business-save-modal")).to_be_visible()
+    page.locator("#business-save-confirm-btn").click()
+    expect(page.locator("#business-save-modal")).not_to_be_visible()
+
+    # Notice must be visible and indicate unavailable status
+    notice = page.locator("#business-sync-status-notice")
+    expect(notice).to_be_visible()
+    expect(notice).to_contain_text("unavailable")
+    expect(notice).not_to_contain_text("synchronized successfully")
+
