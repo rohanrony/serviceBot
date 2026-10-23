@@ -1,13 +1,100 @@
+import re
+import string
 import datetime as dt_mod
 from serviceBot.db.queries import (
     get_sms_config,
     get_customer_opt_in,
     update_sms_conversation_state,
     add_sms_message,
-    get_sms_conversations
+    get_sms_conversations,
+    lookup_customer_by_phone,
 )
 from serviceBot.services.twilio_sms import TwilioSMSClient
 from serviceBot.api.telephony import is_within_business_hours
+
+SUPPORTED_HELPLINE_FIELDS = {"support_number", "support_phone_number", "helpline"}
+SUPPORTED_CUSTOMER_FIELDS = {"customer_name"}
+ALL_SUPPORTED_FIELDS = SUPPORTED_HELPLINE_FIELDS | SUPPORTED_CUSTOMER_FIELDS
+NEUTRAL_FALLBACK_MESSAGE = "Message received."
+
+
+def _resolve_customer_name(conversation_id: int, customer_phone: str, conv: dict = None) -> str:
+    """
+    Resolves customer_name from existing customer/conversation data when available.
+    Does not invent customer names or placeholders.
+    """
+    if conv and conv.get("customer_name"):
+        c_name = str(conv["customer_name"]).strip()
+        if c_name and c_name.lower() not in ("unknown", "unknown customer", "unknown caller"):
+            return c_name
+
+    if customer_phone:
+        try:
+            cust = lookup_customer_by_phone(customer_phone)
+            if cust and cust.get("name"):
+                c_name = str(cust["name"]).strip()
+                if c_name and c_name.lower() not in ("unknown", "unknown customer", "unknown caller"):
+                    return c_name
+        except Exception:
+            pass
+
+    return ""
+
+
+def render_auto_responder_template(template_str: str, support_number: str = "", customer_name: str = "") -> str:
+    """
+    Renders the auto-responder template with supported variables:
+      - support_number (aliases: support_phone_number, helpline)
+      - customer_name
+
+    Invariants:
+      - Plain-text templates (no placeholders) are preserved as-is.
+      - If a template requires a variable that is missing or unavailable (e.g. cleared helpline,
+        missing customer_name), returns the neutral fallback "Message received."
+      - If an unsupported placeholder is used or the template is malformed, returns "Message received."
+      - Never dispatches a partially rendered template.
+    """
+    template = (template_str or "").strip()
+    if not template:
+        template = "Thank you! Our team has received your message. For urgent help, call {support_number}."
+
+    try:
+        parsed = list(string.Formatter().parse(template))
+    except Exception:
+        return NEUTRAL_FALLBACK_MESSAGE
+
+    field_names = [fn for _, fn, _, _ in parsed if fn is not None]
+    if not field_names:
+        return template
+
+    clean_support = (support_number or "").strip()
+    clean_customer = (customer_name or "").strip()
+    if clean_customer.lower() in ("unknown", "unknown customer", "unknown caller"):
+        clean_customer = ""
+
+    format_kwargs = {}
+    for fn in field_names:
+        fn_lower = fn.lower()
+        if fn_lower not in ALL_SUPPORTED_FIELDS:
+            return NEUTRAL_FALLBACK_MESSAGE
+        if fn_lower in SUPPORTED_HELPLINE_FIELDS:
+            if not clean_support:
+                return NEUTRAL_FALLBACK_MESSAGE
+            format_kwargs[fn] = clean_support
+        elif fn_lower in SUPPORTED_CUSTOMER_FIELDS:
+            if not clean_customer:
+                return NEUTRAL_FALLBACK_MESSAGE
+            format_kwargs[fn] = clean_customer
+
+    try:
+        rendered = template.format(**format_kwargs)
+    except Exception:
+        return NEUTRAL_FALLBACK_MESSAGE
+
+    if re.search(r"\{[^{}]*\}", rendered):
+        return NEUTRAL_FALLBACK_MESSAGE
+
+    return rendered
 
 
 def trigger_human_handoff(conversation_id: int, customer_phone: str, message_body: str) -> dict:
@@ -16,12 +103,16 @@ def trigger_human_handoff(conversation_id: int, customer_phone: str, message_bod
     and dispatches auto-responder SMS if eligible.
     Enforces business hours (Mon-Fri 7am-6pm ET).
     """
-    config = get_sms_config()
-    support_number = config.get("support_phone_number") or "+18005550199"
+    from serviceBot.services.sms_classifier import get_support_helpline
+    config = get_sms_config() or {}
+    support_number = get_support_helpline()
 
     # Business Hours Check
     if not is_within_business_hours():
-        out_of_hours_text = f"Live agent support is only available during our business hours (Mon-Fri 7:00 AM - 6:00 PM ET). For urgent help, please call {support_number} or schedule an appointment."
+        if support_number:
+            out_of_hours_text = f"Live agent support is only available during our business hours (Mon-Fri 7:00 AM - 6:00 PM ET). For urgent help, please call {support_number} or schedule an appointment."
+        else:
+            out_of_hours_text = "Live agent support is only available during our business hours (Mon-Fri 7:00 AM - 6:00 PM ET). For urgent help, please schedule an appointment."
         convs = get_sms_conversations()
         conv = next((c for c in convs if c["id"] == conversation_id), None)
         now = dt_mod.datetime.utcnow()
@@ -42,16 +133,20 @@ def trigger_human_handoff(conversation_id: int, customer_phone: str, message_bod
             "message": "Human handoff is only available during business hours (Monday - Friday, 7:00 AM - 6:00 PM ET)."
         }
 
-    template_str = config.get(
-        "auto_responder_template",
-        "Thank you! Our team has received your message. For urgent help, call {support_number}."
-    )
-    auto_responder_text = template_str.format(support_number=support_number)
-    debounce_sec = config.get("auto_responder_debounce_seconds", 60)
+    template_str = config.get("auto_responder_template")
 
-    # Fetch conversation
+    # Fetch conversation to inspect debounce and resolve customer name
     convs = get_sms_conversations()
     conv = next((c for c in convs if c["id"] == conversation_id), None)
+
+    customer_name = _resolve_customer_name(conversation_id, customer_phone, conv)
+    auto_responder_text = render_auto_responder_template(
+        template_str,
+        support_number=support_number,
+        customer_name=customer_name
+    )
+
+    debounce_sec = config.get("auto_responder_debounce_seconds", 60)
 
     # Check 60-second debounce
     now = dt_mod.datetime.utcnow()
