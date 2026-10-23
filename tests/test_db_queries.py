@@ -225,9 +225,9 @@ def test_fuzzy_service_catalog_matching(mock_db):
 
 def test_book_appointment_vehicle_resolution_and_no_overwrite(mock_db):
     """Verify that book_appointment uses the vehicle details and doesn't overwrite an already booked request."""
-    # Find two future unbooked slots
+    # Find two future unbooked slots (use 90 mins so Brake repair fits within business hours)
     from serviceBot.db.queries import _generate_dynamic_slots
-    slots = _generate_dynamic_slots(None, 60)
+    slots = _generate_dynamic_slots(None, 90)
     assert len(slots) >= 2, "Need at least 2 dynamic slots"
 
     with get_db_connection() as conn:
