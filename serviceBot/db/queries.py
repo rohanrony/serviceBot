@@ -3843,8 +3843,8 @@ def add_sms_message(conversation_id: int, direction: str, sender_type: str, send
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             cursor.execute(
-                "INSERT INTO sms_conversations (id, customer_phone, state) VALUES (%s, 'Unknown', 'AUTOMATED') ON CONFLICT (id) DO NOTHING;",
-                (conversation_id,)
+                "INSERT INTO sms_conversations (id, customer_phone, state) VALUES (%s, %s, 'AUTOMATED') ON CONFLICT (id) DO NOTHING;",
+                (conversation_id, f"Unknown-{conversation_id}")
             )
             cursor.execute(
                 """
