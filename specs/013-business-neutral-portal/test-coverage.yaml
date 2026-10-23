@@ -186,6 +186,8 @@ acceptance:
     tests:
       - "tests/test_portal_booking_slots.py::test_available_slots_timezone_formatting"
       - "e2e/test_business_neutral_portal.py::test_service_request_date_first_slot_selection"
+      - "e2e/test_business_neutral_portal.py::test_clearing_selected_slot_does_not_submit_cached_time"
+      - "e2e/test_business_neutral_portal.py::test_clearing_replacement_slot_preserves_original_schedule_for_existing_appointment"
     layer: [http, browser]
     live_acceptance:
       status: not_required
@@ -287,6 +289,8 @@ acceptance:
       - "tests/test_staff_agent_validation.py::test_create_staff_requires_nonblank_email_and_phone"
       - "tests/test_staff_agent_validation.py::test_update_staff_rejects_clearing_email_or_phone"
       - "tests/test_staff_agent_validation.py::test_update_staff_allows_unrelated_edit_on_legacy_incomplete_record"
+      - "tests/test_staff_agent_validation.py::test_malformed_staff_email_is_rejected_on_create_and_update"
+      - "tests/test_staff_agent_validation.py::test_staff_email_trims_whitespace_and_stores_cleanly"
       - "e2e/test_business_neutral_portal.py::test_staff_add_form_validation"
     layer: [unit, http, browser]
     live_acceptance:
@@ -330,8 +334,9 @@ review:
   sufficiency: "Covers all requested review findings and functional acceptance criteria across unit, database, HTTP, and browser E2E layers."
   offline:
     status: verified
-    reason: "All 70 focused unit/integration tests and 22 browser E2E tests across new and existing suites pass cleanly."
+    reason: "All 76 focused unit/integration tests, 24 browser E2E tests, and the complete verification suite (2,452 unit + 698 E2E) pass cleanly."
     evidence:
-      - "pytest tests/test_portal_config.py tests/test_business_profile.py tests/test_portal_booking_slots.py tests/test_staff_agent_validation.py tests/test_sms_acknowledgment.py tests/test_handoff_regressions.py: 70 passed"
-      - "pytest e2e/test_business_neutral_portal.py: 15 passed"
+      - "pytest tests/test_portal_config.py tests/test_business_profile.py tests/test_portal_booking_slots.py tests/test_staff_agent_validation.py tests/test_sms_acknowledgment.py tests/test_handoff_regressions.py: 76 passed"
+      - "pytest e2e/test_business_neutral_portal.py: 17 passed"
       - "pytest e2e/test_business_profile.py: 7 passed"
+      - "./run_tests.sh --verify: 2,452 unit/integration passed (exit 0), 698 E2E passed (exit 0)"
