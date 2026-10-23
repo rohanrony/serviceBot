@@ -13,6 +13,7 @@ from starlette.concurrency import run_in_threadpool
 
 from serviceBot.services.calendar_availability import CalendarAvailabilityService, CalendarConflictError, CalendarError
 from serviceBot.logger import get_logger
+from email_validator import validate_email, EmailNotValidError
 
 logger = get_logger("api.portal")
 
@@ -1005,17 +1006,15 @@ async def get_staff_agent(agent_id: int):
                 "whatsapp_connected": is_agent_whatsapp_connected(row["phone_number"])
             }
 
-STAFF_EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+$")
-
-
 def validate_staff_email(email: Optional[str], *, required: bool = True) -> Optional[str]:
     """
-    Validates staff email addresses consistently for creation and updates.
+    Validates staff email addresses consistently for creation and updates using email-validator.
     - Trims surrounding whitespace before validation.
     - Requires a valid, nonblank email during creation (required=True).
     - If required=False and email is None, returns None (allowing unrelated edits to legacy profiles).
     - If email is empty/blank, raises 400 ('Email cannot be cleared' if not required, else 'A valid, nonblank email is required').
-    - Rejects malformed addresses such as jane@@example.com, @example.com, 'jane@example.com other'.
+    - Rejects malformed addresses offline (check_deliverability=False), ensuring valid syntax (e.g. o'connor@example.com)
+      while rejecting invalid domains (e.g. staff@-example.com, staff@example-.com).
     """
     if email is None:
         if required:
@@ -1028,23 +1027,12 @@ def validate_staff_email(email: Optional[str], *, required: bool = True) -> Opti
             raise HTTPException(status_code=400, detail="A valid, nonblank email is required")
         raise HTTPException(status_code=400, detail="Email cannot be cleared")
 
-    local_part, sep, domain_part = clean_email.partition("@")
-    if not sep or not local_part or not domain_part:
+    try:
+        info = validate_email(clean_email, check_deliverability=False, test_environment=True)
+        return info.normalized
+    except EmailNotValidError:
         detail = "A valid, nonblank email is required" if required else "A valid email address is required"
         raise HTTPException(status_code=400, detail=detail)
-
-    if (
-        ".." in clean_email
-        or local_part.startswith(".")
-        or local_part.endswith(".")
-        or domain_part.startswith(".")
-        or domain_part.endswith(".")
-        or not STAFF_EMAIL_REGEX.match(clean_email)
-    ):
-        detail = "A valid, nonblank email is required" if required else "A valid email address is required"
-        raise HTTPException(status_code=400, detail=detail)
-
-    return clean_email
 
 
 @router.put("/agents/{agent_id}")

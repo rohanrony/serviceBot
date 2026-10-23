@@ -176,3 +176,35 @@ def test_staff_email_trims_whitespace_and_stores_cleanly():
         cursor.execute("SELECT email FROM staff_agents WHERE id = %s;", (agent_id,))
         row = cursor.fetchone()
         assert row["email"] == "updated.whitespace@example.com", "Surrounding whitespace must be trimmed on update"
+
+
+@pytest.mark.parametrize('operation', ['create', 'update'])
+@pytest.mark.parametrize('email,valid', [
+    ("o'connor@example.com", True),
+    ('staff@-example.com', False),
+    ('staff@example-.com', False),
+])
+def test_staff_email_syntax_boundary(operation, email, valid):
+    """P2 Review: Verify accepted values persist correctly and rejected updates leave data unchanged."""
+    initial = {'name': f'Email Boundary Review {operation} {email}', 'email': 'original@example.com', 'phone_number': '+15550100077', 'role': 'Advisor'}
+    if operation == 'create':
+        response = client.post('/api/v1/portal/agents', json={**initial, 'email': email})
+        with get_db_connection() as conn, dict_cursor(conn) as cursor:
+            cursor.execute('SELECT name, email FROM staff_agents WHERE name = %s;', (initial['name'],))
+            rows = cursor.fetchall()
+    else:
+        created = client.post('/api/v1/portal/agents', json=initial)
+        assert created.status_code == 201, created.text
+        agent_id = created.json()['id']
+        response = client.put(f'/api/v1/portal/agents/{agent_id}', json={'name': f"{initial['name']} Changed", 'email': email})
+        with get_db_connection() as conn, dict_cursor(conn) as cursor:
+            cursor.execute('SELECT name, email FROM staff_agents WHERE id = %s;', (agent_id,))
+            rows = cursor.fetchall()
+
+    if valid:
+        assert response.status_code == (201 if operation == 'create' else 200), response.text
+        assert rows[0]['email'] == email
+    else:
+        assert response.status_code in (400, 422), response.text
+        assert rows == ([] if operation == 'create' else [{'name': initial['name'], 'email': initial['email']}])
+
