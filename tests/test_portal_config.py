@@ -173,3 +173,169 @@ def test_provider_http_500_reported_as_failed_sync(tmp_path, monkeypatch):
     assert data["saved"] is True
     assert data["provider_sync"]["status"] == "failed"
     assert "500" in data["provider_sync"]["message"]
+
+
+def test_sync_prompt_to_elevenlabs_multi_agent_resilience(tmp_path, monkeypatch):
+    """Review Finding 4: Attempt synchronization for every configured voice agent."""
+    import asyncio
+    import httpx
+    from serviceBot.api.portal import sync_prompt_to_elevenlabs, load_config
+
+    monkeypatch.setattr(portal, "CONFIG_PATH", str(tmp_path / "config.json"))
+    monkeypatch.setattr(portal, "SYSTEM_PROMPT_PATH", str(tmp_path / "prompt.txt"))
+    portal.save_config({"business_name": "MultiAgent Co"})
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "test-api-key")
+    monkeypatch.setenv("ELEVENLABS_AGENT_ID", "dev-agent-id")
+    monkeypatch.setenv("ELEVENLABS_PRODUCTION_AGENT_ID", "prod-agent-id")
+
+    called_targets = []
+
+    # Case 1: First-target 404, second-target 200 -> mixed failure, both attempted
+    async def mock_patch_404_then_200(self, url, *args, **kwargs):
+        target = url.split("/")[-1]
+        called_targets.append(target)
+        if target == "dev-agent-id":
+            return httpx.Response(status_code=404, text="Agent not found")
+        return httpx.Response(status_code=200, json={"status": "ok"})
+
+    monkeypatch.setattr(httpx.AsyncClient, "patch", mock_patch_404_then_200)
+
+    called_targets.clear()
+    res = asyncio.run(sync_prompt_to_elevenlabs("System prompt instructions"))
+    assert called_targets == ["dev-agent-id", "prod-agent-id"], "Both agents must be attempted even if the first returns 404"
+    assert res["status"] == "failed"
+    assert "agents" in res
+    assert res["agents"]["dev-agent-id"]["status"] == "failed"
+    assert res["agents"]["dev-agent-id"]["status_code"] == 404
+    assert res["agents"]["prod-agent-id"]["status"] == "synced"
+    assert res["agents"]["prod-agent-id"]["status_code"] == 200
+
+    # Case 2: First-target timeout, second-target 200 -> transport exception handled, both attempted
+    async def mock_patch_timeout_then_200(self, url, *args, **kwargs):
+        target = url.split("/")[-1]
+        called_targets.append(target)
+        if target == "dev-agent-id":
+            raise httpx.TimeoutException("Read timed out")
+        return httpx.Response(status_code=200, json={"status": "ok"})
+
+    monkeypatch.setattr(httpx.AsyncClient, "patch", mock_patch_timeout_then_200)
+
+    called_targets.clear()
+    res = asyncio.run(sync_prompt_to_elevenlabs("System prompt instructions"))
+    assert called_targets == ["dev-agent-id", "prod-agent-id"], "Both agents must be attempted even if the first times out"
+    assert res["status"] == "failed"
+    assert res["agents"]["dev-agent-id"]["status"] == "failed"
+    assert "timed out" in res["agents"]["dev-agent-id"]["error"].lower()
+    assert res["agents"]["prod-agent-id"]["status"] == "synced"
+
+    # Case 3: All-success -> overall status synced
+    async def mock_patch_all_200(self, url, *args, **kwargs):
+        target = url.split("/")[-1]
+        called_targets.append(target)
+        return httpx.Response(status_code=200, json={"status": "ok"})
+
+    monkeypatch.setattr(httpx.AsyncClient, "patch", mock_patch_all_200)
+
+    called_targets.clear()
+    res = asyncio.run(sync_prompt_to_elevenlabs("System prompt instructions"))
+    assert called_targets == ["dev-agent-id", "prod-agent-id"]
+    assert res["status"] == "synced"
+    assert res["agents"]["dev-agent-id"]["status"] == "synced"
+    assert res["agents"]["prod-agent-id"]["status"] == "synced"
+
+    # Case 4: Duplicate target IDs are deduplicated
+    monkeypatch.setenv("ELEVENLABS_PRODUCTION_AGENT_ID", "dev-agent-id")
+    called_targets.clear()
+    res = asyncio.run(sync_prompt_to_elevenlabs("System prompt instructions"))
+    assert called_targets == ["dev-agent-id"], "Duplicate target IDs must be deduplicated"
+    assert res["status"] == "synced"
+
+    # Case 5: Single configured target
+    monkeypatch.delenv("ELEVENLABS_PRODUCTION_AGENT_ID", raising=False)
+    monkeypatch.setenv("ELEVENLABS_AGENT_ID", "single-agent-id")
+    called_targets.clear()
+    res = asyncio.run(sync_prompt_to_elevenlabs("System prompt instructions"))
+    assert called_targets == ["single-agent-id"]
+    assert res["status"] == "synced"
+
+    # Case 6: Missing credentials/targets report unavailable
+    monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
+    called_targets.clear()
+    res = asyncio.run(sync_prompt_to_elevenlabs("System prompt instructions"))
+    assert res["status"] == "unavailable"
+    assert len(called_targets) == 0
+
+
+def test_helpline_consistency_across_stores_and_logic(tmp_path, monkeypatch):
+    """Review Finding 2: Keep the helpline consistent across configuration and PostgreSQL."""
+    from serviceBot.db.queries import get_sms_config, update_sms_config
+    from serviceBot.services.sms_classifier import get_unrecognized_message_acknowledgment
+    from serviceBot.services.handoff_service import trigger_human_handoff
+
+    monkeypatch.setattr(portal, "CONFIG_PATH", str(tmp_path / "config.json"))
+    monkeypatch.setattr(portal, "SYSTEM_PROMPT_PATH", str(tmp_path / "prompt.txt"))
+    sync = AsyncMock()
+    monkeypatch.setattr(portal, "sync_prompt_to_elevenlabs", sync)
+
+    # 1. Initialize helpline via Business Settings (/api/v1/portal/config)
+    res = client.post("/api/v1/portal/config", json={"support_phone_number": "+18005550100"})
+    assert res.status_code == 200
+    assert portal.load_config().get("support_phone_number") == "+18005550100"
+    assert get_sms_config().get("support_phone_number") == "+18005550100"
+
+    # 2. Omitted helpline in legacy SMS update preserves both stores
+    res = client.put("/api/v1/portal/sms/config", json={"admin_phone_number": "+15550001111"})
+    assert res.status_code == 200
+    assert portal.load_config().get("support_phone_number") == "+18005550100"
+    assert get_sms_config().get("support_phone_number") == "+18005550100"
+
+    # 3. Null helpline in legacy SMS update preserves both stores
+    res = client.put("/api/v1/portal/sms/config", json={"support_phone_number": None})
+    assert res.status_code == 200
+    assert portal.load_config().get("support_phone_number") == "+18005550100"
+    assert get_sms_config().get("support_phone_number") == "+18005550100"
+
+    # 4. Empty string helpline in legacy SMS update preserves both stores
+    res = client.put("/api/v1/portal/sms/config", json={"support_phone_number": ""})
+    assert res.status_code == 200
+    assert portal.load_config().get("support_phone_number") == "+18005550100"
+    assert get_sms_config().get("support_phone_number") == "+18005550100"
+
+    # 5. Whitespace-only helpline in legacy SMS update preserves both stores
+    res = client.put("/api/v1/portal/sms/config", json={"support_phone_number": "   \t\n  "})
+    assert res.status_code == 200
+    assert portal.load_config().get("support_phone_number") == "+18005550100"
+    assert get_sms_config().get("support_phone_number") == "+18005550100"
+
+    # 6. Valid replacement in legacy SMS update updates BOTH stores
+    res = client.put("/api/v1/portal/sms/config", json={"support_phone_number": " +18005550222 "})
+    assert res.status_code == 200
+    assert portal.load_config().get("support_phone_number") == "+18005550222"
+    assert get_sms_config().get("support_phone_number") == "+18005550222"
+
+    # 7. Explicit clearing through Business Settings clears BOTH stores
+    res = client.post("/api/v1/portal/config", json={"support_phone_number": ""})
+    assert res.status_code == 200
+    assert portal.load_config().get("support_phone_number") == ""
+    assert (get_sms_config().get("support_phone_number") or "") == ""
+
+    # 8. Fresh reads from both endpoints do not resurrect old number or invent placeholder
+    cfg_read = client.get("/api/v1/portal/config").json()
+    assert cfg_read["support_phone_number"] == ""
+
+    sms_read = client.get("/api/v1/portal/sms/config").json()
+    assert sms_read["support_phone_number"] == ""
+
+    # 9. Acknowledgment logic does not invent placeholder number
+    ack = get_unrecognized_message_acknowledgment()
+    assert ack == "Message received."
+    assert "1800" not in ack
+    assert "please call" not in ack.lower()
+
+    # 10. Handoff logic does not invent placeholder number +18005550199
+    from unittest.mock import patch
+    with patch("serviceBot.services.handoff_service.is_within_business_hours", return_value=False), \
+         patch("serviceBot.services.handoff_service.get_customer_opt_in", return_value=False):
+        handoff_res = trigger_human_handoff(1, "+15550009999", "Need help")
+        assert "+18005550199" not in str(handoff_res)
+

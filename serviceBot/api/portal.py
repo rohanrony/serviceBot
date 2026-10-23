@@ -422,27 +422,27 @@ def sync_services_to_kb():
                 os.unlink(temporary_path)
 
 async def sync_prompt_to_elevenlabs(prompt_text: str, first_message: str = None):
-    api_key = os.getenv("ELEVENLABS_API_KEY", "")
-    agent_id = os.getenv("ELEVENLABS_AGENT_ID", "")
+    api_key = os.getenv("ELEVENLABS_API_KEY", "").strip()
+    agent_id = os.getenv("ELEVENLABS_AGENT_ID", "").strip()
+    prod_agent_id = os.getenv("ELEVENLABS_PRODUCTION_AGENT_ID", "").strip()
 
-    if not api_key or not agent_id:
+    target_agents = []
+    for aid in (agent_id, prod_agent_id):
+        if aid and aid not in target_agents:
+            target_agents.append(aid)
+
+    if not api_key or not target_agents:
         return {"status": "unavailable", "message": "Voice provider credentials not configured."}
 
     log_file = os.path.join(os.path.dirname(CONFIG_PATH), "elevenlabs_sync.log")
-    
     try:
         with open(log_file, "a") as lf:
             lf.write(f"\n--- Sync Attempt ---\n")
-            lf.write(f"Agent ID: {agent_id}\n")
+            lf.write(f"Target Agents: {target_agents}\n")
             lf.write(f"API Key configured: {bool(api_key)}\n")
     except Exception:
         pass
-        
-    target_agents = [agent_id]
-    prod_agent_id = os.getenv("ELEVENLABS_PRODUCTION_AGENT_ID")
-    if prod_agent_id and prod_agent_id not in target_agents:
-        target_agents.append(prod_agent_id)
-        
+
     headers = {"xi-api-key": api_key}
     el_payload = {
         "name": f"{load_config().get('business_name') or 'Business'} Service Agent",
@@ -456,26 +456,62 @@ async def sync_prompt_to_elevenlabs(prompt_text: str, first_message: str = None)
     }
     if first_message:
         el_payload["conversation_config"]["agent"]["first_message"] = first_message
-    
+
+    agent_results = {}
     async with httpx.AsyncClient() as client:
         for target_id in target_agents:
-            response = await client.patch(
-                f"https://api.elevenlabs.io/v1/convai/agents/{target_id}",
-                json=el_payload,
-                headers=headers
-            )
             try:
-                with open(log_file, "a") as lf:
-                    lf.write(f"Target: {target_id} - Status Code: {response.status_code}\n")
-                    lf.write(f"Response: {response.text}\n")
-            except Exception:
-                pass
-            if response.status_code != 200:
-                err_msg = f"ElevenLabs prompt sync for {target_id} returned status code {response.status_code}: {response.text}"
+                response = await client.patch(
+                    f"https://api.elevenlabs.io/v1/convai/agents/{target_id}",
+                    json=el_payload,
+                    headers=headers
+                )
+                try:
+                    with open(log_file, "a") as lf:
+                        lf.write(f"Target: {target_id} - Status Code: {response.status_code}\n")
+                        lf.write(f"Response: {response.text}\n")
+                except Exception:
+                    pass
+                if response.status_code == 200:
+                    agent_results[target_id] = {
+                        "status": "synced",
+                        "status_code": 200,
+                        "message": "Voice provider instructions synchronized successfully.",
+                    }
+                else:
+                    err_msg = f"ElevenLabs prompt sync for {target_id} returned status code {response.status_code}: {response.text}"
+                    logger.warning(err_msg)
+                    agent_results[target_id] = {
+                        "status": "failed",
+                        "status_code": response.status_code,
+                        "message": err_msg,
+                        "error": response.text,
+                    }
+            except Exception as exc:
+                err_msg = f"ElevenLabs prompt sync for {target_id} failed: {exc}"
                 logger.warning(err_msg)
-                raise RuntimeError(err_msg)
+                agent_results[target_id] = {
+                    "status": "failed",
+                    "status_code": None,
+                    "message": err_msg,
+                    "error": str(exc),
+                }
 
-    return {"status": "synced", "message": "Voice provider instructions synchronized successfully."}
+    all_succeeded = all(res.get("status") == "synced" for res in agent_results.values())
+    if all_succeeded:
+        return {
+            "status": "synced",
+            "message": "Voice provider instructions synchronized successfully.",
+            "agents": agent_results,
+        }
+    else:
+        failed_agents = [aid for aid, res in agent_results.items() if res.get("status") != "synced"]
+        failed_msgs = "; ".join(agent_results[aid]["message"] for aid in failed_agents)
+        return {
+            "status": "failed",
+            "message": f"Voice provider synchronization failed for agent(s) ({', '.join(failed_agents)}): {failed_msgs}",
+            "agents": agent_results,
+        }
 
 from serviceBot.services.business_profile import (
     BusinessProfile, build_business_prompt, get_business_profile, normalize_portal_base_url, validate_intake_data,
@@ -523,7 +559,7 @@ class ConfigUpdatePayload(BaseModel):
 @router.get("/config")
 async def get_config():
     cfg = load_config()
-    if not cfg.get("support_phone_number"):
+    if "support_phone_number" not in cfg:
         try:
             from serviceBot.db.queries import get_sms_config
             sms_c = get_sms_config()
@@ -2544,7 +2580,10 @@ async def get_sms_config_endpoint():
     res["business_address"] = cfg.get("business_address", "123 Main St, Springfield, NC 27513")
     res["google_maps_url"] = cfg.get("google_maps_url", "")
     res["business_timezone"] = cfg.get("business_timezone", "America/New_York")
-    res["support_phone_number"] = cfg.get("support_phone_number") or res.get("support_phone_number") or ""
+    if "support_phone_number" in cfg:
+        res["support_phone_number"] = cfg["support_phone_number"]
+    else:
+        res["support_phone_number"] = res.get("support_phone_number") or ""
     return res
 
 
@@ -2555,9 +2594,9 @@ async def update_sms_config_endpoint(payload: SMSConfigPayload):
 
     # Sync address / business settings into config.json
     loc_updates = {}
-    for loc_key in ("business_name", "business_address", "google_maps_url", "business_timezone", "support_phone_number"):
+    for loc_key in ("business_name", "business_address", "google_maps_url", "business_timezone"):
         if loc_key in data:
-            val = data[loc_key] if loc_key == "support_phone_number" else data.pop(loc_key)
+            val = data.pop(loc_key)
             if val is not None and str(val).strip() != "":
                 if loc_key == "business_timezone":
                     from serviceBot.services.timezone_service import validate_timezone
@@ -2565,6 +2604,17 @@ async def update_sms_config_endpoint(payload: SMSConfigPayload):
                         raise HTTPException(status_code=400, detail=f"Invalid IANA timezone identifier: {val}")
                     val = str(val).strip()
                 loc_updates[loc_key] = val
+
+    if "support_phone_number" in data:
+        sup_val = data["support_phone_number"]
+        if sup_val is None or str(sup_val).strip() == "":
+            # Treat null, empty, and whitespace-only helpline values as omitted: preserve both stores
+            data.pop("support_phone_number", None)
+        else:
+            clean_sup = str(sup_val).strip()
+            loc_updates["support_phone_number"] = clean_sup
+            data["support_phone_number"] = clean_sup
+
     if loc_updates:
         cfg = load_config()
         cfg.update(loc_updates)
@@ -2576,7 +2626,10 @@ async def update_sms_config_endpoint(payload: SMSConfigPayload):
     db_res["business_address"] = cfg_now.get("business_address", "123 Main St, Springfield, NC 27513")
     db_res["google_maps_url"] = cfg_now.get("google_maps_url", "")
     db_res["business_timezone"] = cfg_now.get("business_timezone", "America/New_York")
-    db_res["support_phone_number"] = cfg_now.get("support_phone_number") or db_res.get("support_phone_number") or ""
+    if "support_phone_number" in cfg_now:
+        db_res["support_phone_number"] = cfg_now["support_phone_number"]
+    else:
+        db_res["support_phone_number"] = db_res.get("support_phone_number") or ""
     return db_res
 
 
