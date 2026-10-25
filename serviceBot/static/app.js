@@ -4995,10 +4995,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function currentBookingMetadata() {
     const bookingType = srBookingTypeSelect?.value || srForm?.dataset.bookingType || 'appointment';
+    const isEdit = !!document.getElementById('sr-form-id')?.value;
     return {
       bookingType,
       durationMinutes: bookingType === 'callback' ? 15 : (parseInt(srDurationSelect?.value || srForm?.dataset.durationMinutes) || 60),
-      staffAgentId: document.getElementById('sr-agent-select')?.value ?? srForm?.dataset.staffAgentId ?? ''
+      staffAgentId: isEdit ? (srForm?.dataset.staffAgentId || '') : (document.getElementById('sr-agent-select')?.value || '')
     };
   }
 
@@ -5316,6 +5317,19 @@ document.addEventListener('DOMContentLoaded', () => {
     if (saveButton) saveButton.disabled = serviceRemovalNeedsReload.has(req.id);
     document.getElementById('sr-modal-title').textContent = 'Edit Service Request';
     document.getElementById('sr-form-id').value = req.id;
+    // Editing preserves the saved assignment; reassignment has its own validated flow.
+    const agentSelect = document.getElementById('sr-agent-select');
+    if (agentSelect) {
+      agentSelect.value = '';
+      agentSelect.disabled = true;
+    }
+    const agentSelectContainer = document.getElementById('sr-agent-select-container');
+    if (agentSelectContainer) agentSelectContainer.style.display = 'none';
+    const autoAssignText = document.getElementById('sr-auto-assign-text');
+    if (autoAssignText) {
+      autoAssignText.style.display = 'block';
+      autoAssignText.textContent = 'The assigned staff agent is preserved when rescheduling.';
+    }
     if (srForm) {
       srForm.dataset.bookingType = req.booking_type || 'appointment';
       srForm.dataset.durationMinutes = String(req.duration_minutes || (req.booking_type === 'callback' ? 15 : 60));
@@ -5438,6 +5452,7 @@ document.addEventListener('DOMContentLoaded', () => {
     btnNewRequest.addEventListener('click', async () => {
       invalidateStaffSlotLookup();
       serviceRequestModalVersion += 1;
+      const modalVersion = serviceRequestModalVersion;
       document.getElementById('sr-service-removal')?.remove();
       const saveButton = document.getElementById('sr-save-btn');
       if (saveButton) saveButton.disabled = false;
@@ -5471,8 +5486,14 @@ document.addEventListener('DOMContentLoaded', () => {
       const autoAssignText = document.getElementById('sr-auto-assign-text');
       const agentSelect = document.getElementById('sr-agent-select');
       if (agentSelectContainer) agentSelectContainer.style.display = 'none';
-      if (autoAssignText) autoAssignText.style.display = 'block';
-      if (agentSelect) agentSelect.value = '';
+      if (autoAssignText) {
+        autoAssignText.style.display = 'block';
+        autoAssignText.textContent = 'Staff agent will be automatically assigned based on calendar availability.';
+      }
+      if (agentSelect) {
+        agentSelect.replaceChildren(new Option('Loading staff agents...', ''));
+        agentSelect.disabled = true;
+      }
 
       try {
         const [profileResponse, servicesResponse] = await Promise.all([fetch('/api/v1/portal/config'), fetch('/api/v1/portal/services')]);
@@ -5502,10 +5523,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const configRes = await fetch('/api/v1/portal/gmail-config');
         if (configRes.ok) {
           const config = await configRes.json();
+          if (modalVersion !== serviceRequestModalVersion) return;
           if (config.enable_agent_selection) {
             if (agentSelectContainer) agentSelectContainer.style.display = 'block';
             if (autoAssignText) autoAssignText.style.display = 'none';
-            await populateAgentsDropdown('sr-agent-select');
+            await populateAgentsDropdown('sr-agent-select', null, modalVersion);
           }
         }
       } catch (e) {
@@ -5514,7 +5536,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  async function populateAgentsDropdown(selectId, selectedAgentId) {
+  async function populateAgentsDropdown(selectId, selectedAgentId, modalVersion) {
     const selectEl = document.getElementById(selectId);
     if (!selectEl) return;
     
@@ -5522,7 +5544,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const res = await fetch('/api/v1/portal/agents');
       if (res.ok) {
         const agents = await res.json();
-        selectEl.innerHTML = '<option value="">Select an Agent...</option>';
+        if (modalVersion !== serviceRequestModalVersion) return;
+        selectEl.innerHTML = '<option value="">Automatically assign an available agent</option>';
         agents.forEach(a => {
           const opt = document.createElement('option');
           opt.value = a.id;
@@ -5530,6 +5553,7 @@ document.addEventListener('DOMContentLoaded', () => {
           if (selectedAgentId && a.id == selectedAgentId) opt.selected = true;
           selectEl.appendChild(opt);
         });
+        selectEl.disabled = false;
       }
     } catch (e) {
       console.error('Failed to load agents', e);
