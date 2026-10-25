@@ -2342,7 +2342,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (resData.provider_sync && resData.provider_sync.status === 'synced') {
           showToast('Agent prompts updated and voice provider synchronized.');
         } else {
-          showToast('Agent prompts and intake fields updated successfully!');
+          showToast('Agent prompts saved locally (provider sync unverified).', 'warning');
         }
       } catch (err) {
         console.error(err);
@@ -3244,7 +3244,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 showToast('Business hours updated and voice provider synchronized.');
               } else {
                 if (staffNotice) staffNotice.style.display = 'none';
-                showToast('Business hours and operating workdays updated successfully!');
+                showToast('Business hours and operating workdays saved locally (provider sync unverified).', 'warning');
               }
             } catch (err) {
               console.error(err);
@@ -3852,7 +3852,40 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         if (!res.ok) throw new Error('Failed to update escalation settings');
-        showToast('Escalation SLAs and timing settings saved successfully!');
+        const resData = await res.json();
+
+        const syncNotice = document.getElementById('escalation-sync-notice');
+        if (resData.provider_sync && resData.provider_sync.status === 'failed') {
+          if (syncNotice) {
+            syncNotice.style.display = 'block';
+            syncNotice.style.background = 'rgba(239, 68, 68, 0.15)';
+            syncNotice.style.color = '#ef4444';
+            syncNotice.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+            syncNotice.textContent = `Timing settings saved locally, but voice provider sync failed: ${resData.provider_sync.message || 'Unknown error'}`;
+          }
+          showToast('Timing settings saved locally. Voice provider sync failed.', 'warning');
+        } else if (resData.provider_sync && resData.provider_sync.status === 'unavailable') {
+          if (syncNotice) {
+            syncNotice.style.display = 'block';
+            syncNotice.style.background = 'rgba(245, 158, 11, 0.15)';
+            syncNotice.style.color = '#f59e0b';
+            syncNotice.style.border = '1px solid rgba(245, 158, 11, 0.3)';
+            syncNotice.textContent = `Timing settings saved locally, but voice provider sync is unavailable: ${resData.provider_sync.message || 'Credentials not configured.'}`;
+          }
+          showToast('Timing settings saved locally. Voice provider sync unavailable.', 'warning');
+        } else if (resData.provider_sync && resData.provider_sync.status === 'synced') {
+          if (syncNotice) {
+            syncNotice.style.display = 'block';
+            syncNotice.style.background = 'rgba(34, 197, 94, 0.15)';
+            syncNotice.style.color = '#22c55e';
+            syncNotice.style.border = '1px solid rgba(34, 197, 94, 0.3)';
+            syncNotice.textContent = 'Timing settings saved and voice provider synchronized successfully.';
+          }
+          showToast('Escalation SLAs and timing settings saved and voice provider synchronized!');
+        } else {
+          if (syncNotice) syncNotice.style.display = 'none';
+          showToast('Escalation SLAs and timing settings saved successfully (provider sync unverified).', 'warning');
+        }
       } catch (err) {
         console.error('Error saving escalation settings:', err);
         showToast('Error saving escalation settings: ' + err.message, 'error');

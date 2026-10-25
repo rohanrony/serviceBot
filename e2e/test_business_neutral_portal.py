@@ -446,3 +446,33 @@ def test_clearing_replacement_slot_preserves_original_schedule_for_existing_appo
     reservations = db('SELECT starts_at FROM appointment_reservations WHERE service_request_id = %s AND status = %s', (req_id, 'ACTIVE'))
     assert len(reservations) > 0, 'Original reservation must remain active'
 
+
+
+def test_timing_and_hours_sync_notices_displayed_on_provider_sync_failure(page, live_server):
+    """Req 10: Report saved settings separately from voice-provider synchronization status in hours and timing forms."""
+    # 1. Staff hours form
+    page.goto(f"{live_server}/portal/#config/staff")
+    expect(page.locator("#staff-view")).to_be_visible()
+
+    page.route("**/api/v1/portal/config", lambda route: (
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body='{"success": true, "saved": true, "provider_sync": {"status": "failed", "message": "ElevenLabs API down"}}'
+        ) if route.request.method == "POST" else route.continue_()
+    ))
+
+    page.locator("#staff-bhours-form button[type=submit]").click()
+    staff_notice = page.locator("#staff-bhours-sync-notice")
+    expect(staff_notice).to_be_visible()
+    expect(staff_notice).to_contain_text("ElevenLabs API down")
+    expect(staff_notice).not_to_contain_text("synchronized successfully")
+
+    # 2. Timing / Escalation settings form
+    page.goto(f"{live_server}/portal/#config/sms-config")
+    expect(page.locator("#sms-config-view")).to_be_visible()
+
+    page.locator("#escalation-config-form button[type=submit]").click()
+    esc_notice = page.locator("#escalation-sync-notice")
+    expect(esc_notice).to_be_visible()
+    expect(esc_notice).to_contain_text("ElevenLabs API down")

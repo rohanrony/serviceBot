@@ -45,10 +45,18 @@ acceptance:
       - "tests/test_prompt_and_catalogue_sync.py::test_business_hours_and_timezone_update_all_prompt_sections"
       - "tests/test_prompt_and_catalogue_sync.py::test_business_hours_update_with_missing_credentials_reports_unavailable"
       - "tests/test_prompt_and_catalogue_sync.py::test_business_hours_update_with_provider_error_reports_failed"
+      - "tests/test_prompt_and_catalogue_sync.py::test_publication_boundary_serializes_updates_and_prevents_stale_remote"
+      - "tests/test_prompt_and_catalogue_sync.py::test_authoritative_config_persistence_and_stale_export_protection"
+      - "tests/test_prompt_and_catalogue_sync.py::test_preserve_ambiguous_custom_instructions_with_warning"
+      - "tests/test_prompt_and_catalogue_sync.py::test_name_only_sms_update_truthfully_reports_pending_identity"
+      - "tests/test_prompt_and_catalogue_sync.py::test_db_publication_locking_lifecycle_and_cleanup"
+      - "tests/test_prompt_and_catalogue_sync.py::test_split_schedule_parsing_and_repeated_saves_regression"
+      - "tests/test_prompt_and_catalogue_sync.py::test_sync_failures_precedence_ordering"
       - "e2e/test_business_neutral_portal.py::test_provider_sync_failure_displays_separate_notice"
       - "e2e/test_business_neutral_portal.py::test_provider_sync_unavailable_displays_warning_notice"
       - "e2e/test_business_neutral_portal.py::test_staff_business_hours_provider_sync_unavailable_displays_notice"
       - "e2e/test_business_neutral_portal.py::test_staff_business_hours_provider_sync_failure_displays_notice"
+      - "e2e/test_business_neutral_portal.py::test_timing_and_hours_sync_notices_displayed_on_provider_sync_failure"
     layer: [unit, http, browser]
     live_acceptance:
       status: pending
@@ -239,6 +247,9 @@ acceptance:
       - "tests/test_prompt_and_catalogue_sync.py::test_stale_rag_chunks_do_not_conflict_with_live_catalogue"
       - "tests/test_prompt_and_catalogue_sync.py::test_catalogue_mutations_do_not_rewrite_prompt_or_call_sync"
       - "tests/test_prompt_and_catalogue_sync.py::test_business_profile_with_regenerate_flag_updates_prompt_and_syncs"
+      - "tests/test_prompt_and_catalogue_sync.py::test_rag_fallback_does_not_return_stale_duration_for_deleted_service"
+      - "tests/test_prompt_and_catalogue_sync.py::test_catalogue_completion_generation_aware"
+      - "tests/test_rag_service.py::test_rag_answer_question_fallback"
     layer: [unit, database, http]
     live_acceptance:
       status: not_required
@@ -358,8 +369,8 @@ review:
   test_changes: "All tests are net-new or non-destructive additions ensuring 0 weakened assertions."
   sufficiency: "Covers all requested review findings and functional acceptance criteria across unit, database, HTTP, and browser E2E layers."
   offline:
-    status: verified
-    reason: "All 82 focused unit/integration tests, 24 browser E2E tests, and the complete verification suite pass cleanly."
+    status: pending
+    reason: "Full exact-candidate publication verification is pending for the prompt/catalogue sync follow-up. The implementer reported 16 focused tests passing on an uncommitted working tree; provider boundaries and locking resources in the relevant tests are synthetic. The retained evidence below describes the earlier baseline, not this candidate."
     evidence:
       - "pytest tests/test_portal_config.py tests/test_business_profile.py tests/test_portal_booking_slots.py tests/test_staff_agent_validation.py tests/test_sms_acknowledgment.py tests/test_handoff_regressions.py: 82 passed"
       - "pytest e2e/test_business_neutral_portal.py: 17 passed"

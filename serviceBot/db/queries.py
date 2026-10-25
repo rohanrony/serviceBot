@@ -1336,6 +1336,8 @@ def get_service_required_fields(service_name: str, *, strict: bool = False) -> d
         return None
         
     rows = []
+    db_failed = False
+    db_error = None
     try:
         query = """
         SELECT name, description, price_range, duration_minutes,
@@ -1351,6 +1353,25 @@ def get_service_required_fields(service_name: str, *, strict: bool = False) -> d
             raise AvailabilityUnknownError() from None
         logger.warning(f"Could not query services table in get_service_required_fields: {e}")
         rows = []
+        db_failed = True
+        db_error = str(e)
+
+    if db_failed:
+        return {
+            "name": service_name,
+            "description": "Service request",
+            "price_range": "Varies by service",
+            "duration_minutes": 60,
+            "req_customer_name": True,
+            "req_phone_number": True,
+            "req_vehicle_details": True,
+            "req_issue_description": True,
+            "req_location": False,
+            "is_fallback": True,
+            "service_found": None,
+            "lookup_status": "unavailable",
+            "db_error": db_error,
+        }
         
     import re
     def clean_str(s: str) -> str:
@@ -1361,7 +1382,11 @@ def get_service_required_fields(service_name: str, *, strict: bool = False) -> d
     # 1. Exact match check for single catalog service
     for s in rows:
         if cleaned_query == clean_str(s["name"]):
-            return s
+            res = dict(s)
+            res["lookup_status"] = "matched"
+            res["service_found"] = True
+            res["is_fallback"] = False
+            return res
 
     # 2. Match whole canonical labels before the legacy fuzzy-name fallback.
     canonical_names = match_catalog_service_names(service_name, [s["name"] for s in rows])
@@ -1405,13 +1430,20 @@ def get_service_required_fields(service_name: str, *, strict: bool = False) -> d
             "req_phone_number": any(bool(s.get("req_phone_number")) for s in matched_services),
             "req_vehicle_details": any(bool(s.get("req_vehicle_details")) for s in matched_services),
             "req_issue_description": any(bool(s.get("req_issue_description")) for s in matched_services),
-            "req_location": any(bool(s.get("req_location")) for s in matched_services)
+            "req_location": any(bool(s.get("req_location")) for s in matched_services),
+            "lookup_status": "matched",
+            "service_found": True,
+            "is_fallback": False,
         }
 
     # 3. Single service fuzzy match fallback
     match = find_best_service_match(service_name, rows)
     if match:
-        return match
+        res = dict(match)
+        res["lookup_status"] = "matched"
+        res["service_found"] = True
+        res["is_fallback"] = False
+        return res
 
     return {
         "name": service_name,
@@ -1424,7 +1456,8 @@ def get_service_required_fields(service_name: str, *, strict: bool = False) -> d
         "req_issue_description": True,
         "req_location": False,
         "is_fallback": True,
-        "service_found": False
+        "service_found": False,
+        "lookup_status": "not_found",
     }
 
 

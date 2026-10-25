@@ -82,6 +82,36 @@ def get_configured_business_days() -> List[int]:
     return [0, 1, 2, 3, 4]
 
 
+def format_hours_intervals(hours: List[int]) -> str:
+    """Formats a list of operating hours into readable interval string (supports split hours)."""
+    if not hours:
+        return "7:00 AM to 6:00 PM"
+    sorted_h = sorted(set(int(h) for h in hours))
+    intervals = []
+    start = sorted_h[0]
+    prev = sorted_h[0]
+    for h in sorted_h[1:]:
+        if h == prev + 1:
+            prev = h
+        else:
+            intervals.append((start, prev + 1))
+            start = h
+            prev = h
+    intervals.append((start, prev + 1))
+
+    parts = []
+    for s, e in intervals:
+        s_dt = datetime.datetime(2000, 1, 1, s, 0)
+        e_dt = datetime.datetime(2000, 1, 1, e, 0)
+        parts.append(f"{s_dt.strftime('%I:%M %p').lstrip('0')} to {e_dt.strftime('%I:%M %p').lstrip('0')}")
+    if len(parts) == 1:
+        return parts[0]
+    elif len(parts) == 2:
+        return f"{parts[0]} and {parts[1]}"
+    else:
+        return ", ".join(parts[:-1]) + f", and {parts[-1]}"
+
+
 def get_business_hours_display() -> tuple[str, str]:
     """
     Returns (schedule_description, closing_time_str) based on portal configuration.
@@ -91,20 +121,19 @@ def get_business_hours_display() -> tuple[str, str]:
     b_days = get_configured_business_days()
     day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
     if b_days:
-        if b_days == list(range(min(b_days), max(b_days) + 1)):
-            days_str = f"{day_names[min(b_days)]} to {day_names[max(b_days)]}"
+        sorted_days = sorted(set(b_days))
+        if sorted_days == list(range(min(sorted_days), max(sorted_days) + 1)):
+            days_str = f"{day_names[min(sorted_days)]} to {day_names[max(sorted_days)]}"
         else:
-            days_str = ", ".join(day_names[d] for d in b_days)
+            days_str = ", ".join(day_names[d] for d in sorted_days)
     else:
         days_str = "Monday to Friday"
 
-    start_h = min(b_hours) if b_hours else 7
+    hours_desc = format_hours_intervals(b_hours)
     end_h = (max(b_hours) + 1) if b_hours else 18
-    s_dt = datetime.datetime(2000, 1, 1, start_h, 0)
     e_dt = datetime.datetime(2000, 1, 1, end_h, 0)
-    s_str = s_dt.strftime("%I:%M %p").lstrip("0")
     e_str = e_dt.strftime("%I:%M %p").lstrip("0")
-    return f"{days_str}, {s_str} to {e_str}", e_str
+    return f"{days_str}, {hours_desc}", e_str
 
 
 def _generate_slot_strings(days: int = DEFAULT_DAYS, hours: List[int] = None) -> List[str]:

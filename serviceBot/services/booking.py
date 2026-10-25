@@ -208,6 +208,7 @@ def validate_bookable_window(starts_at: dt_mod.datetime, duration_minutes: int) 
     from serviceBot.services.calendar_sync import (
         get_configured_business_days,
         get_configured_business_hours,
+        get_business_hours_display,
     )
 
     segments = reservation_segments(starts_at, duration_minutes)
@@ -222,8 +223,9 @@ def validate_bookable_window(starts_at: dt_mod.datetime, duration_minutes: int) 
         raise BookingValidationError("No operating hours are configured for bookings.")
     for segment in segments:
         if segment.weekday() not in business_days or segment.hour not in business_hours:
+            schedule_desc, _ = get_business_hours_display()
             raise BookingValidationError(
-                "Booking time is outside company workhours (Monday to Friday, 7:00 AM to 6:00 PM)."
+                f"Booking time is outside company workhours ({schedule_desc})."
             )
     return segments
 

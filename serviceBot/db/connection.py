@@ -354,6 +354,26 @@ CREATE TABLE IF NOT EXISTS render_logs (
 
 CREATE INDEX IF NOT EXISTS idx_render_logs_timestamp ON render_logs(log_timestamp);
 CREATE INDEX IF NOT EXISTS idx_render_logs_service ON render_logs(service_id);
+
+CREATE TABLE IF NOT EXISTS catalog_sync_state (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    desired_generation BIGINT DEFAULT 0,
+    indexed_generation BIGINT DEFAULT 0,
+    status VARCHAR(50) DEFAULT 'idle',
+    last_synced_at TIMESTAMP WITHOUT TIME ZONE,
+    last_error TEXT,
+    updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS prompt_sync_state (
+    agent_id VARCHAR(255) PRIMARY KEY,
+    desired_generation BIGINT DEFAULT 0,
+    published_generation BIGINT DEFAULT 0,
+    status VARCHAR(50) DEFAULT 'idle',
+    last_synced_at TIMESTAMP WITHOUT TIME ZONE,
+    last_error TEXT,
+    updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
+);
 """
 
 _db_initialized = False
@@ -536,6 +556,33 @@ def init_db(db_url: str = None, force: bool = False):
                 INSERT INTO sms_config (quiet_hours_enabled, quiet_start_time, quiet_end_time, urgent_threshold_hours, support_phone_number, auto_responder_template, auto_responder_debounce_seconds, environment)
                 VALUES (TRUE, '21:00', '08:00', 12, '+18005550199', 'Thank you! Our team has received your message. For urgent help, call {support_number}.', 60, 'PRODUCTION');
             """)
+
+        try:
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS catalog_sync_state (
+                    id INTEGER PRIMARY KEY DEFAULT 1,
+                    desired_generation BIGINT DEFAULT 0,
+                    indexed_generation BIGINT DEFAULT 0,
+                    status VARCHAR(50) DEFAULT 'idle',
+                    last_synced_at TIMESTAMP WITHOUT TIME ZONE,
+                    last_error TEXT,
+                    updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
+                );
+            """)
+            cursor.execute("INSERT INTO catalog_sync_state (id, desired_generation, indexed_generation, status) VALUES (1, 0, 0, 'idle') ON CONFLICT (id) DO NOTHING;")
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS prompt_sync_state (
+                    agent_id VARCHAR(255) PRIMARY KEY,
+                    desired_generation BIGINT DEFAULT 0,
+                    published_generation BIGINT DEFAULT 0,
+                    status VARCHAR(50) DEFAULT 'idle',
+                    last_synced_at TIMESTAMP WITHOUT TIME ZONE,
+                    last_error TEXT,
+                    updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
+                );
+            """)
+        except Exception as exc:
+            logger.debug(f"catalog_sync_state / prompt_sync_state setup: {exc}")
 
         # Ensure channel column exists on sms_matrix_rules
         try:

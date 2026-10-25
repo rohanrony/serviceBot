@@ -3,6 +3,10 @@ import re
 import json
 import time
 import tempfile
+import asyncio
+import threading
+import zlib
+from contextlib import asynccontextmanager
 import httpx
 import datetime as dt_mod
 from datetime import datetime
@@ -369,32 +373,72 @@ Speak the filler naturally as part of the conversation so the caller experiences
             print(f"Error loading {CONFIG_PATH}: {e}")
             data = defaults.copy()
 
-    # Also check system_prompt.txt for overrides
-    if os.path.exists(SYSTEM_PROMPT_PATH):
-        try:
-            with _CONFIG_LOCK, open(SYSTEM_PROMPT_PATH, "r", encoding="utf-8") as f:
-                content = f.read().strip()
-                if content:
-                    data["system_prompt"] = content
-        except Exception as e:
-            print(f"Error loading system_prompt.txt: {e}")
+    # Load authoritative JSON config
+    # Preserve currently effective prompt during migration from system_prompt.txt if prompt_authoritative is not yet set
+    has_authoritative = bool(data.get("prompt_authoritative"))
+    if not has_authoritative:
+        if os.path.exists(SYSTEM_PROMPT_PATH):
+            try:
+                with _CONFIG_LOCK, open(SYSTEM_PROMPT_PATH, "r", encoding="utf-8") as f:
+                    content = f.read().strip()
+                    if content:
+                        data["system_prompt"] = content
+            except Exception as e:
+                print(f"Error loading system_prompt.txt during migration: {e}")
+    else:
+        # Once authoritative, system_prompt.txt is only a legacy fallback if data has no system_prompt
+        if not data.get("system_prompt") and os.path.exists(SYSTEM_PROMPT_PATH):
+            try:
+                with _CONFIG_LOCK, open(SYSTEM_PROMPT_PATH, "r", encoding="utf-8") as f:
+                    content = f.read().strip()
+                    if content:
+                        data["system_prompt"] = content
+            except Exception as e:
+                print(f"Error loading fallback system_prompt.txt: {e}")
 
     data["business_profile"] = get_business_profile(data)
     return data
 
+def _atomic_write_file(filepath: str, content: str):
+    """Atomically writes content to a file via tempfile + os.replace, ensuring durability."""
+    dir_name = os.path.dirname(os.path.abspath(filepath))
+    os.makedirs(dir_name, exist_ok=True)
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=dir_name, prefix=".tmp-atomic-", delete=False) as tf:
+            temp_path = tf.name
+            tf.write(content)
+            tf.flush()
+            os.fsync(tf.fileno())
+        os.replace(temp_path, filepath)
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.unlink(temp_path)
+            except Exception:
+                pass
+
+
 def save_config(config_data):
+    """
+    Authoritatively persists configuration to JSON.
+    system_prompt.txt is updated as a compatibility export.
+    Propagates write failures on authoritative JSON immediately.
+    """
     import json
     with _CONFIG_LOCK:
+        config_data["prompt_authoritative"] = True
+        config_str = json.dumps(config_data, indent=2)
+        # Authoritative persistence to JSON:
+        _atomic_write_file(CONFIG_PATH, config_str)
+
+        # Compatibility export to system_prompt.txt:
         system_prompt = config_data.get("system_prompt")
         if system_prompt is not None:
             try:
-                with open(SYSTEM_PROMPT_PATH, "w", encoding="utf-8") as f:
-                    f.write(system_prompt)
+                _atomic_write_file(SYSTEM_PROMPT_PATH, system_prompt)
             except Exception as e:
-                print(f"Error saving system_prompt.txt: {e}")
-
-        with open(CONFIG_PATH, "w") as f:
-            json.dump(config_data, f, indent=2)
+                logger.warning(f"Could not export compatibility system_prompt.txt: {e}")
 
 
 def update_config_values(changes):
@@ -406,21 +450,62 @@ def update_config_values(changes):
 
 _catalog_sync_status = {
     "status": "idle",
+    "desired_generation": 0,
+    "indexed_generation": 0,
     "last_synced_at": None,
     "last_error": None,
 }
 
 def get_catalog_sync_status() -> dict:
+    """Reads durable catalog sync state across workers from the database."""
+    from serviceBot.db.connection import get_db_connection, dict_cursor
+    try:
+        with get_db_connection() as conn:
+            with dict_cursor(conn) as cursor:
+                cursor.execute("""
+                    SELECT desired_generation, indexed_generation, status, last_synced_at, last_error
+                    FROM catalog_sync_state WHERE id = 1
+                """)
+                row = cursor.fetchone()
+                if row:
+                    last_synced = row["last_synced_at"]
+                    if isinstance(last_synced, dt_mod.datetime):
+                        last_synced = last_synced.timestamp()
+                    return {
+                        "status": row["status"] or "idle",
+                        "desired_generation": int(row["desired_generation"] or 0),
+                        "indexed_generation": int(row["indexed_generation"] or 0),
+                        "last_synced_at": last_synced,
+                        "last_error": row["last_error"],
+                    }
+    except Exception as e:
+        logger.warning(f"Error reading catalog_sync_state from database: {e}")
     return dict(_catalog_sync_status)
 
 def sync_services_to_kb():
+    """
+    Durable and generation-aware background catalogue synchronization.
+    Maintains desired vs indexed generations and retains prior searchable chunks until new embeddings succeed.
+    """
     global _catalog_sync_status
     from serviceBot.db.connection import get_db_connection, dict_cursor
     from serviceBot.services.rag import FAQService
 
-    # The snapshot must be inside the same boundary as embedding/publication:
-    # an older background job cannot publish a snapshot it took before waiting.
+    desired_gen = 1
+    try:
+        with get_db_connection() as conn:
+            with dict_cursor(conn) as cursor:
+                cursor.execute("SELECT desired_generation, indexed_generation FROM catalog_sync_state WHERE id = 1")
+                row = cursor.fetchone()
+                if row:
+                    desired_gen = int(row["desired_generation"] or 1)
+                cursor.execute("UPDATE catalog_sync_state SET status = 'syncing', updated_at = NOW() WHERE id = 1")
+                conn.commit()
+    except Exception as exc:
+        logger.warning(f"Could not update catalog_sync_state to syncing: {exc}")
+
     _catalog_sync_status["status"] = "syncing"
+    _catalog_sync_status["desired_generation"] = desired_gen
     try:
         with FAQService.operation_lock:
             with get_db_connection() as conn:
@@ -444,25 +529,173 @@ def sync_services_to_kb():
                         prefix=".auto-services-", suffix=".tmp", delete=False) as temporary:
                     temporary_path = temporary.name
                     temporary.write(catalog_text)
-                FAQService().replace_text(catalog_text, filename)
+                FAQService().replace_text(catalog_text, filename, generation=desired_gen)
                 os.replace(temporary_path, os.path.join(KB_DIR, filename))
             finally:
                 if temporary_path and os.path.exists(temporary_path):
                     os.unlink(temporary_path)
-        _catalog_sync_status["status"] = "synced"
-        _catalog_sync_status["last_synced_at"] = time.time()
-        _catalog_sync_status["last_error"] = None
-        logger.info(f"[catalog_sync] Knowledge base catalog refreshed with {len(rows)} service(s).")
+
+        now_ts = time.time()
+        catch_up_needed = False
+        try:
+            with get_db_connection() as conn:
+                with dict_cursor(conn) as cursor:
+                    cursor.execute("SELECT desired_generation FROM catalog_sync_state WHERE id = 1 FOR UPDATE")
+                    row = cursor.fetchone()
+                    latest_desired = int(row["desired_generation"]) if row and row.get("desired_generation") else desired_gen
+                    if latest_desired == desired_gen:
+                        cursor.execute("""
+                            UPDATE catalog_sync_state
+                            SET indexed_generation = %s, status = 'synced', last_synced_at = NOW(), last_error = NULL, updated_at = NOW()
+                            WHERE id = 1
+                        """, (desired_gen,))
+                        _catalog_sync_status["status"] = "synced"
+                        _catalog_sync_status["indexed_generation"] = desired_gen
+                        _catalog_sync_status["last_synced_at"] = now_ts
+                        _catalog_sync_status["last_error"] = None
+                    else:
+                        cursor.execute("""
+                            UPDATE catalog_sync_state
+                            SET indexed_generation = %s, status = 'pending', updated_at = NOW()
+                            WHERE id = 1
+                        """, (desired_gen,))
+                        _catalog_sync_status["status"] = "pending"
+                        _catalog_sync_status["indexed_generation"] = desired_gen
+                        _catalog_sync_status["last_error"] = None
+                        catch_up_needed = True
+                    conn.commit()
+        except Exception as exc:
+            logger.warning(f"Could not update catalog_sync_state upon completion: {exc}")
+            latest_desired = _catalog_sync_status.get("desired_generation", desired_gen)
+            if latest_desired > desired_gen:
+                _catalog_sync_status["status"] = "pending"
+                _catalog_sync_status["indexed_generation"] = desired_gen
+                catch_up_needed = True
+            else:
+                _catalog_sync_status["status"] = "synced"
+                _catalog_sync_status["indexed_generation"] = desired_gen
+                _catalog_sync_status["last_synced_at"] = now_ts
+                _catalog_sync_status["last_error"] = None
+
+        logger.info(f"[catalog_sync] Knowledge base catalog refreshed with {len(rows)} service(s) for generation {desired_gen}.")
+        if catch_up_needed:
+            logger.info(f"[catalog_sync] Newer catalogue generation {latest_desired} detected; triggering catch-up refresh.")
+            def _run_catch_up():
+                time.sleep(0.05)
+                try:
+                    sync_services_to_kb()
+                except Exception as e:
+                    logger.warning(f"Error in catch-up catalog sync: {e}")
+            threading.Thread(target=_run_catch_up, daemon=True).start()
     except Exception as exc:
         _catalog_sync_status["status"] = "failed"
         _catalog_sync_status["last_error"] = str(exc)
+        try:
+            with get_db_connection() as conn:
+                with dict_cursor(conn) as cursor:
+                    cursor.execute("""
+                        UPDATE catalog_sync_state
+                        SET status = 'failed', last_error = %s, updated_at = NOW()
+                        WHERE id = 1
+                    """, (str(exc),))
+                    conn.commit()
+        except Exception:
+            pass
         logger.error(f"[catalog_sync] Knowledge base catalog sync failed: {exc}")
         raise
 
-async def sync_prompt_to_elevenlabs(prompt_text: str, first_message: str = None):
-    api_key = os.getenv("ELEVENLABS_API_KEY", "").strip()
-    agent_id = os.getenv("ELEVENLABS_AGENT_ID", "").strip()
-    prod_agent_id = os.getenv("ELEVENLABS_PRODUCTION_AGENT_ID", "").strip()
+_agent_publication_locks = {}
+_agent_publication_locks_guard = threading.Lock()
+
+def _get_agent_async_lock(agent_id: str) -> asyncio.Lock:
+    with _agent_publication_locks_guard:
+        if agent_id not in _agent_publication_locks:
+            _agent_publication_locks[agent_id] = asyncio.Lock()
+        return _agent_publication_locks[agent_id]
+
+def _get_agent_advisory_lock_id(agent_id: str) -> int:
+    return zlib.crc32(f"prompt_pub_{agent_id}".encode("utf-8"))
+
+def _acquire_db_agent_lock(agent_id: str, require_db: bool = False):
+    """
+    Acquires a session-level Postgres advisory lock for agent publication.
+    Enters the database connection context and yields the active connection.
+    Returns (conn_ctx, conn). When database coordination is required (require_db=True
+    or REQUIRE_DB_LOCK=1), failures are reported honestly by raising the exception.
+    """
+    is_required = require_db or os.getenv("REQUIRE_DB_LOCK") == "1" or os.getenv("REQUIRE_DB_COORDINATION") == "1"
+    conn_ctx = None
+    try:
+        from serviceBot.db.connection import get_db_connection
+        conn_ctx = get_db_connection()
+        conn = conn_ctx.__enter__()
+        with conn.cursor() as cur:
+            cur.execute("SELECT pg_advisory_lock(%s)", (_get_agent_advisory_lock_id(agent_id),))
+        return conn_ctx, conn
+    except Exception as e:
+        if conn_ctx is not None:
+            try:
+                conn_ctx.__exit__(type(e), e, e.__traceback__)
+            except Exception:
+                pass
+        logger.debug(f"DB advisory lock unavailable for {agent_id}: {e}")
+        if is_required:
+            raise RuntimeError(f"Database publication lock could not be acquired for agent {agent_id}: {e}") from e
+        return None, None
+
+def _release_db_agent_lock(agent_id: str, lock_ctx):
+    """
+    Releases the session-level Postgres advisory lock and exits the connection context,
+    returning pooled connections to the pool.
+    """
+    if not lock_ctx:
+        return
+    conn_ctx, conn = lock_ctx if isinstance(lock_ctx, tuple) else (None, lock_ctx)
+    try:
+        if conn is not None and getattr(conn, "closed", 0) == 0:
+            with conn.cursor() as cur:
+                cur.execute("SELECT pg_advisory_unlock(%s)", (_get_agent_advisory_lock_id(agent_id),))
+    except Exception as e:
+        logger.debug(f"Error releasing DB advisory lock for {agent_id}: {e}")
+    finally:
+        if conn_ctx is not None:
+            try:
+                conn_ctx.__exit__(None, None, None)
+            except Exception as e:
+                logger.debug(f"Error exiting DB connection context for {agent_id}: {e}")
+        elif conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+@asynccontextmanager
+async def agent_publication_boundary(agent_id: str, require_db: bool = False):
+    async_lock = _get_agent_async_lock(agent_id)
+    await async_lock.acquire()
+    lock_ctx = (None, None)
+    try:
+        lock_ctx = await asyncio.to_thread(_acquire_db_agent_lock, agent_id, require_db)
+        yield
+    finally:
+        try:
+            if lock_ctx and lock_ctx != (None, None):
+                await asyncio.to_thread(_release_db_agent_lock, agent_id, lock_ctx)
+        finally:
+            async_lock.release()
+
+async def sync_prompt_to_elevenlabs(prompt_text: str, first_message: str = None, generation: Optional[int] = None):
+    """
+    Synchronizes system prompt to ElevenLabs voice agents.
+    Uses shared credential resolver, explicit target deduplication, and generation-aware coordination
+    with per-agent publication boundaries to prevent older asynchronous updates from overwriting newer prompt generations.
+    """
+    from serviceBot.services.encryption import get_active_secret
+    from serviceBot.db.connection import get_db_connection, dict_cursor
+
+    api_key = get_active_secret("elevenlabs_api_key").strip()
+    agent_id = get_active_secret("elevenlabs_agent_id").strip()
+    prod_agent_id = get_active_secret("elevenlabs_production_agent_id").strip()
 
     target_agents = []
     for aid in (agent_id, prod_agent_id):
@@ -472,84 +705,275 @@ async def sync_prompt_to_elevenlabs(prompt_text: str, first_message: str = None)
     if not api_key or not target_agents:
         return {"status": "unavailable", "message": "Voice provider credentials not configured."}
 
+    cfg = load_config()
+    target_gen = generation if generation is not None else int(cfg.get("prompt_generation", 1))
+
+    # Record desired generation in prompt_sync_state
+    try:
+        with get_db_connection() as conn:
+            with dict_cursor(conn) as cursor:
+                for target_id in target_agents:
+                    cursor.execute("""
+                        INSERT INTO prompt_sync_state (agent_id, desired_generation, status, updated_at)
+                        VALUES (%s, %s, 'pending', NOW())
+                        ON CONFLICT (agent_id) DO UPDATE
+                        SET desired_generation = GREATEST(prompt_sync_state.desired_generation, EXCLUDED.desired_generation),
+                            updated_at = NOW();
+                    """, (target_id, target_gen))
+                conn.commit()
+    except Exception as e:
+        logger.warning(f"Could not update prompt_sync_state in DB: {e}")
+
     log_file = os.path.join(os.path.dirname(CONFIG_PATH), "elevenlabs_sync.log")
     try:
         with open(log_file, "a") as lf:
-            lf.write(f"\n--- Sync Attempt ---\n")
+            lf.write(f"\n--- Sync Attempt (Gen {target_gen}) ---\n")
             lf.write(f"Target Agents: {target_agents}\n")
             lf.write(f"API Key configured: {bool(api_key)}\n")
     except Exception:
         pass
 
     headers = {"xi-api-key": api_key}
-    el_payload = {
-        "name": f"{load_config().get('business_name') or 'Business'} Service Agent",
-        "conversation_config": {
-            "agent": {
-                "prompt": {
-                    "prompt": prompt_text
-                }
-            }
-        }
-    }
-    if first_message:
-        el_payload["conversation_config"]["agent"]["first_message"] = first_message
-
     agent_results = {}
-    async with httpx.AsyncClient() as client:
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
         for target_id in target_agents:
-            try:
-                response = await client.patch(
-                    f"https://api.elevenlabs.io/v1/convai/agents/{target_id}",
-                    json=el_payload,
-                    headers=headers
-                )
+            async with agent_publication_boundary(target_id):
+                # Inside publication boundary: read the latest saved configuration and prompt
+                cfg_latest = load_config()
+                latest_saved_gen = int(cfg_latest.get("prompt_generation", target_gen))
+                latest_prompt = cfg_latest.get("system_prompt", prompt_text)
+                latest_first_msg = cfg_latest.get("first_message", first_message)
+                biz_name = cfg_latest.get("business_name") or "Business"
+
+                # Check published generation from DB / state
+                published_gen = None
                 try:
-                    with open(log_file, "a") as lf:
-                        lf.write(f"Target: {target_id} - Status Code: {response.status_code}\n")
-                        lf.write(f"Response: {response.text}\n")
+                    with get_db_connection() as conn:
+                        with dict_cursor(conn) as cursor:
+                            cursor.execute("SELECT published_generation, desired_generation FROM prompt_sync_state WHERE agent_id = %s", (target_id,))
+                            row = cursor.fetchone()
+                            if row and row.get("published_generation") is not None:
+                                published_gen = int(row["published_generation"])
                 except Exception:
                     pass
-                if response.status_code == 200:
+
+                # If this invocation is for an older generation that was already superseded by a published generation:
+                if published_gen is not None and published_gen >= target_gen and target_gen < latest_saved_gen:
+                    logger.warning(f"Prompt sync for {target_id} (gen {target_gen}) superseded by published generation {published_gen}.")
                     agent_results[target_id] = {
-                        "status": "synced",
-                        "status_code": 200,
-                        "message": "Voice provider instructions synchronized successfully.",
+                        "status": "superseded",
+                        "generation": target_gen,
+                        "published_generation": published_gen,
+                        "message": f"Prompt update superseded by published generation {published_gen}.",
                     }
-                else:
-                    err_msg = f"ElevenLabs prompt sync for {target_id} returned status code {response.status_code}: {response.text}"
+                    continue
+
+                pub_gen = max(target_gen, latest_saved_gen)
+                el_payload = {
+                    "name": f"{biz_name} Service Agent",
+                    "conversation_config": {
+                        "agent": {
+                            "prompt": {
+                                "prompt": latest_prompt
+                            }
+                        }
+                    }
+                }
+                if latest_first_msg:
+                    el_payload["conversation_config"]["agent"]["first_message"] = latest_first_msg
+
+                try:
+                    response = await client.patch(
+                        f"https://api.elevenlabs.io/v1/convai/agents/{target_id}",
+                        json=el_payload,
+                        headers=headers
+                    )
+                    try:
+                        with open(log_file, "a") as lf:
+                            lf.write(f"Target: {target_id} - Status Code: {response.status_code}\n")
+                            lf.write(f"Response: {response.text}\n")
+                    except Exception:
+                        pass
+
+                    if response.status_code == 200:
+                        try:
+                            with get_db_connection() as conn:
+                                with dict_cursor(conn) as cursor:
+                                    cursor.execute("""
+                                        UPDATE prompt_sync_state
+                                        SET published_generation = %s, status = 'synced', last_synced_at = NOW(), last_error = NULL, updated_at = NOW()
+                                        WHERE agent_id = %s AND desired_generation <= %s
+                                    """, (pub_gen, target_id, pub_gen))
+                                    conn.commit()
+                        except Exception:
+                            pass
+
+                        # Report synced only for the generation actually published
+                        if target_gen < pub_gen:
+                            agent_results[target_id] = {
+                                "status": "superseded",
+                                "status_code": 200,
+                                "generation": target_gen,
+                                "published_generation": pub_gen,
+                                "message": f"Prompt update superseded by newer published generation {pub_gen}.",
+                            }
+                        else:
+                            agent_results[target_id] = {
+                                "status": "synced",
+                                "status_code": 200,
+                                "generation": pub_gen,
+                                "message": "Voice provider instructions synchronized successfully.",
+                            }
+                    else:
+                        err_msg = f"ElevenLabs prompt sync for {target_id} returned status code {response.status_code}: {response.text}"
+                        logger.warning(err_msg)
+                        try:
+                            with get_db_connection() as conn:
+                                with dict_cursor(conn) as cursor:
+                                    cursor.execute("""
+                                        UPDATE prompt_sync_state
+                                        SET status = 'failed', last_error = %s, updated_at = NOW()
+                                        WHERE agent_id = %s
+                                    """, (err_msg, target_id))
+                                    conn.commit()
+                        except Exception:
+                            pass
+                        agent_results[target_id] = {
+                            "status": "failed",
+                            "status_code": response.status_code,
+                            "generation": pub_gen,
+                            "message": err_msg,
+                            "error": response.text,
+                        }
+                except Exception as exc:
+                    err_msg = f"ElevenLabs prompt sync for {target_id} failed: {exc}"
                     logger.warning(err_msg)
+                    try:
+                        with get_db_connection() as conn:
+                            with dict_cursor(conn) as cursor:
+                                cursor.execute("""
+                                    UPDATE prompt_sync_state
+                                    SET status = 'failed', last_error = %s, updated_at = NOW()
+                                    WHERE agent_id = %s
+                                """, (err_msg, target_id))
+                                conn.commit()
+                    except Exception:
+                        pass
                     agent_results[target_id] = {
                         "status": "failed",
-                        "status_code": response.status_code,
+                        "status_code": None,
+                        "generation": pub_gen,
                         "message": err_msg,
-                        "error": response.text,
+                        "error": str(exc),
                     }
-            except Exception as exc:
-                err_msg = f"ElevenLabs prompt sync for {target_id} failed: {exc}"
-                logger.warning(err_msg)
-                agent_results[target_id] = {
-                    "status": "failed",
-                    "status_code": None,
-                    "message": err_msg,
-                    "error": str(exc),
-                }
 
-    all_succeeded = all(res.get("status") == "synced" for res in agent_results.values())
-    if all_succeeded:
+    has_failed = any(res.get("status") == "failed" for res in agent_results.values())
+    has_superseded = any(res.get("status") == "superseded" for res in agent_results.values())
+    all_synced = bool(agent_results) and all(res.get("status") == "synced" for res in agent_results.values())
+
+    if has_failed:
+        failed_agents = [aid for aid, res in agent_results.items() if res.get("status") == "failed"]
+        failed_msgs = "; ".join(agent_results[aid].get("message", "Unknown error") for aid in failed_agents)
+        return {
+            "status": "failed",
+            "generation": target_gen,
+            "message": f"Voice provider synchronization failed for agent(s) ({', '.join(failed_agents)}): {failed_msgs}",
+            "agents": agent_results,
+        }
+    elif has_superseded:
+        return {
+            "status": "superseded",
+            "generation": target_gen,
+            "message": "Voice provider synchronization was superseded by a newer prompt.",
+            "agents": agent_results,
+        }
+    elif all_synced:
+        published_generation = next((res.get("generation") for res in agent_results.values() if "generation" in res), target_gen)
         return {
             "status": "synced",
+            "generation": published_generation,
             "message": "Voice provider instructions synchronized successfully.",
             "agents": agent_results,
         }
     else:
         failed_agents = [aid for aid, res in agent_results.items() if res.get("status") != "synced"]
-        failed_msgs = "; ".join(agent_results[aid]["message"] for aid in failed_agents)
+        failed_msgs = "; ".join(agent_results[aid].get("message", "Unknown error") for aid in failed_agents)
         return {
             "status": "failed",
+            "generation": target_gen,
             "message": f"Voice provider synchronization failed for agent(s) ({', '.join(failed_agents)}): {failed_msgs}",
             "agents": agent_results,
         }
+
+async def update_shared_business_settings(updates: dict) -> dict:
+    """
+    Centralized service for updating shared business settings.
+    Ensures prompt business hours, timezone, and voice provider instructions are consistently synchronized.
+    Truthfully preserves voice agent identity when business_name changes without explicit regeneration confirmation.
+    """
+    from serviceBot.services.prompt_service import update_prompt_business_hours
+    from serviceBot.services.timezone_service import validate_timezone
+
+    with _CONFIG_LOCK:
+        cfg = load_config()
+        old_name = cfg.get("business_name")
+        new_name = updates.get("business_name")
+        name_changed = bool(new_name and old_name and str(new_name).strip() != str(old_name).strip())
+        regenerate_authorized = bool(updates.get("regenerate_business_prompt"))
+
+        if "business_timezone" in updates:
+            tz_str = str(updates["business_timezone"]).strip()
+            if not validate_timezone(tz_str):
+                raise HTTPException(status_code=400, detail=f"Invalid IANA timezone identifier: {tz_str}")
+            updates["business_timezone"] = tz_str
+
+        cfg.update(updates)
+
+        if name_changed and regenerate_authorized:
+            from serviceBot.services.business_profile import build_business_prompt
+            new_prompt, new_greeting = build_business_prompt(cfg)
+            cfg["system_prompt"] = new_prompt
+            cfg["first_message"] = new_greeting
+
+        if any(k in updates for k in ("business_timezone", "business_hours_start", "business_hours_end", "business_hours", "business_days")):
+            b_start = cfg.get("business_hours_start", 7)
+            b_end = cfg.get("business_hours_end", 18)
+            b_days = cfg.get("business_days", [0, 1, 2, 3, 4])
+            b_hours = cfg.get("business_hours", list(range(b_start, b_end)))
+            tz = cfg.get("business_timezone", "America/New_York")
+            cfg["system_prompt"] = update_prompt_business_hours(
+                cfg.get("system_prompt", ""),
+                start_hour=b_start,
+                end_hour=b_end,
+                business_days=b_days,
+                timezone_str=tz,
+                business_hours=b_hours
+            )
+
+        cfg["prompt_generation"] = int(cfg.get("prompt_generation", 0)) + 1
+        save_config(cfg)
+
+    if name_changed and not regenerate_authorized:
+        provider_sync = {
+            "status": "pending_identity_update",
+            "generation": cfg.get("prompt_generation"),
+            "message": f"Business name updated locally to '{new_name}'. Voice agent prompt and greeting still use '{old_name}'. Regenerate or update voice identity via Business Settings to synchronize.",
+        }
+    else:
+        sync_res = await sync_prompt_to_elevenlabs(
+            cfg["system_prompt"],
+            cfg.get("first_message"),
+            generation=cfg["prompt_generation"]
+        )
+        if not isinstance(sync_res, dict):
+            sync_res = {"status": "synced", "message": "Voice provider instructions synchronized successfully."}
+        provider_sync = sync_res
+
+    res = {"config": cfg, "provider_sync": provider_sync}
+    if hasattr(update_prompt_business_hours, "unsynchronized_schedules") and update_prompt_business_hours.unsynchronized_schedules:
+        res["warnings"] = [f"Preserved ambiguous custom instructions: {s}" for s in update_prompt_business_hours.unsynchronized_schedules]
+    return res
 
 from serviceBot.services.business_profile import (
     BusinessProfile, build_business_prompt, get_business_profile, normalize_portal_base_url, validate_intake_data,
@@ -709,45 +1133,59 @@ async def update_config(payload: ConfigUpdatePayload):
         start_hour=b_start,
         end_hour=b_end,
         business_days=b_days,
-        timezone_str=config_data.get("business_timezone", "America/New_York")
+        timezone_str=config_data.get("business_timezone", "America/New_York"),
+        business_hours=b_hours
     )
     config_data["system_prompt"] = prompt_to_sync
+    config_data["prompt_generation"] = int(config_data.get("prompt_generation", 0)) + 1
 
-    save_config(config_data)
+    try:
+        save_config(config_data)
+    except Exception as exc:
+        logger.error(f"Authoritative configuration save failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"Failed to persist configuration: {str(exc)}")
+
+    old_biz_name = existing.get("business_name")
+    new_biz_name = config_data.get("business_name")
+    name_changed = bool(new_biz_name and old_biz_name and new_biz_name.strip() != old_biz_name.strip())
+    identity_pending = name_changed and not payload.regenerate_business_prompt and not payload.system_prompt
 
     provider_sync = {"status": "synced", "message": "Voice provider instructions synchronized successfully."}
-    try:
-        sync_result = await sync_prompt_to_elevenlabs(
-            prompt_to_sync,
-            config_data["first_message"] if payload.regenerate_business_prompt else payload.first_message
-        )
-        api_key = os.getenv("ELEVENLABS_API_KEY", "")
-        agent_id = os.getenv("ELEVENLABS_AGENT_ID", "")
-        is_mocked = hasattr(sync_prompt_to_elevenlabs, "mock_calls") or hasattr(sync_prompt_to_elevenlabs, "await_count")
-        if isinstance(sync_result, dict):
-            provider_sync = sync_result
-        elif not (api_key and agent_id) and not is_mocked:
-            provider_sync = {
-                "status": "unavailable",
-                "message": "Voice provider credentials not configured.",
-            }
-        else:
-            provider_sync = {
-                "status": "synced",
-                "message": "Voice provider instructions synchronized successfully.",
-            }
-    except Exception as exc:
-        logger.warning(f"Voice provider synchronization failed: {exc}")
+    if identity_pending:
         provider_sync = {
-            "status": "failed",
-            "message": f"Voice provider synchronization failed: {str(exc)}",
+            "status": "pending_identity_update",
+            "generation": config_data.get("prompt_generation"),
+            "message": f"Business name updated locally to '{new_biz_name}'. Voice agent prompt still uses previous business name; regenerate voice identity to synchronize.",
         }
+    else:
+        try:
+            sync_result = await sync_prompt_to_elevenlabs(
+                prompt_to_sync,
+                config_data["first_message"] if payload.regenerate_business_prompt else payload.first_message,
+                generation=config_data["prompt_generation"]
+            )
+            if isinstance(sync_result, dict):
+                provider_sync = sync_result
+            else:
+                provider_sync = {
+                    "status": "synced",
+                    "message": "Voice provider instructions synchronized successfully.",
+                }
+        except Exception as exc:
+            logger.warning(f"Voice provider synchronization failed: {exc}")
+            provider_sync = {
+                "status": "failed",
+                "message": f"Voice provider synchronization failed: {str(exc)}",
+            }
 
-    return {
+    ret = {
         "success": True,
         "saved": True,
         "provider_sync": provider_sync,
     }
+    if hasattr(update_prompt_business_hours, "unsynchronized_schedules") and update_prompt_business_hours.unsynchronized_schedules:
+        ret["warnings"] = [f"Preserved ambiguous custom instructions: {s}" for s in update_prompt_business_hours.unsynchronized_schedules]
+    return ret
 
 @router.get("/services")
 async def get_services():
@@ -808,17 +1246,40 @@ async def seed_default_services(background_tasks: BackgroundTasks):
                 if cursor.rowcount > 0:
                     inserted_count += 1
             conn.commit()
+
+            cursor.execute("""
+                INSERT INTO catalog_sync_state (id, desired_generation, status, updated_at)
+                VALUES (1, 1, 'pending', NOW())
+                ON CONFLICT (id) DO UPDATE
+                SET desired_generation = catalog_sync_state.desired_generation + 1,
+                    status = 'pending',
+                    updated_at = NOW()
+                RETURNING desired_generation, indexed_generation;
+            """)
+            sync_row = cursor.fetchone()
+            conn.commit()
     background_tasks.add_task(sync_services_to_kb)
-    return {"success": True, "inserted_count": inserted_count, "total_defaults": len(SERVICES_DATA)}
+    return {
+        "success": True,
+        "inserted_count": inserted_count,
+        "total_defaults": len(SERVICES_DATA),
+        "catalog_sync": {
+            "status": "pending",
+            "desired_generation": sync_row["desired_generation"] if sync_row else 1,
+            "indexed_generation": sync_row["indexed_generation"] if sync_row else 0
+        }
+    }
 
 @router.post("/services", status_code=201)
 async def create_service(payload: ServiceCreate, background_tasks: BackgroundTasks):
     """
     Creates a new catalog service item and optionally associates qualified staff agents
     via payload.agent_ids. If agent_ids is empty or null, the service remains open to all agents.
+    Records refresh work within the same database transaction.
     """
     from serviceBot.db.connection import get_db_connection, dict_cursor
     from serviceBot.db.queries import set_service_agents
+    sync_state = {"desired_generation": 1, "indexed_generation": 0}
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             # Check if service with same name already exists
@@ -834,6 +1295,19 @@ async def create_service(payload: ServiceCreate, background_tasks: BackgroundTas
                  bool(payload.req_location))
             )
             new_id = cursor.fetchone()["id"]
+
+            cursor.execute("""
+                INSERT INTO catalog_sync_state (id, desired_generation, status, updated_at)
+                VALUES (1, 1, 'pending', NOW())
+                ON CONFLICT (id) DO UPDATE
+                SET desired_generation = catalog_sync_state.desired_generation + 1,
+                    status = 'pending',
+                    updated_at = NOW()
+                RETURNING desired_generation, indexed_generation;
+            """)
+            sync_row = cursor.fetchone()
+            if sync_row:
+                sync_state = dict(sync_row)
             conn.commit()
 
     if payload.agent_ids is not None:
@@ -843,7 +1317,16 @@ async def create_service(payload: ServiceCreate, background_tasks: BackgroundTas
             logger.warning(f"Error setting service agents: {e}")
 
     background_tasks.add_task(sync_services_to_kb)
-    return {"id": new_id, "name": payload.name, "success": True}
+    return {
+        "id": new_id,
+        "name": payload.name,
+        "success": True,
+        "catalog_sync": {
+            "status": "pending",
+            "desired_generation": sync_state["desired_generation"],
+            "indexed_generation": sync_state["indexed_generation"]
+        }
+    }
 
 @router.put("/services/{service_id}")
 async def update_service(service_id: int, payload: ServiceCreate, background_tasks: BackgroundTasks):
@@ -851,9 +1334,11 @@ async def update_service(service_id: int, payload: ServiceCreate, background_tas
     Updates an existing catalog service item and synchronizes assigned staff agents
     via payload.agent_ids. Providing an empty list clears agent restrictions, making
     the service open to all active staff agents.
+    Records refresh work within the same database transaction.
     """
     from serviceBot.db.connection import get_db_connection, dict_cursor
     from serviceBot.db.queries import set_service_agents
+    sync_state = {"desired_generation": 1, "indexed_generation": 0}
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             cursor.execute("SELECT id FROM services WHERE id = %s", (service_id,))
@@ -867,6 +1352,18 @@ async def update_service(service_id: int, payload: ServiceCreate, background_tas
                  bool(payload.req_location),
                  service_id)
             )
+            cursor.execute("""
+                INSERT INTO catalog_sync_state (id, desired_generation, status, updated_at)
+                VALUES (1, 1, 'pending', NOW())
+                ON CONFLICT (id) DO UPDATE
+                SET desired_generation = catalog_sync_state.desired_generation + 1,
+                    status = 'pending',
+                    updated_at = NOW()
+                RETURNING desired_generation, indexed_generation;
+            """)
+            sync_row = cursor.fetchone()
+            if sync_row:
+                sync_state = dict(sync_row)
             conn.commit()
 
     if payload.agent_ids is not None:
@@ -876,25 +1373,87 @@ async def update_service(service_id: int, payload: ServiceCreate, background_tas
             logger.warning(f"Error updating service agents: {e}")
 
     background_tasks.add_task(sync_services_to_kb)
-    return {"id": service_id, "name": payload.name, "success": True}
+    return {
+        "id": service_id,
+        "name": payload.name,
+        "success": True,
+        "catalog_sync": {
+            "status": "pending",
+            "desired_generation": sync_state["desired_generation"],
+            "indexed_generation": sync_state["indexed_generation"]
+        }
+    }
 
 @router.delete("/services/{service_id}")
 async def delete_service(service_id: int, background_tasks: BackgroundTasks):
     from serviceBot.db.connection import get_db_connection, dict_cursor
+    sync_state = {"desired_generation": 1, "indexed_generation": 0}
     with get_db_connection() as conn:
         with dict_cursor(conn) as cursor:
             cursor.execute("SELECT id FROM services WHERE id = %s", (service_id,))
             if not cursor.fetchone():
                 raise HTTPException(status_code=404, detail="Service not found")
             cursor.execute("DELETE FROM services WHERE id = %s", (service_id,))
+            cursor.execute("""
+                INSERT INTO catalog_sync_state (id, desired_generation, status, updated_at)
+                VALUES (1, 1, 'pending', NOW())
+                ON CONFLICT (id) DO UPDATE
+                SET desired_generation = catalog_sync_state.desired_generation + 1,
+                    status = 'pending',
+                    updated_at = NOW()
+                RETURNING desired_generation, indexed_generation;
+            """)
+            sync_row = cursor.fetchone()
+            if sync_row:
+                sync_state = dict(sync_row)
             conn.commit()
     background_tasks.add_task(sync_services_to_kb)
-    return {"id": service_id, "success": True}
+    return {
+        "id": service_id,
+        "success": True,
+        "catalog_sync": {
+            "status": "pending",
+            "desired_generation": sync_state["desired_generation"],
+            "indexed_generation": sync_state["indexed_generation"]
+        }
+    }
 
 @router.get("/services/sync-status")
 async def get_services_sync_status():
-    """Returns the current background sync status of the service catalog to knowledge base."""
+    """Returns the durable background sync status of the service catalog from the database."""
     return get_catalog_sync_status()
+
+@router.get("/prompts/sync-status")
+async def get_prompts_sync_status():
+    """Returns the current synchronization status of prompt generations across configured voice agents."""
+    from serviceBot.db.connection import get_db_connection, dict_cursor
+    agents = {}
+    try:
+        with get_db_connection() as conn:
+            with dict_cursor(conn) as cursor:
+                cursor.execute("""
+                    SELECT agent_id, desired_generation, published_generation, status, last_synced_at, last_error
+                    FROM prompt_sync_state
+                """)
+                for row in cursor.fetchall():
+                    last_synced = row["last_synced_at"]
+                    if isinstance(last_synced, dt_mod.datetime):
+                        last_synced = last_synced.timestamp()
+                    agents[row["agent_id"]] = {
+                        "agent_id": row["agent_id"],
+                        "desired_generation": int(row["desired_generation"] or 0),
+                        "published_generation": int(row["published_generation"] or 0),
+                        "status": row["status"],
+                        "last_synced_at": last_synced,
+                        "last_error": row["last_error"],
+                    }
+    except Exception as exc:
+        logger.warning(f"Error reading prompt_sync_state: {exc}")
+    cfg = load_config()
+    return {
+        "current_prompt_generation": int(cfg.get("prompt_generation", 1)),
+        "agents": agents
+    }
 
 
 class CalendarSlotCreate(BaseModel):
@@ -2684,10 +3243,10 @@ async def update_sms_config_endpoint(payload: SMSConfigPayload):
             loc_updates["support_phone_number"] = clean_sup
             data["support_phone_number"] = clean_sup
 
+    provider_sync = None
     if loc_updates:
-        cfg = load_config()
-        cfg.update(loc_updates)
-        save_config(cfg)
+        shared_res = await update_shared_business_settings(loc_updates)
+        provider_sync = shared_res.get("provider_sync")
 
     db_res = update_sms_config(data) if data else {}
     cfg_now = load_config()
@@ -2699,6 +3258,8 @@ async def update_sms_config_endpoint(payload: SMSConfigPayload):
         db_res["support_phone_number"] = cfg_now["support_phone_number"]
     else:
         db_res["support_phone_number"] = db_res.get("support_phone_number") or ""
+    if provider_sync:
+        db_res["provider_sync"] = provider_sync
     return db_res
 
 

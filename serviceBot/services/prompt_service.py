@@ -58,11 +58,12 @@ def format_business_schedule(
     start_hour: int,
     end_hour: int,
     business_days: Optional[List[int]] = None,
-    timezone_str: Optional[str] = None
+    timezone_str: Optional[str] = None,
+    business_hours: Optional[List[int]] = None,
 ) -> Dict[str, Any]:
     """
     Computes all schedule display strings, closing boundary calculations,
-    and duration latest start times for prompt formatting.
+    and duration latest start times for prompt formatting. Supports split schedules.
     """
     days = [int(d) for d in business_days] if business_days is not None else [0, 1, 2, 3, 4]
     days = sorted(set(days))
@@ -91,9 +92,45 @@ def format_business_schedule(
     else:
         closed_desc = f"closed {', '.join(DAY_NAMES[d] + 's' for d in closed_days)}"
 
-    # Hours
-    start_dt = dt_mod.datetime(2000, 1, 1, start_hour, 0)
-    end_dt = dt_mod.datetime(2000, 1, 1, end_hour, 0)
+    # Hours & Split Interval handling
+    if business_hours is not None and len(business_hours) > 0:
+        sorted_h = sorted(set(int(h) for h in business_hours))
+        intervals = []
+        start = sorted_h[0]
+        prev = sorted_h[0]
+        for h in sorted_h[1:]:
+            if h == prev + 1:
+                prev = h
+            else:
+                intervals.append((start, prev + 1))
+                start = h
+                prev = h
+        intervals.append((start, prev + 1))
+
+        parts = []
+        for s, e in intervals:
+            s_dt = dt_mod.datetime(2000, 1, 1, s, 0)
+            e_dt = dt_mod.datetime(2000, 1, 1, e, 0)
+            parts.append(f"{s_dt.strftime('%I:%M %p').lstrip('0')} - {e_dt.strftime('%I:%M %p').lstrip('0')}")
+
+        if len(parts) == 1:
+            hours_desc = parts[0]
+        elif len(parts) == 2:
+            hours_desc = f"{parts[0]} and {parts[1]}"
+        else:
+            hours_desc = ", ".join(parts[:-1]) + f", and {parts[-1]}"
+
+        eff_start_h = intervals[0][0]
+        eff_end_h = intervals[-1][1]
+    else:
+        eff_start_h = start_hour
+        eff_end_h = end_hour
+        start_dt = dt_mod.datetime(2000, 1, 1, start_hour, 0)
+        end_dt = dt_mod.datetime(2000, 1, 1, end_hour, 0)
+        hours_desc = f"{start_dt.strftime('%I:%M %p').lstrip('0')} - {end_dt.strftime('%I:%M %p').lstrip('0')}"
+
+    start_dt = dt_mod.datetime(2000, 1, 1, eff_start_h, 0)
+    end_dt = dt_mod.datetime(2000, 1, 1, eff_end_h, 0)
     start_str = start_dt.strftime("%I:%M %p").lstrip("0")
     end_str = end_dt.strftime("%I:%M %p").lstrip("0")
 
@@ -122,6 +159,7 @@ def format_business_schedule(
         "days_hyphen": days_hyphen,
         "days_spoken": days_spoken,
         "closed_desc": closed_desc,
+        "hours_desc": hours_desc,
         "start_str": start_str,
         "end_str": end_str,
         "tz_code": tz_code,
@@ -136,6 +174,7 @@ def format_business_schedule(
 def generate_closing_boundary_block(sched: Dict[str, Any], indent: str = "  ") -> str:
     """Generates the standardized Closing Boundary markdown section."""
     days_hyphen = sched["days_hyphen"]
+    hours_desc = sched["hours_desc"]
     start_str = sched["start_str"]
     end_str = sched["end_str"]
     tz_code = sched["tz_code"]
@@ -148,7 +187,7 @@ def generate_closing_boundary_block(sched: Dict[str, Any], indent: str = "  ") -
 
     return (
         f"{indent}4. **Business Hours Closing Boundary & Duration Constraints (MANDATORY):**\n"
-        f"{indent}   - Business hours are strictly {days_hyphen}, {start_str} – {end_str} {tz_code} ({closed_desc}). All appointments must fully conclude by {end_str}. Agents and business operations finish promptly at {end_str}.\n"
+        f"{indent}   - Business hours are strictly {days_hyphen}, {hours_desc} {tz_code} ({closed_desc}). All appointments must fully conclude by {end_str}. Agents and business operations finish promptly at {end_str}.\n"
         f"{indent}   - Calculate the **Latest Possible Start Time**: `Latest Start Time = {end_str} - Total Service Duration`.\n"
         f"{indent}     - 60-minute service: Latest possible start is {start_60} (concludes at {end_str}).\n"
         f"{indent}     - 90-minute (1.5-hour) service: Latest possible start is {start_90} (concludes at {end_str}).\n"
@@ -160,12 +199,40 @@ def generate_closing_boundary_block(sched: Dict[str, Any], indent: str = "  ") -
     )
 
 
+INTERVAL_PATTERN = r"\b\d{1,2}(?::\d{2})?\s*(?:am|pm)?\s*(?:[-–—to]+|\s+to\s+)\s*\d{1,2}(?::\d{2})?\s*(?:am|pm)?\b"
+INTERVAL_SEP = r"(?:[,\s]+and\s+|[,\s]*&[,\s]*|[,\s]*\/[,\s]*|,\s*|\s+and\s+)"
+CLOSED_PATTERN = r"(?:\([ \t]*(?:we\s+are\s+)?closed[^\)]*\)|[,\s]*(?:we\s+are\s+)?closed\s+(?:on\s+)?[a-z0-9,\s]+(?:\sand\s+[a-z0-9]+)?)"
+
+RECOGNIZED_SCHEDULE_RE = re.compile(
+    rf"""^
+    [ \t]*
+    (?:
+        (?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Mon|Tue|Wed|Thu|Fri|Sat|Sun|Weekdays|Daily)
+        (?:\s*(?:[-–—to]|and|through)\s*(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Mon|Tue|Wed|Thu|Fri|Sat|Sun))?
+        [,\s]*
+    )*
+    (?:
+        {INTERVAL_PATTERN}
+        (?:
+            {INTERVAL_SEP}
+            {INTERVAL_PATTERN}
+        )*
+    )
+    (?:[ \t]+(?:ET|EST|EDT|CT|CST|CDT|MT|MST|MDT|PT|PST|PDT|UTC|GMT))?
+    (?:[,\s]*{CLOSED_PATTERN})?
+    [.\s]*
+    """,
+    re.VERBOSE | re.IGNORECASE
+)
+
+
 def update_prompt_business_hours(
     prompt_text: str,
     start_hour: int,
     end_hour: int,
     business_days: Optional[List[int]] = None,
-    timezone_str: Optional[str] = "America/New_York"
+    timezone_str: Optional[str] = "America/New_York",
+    business_hours: Optional[List[int]] = None,
 ) -> str:
     """
     Substitutes operational business hours, operating days, timezone,
@@ -175,16 +242,85 @@ def update_prompt_business_hours(
     if not prompt_text or not isinstance(prompt_text, str):
         return prompt_text
 
-    sched = format_business_schedule(start_hour, end_hour, business_days, timezone_str)
+    sched = format_business_schedule(start_hour, end_hour, business_days, timezone_str, business_hours)
+    unsynchronized_schedules = []
+
+    def replace_business_hours_line(m):
+        prefix = m.group(1)
+        remainder = m.group(2)
+
+        custom_suffix = ""
+        trimmed = remainder.strip()
+        sep = " " if not prefix.endswith(" ") else ""
+        if trimmed:
+            match = RECOGNIZED_SCHEDULE_RE.match(remainder)
+            if match:
+                tail = remainder[match.end():].strip()
+                if tail:
+                    if tail.startswith(";"):
+                        custom_trimmed = tail.lstrip(";").strip()
+                        custom_suffix = f"; {custom_trimmed}"
+                        if custom_trimmed:
+                            unsynchronized_schedules.append(custom_trimmed)
+                            logger.warning(f"Preserving custom instructions following schedule: {custom_trimmed}")
+                    elif tail.startswith("|"):
+                        custom_trimmed = tail.lstrip("|").strip()
+                        custom_suffix = f" | {custom_trimmed}"
+                        if custom_trimmed:
+                            unsynchronized_schedules.append(custom_trimmed)
+                            logger.warning(f"Preserving custom instructions following schedule: {custom_trimmed}")
+                    elif tail.startswith("- "):
+                        custom_trimmed = tail[2:].strip()
+                        custom_suffix = f" - {custom_trimmed}"
+                        if custom_trimmed:
+                            unsynchronized_schedules.append(custom_trimmed)
+                            logger.warning(f"Preserving custom instructions following schedule: {custom_trimmed}")
+                    else:
+                        clean_tail = tail.lstrip(". ").strip()
+                        if clean_tail:
+                            custom_suffix = f". {clean_tail}"
+                            unsynchronized_schedules.append(clean_tail)
+                            logger.warning(f"Preserving custom instructions following schedule: {clean_tail}")
+            elif ";" in remainder:
+                sched_part, custom_part = remainder.split(";", 1)
+                custom_trimmed = custom_part.strip()
+                custom_suffix = f"; {custom_trimmed}"
+                if custom_trimmed:
+                    unsynchronized_schedules.append(custom_trimmed)
+                    logger.warning(f"Preserving custom instructions following schedule: {custom_trimmed}")
+            elif " | " in remainder:
+                sched_part, custom_part = remainder.split(" | ", 1)
+                custom_trimmed = custom_part.strip()
+                custom_suffix = f" | {custom_trimmed}"
+                if custom_trimmed:
+                    unsynchronized_schedules.append(custom_trimmed)
+                    logger.warning(f"Preserving custom instructions following schedule: {custom_trimmed}")
+            else:
+                unsynchronized_schedules.append(trimmed)
+                logger.warning(f"Schedule text could not be synchronized safely: {trimmed}")
+                return f"{prefix}{sep}{sched['days_hyphen']} {sched['hours_desc']} {sched['tz_code']}. Note: {trimmed}"
+
+        if custom_suffix:
+            if (
+                custom_suffix.startswith(".")
+                or custom_suffix.startswith(";")
+                or custom_suffix.startswith(" |")
+                or custom_suffix.startswith(" -")
+            ):
+                return f"{prefix}{sep}{sched['days_hyphen']} {sched['hours_desc']} {sched['tz_code']}{custom_suffix}"
+            return f"{prefix}{sep}{sched['days_hyphen']} {sched['hours_desc']} {sched['tz_code']}. {custom_suffix.lstrip()}"
+        return f"{prefix}{sep}{sched['days_hyphen']} {sched['hours_desc']} {sched['tz_code']}."
+
     updated = re.sub(
-        r"(?m)^(\s*(?:[-*]\s*)?Business hours:\s*).*$",
-        lambda m: f"{m.group(1)}{sched['days_hyphen']} {sched['start_str']} - {sched['end_str']} {sched['tz_code']}.",
+        r"(?m)^([ \t]*(?:[-*][ \t]*)?Business hours:[ \t]*)([^\r\n]*)$",
+        replace_business_hours_line,
         prompt_text
     )
+    update_prompt_business_hours.unsynchronized_schedules = unsynchronized_schedules
 
     # 1. FAQ & General Knowledge bullet
     # Example: - **FAQ & General Knowledge:** The caller has questions about business hours (Monday-Friday 7:00 AM - 6:00 PM, closed weekends), location...
-    faq_hours_str = f"{sched['days_hyphen']} {sched['start_str']} - {sched['end_str']}, {sched['closed_desc']}"
+    faq_hours_str = f"{sched['days_hyphen']} {sched['hours_desc']}, {sched['closed_desc']}"
     faq_pattern = re.compile(
         r"(-\s*\*\*FAQ\s*&\s*General Knowledge:\*\*.*?questions about business hours\s*\()[^)]+(\))",
         re.IGNORECASE
@@ -193,7 +329,7 @@ def update_prompt_business_hours(
 
     # 2. If Callback bullet
     # Example: - **If Callback:** Callback calls are made during business hours (Monday–Friday 7:00 AM – 6:00 PM ET).
-    callback_hours_str = f"{sched['days_hyphen']} {sched['start_str']} – {sched['end_str']} {sched['tz_code']}"
+    callback_hours_str = f"{sched['days_hyphen']} {sched['hours_desc']} {sched['tz_code']}"
     callback_pattern = re.compile(
         r"(-\s*\*\*If Callback:\*\*\s*Callback calls are made during business hours\s*\()[^)]+(\))",
         re.IGNORECASE
@@ -224,7 +360,7 @@ def update_prompt_business_hours(
         if single_bullet_pattern.search(updated):
             single_block = (
                 f"- **Business Hours Closing Boundary & Duration Constraints (MANDATORY):** "
-                f"Business hours are strictly {sched['days_hyphen']}, {sched['start_str']} – {sched['end_str']} {sched['tz_code']} ({sched['closed_desc']}). "
+                f"Business hours are strictly {sched['days_hyphen']}, {sched['hours_desc']} {sched['tz_code']} ({sched['closed_desc']}). "
                 f"All appointments must conclude strictly by {sched['end_str']}. "
                 f"Calculate Latest Start Time = {sched['end_str']} minus service duration "
                 f"(e.g., 60m -> {sched['start_60']} max; 90m -> {sched['start_90']} max; 120m -> {sched['start_120']} max). "
@@ -241,14 +377,14 @@ def update_prompt_business_hours(
         r"(AND ONLY during business hours\s*\()[^)]+(\))",
         re.IGNORECASE
     )
-    updated = handoff_pattern1.sub(rf"\g<1>{sched['days_hyphen']} {sched['start_str']} - {sched['end_str']} {sched['tz_code']}\2", updated)
+    updated = handoff_pattern1.sub(rf"\g<1>{sched['days_hyphen']} {sched['hours_desc']} {sched['tz_code']}\2", updated)
 
     # Example: (business hours are Monday to Friday, 7:00 AM to 6:00 PM ET)
     handoff_pattern2 = re.compile(
         r"(\(business hours are\s+)[^)]+(\))",
         re.IGNORECASE
     )
-    updated = handoff_pattern2.sub(rf"\g<1>{sched['days_spoken']}, {sched['start_str']} to {sched['end_str']} {sched['tz_code']}\2", updated)
+    updated = handoff_pattern2.sub(rf"\g<1>{sched['days_spoken']}, {sched['hours_desc']} {sched['tz_code']}\2", updated)
 
     return updated
 

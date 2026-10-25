@@ -64,6 +64,8 @@ def test_rag_answer_question_fallback(mock_chat_openai):
     mock_llm_instance.side_effect = Exception("OpenAI API Key expired")
     mock_chat_openai.return_value = mock_llm_instance
     
-    # Should fall back to return the retrieved context snippet directly
+    # On model failure without unambiguous catalogue match, should return safe unavailable message
+    # rather than dumping raw context snippets
     ans = faq.answer_question("Any question?")
-    assert "Fallback context snippet here." in ans
+    assert "unable to retrieve" in ans.lower()
+    assert "Fallback context snippet here." not in ans

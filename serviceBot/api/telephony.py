@@ -2458,11 +2458,31 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
         elif tool_name in ["get_service_fields", "get_required_fields"]:
             service_name = args.get("service_name") or args.get("serviceName") or args.get("service") or ""
             fields_data = get_service_required_fields(service_name)
-            is_found = bool(fields_data and not fields_data.get("is_fallback") and fields_data.get("service_found", True) is not False)
-            if is_found:
+            config = load_config()
+            default_fields = config.get("required_fields", {
+                "customer_name": True,
+                "phone_number": True,
+                "vehicle_details": True,
+                "issue_description": True,
+                "location": True
+            })
+
+            lookup_status = fields_data.get("lookup_status") if fields_data else "not_found"
+
+            if lookup_status == "unavailable":
+                result = {
+                    "success": False,
+                    "service_found": None,
+                    "lookup_status": "unavailable",
+                    "message": "Service catalog lookup is currently unavailable due to a database error.",
+                    "required_fields": default_fields,
+                    "error": fields_data.get("db_error", "Database error")
+                }
+            elif lookup_status == "matched" or (fields_data and not fields_data.get("is_fallback") and fields_data.get("service_found", True) is not False):
                 result = {
                     "success": True,
                     "service_found": True,
+                    "lookup_status": "matched",
                     "service_name": fields_data["name"],
                     "description": fields_data["description"],
                     "price_range": fields_data["price_range"],
@@ -2476,17 +2496,10 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
                     }
                 }
             else:
-                config = load_config()
-                default_fields = config.get("required_fields", {
-                    "customer_name": True,
-                    "phone_number": True,
-                    "vehicle_details": True,
-                    "issue_description": True,
-                    "location": True
-                })
                 result = {
                     "success": True,
                     "service_found": False,
+                    "lookup_status": "not_found",
                     "message": f"Service '{service_name}' not found in catalog. Using default fields.",
                     "required_fields": default_fields
                 }

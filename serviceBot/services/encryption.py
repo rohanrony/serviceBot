@@ -184,6 +184,9 @@ def get_active_secret(secret_name: str) -> str:
         "elevenlabs_agent": ("elevenlabs_agent_id", ["ELEVENLABS_AGENT_ID"]),
         "elevenlabs_agent_id": ("elevenlabs_agent_id", ["ELEVENLABS_AGENT_ID"]),
         "ELEVENLABS_AGENT_ID": ("elevenlabs_agent_id", ["ELEVENLABS_AGENT_ID"]),
+        "elevenlabs_production_agent": ("elevenlabs_production_agent_id", ["ELEVENLABS_PRODUCTION_AGENT_ID"]),
+        "elevenlabs_production_agent_id": ("elevenlabs_production_agent_id", ["ELEVENLABS_PRODUCTION_AGENT_ID"]),
+        "ELEVENLABS_PRODUCTION_AGENT_ID": ("elevenlabs_production_agent_id", ["ELEVENLABS_PRODUCTION_AGENT_ID"]),
         "twilio": ("twilio_auth_token", ["TWILIO_AUTH_TOKEN"]),
         "twilio_auth_token": ("twilio_auth_token", ["TWILIO_AUTH_TOKEN"]),
         "TWILIO_AUTH_TOKEN": ("twilio_auth_token", ["TWILIO_AUTH_TOKEN"]),
@@ -192,7 +195,11 @@ def get_active_secret(secret_name: str) -> str:
     config_key, env_vars = mapping.get(secret_name, (secret_name.lower(), [secret_name.upper()]))
     
     # 1. Check config.json encrypted secrets
-    config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
+    try:
+        from serviceBot.api.portal import CONFIG_PATH
+        config_path = CONFIG_PATH
+    except Exception:
+        config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
     if os.path.exists(config_path):
         try:
             with open(config_path, "r", encoding="utf-8") as f:
