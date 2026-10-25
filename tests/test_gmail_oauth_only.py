@@ -232,6 +232,7 @@ def test_admin_google_failure_retains_staff_fallback(
 def test_booking_preserves_staff_google_then_system_routing(
     mail_config, monkeypatch, staff_result
 ):
+    mail_config["business_name"] = "Davidson CarCare"
     monkeypatch.setattr(gmail, "load_config", lambda: mail_config)
     connection = MagicMock()
     cursor = MagicMock()
@@ -252,9 +253,18 @@ def test_booking_preserves_staff_google_then_system_routing(
     staff_send.assert_called_once()
     assert staff_send.call_args.kwargs["agent_id"] == 8
     assert staff_send.call_args.kwargs["recipient"] == "staff@example.test"
+    call_kwargs = staff_send.call_args.kwargs if staff_result else None
     if staff_result:
         system_send.assert_not_called()
     else:
         system_send.assert_called_once()
         assert system_send.call_args.kwargs["recipient"] == "staff@example.test"
+        call_kwargs = system_send.call_args.kwargs
+
+    assert "[Davidson CarCare]" in call_kwargs["subject"]
+    assert "serviceBot" not in call_kwargs["subject"]
+    assert "Davidson CarCare" in call_kwargs["html_body"]
+    assert "serviceBot" not in call_kwargs["html_body"]
+    assert "Davidson CarCare" in call_kwargs["plain_body"]
+    assert "serviceBot" not in call_kwargs["plain_body"]
     smtp.assert_not_called()

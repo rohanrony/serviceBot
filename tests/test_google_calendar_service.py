@@ -98,10 +98,12 @@ def test_is_agent_free(mock_get, mock_creds):
     free = is_agent_free(999, "2026-06-25 10:15:00", duration_minutes=30)
     assert free is False
 
+@patch("serviceBot.services.google_calendar.load_config")
 @patch("serviceBot.services.google_calendar.get_user_google_credentials")
 @patch("httpx.post")
-def test_create_agent_calendar_event(mock_post, mock_creds):
-    """Verify create_agent_calendar_event constructs body payload correctly."""
+def test_create_agent_calendar_event(mock_post, mock_creds, mock_load):
+    """Verify create_agent_calendar_event constructs body payload with business branding."""
+    mock_load.return_value = {"business_name": "Davidson CarCare"}
     mock_creds.return_value = {
         "access_token": "dummy", 
         "email": "agent@test.com",
@@ -128,10 +130,88 @@ def test_create_agent_calendar_event(mock_post, mock_creds):
     # Check payload parameters
     _, kwargs = mock_post.call_args
     json_data = kwargs.get("json", {})
-    assert json_data["summary"] == "BayFull Appointment - John Doe"
+    assert json_data["summary"] == "Davidson CarCare Appointment - John Doe"
+    assert "BayFull" not in json_data["summary"]
+    assert "serviceBot" not in json_data["summary"]
     assert "AC Repair" in json_data["description"]
     assert "Blowing warm air" in json_data["description"]
+    assert "Davidson CarCare" in json_data["description"]
+    assert "BayFull" not in json_data["description"]
+    assert "serviceBot" not in json_data["description"]
     assert json_data["start"]["dateTime"] == "2026-06-25T10:00:00-04:00"
+
+
+@patch("serviceBot.services.google_calendar.load_config")
+@patch("serviceBot.services.google_calendar.get_user_google_credentials")
+@patch("httpx.post")
+def test_create_agent_calendar_event_callback(mock_post, mock_creds, mock_load):
+    """Verify create_agent_calendar_event builds branded summary and description for callbacks."""
+    mock_load.return_value = {"business_name": "Davidson CarCare"}
+    mock_creds.return_value = {
+        "access_token": "dummy",
+        "email": "agent@test.com",
+        "granted_scopes": {"https://www.googleapis.com/auth/calendar.events"}
+    }
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {"id": "event_created_999"}
+    mock_post.return_value = mock_response
+
+    res = create_agent_calendar_event(
+        agent_id=999,
+        customer_name="Jane Doe",
+        service_type="Brake Check",
+        issue_description="Squeaking noise",
+        slot_datetime_str="2026-06-25 10:00:00",
+        duration_minutes=30,
+        booking_type="callback"
+    )
+
+    assert res is True
+    assert mock_post.called
+
+    _, kwargs = mock_post.call_args
+    json_data = kwargs.get("json", {})
+    assert json_data["summary"] == "Davidson CarCare Callback - Jane Doe (Brake Check)"
+    assert "BayFull" not in json_data["summary"]
+    assert "serviceBot" not in json_data["summary"]
+    assert "Davidson CarCare" in json_data["description"]
+    assert "BayFull" not in json_data["description"]
+    assert "serviceBot" not in json_data["description"]
+
+
+@patch("serviceBot.services.google_calendar.load_config")
+@patch("serviceBot.services.google_calendar.get_user_google_credentials")
+@patch("serviceBot.services.google_calendar.fetch_agent_events")
+@patch("httpx.delete")
+def test_delete_agent_calendar_event_cancellation_compatibility(
+    mock_delete, mock_fetch, mock_creds, mock_load
+):
+    """Verify delete_agent_calendar_event matches and cancels both legacy and newly branded events."""
+    from serviceBot.services.google_calendar import delete_agent_calendar_event
+    mock_load.return_value = {"business_name": "Davidson CarCare"}
+    mock_creds.return_value = {
+        "access_token": "dummy",
+        "email": "agent@test.com",
+        "granted_scopes": {"https://www.googleapis.com/auth/calendar.events"}
+    }
+    mock_fetch.return_value = [
+        {"id": "ev_legacy_bayfull", "summary": "BayFull Appointment - John Doe"},
+        {"id": "ev_legacy_servicebot", "summary": "serviceBot Booking - John Doe (Staff)"},
+        {"id": "ev_branded_appt", "summary": "Davidson CarCare Appointment - John Doe"},
+        {"id": "ev_branded_cb", "summary": "Davidson CarCare Callback - John Doe (AC Repair)"},
+        {"id": "ev_unrelated_meeting", "summary": "Davidson CarCare planning meeting"},
+    ]
+    mock_resp = MagicMock()
+    mock_resp.status_code = 204
+    mock_delete.return_value = mock_resp
+
+    res = delete_agent_calendar_event(agent_id=999, slot_datetime_str="2026-06-25 10:00:00")
+    assert res is True
+    assert mock_delete.call_count == 4
+    for call in mock_delete.call_args_list:
+        assert "ev_unrelated_meeting" not in call.args[0]
 
 def test_parse_google_datetime():
     """Verify parsing of start/end Google structures (both dateTime and date)."""

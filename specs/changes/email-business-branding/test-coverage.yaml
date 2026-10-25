@@ -1,0 +1,135 @@
+schema: 1
+feature: changes/email-business-branding
+# Current pytest node IDs for the implemented and reviewed email-branding contracts.
+acceptance:
+  - id: EB/AC1
+    behavior: Business identity replaces product branding in system/agent MIME and booking/admin subjects and bodies.
+    preconditions:
+      - Synthetic Business Name Davidson CarCare and a second non-Davidson name
+      - Synthetic connected system/agent accounts and explicit notification settings
+    success:
+      - Decoded MIME From display name, Subject, HTML and plain text contain the configured business identity
+      - Exact sender address, recipient list, urgency markers and business details are preserved
+    failure:
+      - Missing or invalid names use neutral Service Notifications; HTML/header metacharacters are handled safely
+      - Disabled/incomplete configuration makes no provider request; provider failures remain failures
+    invariants:
+      - No extra recipients, duplicate sends, configuration writes or routine-admin opt-in changes
+    tests:
+      - tests/test_gmail_service.py::test_send_gmail_api_email
+      - tests/test_gmail_service.py::test_send_gmail_api_email_reports_provider_failure
+      - tests/test_gmail_service.py::test_send_booking_notification
+      - tests/test_gmail_service.py::test_send_admin_notification
+      - tests/test_gmail_service.py::test_routine_admin_copies_are_disabled_by_default
+      - tests/test_gmail_service.py::test_routine_admin_copies_send_when_enabled
+      - tests/test_gmail_service.py::test_send_gmail_via_api_connected_agent_branding
+      - tests/test_gmail_service.py::test_business_branding_alternate_name
+      - tests/test_gmail_service.py::test_business_branding_crlf_and_html_safety
+      - tests/test_gmail_oauth_only.py::test_booking_preserves_staff_google_then_system_routing[True]
+      - tests/test_gmail_oauth_only.py::test_booking_preserves_staff_google_then_system_routing[False]
+    layer: [unit, provider_contract, targeted]
+    live_acceptance:
+      status: pending
+      reason: Delivery and sender rendering need separately authorized provider acceptance.
+      scenarios: [EB01]
+      scenario_source: specs/changes/email-business-branding/live-scenarios.md
+      prerequisites: &prerequisites
+        - Approved target revision/environment, exact Business Name and synthetic run fixtures
+        - Allowlisted sender/agent/admin/attendee accounts with OAuth permissions and independent read access
+        - Approved case variants, cleanup permissions, current cost estimate and explicit spending ceiling
+      expected_effects:
+        - One branded email per eligible notification and no routine admin copy when disabled
+        - No unintended recipient, duplicate send, configuration write or false delivery claim
+      independent_read_back:
+        - Retain Gmail message IDs and RFC Message-ID; inspect decoded MIME and recipient inbox separately
+        - Correlate each inbox result to its message ID and synthetic run marker; provider acceptance alone is insufficient
+      cleanup_recovery: &cleanup
+        - Retain redacted IDs/read-back; remove only run-owned messages/events/fixtures using approved permissions
+        - On partial failure retain outstanding resource IDs for recovery; do not blindly replay notifications
+      estimated_credits: &credits Unknown provider units; determine current account billing before a run. No voice calls required by these manual cases.
+      estimated_cost: &cost Unknown incremental Gmail/Calendar/account cost; resolve against target account terms before execution.
+      spending_ceiling: &ceiling No spending authorized. Obtain an explicit per-case and total cap after estimating units/costs.
+      unknown_charge_handling: &charges Stop, retain the ledger and reconcile before retrying.
+      reuse: &reuse No existing live evidence claimed. Changed branding invalidates prior copy assertions.
+      evidence: []
+  - id: EB/AC2
+    behavior: Portal Test Email sends branded MIME after settings reload and reports the actual transport outcome.
+    preconditions: [Isolated portal settings, connected/disconnected account variants, captured Google HTTP transport]
+    success: [Exact branded subject/sender and both body alternatives at the Gmail boundary, Persisted Business Name survives reload]
+    failure: [Disconnected account makes no send, Provider rejection yields the existing error UI]
+    invariants: [Recipient address and send count remain unchanged, No token or config writes while formatting]
+    tests:
+      - tests/test_gmail_integration.py::test_gmail_connection_test_endpoint
+      - e2e/test_admin_mail_oauth.py::test_legacy_settings_render_google_only_and_save_after_reload
+      - e2e/test_admin_mail_oauth.py::test_google_connection_status_and_truthful_test_result[True-True-200-Test email sent successfully!]
+      - 'e2e/test_admin_mail_oauth.py::test_google_connection_status_and_truthful_test_result[True-False-500-Connection Test Failed:]'
+      - e2e/test_admin_mail_oauth.py::test_google_connection_status_and_truthful_test_result[False-True-400-Connect Gmail Account]
+    layer: [http, browser, provider_contract]
+    live_acceptance:
+      status: pending
+      reason: Captured HTTP does not prove the test email arrived with the requested identity.
+      scenarios: [EB02]
+      scenario_source: specs/changes/email-business-branding/live-scenarios.md
+      prerequisites: *prerequisites
+      expected_effects: [One branded test email to the approved recipient, No booking or calendar mutation]
+      independent_read_back: [Correlate Gmail message ID and RFC Message-ID to the received inbox MIME; inspect sender, subject and both bodies]
+      cleanup_recovery: *cleanup
+      estimated_credits: *credits
+      estimated_cost: *cost
+      spending_ceiling: *ceiling
+      unknown_charge_handling: *charges
+      reuse: *reuse
+      evidence: []
+  - id: EB/AC3
+    behavior: Agent/admin invitation event copy and multi-service copy use the business identity without changing scheduling or notification behavior.
+    preconditions: [Synthetic appointment/callback and multi-service fixtures, Captured Calendar transport and stable event IDs]
+    success: [Branded titles/descriptions for agent/admin and unified/fallback events, Exact event times/durations/attendees and flags retained]
+    failure: [Provider failures retain existing failure behavior, Existing legacy and newly branded events remain cancellable under current rules]
+    invariants: [No duplicate event, No event-ID or booking-state change caused by formatting, No additional attendee notification requested]
+    tests:
+      - tests/test_google_calendar_service.py::test_create_agent_calendar_event
+      - tests/test_google_calendar_service.py::test_create_agent_calendar_event_callback
+      - tests/test_google_calendar_service.py::test_delete_agent_calendar_event_cancellation_compatibility
+      - tests/test_calendar_deduplication.py::test_delete_admin_calendar_event
+      - tests/test_gmail_service.py::test_create_admin_calendar_event
+      - tests/test_gmail_service.py::test_create_admin_calendar_event_callback
+      - tests/test_multi_service_scheduling.py::test_multi_service_google_calendar_sync
+      - tests/test_multi_service_scheduling.py::test_multi_service_google_calendar_sync_fallback
+    layer: [unit, provider_contract, targeted]
+    live_acceptance:
+      status: pending
+      reason: Calendar acceptance and invitation email delivery require independent provider/inbox reads.
+      scenarios: [EB03]
+      scenario_source: specs/changes/email-business-branding/live-scenarios.md
+      prerequisites: *prerequisites
+      expected_effects:
+        - Correctly branded run-owned Calendar events and invitations where the existing path requests them
+        - No duplicate event, unintended attendee, legacy-event rename or notification-flag change
+      independent_read_back:
+        - Fetch each provider event by calendar ID/event ID and inspect summary, description, times and attendees
+        - Correlate received invitation ICS UID to the provider event; do not infer inbox delivery from an event row
+      cleanup_recovery: *cleanup
+      estimated_credits: *credits
+      estimated_cost: *cost
+      spending_ceiling: *ceiling
+      unknown_charge_handling: *charges
+      reuse: *reuse
+      evidence: []
+omitted_layers:
+  database: No new persistence schema or booking mutation; use existing reload/round-trip coverage for the unchanged Business Name setting.
+  migration: No migration or historical-event backfill.
+  composed: No voice campaign execution in this planning stage; maintain shared campaign branding assertions before implementation handoff.
+review:
+  red: 2026-10-25 red executed; 12 tests in tests/test_gmail_service.py, 3 tests in tests/test_google_calendar_service.py, 2 tests in tests/test_multi_service_scheduling.py, 1 test in tests/test_gmail_integration.py, 2 tests in tests/test_gmail_oauth_only.py, and 2 browser test cases in e2e/test_admin_mail_oauth.py failed on legacy branding and missing assertion checks before runtime implementation.
+  green: 2026-10-25 green executed; all 87 unit/API cases across the 5 targeted test modules (tests/test_gmail_service.py, tests/test_gmail_oauth_only.py, tests/test_gmail_integration.py, tests/test_google_calendar_service.py, tests/test_multi_service_scheduling.py) and 4/4 Playwright browser test cases in e2e/test_admin_mail_oauth.py passed.
+  test_changes: Extended existing assertions to verify configured business identity, second-name alternate handling, CRLF/HTML safety, connected-agent MIME display formatting, callback copy, multi-service unified and split fallback, and calendar cancellation compatibility without weakening or removing any assertions.
+  sufficiency: Added raw connected-agent MIME assertions, second-name tests, escaping and header safety checks, callback summary/description assertions, calendar fallback and cancellation compatibility tests across all acceptance contracts.
+  offline:
+    status: pending
+    reason: Prior full offline suites passed; publication requires a fresh receipt for the exact outgoing commit and current remote target.
+    evidence:
+      - '2026-10-25 planning: separate sanitized collect-only runs passed, 76 unit/API and 4 browser cases; no tests executed.'
+      - '2026-10-25 planning: YAML, 3 AC mappings, 15 source test references, 3 linked live IDs and 4 document whitespace checks passed.'
+      - '2026-10-25 green: 87 targeted unit/API tests and 4 Playwright browser journeys passed.'
+      - '2026-10-25 verify: ./run_tests.sh --all completed with 2497 passed, 0 failures (151s).'
+      - '2026-10-25 verify: ./run_tests.sh --e2e completed with 715 passed, 0 failures (320s).'

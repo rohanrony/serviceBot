@@ -88,6 +88,7 @@ def test_google_connection_status_and_truthful_test_result(
 
     config = portal.load_config()
     config.update(
+        business_name="Davidson CarCare",
         gmail_sender="sender@example.test",
         gmail_recipient="admin@example.test",
         gmail_refresh_token=encrypt_key("isolated-refresh") if connected else "",
@@ -129,11 +130,16 @@ def test_google_connection_status_and_truthful_test_result(
         raw = json.loads(request.content)["raw"]
         mail = message_from_bytes(base64.urlsafe_b64decode(raw), policy=policy.default)
         assert mail["To"] == "admin@example.test"
-        assert "sender@example.test" in mail["From"]
-        assert "Gmail Integration Test Email" in mail["Subject"]
-        assert (
-            "configured correctly"
-            in mail.get_body(preferencelist=("html",)).get_content()
-        )
+        assert mail["From"] == "Davidson CarCare <sender@example.test>"
+        assert mail["Subject"] == "[Davidson CarCare] Gmail Integration Test Email"
+        html_content = mail.get_body(preferencelist=("html",)).get_content()
+        plain_content = mail.get_body(preferencelist=("plain",)).get_content()
+        assert "configured correctly" in html_content
+        assert "Davidson CarCare" in html_content
+        assert "BayFull" not in html_content
+        assert "serviceBot" not in html_content
+        assert "Davidson CarCare" in plain_content
+        assert "BayFull" not in plain_content
+        assert "serviceBot" not in plain_content
     else:
         assert not requests

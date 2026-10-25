@@ -2,9 +2,40 @@
 
 import json
 import math
-from typing import Literal
+import re
+from typing import Literal, Optional
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, TypeAdapter, field_validator
+
+
+DEFAULT_BUSINESS_DISPLAY_NAME = "Service Notifications"
+
+
+def resolve_business_name(config: Optional[dict] = None) -> str:
+    """
+    Resolves the configured business name, trimmed.
+    Returns neutral 'Service Notifications' when absent, blank, or non-string.
+    Never restores legacy product names (BayFull, serviceBot) as a fallback.
+    """
+    if config is None:
+        from serviceBot.api.portal import load_config
+        config = load_config()
+    name = (config or {}).get("business_name")
+    if not isinstance(name, str):
+        return DEFAULT_BUSINESS_DISPLAY_NAME
+    cleaned = name.strip()
+    return cleaned if cleaned else DEFAULT_BUSINESS_DISPLAY_NAME
+
+
+def sanitize_header_value(val: str) -> str:
+    """Strip CR and LF from header values to prevent CRLF injection."""
+    return re.sub(r"[\r\n]+", " ", str(val)).strip()
+
+
+def sanitize_display_name(val: str) -> str:
+    """Safely format the display name by removing angle brackets and CRLF."""
+    cleaned = re.sub(r"[<>\r\n]+", " ", str(val))
+    return " ".join(cleaned.split()).strip()
 
 
 def prefix_business_name(message: str, config: dict) -> str:

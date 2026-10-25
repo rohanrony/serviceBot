@@ -1,5 +1,6 @@
 import pytest
 from datetime import datetime, timedelta
+from unittest.mock import patch, MagicMock
 from serviceBot.db.connection import get_db_connection, dict_cursor
 from serviceBot.db.seed import seed_db
 from serviceBot.db.queries import (
@@ -9,6 +10,7 @@ from serviceBot.db.queries import (
 )
 from serviceBot.services.booking import BookingService, BookingConflictError
 from serviceBot.services import timezone_service
+from serviceBot.services.google_calendar import create_multi_service_calendar_events
 
 
 @pytest.fixture(autouse=True)
@@ -487,7 +489,9 @@ def test_multi_service_google_calendar_sync():
     ]
 
     with patch("serviceBot.services.google_calendar.httpx.post") as mock_post, \
+         patch("serviceBot.services.google_calendar.load_config") as mock_load, \
          patch("serviceBot.services.google_calendar.get_user_google_credentials") as mock_creds:
+        mock_load.return_value = {"business_name": "Davidson CarCare"}
         mock_creds.return_value = {"access_token": "mock_tok_123"}
         mock_post.return_value = MagicMock(status_code=201, text="{}")
 
@@ -499,13 +503,67 @@ def test_multi_service_google_calendar_sync():
 
         assert res["success"] is True
         assert res["event_mode"] == "unified"
+        assert res["summary"] == "Davidson CarCare Appointment - Alice Smith"
         # Check payload
         _, kwargs = mock_post.call_args
         json_data = kwargs.get("json", {})
-        assert json_data["summary"] == "BayFull Appointment - Alice Smith"
+        assert json_data["summary"] == "Davidson CarCare Appointment - Alice Smith"
+        assert "BayFull" not in json_data["summary"]
+        assert "serviceBot" not in json_data["summary"]
         assert "Oil Change" in json_data["description"]
         assert "Brake Replacement" in json_data["description"]
         assert "John Doe" in json_data["description"]
         assert "Sarah Jenkins" in json_data["description"]
+        assert "Davidson CarCare" in json_data["description"]
+        assert "BayFull" not in json_data["description"]
+        assert "serviceBot" not in json_data["description"]
 
 
+def test_multi_service_google_calendar_sync_fallback():
+    """Verify fallback per-segment calendar event copy delegates when unified fails."""
+    segments = [
+        {
+            "staff_agent_id": 1,
+            "staff_agent_name": "John Doe",
+            "service_name": "Oil Change",
+            "booking_time": "2026-07-20 10:00:00",
+            "duration_minutes": 60,
+        },
+        {
+            "staff_agent_id": 2,
+            "staff_agent_name": "Sarah Jenkins",
+            "service_name": "Brake Replacement",
+            "booking_time": "2026-07-20 11:00:00",
+            "duration_minutes": 90,
+        },
+    ]
+
+    with patch("serviceBot.services.google_calendar.httpx.post") as mock_post, \
+         patch("serviceBot.services.google_calendar.load_config") as mock_load, \
+         patch("serviceBot.services.google_calendar.get_user_google_credentials") as mock_creds, \
+         patch("serviceBot.services.google_calendar.create_agent_calendar_event") as mock_agent_event:
+        mock_load.return_value = {"business_name": "Davidson CarCare"}
+        mock_creds.return_value = {"access_token": "mock_tok_123", "granted_scopes": {"https://www.googleapis.com/auth/calendar.events"}}
+        mock_post.return_value = MagicMock(status_code=500, text="Internal Error") # unified fail
+        mock_agent_event.return_value = True
+
+        res = create_multi_service_calendar_events(
+            customer_name="Alice Smith",
+            segments=segments,
+            issue_description="Regular maintenance",
+        )
+
+        assert res["success"] is True
+        assert res["event_mode"] == "fallback_split"
+        assert res["segments_count"] == 2
+        assert mock_agent_event.call_count == 2
+        call1 = mock_agent_event.call_args_list[0].kwargs
+        assert call1["agent_id"] == 1
+        assert call1["customer_name"] == "Alice Smith"
+        assert call1["service_type"] == "Oil Change"
+        assert call1["issue_description"] == "Regular maintenance"
+        call2 = mock_agent_event.call_args_list[1].kwargs
+        assert call2["agent_id"] == 2
+        assert call2["customer_name"] == "Alice Smith"
+        assert call2["service_type"] == "Brake Replacement"
+        assert call2["issue_description"] == "Regular maintenance"
