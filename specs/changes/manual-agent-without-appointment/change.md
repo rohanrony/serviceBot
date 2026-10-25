@@ -90,7 +90,7 @@ Publication is now authorized for the selected fix branch; merge/deploy remain s
 
 ## Publication selection
 
-Publish only the seven fix/test/record paths on `fix/manual-staff-agent-selection` from `c04d72c8b237820ef72e7c5da2c5bf747327b54f`.
+Publish only the eight fix/test/record paths on `fix/manual-staff-agent-selection` from `c04d72c8b237820ef72e7c5da2c5bf747327b54f`.
 The source parent `33e08f753b81df255dbdee43cd1f4b82d067b9b8` contains a separate prompt/RAG change and is
 deliberately absent from this publication branch. The existing source checkout and
 implementation worktree are preserved. The script query is advanced to `v=48` so
@@ -102,3 +102,20 @@ selected paths, fetches the target and runs the complete exact-candidate verifie
 Its immutable head/base receipt is stored at
 `scratch/verification/<head>-<base>/receipt.json`; the pre-push checks require it.
 Final commit/push status is reported after that gate, without modifying the tested commit.
+
+### Deterministic fixture needed by the publication gate
+
+The first exact candidate `2c77923` retained the existing main-branch reminder test's
+wall clock. Its fixed appointment (`2026-10-25 14:00`) had already passed, so the
+assertion requiring future pending attempts failed: 1 failed, 2,479 unit tests passed.
+All 719 E2E tests passed on this candidate, including all six manual-selection cases.
+The failure is independent of manual staff selection; no application code changed here.
+Retain the failed receipt under `scratch/verification/2c77923f92ffa5d646b9cc18fbf13de7bcfa4648-c04d72c8b237820ef72e7c5da2c5bf747327b54f/`.
+
+Freeze only `sms_reminders.get_current_business_time` to `2026-10-24 10:00:00` during
+booking and `10:00:30` during polling in the existing test. This is the same three-line
+clock fixture correction already present in the original implementation base; the
+unrelated prompt/RAG changes remain excluded. Keep every existing assertion for one
+dispatch per recipient, SENT first attempts, PENDING future attempts and no duplicate
+polling dispatch. Record this fixture contract as TEST-CLOCK-01 in the coverage matrix.
+The corrected exact candidate must pass the complete publication gate before push.

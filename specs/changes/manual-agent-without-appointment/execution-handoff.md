@@ -74,3 +74,10 @@ The test counts above are the implementation-stage snapshot from the source work
 Publishing requires fresh static checks, complete test collection/execution, coverage IDs,
 and matching head/base receipt through `./scripts/verify_change.sh`. The helper pushes
 only after the receipt and live remote target checks pass. No PR, merge or deploy is included.
+
+The first exact candidate exposed the existing duplicate-booking-message test's expired
+wall-clock appointment. TEST-CLOCK-01 freezes its booking/polling clocks without changing
+runtime code or weakening assertions. Include `tests/test_no_duplicate_booking_messages.py`
+among the selected paths (eight paths total), run that focused test and then the complete
+exact-candidate gate. Preserve the failed first receipt; use the latest passing head/base
+receipt as publication evidence. The prompt/RAG feature commit remains outside this branch.
