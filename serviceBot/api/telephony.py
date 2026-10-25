@@ -2458,7 +2458,8 @@ async def voice_tools(payload: Dict[str, Any], request: Request = None, backgrou
         elif tool_name in ["get_service_fields", "get_required_fields"]:
             service_name = args.get("service_name") or args.get("serviceName") or args.get("service") or ""
             fields_data = get_service_required_fields(service_name)
-            if fields_data:
+            is_found = bool(fields_data and not fields_data.get("is_fallback") and fields_data.get("service_found", True) is not False)
+            if is_found:
                 result = {
                     "success": True,
                     "service_found": True,

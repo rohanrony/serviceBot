@@ -1422,7 +1422,9 @@ def get_service_required_fields(service_name: str, *, strict: bool = False) -> d
         "req_phone_number": True,
         "req_vehicle_details": True,
         "req_issue_description": True,
-        "req_location": False
+        "req_location": False,
+        "is_fallback": True,
+        "service_found": False
     }
 
 

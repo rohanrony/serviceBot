@@ -1,10 +1,12 @@
 import os
 import re
 import json
+import time
 import tempfile
 import httpx
 import datetime as dt_mod
 from datetime import datetime
+from threading import RLock
 from typing import Optional, List, Literal
 from fastapi import APIRouter, HTTPException, UploadFile, File, Request, BackgroundTasks
 from pydantic import Field, BaseModel, StrictBool, StrictStr, field_validator
@@ -245,6 +247,8 @@ class ServiceCreate(BaseModel):
 
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
 SYSTEM_PROMPT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "system_prompt.txt")
+# Request handlers and background Google refreshes share this file in-process.
+_CONFIG_LOCK = RLock()
 
 def load_config():
     import json
@@ -356,7 +360,7 @@ Speak the filler naturally as part of the conversation so the caller experiences
         data = defaults.copy()
     else:
         try:
-            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            with _CONFIG_LOCK, open(CONFIG_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
             for k, v in defaults.items():
                 if k not in data:
@@ -368,7 +372,7 @@ Speak the filler naturally as part of the conversation so the caller experiences
     # Also check system_prompt.txt for overrides
     if os.path.exists(SYSTEM_PROMPT_PATH):
         try:
-            with open(SYSTEM_PROMPT_PATH, "r", encoding="utf-8") as f:
+            with _CONFIG_LOCK, open(SYSTEM_PROMPT_PATH, "r", encoding="utf-8") as f:
                 content = f.read().strip()
                 if content:
                     data["system_prompt"] = content
@@ -380,48 +384,80 @@ Speak the filler naturally as part of the conversation so the caller experiences
 
 def save_config(config_data):
     import json
-    system_prompt = config_data.get("system_prompt")
-    if system_prompt is not None:
-        try:
-            with open(SYSTEM_PROMPT_PATH, "w", encoding="utf-8") as f:
-                f.write(system_prompt)
-        except Exception as e:
-            print(f"Error saving system_prompt.txt: {e}")
+    with _CONFIG_LOCK:
+        system_prompt = config_data.get("system_prompt")
+        if system_prompt is not None:
+            try:
+                with open(SYSTEM_PROMPT_PATH, "w", encoding="utf-8") as f:
+                    f.write(system_prompt)
+            except Exception as e:
+                print(f"Error saving system_prompt.txt: {e}")
 
-    with open(CONFIG_PATH, "w") as f:
-        json.dump(config_data, f, indent=2)
+        with open(CONFIG_PATH, "w") as f:
+            json.dump(config_data, f, indent=2)
+
+
+def update_config_values(changes):
+    """Merge a background operation's fields without restoring its old snapshot."""
+    with _CONFIG_LOCK:
+        config = load_config()
+        config.update(changes)
+        save_config(config)
+
+_catalog_sync_status = {
+    "status": "idle",
+    "last_synced_at": None,
+    "last_error": None,
+}
+
+def get_catalog_sync_status() -> dict:
+    return dict(_catalog_sync_status)
 
 def sync_services_to_kb():
+    global _catalog_sync_status
     from serviceBot.db.connection import get_db_connection, dict_cursor
     from serviceBot.services.rag import FAQService
 
     # The snapshot must be inside the same boundary as embedding/publication:
     # an older background job cannot publish a snapshot it took before waiting.
-    with FAQService.operation_lock:
-        with get_db_connection() as conn:
-            with dict_cursor(conn) as cursor:
-                cursor.execute("SELECT name, description, price_range, duration_minutes FROM services")
-                rows = cursor.fetchall()
-        lines = ["# Auto Service Catalog and Offerings"]
-        for row in rows:
-            lines.extend([f"## {row['name']}",
-                f"Description: {row['description'] or 'No description available'}",
-                f"Price Range: {row['price_range'] or 'TBD'}",
-                f"Duration: {row['duration_minutes'] or 'TBD'} minutes", ""])
-        catalog_text = "\n".join(lines)
-        os.makedirs(KB_DIR, exist_ok=True)
-        filename = "auto_services_catalog.txt"
-        temporary_path = None
-        try:
-            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=KB_DIR,
-                    prefix=".auto-services-", suffix=".tmp", delete=False) as temporary:
-                temporary_path = temporary.name
-                temporary.write(catalog_text)
-            FAQService().replace_text(catalog_text, filename)
-            os.replace(temporary_path, os.path.join(KB_DIR, filename))
-        finally:
-            if temporary_path and os.path.exists(temporary_path):
-                os.unlink(temporary_path)
+    _catalog_sync_status["status"] = "syncing"
+    try:
+        with FAQService.operation_lock:
+            with get_db_connection() as conn:
+                with dict_cursor(conn) as cursor:
+                    cursor.execute("SELECT name, description, price_range, duration_minutes FROM services")
+                    rows = cursor.fetchall()
+            lines = ["# Auto Service Catalog and Offerings"]
+            for row in rows:
+                lines.extend([f"## {row['name']}",
+                    f"Description: {row['description'] or 'No description available'}",
+                    f"Price Range: {row['price_range'] or 'TBD'}",
+                    f"Duration: {row['duration_minutes'] or 'TBD'} minutes", ""])
+            if not rows:
+                lines.extend(["No services are currently listed in the catalog.", ""])
+            catalog_text = "\n".join(lines)
+            os.makedirs(KB_DIR, exist_ok=True)
+            filename = "auto_services_catalog.txt"
+            temporary_path = None
+            try:
+                with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=KB_DIR,
+                        prefix=".auto-services-", suffix=".tmp", delete=False) as temporary:
+                    temporary_path = temporary.name
+                    temporary.write(catalog_text)
+                FAQService().replace_text(catalog_text, filename)
+                os.replace(temporary_path, os.path.join(KB_DIR, filename))
+            finally:
+                if temporary_path and os.path.exists(temporary_path):
+                    os.unlink(temporary_path)
+        _catalog_sync_status["status"] = "synced"
+        _catalog_sync_status["last_synced_at"] = time.time()
+        _catalog_sync_status["last_error"] = None
+        logger.info(f"[catalog_sync] Knowledge base catalog refreshed with {len(rows)} service(s).")
+    except Exception as exc:
+        _catalog_sync_status["status"] = "failed"
+        _catalog_sync_status["last_error"] = str(exc)
+        logger.error(f"[catalog_sync] Knowledge base catalog sync failed: {exc}")
+        raise
 
 async def sync_prompt_to_elevenlabs(prompt_text: str, first_message: str = None):
     api_key = os.getenv("ELEVENLABS_API_KEY", "").strip()
@@ -854,6 +890,11 @@ async def delete_service(service_id: int, background_tasks: BackgroundTasks):
             conn.commit()
     background_tasks.add_task(sync_services_to_kb)
     return {"id": service_id, "success": True}
+
+@router.get("/services/sync-status")
+async def get_services_sync_status():
+    """Returns the current background sync status of the service catalog to knowledge base."""
+    return get_catalog_sync_status()
 
 
 class CalendarSlotCreate(BaseModel):

@@ -42,8 +42,13 @@ acceptance:
       - "tests/test_portal_config.py::test_provider_sync_status_reported_separately_on_failure"
       - "tests/test_portal_config.py::test_provider_http_500_reported_as_failed_sync"
       - "tests/test_portal_config.py::test_sync_prompt_to_elevenlabs_multi_agent_resilience"
+      - "tests/test_prompt_and_catalogue_sync.py::test_business_hours_and_timezone_update_all_prompt_sections"
+      - "tests/test_prompt_and_catalogue_sync.py::test_business_hours_update_with_missing_credentials_reports_unavailable"
+      - "tests/test_prompt_and_catalogue_sync.py::test_business_hours_update_with_provider_error_reports_failed"
       - "e2e/test_business_neutral_portal.py::test_provider_sync_failure_displays_separate_notice"
       - "e2e/test_business_neutral_portal.py::test_provider_sync_unavailable_displays_warning_notice"
+      - "e2e/test_business_neutral_portal.py::test_staff_business_hours_provider_sync_unavailable_displays_notice"
+      - "e2e/test_business_neutral_portal.py::test_staff_business_hours_provider_sync_failure_displays_notice"
     layer: [unit, http, browser]
     live_acceptance:
       status: pending
@@ -221,6 +226,23 @@ acceptance:
     live_acceptance:
       status: not_required
       reason: "DOM structure and styling verified offline."
+      scenarios: []
+
+  - id: "US4/AC2"
+    behavior: "Service catalogue mutations preserve main agent prompt, purge obsolete RAG chunks, and prevent stale RAG collisions with live database"
+    preconditions: ["PostgreSQL services table and ChromaDB knowledge base collection initialized"]
+    success: ["Service creations, updates, and deletions reflect immediately in get_service_fields and live FAQ lookup without modifying system_prompt.txt or triggering provider sync; obsolete RAG chunks are removed upon background sync and filtered out from LLM context"]
+    failure: ["Catalogue edit rewrites main system prompt, or obsolete service chunks from RAG collide with live catalogue"]
+    invariants: ["Live PostgreSQL database remains the canonical source of truth for catalogue services"]
+    tests:
+      - "tests/test_prompt_and_catalogue_sync.py::test_service_catalogue_lifecycle_and_freshness"
+      - "tests/test_prompt_and_catalogue_sync.py::test_stale_rag_chunks_do_not_conflict_with_live_catalogue"
+      - "tests/test_prompt_and_catalogue_sync.py::test_catalogue_mutations_do_not_rewrite_prompt_or_call_sync"
+      - "tests/test_prompt_and_catalogue_sync.py::test_business_profile_with_regenerate_flag_updates_prompt_and_syncs"
+    layer: [unit, database, http]
+    live_acceptance:
+      status: not_required
+      reason: "Catalogue persistence, live DB query, RAG filtering, and prompt isolation are fully verified offline."
       scenarios: []
 
   - id: "US5/AC1"

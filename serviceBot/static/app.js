@@ -2334,7 +2334,16 @@ document.addEventListener('DOMContentLoaded', () => {
           body: JSON.stringify(payload)
         });
         if (!response.ok) throw new Error('Failed to save configurations');
-        showToast('Agent prompts and intake fields updated successfully!');
+        const resData = await response.json().catch(() => ({}));
+        if (resData.provider_sync && resData.provider_sync.status === 'failed') {
+          showToast('Prompts saved locally. Voice provider sync failed.', 'warning');
+        } else if (resData.provider_sync && resData.provider_sync.status === 'unavailable') {
+          showToast('Prompts saved locally. Voice provider sync unavailable.', 'warning');
+        } else if (resData.provider_sync && resData.provider_sync.status === 'synced') {
+          showToast('Agent prompts updated and voice provider synchronized.');
+        } else {
+          showToast('Agent prompts and intake fields updated successfully!');
+        }
       } catch (err) {
         console.error(err);
         showToast('Error saving configuration: ' + err.message, 'error');
@@ -3203,7 +3212,40 @@ document.addEventListener('DOMContentLoaded', () => {
                 })
               });
               if (!res.ok) throw new Error('Failed to update business hours');
-              showToast('Business hours and operating workdays updated successfully!');
+              const resData = await res.json().catch(() => ({}));
+              
+              const staffNotice = document.getElementById('staff-bhours-sync-notice');
+              if (resData.provider_sync && resData.provider_sync.status === 'failed') {
+                if (staffNotice) {
+                  staffNotice.style.display = 'block';
+                  staffNotice.style.background = 'rgba(239, 68, 68, 0.15)';
+                  staffNotice.style.color = '#ef4444';
+                  staffNotice.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+                  staffNotice.textContent = `Saved locally, but voice provider sync failed: ${resData.provider_sync.message || 'Service unavailable'}`;
+                }
+                showToast('Business hours saved locally. Voice provider sync failed.', 'warning');
+              } else if (resData.provider_sync && resData.provider_sync.status === 'unavailable') {
+                if (staffNotice) {
+                  staffNotice.style.display = 'block';
+                  staffNotice.style.background = 'rgba(245, 158, 11, 0.15)';
+                  staffNotice.style.color = '#f59e0b';
+                  staffNotice.style.border = '1px solid rgba(245, 158, 11, 0.3)';
+                  staffNotice.textContent = `Business hours saved locally, but voice provider synchronization is unavailable: ${resData.provider_sync.message || 'Voice provider credentials not configured.'}`;
+                }
+                showToast('Business hours saved locally. Voice provider sync unavailable.', 'warning');
+              } else if (resData.provider_sync && resData.provider_sync.status === 'synced') {
+                if (staffNotice) {
+                  staffNotice.style.display = 'block';
+                  staffNotice.style.background = 'rgba(34, 197, 94, 0.15)';
+                  staffNotice.style.color = '#22c55e';
+                  staffNotice.style.border = '1px solid rgba(34, 197, 94, 0.3)';
+                  staffNotice.textContent = 'Business hours saved and live voice agent synchronized successfully.';
+                }
+                showToast('Business hours updated and voice provider synchronized.');
+              } else {
+                if (staffNotice) staffNotice.style.display = 'none';
+                showToast('Business hours and operating workdays updated successfully!');
+              }
             } catch (err) {
               console.error(err);
               showToast('Error saving business hours: ' + err.message, 'error');

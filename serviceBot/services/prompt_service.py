@@ -176,8 +176,11 @@ def update_prompt_business_hours(
         return prompt_text
 
     sched = format_business_schedule(start_hour, end_hour, business_days, timezone_str)
-    updated = re.sub(r"(?m)^Business hours: .*\.$",
-        lambda _: f"Business hours: {sched['days_hyphen']} {sched['start_str']} - {sched['end_str']} {sched['tz_code']}.", prompt_text)
+    updated = re.sub(
+        r"(?m)^(\s*(?:[-*]\s*)?Business hours:\s*).*$",
+        lambda m: f"{m.group(1)}{sched['days_hyphen']} {sched['start_str']} - {sched['end_str']} {sched['tz_code']}.",
+        prompt_text
+    )
 
     # 1. FAQ & General Knowledge bullet
     # Example: - **FAQ & General Knowledge:** The caller has questions about business hours (Monday-Friday 7:00 AM - 6:00 PM, closed weekends), location...

@@ -90,11 +90,11 @@ class FAQService:
             )
         
         # Consolidate retrieved document snippets
-        context_snippets = []
-        if results and "documents" in results and results["documents"]:
-            context_snippets = results["documents"][0]
+        docs = results.get("documents", [[]])[0] if results and "documents" in results else []
+        metas = results.get("metadatas", [[]])[0] if results and "metadatas" in results and results["metadatas"] else []
 
         # Dynamically retrieve the actual services catalog from the database
+        db_services_loaded = False
         try:
             from serviceBot.db.connection import get_db_connection, dict_cursor
             with get_db_connection() as conn:
@@ -109,10 +109,22 @@ class FAQService:
                         duration = f" - Duration: {row['duration_minutes']} minutes" if row['duration_minutes'] else ""
                         db_services.append(f"- {row['name']}{desc}{price}{duration}")
                     services_context = "Actual Available Services (from the live service catalog):\n" + "\n".join(db_services)
-                    context_snippets.insert(0, services_context)
+                else:
+                    services_context = "Actual Available Services (from the live service catalog):\nNo services are currently listed in the catalog."
+                db_services_loaded = True
         except Exception:
             # Fall back gracefully in testing or if database is unavailable
             pass
+
+        if db_services_loaded:
+            filtered_snippets = []
+            for i, doc in enumerate(docs):
+                meta = metas[i] if i < len(metas) else {}
+                if (meta or {}).get("filename") != "auto_services_catalog.txt":
+                    filtered_snippets.append(doc)
+            context_snippets = [services_context] + filtered_snippets
+        else:
+            context_snippets = list(docs)
         
         context = "\n".join(context_snippets) if context_snippets else "No relevant context found."
             

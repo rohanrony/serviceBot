@@ -322,6 +322,50 @@ def test_provider_sync_unavailable_displays_warning_notice(page, live_server):
     expect(notice).not_to_contain_text("synchronized successfully")
 
 
+def test_staff_business_hours_provider_sync_unavailable_displays_notice(page, live_server):
+    """Business hours form displays warning notice when voice provider sync is unavailable."""
+    def handle_post_config(route):
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body='{"success": true, "saved": true, "provider_sync": {"status": "unavailable", "message": "Voice provider credentials not configured."}}'
+        )
+
+    page.route("**/api/v1/portal/config", lambda route: handle_post_config(route) if route.request.method == "POST" else route.continue_())
+
+    page.goto(f"{live_server}/portal/#staff")
+    expect(page.locator("#staff-bhours-form")).to_be_visible()
+
+    page.locator("#staff-bhours-form button[type=submit]").click()
+
+    notice = page.locator("#staff-bhours-sync-notice")
+    expect(notice).to_be_visible()
+    expect(notice).to_contain_text("unavailable")
+    expect(notice).not_to_contain_text("synchronized successfully")
+
+
+def test_staff_business_hours_provider_sync_failure_displays_notice(page, live_server):
+    """Business hours form displays error notice when voice provider sync fails."""
+    def handle_post_config(route):
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body='{"success": true, "saved": true, "provider_sync": {"status": "failed", "message": "ElevenLabs 500 server error."}}'
+        )
+
+    page.route("**/api/v1/portal/config", lambda route: handle_post_config(route) if route.request.method == "POST" else route.continue_())
+
+    page.goto(f"{live_server}/portal/#staff")
+    expect(page.locator("#staff-bhours-form")).to_be_visible()
+
+    page.locator("#staff-bhours-form button[type=submit]").click()
+
+    notice = page.locator("#staff-bhours-sync-notice")
+    expect(notice).to_be_visible()
+    expect(notice).to_contain_text("failed")
+    expect(notice).not_to_contain_text("synchronized successfully")
+
+
 def test_clearing_selected_slot_does_not_submit_cached_time(page, live_server, api, db, scenario):
     """Review Finding 1: Clearing slot dropdown clears cached slot time and submits unscheduled request."""
     assert api.post('/api/v1/portal/config', json={
