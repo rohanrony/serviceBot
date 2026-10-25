@@ -1,3 +1,4 @@
+import datetime as dt_mod
 from unittest.mock import MagicMock, patch
 import pytest
 
@@ -116,6 +117,7 @@ def test_booking_does_not_duplicate_messages_to_customer_and_agent():
          patch("serviceBot.db.queries.get_sms_config", return_value={}), \
          patch("serviceBot.db.queries.get_or_create_sms_conversation", return_value={"id": 1}), \
          patch("serviceBot.db.queries.add_sms_message", return_value=1), \
+         patch("serviceBot.services.sms_reminders.get_current_business_time", return_value=dt_mod.datetime(2026, 10, 24, 10, 0, 0)), \
          patch("serviceBot.services.sms_reminders.schedule_sms_reminder", side_effect=mock_schedule_sms_reminder), \
          patch("serviceBot.db.connection.get_db_connection", return_value=mock_conn_ctx), \
          patch("serviceBot.db.connection.dict_cursor", return_value=mock_cursor_ctx), \
@@ -159,6 +161,7 @@ def test_booking_does_not_duplicate_messages_to_customer_and_agent():
     with patch("serviceBot.db.connection.get_db_connection", return_value=mock_conn_ctx), \
          patch("serviceBot.db.connection.dict_cursor", return_value=mock_cursor_ctx), \
          patch("serviceBot.api.portal.load_config", return_value=cfg), \
+         patch("serviceBot.services.sms_reminders.get_current_business_time", return_value=dt_mod.datetime(2026, 10, 24, 10, 0, 30)), \
          patch("serviceBot.services.sms_reminders.TwilioSMSClient", return_value=mock_client):
         dispatched_count = run_reminder_polling_worker_cycle()
 
