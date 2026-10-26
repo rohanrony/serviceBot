@@ -220,6 +220,14 @@ def elevenlabs_capture(scenario, monkeypatch):
     calls = []
     monkeypatch.setenv("ELEVENLABS_API_KEY", "synthetic-key")
     monkeypatch.setenv("ELEVENLABS_AGENT_ID", "synthetic-agent")
+    secrets = {
+        "elevenlabs_api_key": "synthetic-key",
+        "elevenlabs_agent_id": "synthetic-agent",
+    }
+    monkeypatch.setattr(
+        "serviceBot.services.encryption.get_active_secret",
+        lambda name: secrets.get(name, ""),
+    )
     original = httpx.AsyncClient._send_single_request
 
     async def capture(self, request):

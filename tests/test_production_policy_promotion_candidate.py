@@ -40,7 +40,7 @@ def test_candidate_is_native_settings_fixed_point():
     assert transform(prompt) == prompt
     assert "4-Hour Minimum Planning Horizon Restriction" in prompt
     assert "advisor callbacks require at least 2 hours advance notice" in prompt
-    assert "Monday–Friday, 7:00 AM – 6:00 PM ET" in prompt
+    assert "Monday–Friday, 7:00 AM - 6:00 PM ET" in prompt.replace(" – ", " - ")
 
 
 def test_candidate_preserves_recording_disclosure_and_callback_lead_time():
@@ -73,5 +73,5 @@ def test_settings_preserve_quote_link_and_service_free_callback_rules(settings):
     assert f"Callbacks require at least {settings[5]} hours advance notice during business hours" in updated
     assert "ensure it meets the configured callback lead time before booking" in updated
     if settings != NATIVE:
-        assert "Tuesday–Saturday, 9:00 AM – 7:00 PM CT" in updated
+        assert "Tuesday–Saturday, 9:00 AM - 7:00 PM CT" in updated.replace(" – ", " - ")
         assert "90-minute (1.5-hour) service: Latest possible start is 5:30 PM" in updated

@@ -1,5 +1,13 @@
 # Review Handoff: Voice Agent Prompt and Catalogue Sync
 
+## Publication verification follow-up
+
+The host publication script created commit `e2b551e8d69605b53c813480be22cd4ae60a1b31`. Its exact-candidate verification against base `c04d72c8b237820ef72e7c5da2c5bf747327b54f` completed with 2,488 unit/integration tests passing and 7 failing, plus 715 E2E tests passing and 1 failing. The failed gate prevented publication. The reviewer inspected the receipt, JUnit reports, and failure logs directly.
+
+The failures identified three test issues: the authoritative-persistence regression called `monkeypatch.undo()` and removed its configuration-path isolation, contaminating later tests; two policy assertions required an en dash while the schedule formatter emits a hyphen; and the greeting browser fixture mocked environment variables while the shared fixture replaced the credential resolver with empty values. Follow-up corrections are confined to those tests and their coverage mappings. No production code or root test harness changes are included in this follow-up.
+
+Static checks, isolated checks of the corrected persistence test, schedule-policy assertions, and credential-capture fixture, and the 13 focused offline regressions passed. These isolated checks do not constitute a browser or full PostgreSQL suite rerun. Full exact-candidate verification must pass for the corrected commit before pushing. Live/provider and deployed behavior remain unverified.
+
 ## Follow-up execution record — 2026-10-25
 
 - **Branch:** `dev-v0.19.3-prompt-and-catalogue-sync`.

@@ -52,11 +52,14 @@ acceptance:
       - "tests/test_prompt_and_catalogue_sync.py::test_db_publication_locking_lifecycle_and_cleanup"
       - "tests/test_prompt_and_catalogue_sync.py::test_split_schedule_parsing_and_repeated_saves_regression"
       - "tests/test_prompt_and_catalogue_sync.py::test_sync_failures_precedence_ordering"
+      - "tests/test_production_policy_promotion_candidate.py::test_candidate_is_native_settings_fixed_point"
+      - "tests/test_production_policy_promotion_candidate.py::test_settings_preserve_quote_link_and_service_free_callback_rules"
       - "e2e/test_business_neutral_portal.py::test_provider_sync_failure_displays_separate_notice"
       - "e2e/test_business_neutral_portal.py::test_provider_sync_unavailable_displays_warning_notice"
       - "e2e/test_business_neutral_portal.py::test_staff_business_hours_provider_sync_unavailable_displays_notice"
       - "e2e/test_business_neutral_portal.py::test_staff_business_hours_provider_sync_failure_displays_notice"
       - "e2e/test_business_neutral_portal.py::test_timing_and_hours_sync_notices_displayed_on_provider_sync_failure"
+      - "e2e/test_portal_recent_features.py::test_recording_disclosure_greeting_persists_and_syncs_from_browser"
     layer: [unit, http, browser]
     live_acceptance:
       status: pending

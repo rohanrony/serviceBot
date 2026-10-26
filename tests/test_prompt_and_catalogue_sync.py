@@ -528,18 +528,16 @@ def test_authoritative_config_persistence_and_stale_export_protection(isolated_e
             raise IOError("Simulated disk error writing config.json")
         orig_atomic_write(filepath, content)
 
-    monkeypatch.setattr(portal, "_atomic_write_file", mock_atomic_write_fail)
-
     bad_cfg = dict(initial_cfg)
     bad_cfg["system_prompt"] = "Corrupted Prompt That Should Fail"
-    try:
-        portal.save_config(bad_cfg)
-        assert False, "Should have raised IOError"
-    except IOError:
-        pass
+    with monkeypatch.context() as write_failure:
+        write_failure.setattr(portal, "_atomic_write_file", mock_atomic_write_fail)
+        with pytest.raises(IOError, match="Simulated disk error writing config.json"):
+            portal.save_config(bad_cfg)
 
     # Effective settings remain unchanged
-    monkeypatch.undo()
+    assert portal.CONFIG_PATH == isolated_env["config_file"]
+    assert portal.SYSTEM_PROMPT_PATH == isolated_env["prompt_file"]
     loaded_cfg = portal.load_config()
     assert loaded_cfg.get("system_prompt") == orig_prompt
 
