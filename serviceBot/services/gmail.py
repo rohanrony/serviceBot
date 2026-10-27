@@ -7,7 +7,7 @@ import httpx
 from typing import Optional
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from serviceBot.api.portal import load_config, save_config
+from serviceBot.api.portal import load_config, update_config_values
 from serviceBot.services.encryption import encrypt_key, decrypt_key
 from serviceBot.db.connection import get_db_connection
 from serviceBot.logger import get_logger
@@ -61,10 +61,12 @@ def refresh_gmail_token() -> Optional[str]:
         # Calculate secure expiry time (subtracting 60 seconds margin)
         expires_at = time.time() + expires_in - 60
         
-        # Store encrypted
-        config["gmail_access_token"] = encrypt_key(new_access_token)
-        config["gmail_token_expires_at"] = expires_at
-        save_config(config)
+        # Google may respond after an admin saved newer notification settings.
+        # Merge only token fields into the latest configuration under its lock.
+        update_config_values({
+            "gmail_access_token": encrypt_key(new_access_token),
+            "gmail_token_expires_at": expires_at,
+        })
         
         logger.info("Google OAuth2 access token refreshed successfully!")
         return new_access_token

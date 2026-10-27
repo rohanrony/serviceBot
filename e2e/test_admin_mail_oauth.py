@@ -2,6 +2,8 @@
 
 import base64
 import json
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from email import message_from_bytes, policy
 
 import httpx
@@ -70,6 +72,72 @@ def test_legacy_settings_render_google_only_and_save_after_reload(
     expect(page.locator("#gmail-enabled")).to_be_checked()
     expect(page.locator("#gmail-routine-admin-copies-enabled")).to_be_checked()
     expect(page.locator("#enable-agent-selection")).not_to_be_checked()
+
+
+@pytest.mark.test_layer("browser")
+def test_admin_email_save_survives_background_refresh_and_page_reload(
+    page, live_server, api, monkeypatch
+):
+    from serviceBot.api import portal
+    from serviceBot.services import gmail
+    from serviceBot.services.encryption import decrypt_key, encrypt_key
+
+    config = portal.load_config()
+    config.update(
+        gmail_enabled=True,
+        gmail_recipient="old-admin@example.test",
+        gmail_sender="sender@example.test",
+        gmail_client_id=encrypt_key("synthetic-client"),
+        gmail_client_secret=encrypt_key("synthetic-secret"),
+        gmail_refresh_token=encrypt_key("synthetic-refresh"),
+        gmail_access_token=encrypt_key("old-access"),
+        gmail_token_expires_at=1,
+    )
+    portal.save_config(config)
+    waiting_for_google = threading.Event()
+    release_google = threading.Event()
+    refresh_requests = []
+
+    def google_response(url, **kwargs):
+        assert url == "https://oauth2.googleapis.com/token"
+        refresh_requests.append(url)
+        waiting_for_google.set()
+        assert release_google.wait(timeout=30), "Admin save did not finish"
+        return httpx.Response(
+            200, json={"access_token": "new-access", "expires_in": 3600}
+        )
+
+    monkeypatch.setattr(gmail.httpx, "post", google_response)
+    open_mail(page, live_server)
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        refreshed = executor.submit(gmail.refresh_gmail_token)
+        try:
+            assert waiting_for_google.wait(timeout=10)
+            page.locator("#gmail-recipient").fill("new-admin@example.test")
+            with page.expect_response(
+                lambda r: r.request.method == "POST"
+                and r.url.endswith("/gmail-config")
+            ) as saved:
+                page.locator("#save-gmail-btn").click()
+            assert saved.value.status == 200
+            expect(page.locator("#app-toast")).to_contain_text(
+                "Gmail configuration saved successfully!"
+            )
+            assert portal.load_config()["gmail_recipient"] == "new-admin@example.test"
+        finally:
+            release_google.set()
+        assert refreshed.result(timeout=10) == "new-access"
+
+    assert len(refresh_requests) == 1
+    stored = portal.load_config()
+    assert stored["gmail_recipient"] == "new-admin@example.test"
+    assert decrypt_key(stored["gmail_access_token"]) == "new-access"
+    assert stored["gmail_refresh_token"] == config["gmail_refresh_token"]
+    assert api.get(f"{PORTAL}/gmail-config").json()["gmail_recipient"] == (
+        "new-admin@example.test"
+    )
+    open_mail(page, live_server)
+    expect(page.locator("#gmail-recipient")).to_have_value("new-admin@example.test")
 
 
 @pytest.mark.parametrize(

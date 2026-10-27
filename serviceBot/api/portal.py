@@ -5,6 +5,7 @@ import tempfile
 import httpx
 import datetime as dt_mod
 from datetime import datetime
+from threading import RLock
 from typing import Optional, List, Literal
 from fastapi import APIRouter, HTTPException, UploadFile, File, Request, BackgroundTasks
 from pydantic import Field, BaseModel, StrictBool, StrictStr, field_validator
@@ -245,6 +246,8 @@ class ServiceCreate(BaseModel):
 
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
 SYSTEM_PROMPT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "system_prompt.txt")
+# Request handlers and background Google refreshes share this file in-process.
+_CONFIG_LOCK = RLock()
 
 def load_config():
     import json
@@ -356,7 +359,7 @@ Speak the filler naturally as part of the conversation so the caller experiences
         data = defaults.copy()
     else:
         try:
-            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            with _CONFIG_LOCK, open(CONFIG_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
             for k, v in defaults.items():
                 if k not in data:
@@ -368,7 +371,7 @@ Speak the filler naturally as part of the conversation so the caller experiences
     # Also check system_prompt.txt for overrides
     if os.path.exists(SYSTEM_PROMPT_PATH):
         try:
-            with open(SYSTEM_PROMPT_PATH, "r", encoding="utf-8") as f:
+            with _CONFIG_LOCK, open(SYSTEM_PROMPT_PATH, "r", encoding="utf-8") as f:
                 content = f.read().strip()
                 if content:
                     data["system_prompt"] = content
@@ -380,16 +383,25 @@ Speak the filler naturally as part of the conversation so the caller experiences
 
 def save_config(config_data):
     import json
-    system_prompt = config_data.get("system_prompt")
-    if system_prompt is not None:
-        try:
-            with open(SYSTEM_PROMPT_PATH, "w", encoding="utf-8") as f:
-                f.write(system_prompt)
-        except Exception as e:
-            print(f"Error saving system_prompt.txt: {e}")
+    with _CONFIG_LOCK:
+        system_prompt = config_data.get("system_prompt")
+        if system_prompt is not None:
+            try:
+                with open(SYSTEM_PROMPT_PATH, "w", encoding="utf-8") as f:
+                    f.write(system_prompt)
+            except Exception as e:
+                print(f"Error saving system_prompt.txt: {e}")
 
-    with open(CONFIG_PATH, "w") as f:
-        json.dump(config_data, f, indent=2)
+        with open(CONFIG_PATH, "w") as f:
+            json.dump(config_data, f, indent=2)
+
+
+def update_config_values(changes):
+    """Merge a background operation's fields without restoring its old snapshot."""
+    with _CONFIG_LOCK:
+        config = load_config()
+        config.update(changes)
+        save_config(config)
 
 def sync_services_to_kb():
     from serviceBot.db.connection import get_db_connection, dict_cursor
