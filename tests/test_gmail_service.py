@@ -5,7 +5,7 @@ import pytest
 import time
 from email import message_from_bytes, policy
 from unittest.mock import patch, MagicMock
-from serviceBot.services.encryption import encrypt_key
+from serviceBot.services.encryption import decrypt_key, encrypt_key
 from serviceBot.services.gmail import (
     refresh_gmail_token,
     get_gmail_access_token,
@@ -18,9 +18,9 @@ from serviceBot.services.gmail import (
 
 @patch("httpx.post")
 @patch("serviceBot.services.gmail.load_config")
-@patch("serviceBot.services.gmail.save_config")
-def test_refresh_gmail_token_success(mock_save, mock_load, mock_post):
-    """Verify refresh_gmail_token returns fresh token and saves config when HTTP 200."""
+@patch("serviceBot.services.gmail.update_config_values")
+def test_refresh_gmail_token_success(mock_update, mock_load, mock_post):
+    """Refresh stores only its token fields and cannot restore old settings."""
     mock_load.return_value = {
         "gmail_client_id": encrypt_key("dummy_id"),
         "gmail_client_secret": encrypt_key("dummy_secret"),
@@ -35,9 +35,14 @@ def test_refresh_gmail_token_success(mock_save, mock_load, mock_post):
     }
     mock_post.return_value = mock_response
     
-    token = refresh_gmail_token()
+    with patch("serviceBot.services.gmail.time.time", return_value=1000):
+        token = refresh_gmail_token()
     assert token == "fresh_access_token_abc"
-    assert mock_save.called
+    mock_update.assert_called_once()
+    changes = mock_update.call_args.args[0]
+    assert set(changes) == {"gmail_access_token", "gmail_token_expires_at"}
+    assert decrypt_key(changes["gmail_access_token"]) == "fresh_access_token_abc"
+    assert changes["gmail_token_expires_at"] == 4540
 
 @patch("httpx.post")
 @patch("serviceBot.services.gmail.load_config")

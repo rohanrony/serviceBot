@@ -1,0 +1,59 @@
+schema: 1
+feature: changes/admin-email-persistence
+acceptance:
+- id: AC1
+  behavior: A successful admin email save survives an overlapping Gmail token refresh and browser reload.
+  preconditions:
+  - Isolated synthetic configuration with an existing sender, recipient, and encrypted Google credentials
+  - Google refresh response is held until the admin save has returned success
+  success:
+  - Fresh API and JSON-file reads retain the newly saved recipient and routine-copy preference
+  - A successful refresh stores the new encrypted access token and expiry
+  - A complete browser reload displays the newly saved recipient
+  failure:
+  - A rejected refresh preserves the newly saved recipient and existing token fields
+  invariants:
+  - Refresh token and unrelated business settings remain unchanged
+  - Provider request semantics and notification policy remain unchanged
+  - Configuration save emits no notification or live provider request
+  tests:
+  - tests/test_gmail_service.py::test_refresh_gmail_token_success
+  - tests/test_admin_email_persistence.py::test_admin_email_save_survives_token_refresh[200]
+  - tests/test_admin_email_persistence.py::test_admin_email_save_survives_token_refresh[403]
+  - e2e/test_admin_mail_oauth.py::test_admin_email_save_survives_background_refresh_and_page_reload
+  - e2e/test_admin_mail_oauth.py::test_legacy_settings_render_google_only_and_save_after_reload
+  layer:
+  - unit
+  - http
+  - browser
+  - provider_contract
+  - composed
+  live_acceptance:
+    status: not_required
+    reason: The changed contract is local configuration persistence during a captured token response. Google
+      request semantics and delivery behavior are unchanged; no live-provider effect is required.
+    scenarios: []
+omitted_layers:
+  database: The email and system Google tokens use the existing JSON configuration file; relational state is
+    unchanged.
+  migration: No schema or stored format changes.
+  targeted: The deterministic API and browser interleaving directly reproduces the lost update; no separate
+    performance or accessibility contract changes.
+review:
+  red: 'Before implementation, ./run_tests.sh --file tests/test_admin_email_persistence.py --tb=short produced
+    1 failed and 1 passed: the successful-refresh case returned old-admin@example.test in a fresh GET after
+    Save had returned 200 for new-admin@example.test.'
+  green: Focused regressions and complete offline verification are run for this isolated publication candidate;
+    final immutable verification evidence is retained by scripts/verify_change.sh.
+  test_changes: Additive API and browser regressions; the service assertion now checks the exact token-only
+    update and encrypted token content. Per-test scratch configuration prevents state leakage. No tests or
+    business assertions were weakened, removed, skipped, or marked xfail. The standalone branch also carries
+    the existing three-line clock fixture correction for test_booking_does_not_duplicate_messages_to_customer_and_agent;
+    all its assertions remain intact.
+  sufficiency: Covers successful and rejected refresh responses, fresh persisted read-back, retained tokens
+    and business settings, and browser save/reload with an overlapping background refresh.
+  offline:
+    status: pending
+    reason: The initial standalone full run exposed a pre-existing booking fixture clock drift. Its deterministic
+      clock correction is included; complete exact-candidate verification must pass before publication.
+    evidence: []
