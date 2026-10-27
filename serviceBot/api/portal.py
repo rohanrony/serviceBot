@@ -3053,28 +3053,33 @@ async def gmail_oauth_callback(request: Request, code: str = None, error: str = 
 
 @router.post("/gmail-config/test")
 async def test_gmail_config(payload: GmailConfigPayload):
+    import html
     from serviceBot.services.gmail import send_gmail_api_email
+    from serviceBot.services.business_profile import resolve_business_name
     
     config = load_config()
-    subject = "[BayFull] Gmail Integration Test Email"
-    html_body = """
+    b_name = resolve_business_name(config)
+    escaped_b_name = html.escape(b_name)
+    subject = f"[{b_name}] Gmail Integration Test Email"
+    html_body = f"""
     <!DOCTYPE html>
     <html>
     <head>
         <meta charset="utf-8">
         <style>
-            body { font-family: -apple-system, sans-serif; padding: 24px; background-color: #f3f4f6; color: #1f2937; }
-            .card { background: #fff; padding: 24px; border-radius: 8px; border-top: 4px solid #18181b; max-width: 500px; margin: 0 auto; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+            body {{ font-family: -apple-system, sans-serif; padding: 24px; background-color: #f3f4f6; color: #1f2937; }}
+            .card {{ background: #fff; padding: 24px; border-radius: 8px; border-top: 4px solid #18181b; max-width: 500px; margin: 0 auto; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }}
         </style>
     </head>
     <body>
         <div class="card">
-            <h2>Connection Test Successful!</h2>
-            <p>Your Gmail integration settings are configured correctly.</p>
+            <h2>{escaped_b_name} Connection Test Successful!</h2>
+            <p>Your Gmail integration settings for {escaped_b_name} are configured correctly.</p>
         </div>
     </body>
     </html>
     """
+    plain_body = f"[{b_name}] Gmail integration OAuth2 test email. Your settings for {b_name} are configured correctly."
     
     try:
         if not config.get("gmail_refresh_token"):
@@ -3087,7 +3092,7 @@ async def test_gmail_config(payload: GmailConfigPayload):
             recipient=payload.gmail_recipient,
             subject=subject,
             html_body=html_body,
-            plain_body="Gmail integration OAuth2 test email."
+            plain_body=plain_body
         )
             
         if not success:

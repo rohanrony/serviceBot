@@ -89,9 +89,10 @@ def test_gmail_routine_copy_setting_persists_and_omitted_updates_preserve():
 
 @patch("serviceBot.services.gmail.send_gmail_api_email", return_value=True)
 def test_gmail_connection_test_endpoint(mock_send):
-    """A connected system account sends the test through the Gmail API."""
+    """A connected system account sends the test through the Gmail API with business branding."""
     config = load_config()
     config["gmail_refresh_token"] = "synthetic-refresh-token"
+    config["business_name"] = "Davidson CarCare"
     save_config(config)
     response = client.post("/api/v1/portal/gmail-config/test", json={
         "gmail_enabled": True,
@@ -104,6 +105,13 @@ def test_gmail_connection_test_endpoint(mock_send):
     mock_send.assert_called_once()
     assert mock_send.call_args.kwargs["sender"] == "test-sender@gmail.com"
     assert mock_send.call_args.kwargs["recipient"] == "test-recipient@gmail.com"
+    assert mock_send.call_args.kwargs["subject"] == "[Davidson CarCare] Gmail Integration Test Email"
+    assert "Davidson CarCare" in mock_send.call_args.kwargs["html_body"]
+    assert "BayFull" not in mock_send.call_args.kwargs["html_body"]
+    assert "serviceBot" not in mock_send.call_args.kwargs["html_body"]
+    assert "Davidson CarCare" in mock_send.call_args.kwargs["plain_body"]
+    assert "BayFull" not in mock_send.call_args.kwargs["plain_body"]
+    assert "serviceBot" not in mock_send.call_args.kwargs["plain_body"]
 
 @patch("serviceBot.services.gmail.send_booking_notification")
 def test_appointment_booking_queues_email_notification(mock_send_email):

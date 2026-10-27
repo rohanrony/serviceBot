@@ -35,6 +35,11 @@ def test_delete_admin_calendar_event(mock_delete, mock_get, mock_token):
                 "id": "unrelated_event_456",
                 "summary": "Doctor Appointment",
                 "status": "confirmed"
+            },
+            {
+                "id": "unrelated_event_planning",
+                "summary": "Davidson CarCare planning meeting",
+                "status": "confirmed"
             }
         ]
     }
@@ -54,8 +59,10 @@ def test_delete_admin_calendar_event(mock_delete, mock_get, mock_token):
 
     # Verify DELETE request was issued ONLY for the matching serviceBot event
     assert mock_delete.called
+    assert mock_delete.call_count == 1
     del_args, del_kwargs = mock_delete.call_args
     assert "admin_event_123" in del_args[0]
+    assert "unrelated_event_planning" not in del_args[0]
 
 
 @patch("serviceBot.services.outbox_worker.delete_agent_calendar_event")
