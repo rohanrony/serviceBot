@@ -47,6 +47,7 @@ acceptance:
     invariants:
       - Existing recipients, routing, event details, and delivery state remain unchanged
     tests:
+      - tests/test_no_duplicate_booking_messages.py::test_booking_does_not_duplicate_messages_to_customer_and_agent
       - tests/test_customer_notification_details.py::test_customer_reminder_messages_omit_appointment_number_and_include_details
       - tests/test_customer_notification_details.py::test_sms_router_customer_messages_omit_appointment_number_and_include_map
     layer: [unit, provider_contract]
