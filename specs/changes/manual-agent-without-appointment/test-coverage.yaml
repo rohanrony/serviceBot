@@ -1,0 +1,103 @@
+schema: 1
+feature: specs/changes/manual-agent-without-appointment
+acceptance:
+- id: AC1-AC4
+  behavior: Manual agent selection follows the saved setting, remains usable after checking slots, and
+    persists for scheduled and unscheduled new requests without leaking into edits.
+  preconditions:
+  - Synthetic active staff
+  - isolated config
+  - disposable loopback PostgreSQL
+  - offline provider boundaries
+  success:
+  - Selected agent survives API read and browser reload
+  - scheduled reservation uses selected agent
+  - saved edit agent scopes availability
+  failure:
+  - Disabled setting clears prior choice
+  - declining confirmation leaves durable state unchanged
+  - late responses cannot expose edit controls
+  - stale staff choices remain unavailable while loading
+  invariants:
+  - Unscheduled requests create no reservations or booking effects
+  - original requests remain unchanged
+  - edit assignment remains owned by existing reassignment flow
+  tests:
+  - e2e/test_manual_agent_selection.py::test_manual_agent_selection_persists_with_and_without_appointment[unscheduled]
+  - e2e/test_manual_agent_selection.py::test_manual_agent_selection_persists_with_and_without_appointment[appointment]
+  - e2e/test_manual_agent_selection.py::test_disabled_setting_does_not_reuse_previous_manual_choice
+  - e2e/test_manual_agent_selection.py::test_edit_availability_uses_saved_agent_after_manual_create_is_cancelled
+  - e2e/test_manual_agent_selection.py::test_late_manual_selection_config_cannot_expose_selector_in_edit
+  - e2e/test_manual_agent_selection.py::test_reopened_request_waits_for_fresh_staff_choices
+  - tests/test_manual_agent_selection_markup.py::ManualAgentSelectionMarkupTest::test_request_form_has_labeled_optional_staff_selector
+  layer:
+  - unit
+  - browser
+  - http
+  - database
+  - composed
+  live_acceptance:
+    status: not_required
+    reason: This restores missing browser controls and their modal lifecycle; provider dispatch, effects
+      and read-back contracts are unchanged and no live boundary is modified.
+    scenarios: []
+- id: TEST-CLOCK-01
+  behavior: The offline booking-notification regression evaluates future reminders against a fixed business
+    clock.
+  preconditions:
+  - Synthetic appointment at 2026-10-25 14:00
+  - Business clock fixed to 2026-10-24 10:00 and advanced by 30 seconds for polling
+  success:
+  - Exactly one customer and agent dispatch
+  - First reminder attempts recorded SENT
+  - Future attempts remain PENDING
+  - Polling sends no duplicate
+  failure:
+  - Wall-clock time must not expire the test appointment and invalidate its future-reminder assertions
+  invariants:
+  - No assertion removals or weakening
+  - No application or provider behavior change
+  tests:
+  - tests/test_no_duplicate_booking_messages.py::test_booking_does_not_duplicate_messages_to_customer_and_agent
+  layer:
+  - unit
+  live_acceptance:
+    status: not_required
+    reason: Only the deterministic clock in an existing mocked offline test is changed; runtime/provider
+      behavior is unchanged.
+    scenarios: []
+omitted_layers:
+  provider_contract: No provider adapter or dispatch assertion changes; existing offline provider boundaries
+    remain in composed browser tests.
+  migration: No schema or stored-data transformation.
+  targeted: No additional isolated mechanism beyond the browser/HTTP/database journey.
+review:
+  red: The permanent markup regression failed for the missing sr-agent-select before the fix; scratch/manual-agent-markup-red.log.
+    Subsequent browser execution passed. Exact publication attempt 2c77923 failed in the existing duplicate-booking-message
+    test because its fixed appointment had passed relative to wall time; the future-attempt assertion
+    remained intact.
+  green: Markup Red/Green passed. Six focused Chromium/HTTP/database cases passed. Final complete ./run_tests.sh
+    --verify --tb=short exited 0 with 2487 unit/integration and 721 E2E tests passed, including all final
+    strengthened assertions. Syntax and diff checks passed.
+  test_changes: New permanent regressions; no removed, weakened, skipped or expected-failure assertions.
+    The publication-only fixture correction freezes the reminder and polling clocks; every existing duplicate-dispatch
+    and future-reminder assertion is retained.
+  sufficiency: Six browser cases passed in focused and complete suites for enabled/disabled configuration,
+    checking slots before staff selection, selected-agent reservation, cancellation, fresh reads/reload,
+    edit isolation, delayed configuration and stale choices while loading. Final cancellation snapshots
+    include customers, vehicles, audit, requests, reservations, outbox and calendar slots; scheduled requests
+    require exactly one ACTIVE reservation for the chosen agent, and unscheduled requests require none.
+    No remaining actionable review finding.
+  offline:
+    status: verified
+    reason: Implementation verification passed on source base 33e08f753b81df255dbdee43cd1f4b82d067b9b8
+      with 2487 unit/integration and 721 E2E tests. This is retained implementation evidence. Publication
+      from the fresh main-based branch additionally requires the exact head/current-base receipt enforced
+      by scripts/git_push_merge.sh and the pre-push checks; a changed head/base must be reverified.
+    evidence:
+    - scratch/manual-agent-markup-red.log
+    - scratch/manual-agent-markup-green.log
+    - scratch/manual-agent-focused.log
+    - scratch/manual-agent-focused.xml
+    - scratch/manual-agent-verification.json
+    - scratch/verification/<head>-<base>/receipt.json (exact candidate; generated before push)
