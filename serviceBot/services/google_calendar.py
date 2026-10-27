@@ -660,15 +660,18 @@ def delete_agent_calendar_event(
             "Content-Type": "application/json"
         }
 
+        business_name = resolve_business_name(load_config())
+        managed_summary_prefixes = (
+            f"{business_name} Appointment - ",
+            f"{business_name} Callback - ",
+            "BayFull Appointment - ",
+            "BayFull Callback - ",
+            "serviceBot Appointment - ",
+            "serviceBot Booking - ",
+        )
         for ev in events:
             summary = ev.get("summary", "")
-            if (
-                "BayFull" in summary
-                or "serviceBot" in summary
-                or "Appointment" in summary
-                or "Callback" in summary
-                or "Booking" in summary
-            ):
+            if summary.startswith(managed_summary_prefixes):
                 event_id = ev.get("id")
                 if event_id:
                     del_url = f"https://www.googleapis.com/calendar/v3/calendars/primary/events/{event_id}"

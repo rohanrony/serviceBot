@@ -84,8 +84,8 @@ acceptance:
     behavior: Agent/admin invitation event copy and multi-service copy use the business identity without changing scheduling or notification behavior.
     preconditions: [Synthetic appointment/callback and multi-service fixtures, Captured Calendar transport and stable event IDs]
     success: [Branded titles/descriptions for agent/admin and unified/fallback events, Exact event times/durations/attendees and flags retained]
-    failure: [Provider failures retain existing failure behavior, Existing legacy and newly branded events remain cancellable under current rules]
-    invariants: [No duplicate event, No event-ID or booking-state change caused by formatting, No additional attendee notification requested]
+    failure: [Provider failures retain existing failure behavior, Existing app-owned legacy and branded events remain cancellable, Unrelated appointments/callbacks/bookings in the same time window are preserved]
+    invariants: [Cleanup matches known app-owned title prefixes only, No duplicate event, No event-ID or booking-state change caused by formatting, No additional attendee notification requested]
     tests:
       - tests/test_google_calendar_service.py::test_create_agent_calendar_event
       - tests/test_google_calendar_service.py::test_create_agent_calendar_event_callback

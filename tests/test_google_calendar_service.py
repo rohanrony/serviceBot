@@ -202,6 +202,9 @@ def test_delete_agent_calendar_event_cancellation_compatibility(
         {"id": "ev_branded_appt", "summary": "Davidson CarCare Appointment - John Doe"},
         {"id": "ev_branded_cb", "summary": "Davidson CarCare Callback - John Doe (AC Repair)"},
         {"id": "ev_unrelated_meeting", "summary": "Davidson CarCare planning meeting"},
+        {"id": "ev_unrelated_appointment", "summary": "Dentist Appointment - Dr Smith"},
+        {"id": "ev_unrelated_callback", "summary": "Phone Callback - Acme"},
+        {"id": "ev_unrelated_booking", "summary": "Business Booking Review"},
     ]
     mock_resp = MagicMock()
     mock_resp.status_code = 204
@@ -210,8 +213,14 @@ def test_delete_agent_calendar_event_cancellation_compatibility(
     res = delete_agent_calendar_event(agent_id=999, slot_datetime_str="2026-06-25 10:00:00")
     assert res is True
     assert mock_delete.call_count == 4
-    for call in mock_delete.call_args_list:
-        assert "ev_unrelated_meeting" not in call.args[0]
+    deleted_urls = [call.args[0] for call in mock_delete.call_args_list]
+    for unrelated_id in (
+        "ev_unrelated_meeting",
+        "ev_unrelated_appointment",
+        "ev_unrelated_callback",
+        "ev_unrelated_booking",
+    ):
+        assert all(unrelated_id not in url for url in deleted_urls)
 
 def test_parse_google_datetime():
     """Verify parsing of start/end Google structures (both dateTime and date)."""
