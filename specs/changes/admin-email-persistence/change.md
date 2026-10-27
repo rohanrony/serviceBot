@@ -1,51 +1,94 @@
-# Preserve admin settings during Gmail token refresh
+# Admin notification email persistence
 
-Route: bug fix, restoring the existing successful-save/reload contract.
+Route: bug fix. Restore the established save/reload contract without changing
+notification recipients, delivery policy, credentials, or provider requests.
 
-A system Gmail token refresh reads configuration before waiting for Google.
-Previously it saved that entire snapshot after the response. If an administrator
-saved a different notification email while the request was in flight, the refresh
-silently restored the previous email even though the admin save had succeeded.
+## Evidence and scope
 
-The refresh now updates only its encrypted access token and expiry through the
-shared configuration owner. A reentrant lock serializes the merge with portal
-configuration reads and writes within the process; the provider request remains
-outside the lock so administrators can save while it is in flight.
+- Reported on the deployed `/portal/#config/gmail` page on 2026-10-25:
+  Save reports success, but a refresh shows the previous admin email.
+- A bounded read of the deployed Gmail configuration API returned the same
+  previous email displayed by the page. No production configuration was changed.
+- The existing local browser save/reload test and an isolated API/file read-back
+  both pass for a sequential save.
+- A deterministic offline reproduction confirms a lost update:
+  `refresh_gmail_token` reads the full configuration before requesting a token;
+  an admin saves a newer email while that request is in flight; refresh then
+  writes its older snapshot back with the token. The email save returned 200
+  before its value was overwritten.
+- This confirms a local defect, not the cause of the reported deployed incident.
+  The user subsequently authorized read-only ADS Render diagnosis. The save and
+  following read returned 200 on the same instance; no system Gmail refresh was
+  logged in the queried window. The service runs on Free compute and its local
+  configuration is also lost across spin-down/restart. See `diagnosis.md` for
+  bounded query parameters, timestamps, log IDs, observations, and limitations.
+- Graph discovery was attempted, but this checkout is outside the graph server's
+  allowed roots. Evidence comes from direct source reads and offline executions.
 
-## Acceptance and tests
+## Acceptance and invariants
 
-AC1 in `test-coverage.yaml` covers a successful email save during both successful
-and rejected token responses, fresh JSON-file and HTTP reads, and a real browser
-save followed by a complete page reload while a background refresh is pending.
-The refresh token, routine-copy preference, and unrelated business settings are
-preserved. The service test checks that only the two owned token fields are
-submitted to the configuration updater. Fixtures use synthetic credentials,
-per-test temporary configuration, deterministic interleaving, and captured Google
-responses; no live email is sent.
+AC1: A successful admin email save survives an overlapping Gmail token refresh,
+a fresh API/file read, and a complete browser reload. A successful refresh stores
+its new access token and expiry without replacing newer notification settings.
+A rejected refresh leaves the saved email and existing token fields unchanged.
+The refresh token, business settings, notification policy, and external request
+payload are preserved. Saving configuration must not send notifications.
 
-The permanent API regression first failed for the intended reason: after a 200
-save of the new email, the successful refresh restored the old address. The
-rejected-refresh case passed. Focused and complete verification results are
-recorded in the coverage matrix and the exact-candidate publication receipt.
+Only local configuration persistence is changed. No production repair,
+publication, deployment, recipient change, or live provider call is authorized.
 
-## Scope and remaining work
+## Validation
 
-This change fixes an in-process lost update. Configuration still uses the
-existing JSON file format. Durable storage across hosting restarts/spin-down
-remains unimplemented and requires separate work. The original production
-incident was not correlated to a system Gmail refresh; the local regression
-establishes this specific defect independently.
+Tests and Red/Green evidence are tracked in `test-coverage.yaml` under AC1.
+The permanent API regression first failed because a fresh read returned the old
+email after a successful save; the rejected-refresh case passed. After the fix,
+the focused browser interleaving test passed. A first combined focused run found
+test configuration leaking into a later default-setting assertion; the new test
+now uses per-test temporary configuration and prompt files.
 
-Google request semantics, notification routing, credentials, and delivery policy
-are unchanged. No database migration or separately executed live-provider test
-is required for this bounded fix. Publication does not authorize merge or deploy.
+The complete `./run_tests.sh --verify --tb=short -q` then passed all 2,488
+unit/integration cases and all 716 E2E cases, with both suite exits zero. This
+includes both refresh response cases, token-only update assertions, ordinary
+save/reload, and the overlapping background-refresh browser journey. Logs and
+JUnit evidence are retained in `scratch/admin-email-persistence-verify.log`,
+`scratch/unit-results.xml`, and `scratch/e2e-results.xml`. Python compile checks,
+coverage YAML validation, and scoped whitespace checks also passed; Ruff is not
+installed in the existing environment.
 
-## Verification fixture correction
+Offline: the recorded working tree based on
+`c04d72c8b237820ef72e7c5da2c5bf747327b54f` passed. Current candidate verification
+is pending after a concurrent workflow changed HEAD to `33e08f753b81df255dbdee43cd1f4b82d067b9b8`.
+Live-provider acceptance: not required
+for this local persistence contract; no provider request or delivery behavior
+changes. Production diagnosis has a confirmed lifecycle-durability gap. After the
+user explicitly designated the recipient and authorized one save, the deployed
+browser save and full-page reload succeeded at 19:17 UTC, with matching 200-status
+server logs. Other visible configuration values were unchanged. The original
+immediate failure was not reproduced; the lifecycle-durability gap remains.
+Committed/Pushed: the shared portal helper was included in the concurrent
+workflow's `33e08f7` commit; the complete Gmail fix and regressions remain
+uncommitted and are not published. Merged: no complete fix. Deployed: no complete
+fix; the latest live deploy was independently rechecked at 17:57 UTC.
 
-The independent branch's first full offline run exposed an existing real-clock
-fixture failure in the duplicate-booking-notification test: its fixed appointment
-was already in the past, so the scheduler correctly queued no future attempts.
-The same three-line correction already present in the parallel change freezes
-scheduling and worker clocks before that appointment. All dispatch counts,
-persisted reminder statuses, and duplicate-prevention assertions remain intact.
-No notification business rule is changed by this fixture correction.
+## Implementation and limits
+
+- Google refresh now merges only its encrypted access token and expiry into the
+  latest configuration, instead of saving the snapshot taken before the request.
+- A shared reentrant lock serializes portal configuration reads/writes and the
+  merge across this process's request handlers and background threads.
+- The existing file format, Google request, refresh token, and recipient policy
+  are preserved. No database migration is needed.
+- This lock is in-process. It does not establish durable or shared configuration
+  across Render restarts or separate instances. Current deployed topology is one
+  Free instance; the configuration's lifecycle-durability gap is confirmed.
+- Scope review checked the token-only patch, lock reentrancy, real persisted
+  read-back, deterministic interleaving, isolated fixtures, retained assertions,
+  and preservation of the checkout's unrelated dirty work. No actionable review
+  findings remain within the bounded token-refresh persistence fix. The broader
+  deployed persistence problem remains unresolved: durable storage is missing,
+  and the original POST's intended/submitted email was not captured.
+
+
+## Current integration candidate status — 2026-10-27
+
+The token-only Gmail refresh behavior and its API/browser regression coverage are included in the local `integrate/recent-prior-changes-20261027` candidate through the Oct 25 admin-refresh branch snapshot (`b7854c3`, merged at `2abb0ed`). The snapshot tree matches the Oct 25 remote commit tree. The combined candidate has not been pushed, merged, or deployed. Exact-candidate offline verification remains pending; the standalone receipt below does not verify this combined candidate.

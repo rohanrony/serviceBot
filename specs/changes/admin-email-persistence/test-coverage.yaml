@@ -30,8 +30,9 @@ acceptance:
   - composed
   live_acceptance:
     status: not_required
-    reason: The changed contract is local configuration persistence during a captured token response. Google
-      request semantics and delivery behavior are unchanged; no live-provider effect is required.
+    reason: The changed contract is local settings persistence during a captured token response; no external
+      delivery or provider request behavior changes. Confirmation of the deployed incident remains a separate
+      pending diagnostic task.
     scenarios: []
 omitted_layers:
   database: The email and system Google tokens use the existing JSON configuration file; relational state is
@@ -43,17 +44,18 @@ review:
   red: 'Before implementation, ./run_tests.sh --file tests/test_admin_email_persistence.py --tb=short produced
     1 failed and 1 passed: the successful-refresh case returned old-admin@example.test in a fresh GET after
     Save had returned 200 for new-admin@example.test.'
-  green: Focused regressions and complete offline verification are run for this isolated publication candidate;
-    final immutable verification evidence is retained by scripts/verify_change.sh.
-  test_changes: Additive API and browser regressions; the service assertion now checks the exact token-only
-    update and encrypted token content. Per-test scratch configuration prevents state leakage. No tests or
-    business assertions were weakened, removed, skipped, or marked xfail. The standalone branch also carries
-    the existing three-line clock fixture correction for test_booking_does_not_duplicate_messages_to_customer_and_agent;
-    all its assertions remain intact.
+  green: 'The focused browser regression passed (1 passed). After correcting test-file isolation, ./run_tests.sh
+    --verify --tb=short -q passed all 2488 unit/integration cases and all 716 E2E cases, including the new
+    regressions; both suite exits were 0. Publication verification subsequently passed for isolated commit
+    8768e0505b87a99d8570452c61114f3f52caa789 against main c04d72c8b237820ef72e7c5da2c5bf747327b54f: 2481 unit/integration
+    and 714 E2E, including 134 browser journeys, with zero failures/errors/skips/xfails/xpasses.'
+  test_changes: Additive API/browser regressions and stronger token-only update assertions replace an old mock-called
+    assertion. A first combined run found the new API test leaking its preference into a later test; the regression
+    now owns per-test temporary configuration and prompt files. No behavioral assertions were weakened; no
+    tests were removed, skipped, or marked xfail.
   sufficiency: Covers successful and rejected refresh responses, fresh persisted read-back, retained tokens
     and business settings, and browser save/reload with an overlapping background refresh.
   offline:
     status: pending
-    reason: The initial standalone full run exposed a pre-existing booking fixture clock drift. Its deterministic
-      clock correction is included; complete exact-candidate verification must pass before publication.
+    reason: The Oct 25 standalone commit has historical verification evidence above. The combined integration candidate includes additional branch changes and requires exact-candidate verification before publication.
     evidence: []
