@@ -78,27 +78,23 @@ def test_browser_retains_persisted_rows_after_held_candidate_lookup(page, api, d
     assert rows[0]['id'] == 1 and rows[0]['candidate_agents'] == [{'id':2,'name':'Morgan E2E'}]
 
 
-def test_listing_memoizes_whatsapp_status_per_exact_staff_phone_only(api, db, monkeypatch):
-    from serviceBot.db import queries
+def test_listing_returns_fresh_whatsapp_status_for_assigned_staff(api, db):
     db('UPDATE service_requests SET staff_agent_id=1 WHERE id=1')
     second = db("INSERT INTO service_requests(customer_id,service_type,staff_agent_id) VALUES(1,'Second same-phone request',1) RETURNING id")[0]['id']
     third = db("INSERT INTO service_requests(customer_id,service_type,staff_agent_id) VALUES(1,'Other technician request',2) RETURNING id")[0]['id']
-    seen = []
-    def status(phone):
-        seen.append(phone)
-        return phone == '+15550100003'
-    monkeypatch.setattr(queries,'is_agent_whatsapp_connected',status)
+    db("INSERT INTO sms_whitelist(phone_number,friendly_name,twilio_verified,whatsapp_onboarded) VALUES('+15550100003','Taylor',TRUE,TRUE),('+15550100004','Morgan',TRUE,FALSE) ON CONFLICT(phone_number) DO UPDATE SET whatsapp_onboarded=EXCLUDED.whatsapp_onboarded")
     response = api.get(PORTAL+'/service-requests')
     assert response.status_code == 200
     rows = {row['id']:row for row in response.json()}
     assert rows[1]['staff_agent_whatsapp_connected'] is True
     assert rows[second]['staff_agent_whatsapp_connected'] is True
     assert rows[third]['staff_agent_whatsapp_connected'] is False
-    assert sorted(seen) == ['+15550100003','+15550100004']
-    # A later request reads fresh status instead of retaining a process cache.
-    seen.clear()
-    api.get(PORTAL+'/service-requests')
-    assert sorted(seen) == ['+15550100003','+15550100004']
+    db("UPDATE sms_whitelist SET whatsapp_onboarded=FALSE WHERE phone_number='+15550100003'")
+    refreshed = api.get(PORTAL+'/service-requests').json()
+    refreshed_rows = {row['id']:row for row in refreshed}
+    assert refreshed_rows[1]['staff_agent_whatsapp_connected'] is False
+    assert refreshed_rows[second]['staff_agent_whatsapp_connected'] is False
+    assert refreshed_rows[third]['staff_agent_whatsapp_connected'] is False
 
 
 def test_captured_collection_delete_by_exact_ids_preserves_new_and_unrelated_chunks():

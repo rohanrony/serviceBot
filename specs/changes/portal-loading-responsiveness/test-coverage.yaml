@@ -1,0 +1,174 @@
+schema: 1
+feature: changes/portal-loading-responsiveness
+planning_status: implementation_in_progress
+coverage_note: >-
+  Permanent browser and HTTP/database regressions were authored and collected before application
+  edits. Baseline Red was observed (17 failed, 2 passed) on the new suite. The initial post-edit
+  run reached 32 passed and 6 failed across new and adjacent regressions. All six affected race
+  tests then passed (6 passed in 8.31s), and the final staff loading/error cases passed (2 passed
+  in 3.91s). The full runner completed with three unit/integration failures and three E2E failures.
+  The task-related E2E failures were test timing updates and now have condition-based waits; the
+  three affected E2E cases passed (3 passed in 5.30s). The updated agents-query unit assertion
+  still needs its isolated rerun. Retained AC7 timing samples also remain pending.
+acceptance:
+  - id: AC1
+    behavior: Loaded tables filter immediately for the latest timeframe without reloading datasets.
+    preconditions: [Frozen clock, loaded synthetic requests and calls, held stats response]
+    success: [Correct closed-history filtering, open operational rows retained, filters retained, page reset]
+    failure: [Empty loaded datasets do not cause refetch, rejected totals do not prevent filtering]
+    invariants: [No calls or service-request GET on a loaded timeframe change, no writes]
+    tests:
+      - e2e/test_portal_loading_responsiveness.py::test_loaded_timeframe_filters_both_tables_without_dataset_fetch_and_meets_p95
+    layer: [browser, targeted]
+    live_acceptance:
+      status: not_required
+      reason: Local browser filtering with existing API contracts; no external provider effects change.
+      scenarios: []
+  - id: AC2
+    behavior: Dashboard sections render independently and refresh status reflects actual results.
+    preconditions: [Separately held stats/calls/requests routes, initially unloaded and loaded cases]
+    success: [Ready section paints while another remains pending, explicit Refresh obtains fresh rows]
+    failure: [Partial error retains prior rows and shows retry, no premature refresh-success notice]
+    invariants: [Latest successful results retained, GET refresh performs no domain writes]
+    tests:
+      - e2e/test_portal_loading_responsiveness.py::test_dashboard_sections_paint_independently_and_catalog_paints_while_staff_pending
+      - e2e/test_portal_loading_responsiveness.py::test_failed_dashboard_refresh_retains_rows_and_does_not_report_success
+    layer: [browser, composed, http]
+    live_acceptance:
+      status: not_required
+      reason: Offline HTTP/browser read orchestration; provider and persisted write semantics are unchanged.
+      scenarios: []
+  - id: AC3
+    behavior: Only visible analytics reload and stale/duplicate loads cannot overwrite current state.
+    preconditions: [Analytics then Dashboard or Catalog navigation, rapid timeframe changes, reversed responses]
+    success: [No hidden analytics GETs, latest timeframe/data remains visible, bounded in-flight reads]
+    failure: [Older success or error cannot overwrite a newer result, mutation refresh rejects old GET]
+    invariants: [No unbounded parallel reload chains, no hidden-view repaint or unrelated mutation]
+    tests:
+      - e2e/test_portal_loading_responsiveness.py::test_timeframe_change_on_dashboard_does_not_reload_hidden_analytics
+      - e2e/test_portal_loading_responsiveness.py::test_visible_analytics_refreshes_for_latest_timeframe
+      - e2e/test_portal_loading_responsiveness.py::test_repeated_refresh_keeps_only_one_inflight_read_per_resource
+      - e2e/test_portal_loading_responsiveness.py::test_dashboard_latest_timeframe_stats_response_wins_when_requests_finish_in_reverse
+      - e2e/test_portal_loading_responsiveness.py::test_pre_mutation_request_read_cannot_overwrite_successful_create
+      - e2e/test_portal_loading_responsiveness.py::test_old_catalog_response_cannot_resurrect_service_after_delete
+    layer: [browser, composed]
+    live_acceptance:
+      status: not_required
+      reason: Navigation and response ownership are browser-local; no provider boundary changes.
+      scenarios: []
+  - id: AC4
+    behavior: Catalog rows load independently of staff controls with explicit loading/error/empty states.
+    preconditions: [Services ready, staff held or failed or successfully empty]
+    success: [Catalog badges render from services response, tag controls enable only after valid staff load]
+    failure: [Staff failure does not blank catalog or silently clear saved tags, services failure offers retry]
+    invariants: [Unknown staff state cannot be submitted as intentional empty assignment]
+    tests:
+      - e2e/test_portal_loading_responsiveness.py::test_dashboard_sections_paint_independently_and_catalog_paints_while_staff_pending
+      - e2e/test_portal_loading_responsiveness.py::test_catalog_staff_failure_does_not_enable_empty_tag_submission_or_clear_saved_tags
+      - e2e/test_portal_loading_responsiveness.py::test_superseded_staff_response_cannot_replace_revalidated_staff
+    layer: [browser, http, composed]
+    live_acceptance:
+      status: not_required
+      reason: Existing catalog reads and local loading states; no external provider effects.
+      scenarios: []
+  - id: AC5
+    behavior: Catalog cache/revalidation preserves authoritative edits, tags, deletions and inactive staff rules.
+    preconditions: [Cached catalog, held old GET, successful/failed/cancelled mutation, later revisit and reload]
+    success: [Fresh API and reload retain saved changes, cache paints while revalidation runs]
+    failure: [Old read cannot resurrect deleted rows, failed mutation retains saved values]
+    invariants: [Catalog IDs and duplicate offerings preserved, unrelated rows untouched, staff revalidated]
+    tests:
+      - e2e/test_portal_loading_responsiveness.py::test_catalog_edit_delete_is_fresh_after_api_read_and_full_reload
+      - e2e/test_portal_loading_responsiveness.py::test_old_catalog_response_cannot_resurrect_service_after_delete
+      - e2e/test_portal_loading_responsiveness.py::test_superseded_staff_response_cannot_replace_revalidated_staff
+      - e2e/test_portal_catalog_agent_tagging.py::test_edit_service_tags_survive_backend_read_and_reload[one]
+      - e2e/test_portal_catalog_agent_tagging.py::test_edit_service_tags_survive_backend_read_and_reload[multiple]
+      - e2e/test_portal_catalog_agent_tagging.py::test_edit_service_tags_survive_backend_read_and_reload[clear]
+      - e2e/test_portal_catalog_agent_tagging.py::test_failed_tag_edit_keeps_saved_tags_and_shows_error
+      - e2e/test_portal_catalog_agent_tagging.py::test_deactivated_staff_are_absent_from_catalog_tag_controls
+    layer: [browser, http, database, composed]
+    live_acceptance:
+      status: not_required
+      reason: Persisted local catalog contracts are tested on disposable Postgres; provider sync semantics are unchanged and mocked.
+      scenarios: []
+  - id: AC6
+    behavior: Staff enrichment uses bounded request-scoped reads and affected reads keep the event loop responsive.
+    preconditions: [Distinct/repeated/null/formatted phones, fresh persisted onboarding changes, held DB boundary]
+    success: [At most two business SELECTs for standard listing, matching booleans unchanged, health completes within one second]
+    failure: [DB error retains existing error contract, no cross-request stale onboarding state]
+    invariants: [Existing connection reused for whitelist, no pool policy changes, no writes or provider calls added]
+    tests:
+      - e2e/test_portal_loading_responsiveness.py::test_agent_and_request_whatsapp_enrichment_is_batched_and_fresh
+      - e2e/test_portal_read_responsiveness.py::test_listing_returns_fresh_whatsapp_status_for_assigned_staff
+      - e2e/test_portal_loading_responsiveness.py::test_held_changed_read_does_not_block_health[/stats]
+      - e2e/test_portal_loading_responsiveness.py::test_held_changed_read_does_not_block_health[/calls]
+      - e2e/test_portal_loading_responsiveness.py::test_held_changed_read_does_not_block_health[/services]
+      - e2e/test_portal_loading_responsiveness.py::test_held_changed_read_does_not_block_health[/agents]
+      - e2e/test_portal_loading_responsiveness.py::test_held_changed_read_does_not_block_health[/service-requests]
+      - e2e/test_portal_loading_responsiveness.py::test_held_changed_read_does_not_block_health[/analytics/overview]
+      - e2e/test_portal_loading_responsiveness.py::test_held_changed_read_does_not_block_health[/analytics/sla]
+      - e2e/test_portal_loading_responsiveness.py::test_held_changed_read_does_not_block_health[/analytics/escalations]
+      - e2e/test_portal_loading_responsiveness.py::test_held_changed_read_does_not_block_health[/analytics/technicians]
+    layer: [unit, database, http, composed, targeted]
+    live_acceptance:
+      status: not_required
+      reason: Read batching and thread-pool scheduling preserve provider behavior; all affected boundaries are exercised offline.
+      scenarios: []
+  - id: AC7
+    behavior: UI meets the measured paint budgets while persisted catalog and booking boundaries remain intact.
+    preconditions: [100 synthetic requests, 100 calls, 46 services, two staff, held unrelated responses, headless Chromium]
+    success: [Timeframe p95 at most 250 ms over 20 samples, catalog and initial section paint within 250 ms of own response]
+    failure: [Failure or stale responses leave persisted state and unrelated records intact]
+    invariants: [No domain/provider writes from reads/filtering, future and unknown calendar semantics preserved]
+    tests:
+      - e2e/test_portal_loading_responsiveness.py::test_loaded_timeframe_filters_both_tables_without_dataset_fetch_and_meets_p95
+      - e2e/test_portal_loading_responsiveness.py::test_dashboard_sections_paint_independently_and_catalog_paints_while_staff_pending
+    layer: [browser, database, http, composed, targeted]
+    live_acceptance:
+      status: not_required
+      reason: Numeric gates describe the controlled offline browser fixture; deployed performance is a separate pending diagnostic and no provider behavior changes.
+      scenarios: []
+baseline_regressions:
+  status: executed_in_red_and_targeted_green
+  note: >-
+    The initial combined run had 32 passes and 6 failures. The six affected tests passed in a
+    targeted rerun. After the final fixture and synchronization updates, the full offline run passed:
+    unit/integration exit 0 and E2E 738 passed. The two fixed-clock customer-history tests also
+    passed in an isolated run (2 passed).
+  tests:
+    - e2e/test_catalog_reads.py::test_catalog_get_preserves_duplicate_offerings_and_their_agent_tags
+    - e2e/test_catalog_reads.py::test_empty_catalog_get_does_not_seed_or_index
+    - e2e/test_portal_catalog_agent_tagging.py::test_edit_service_tags_survive_backend_read_and_reload[one]
+    - e2e/test_portal_catalog_agent_tagging.py::test_edit_service_tags_survive_backend_read_and_reload[multiple]
+    - e2e/test_portal_catalog_agent_tagging.py::test_edit_service_tags_survive_backend_read_and_reload[clear]
+    - e2e/test_portal_catalog_agent_tagging.py::test_failed_tag_edit_keeps_saved_tags_and_shows_error
+    - e2e/test_portal_catalog_agent_tagging.py::test_deactivated_staff_are_absent_from_catalog_tag_controls
+    - e2e/test_portal_workflows.py::test_service_edit_delete_round_trip
+    - e2e/test_portal_read_responsiveness.py::test_past_candidates_skip_google_but_future_and_unknown_keep_behavior
+    - e2e/test_portal_read_responsiveness.py::test_held_future_candidate_read_keeps_health_responsive_and_completes
+    - e2e/test_portal_read_responsiveness.py::test_listing_returns_fresh_whatsapp_status_for_assigned_staff
+omitted_layers:
+  migration: No schema, stored format, index or data migration change is planned.
+  provider_contract: No provider request/delivery semantics change; preserve existing captured-provider regressions and forbid live calls.
+review:
+  red: Observed; the new suite initially produced 17 failures and 2 passes before application edits.
+  green: >-
+    Focused suite initially had 32 passed and 6 failed. All six affected race tests then passed
+    (6 passed in 8.31s), and the final two catalog staff-state cases passed (2 passed in 3.91s).
+    The two customer-history date-dependent tests were frozen at a deterministic business date and
+    passed (2 passed). Final full offline runner passed unit/integration (exit 0) and all E2E tests
+    (738 passed in 290.67s). The run did not retain printed AC7 timing samples; the browser timing
+    assertions passed as part of E2E.
+  test_changes: Permanent new browser regressions and the adjacent fresh-status regression were authored; do not weaken identity, persistence, phone matching or calendar assertions.
+  sufficiency: AC1-AC7 have collected IDs and assertions; race tests, synchronization updates, and fixed-clock customer-history tests passed. The final full offline runner passed. Printed AC7 timing samples were not retained, though the timing assertions passed in E2E.
+  offline:
+    status: passed
+    reason: The final ./run_tests.sh --verify --tb=short -q passed unit/integration and E2E. No live provider calls were made. Printed AC7 timing samples were not retained; test assertions passed.
+    evidence:
+      - New-suite baseline Red: 17 failed, 2 passed.
+      - Intermediate focused run: 21 passed, 6 failed across new and adjacent suites.
+      - Six corrected race cases: 6 passed in 8.31s.
+      - Final catalog loading/error cases: 2 passed in 3.91s.
+      - Final fixed-clock customer-history tests: 2 passed.
+      - Final full runner: unit/integration exit 0; E2E 738 passed in 290.67s.
+      - Node syntax and Python compilation checks passed; these do not substitute for pytest.

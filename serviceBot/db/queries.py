@@ -3197,6 +3197,30 @@ def is_agent_whatsapp_connected(phone_number: str) -> bool:
             return False
 
 
+def get_agent_whatsapp_statuses(cursor, phone_numbers: List[Optional[str]]) -> Dict[Optional[str], bool]:
+    """Resolve agent onboarding states with one request-scoped whitelist read."""
+    import re
+
+    cursor.execute(
+        "SELECT phone_number FROM sms_whitelist WHERE whatsapp_onboarded = TRUE;"
+    )
+    onboarded = set()
+    for row in cursor.fetchall():
+        digits = re.sub(r"\D", "", row.get("phone_number") or "")
+        if digits:
+            onboarded.add(digits)
+
+    last_ten = {digits[-10:] for digits in onboarded if len(digits) >= 10}
+    statuses = {}
+    for phone in phone_numbers:
+        digits = re.sub(r"\D", "", str(phone or ""))
+        statuses[phone] = bool(
+            digits
+            and (digits in onboarded or (len(digits) >= 10 and digits[-10:] in last_ten))
+        )
+    return statuses
+
+
 def get_agent_whatsapp_status(agent_id: int) -> dict:
     """Returns WhatsApp onboarding status and phone info for a specific staff agent."""
     with get_db_connection() as conn:

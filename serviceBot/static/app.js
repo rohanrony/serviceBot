@@ -688,7 +688,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (tabName === 'dashboard') {
         loadDashboardData();
       } else if (tabName === 'services') {
-        loadServicesData();
+        loadServicesData(false, true, true);
       } else if (tabName === 'knowledge') {
         loadKBData();
       } else if (tabName === 'sms-inbox') {
@@ -1552,83 +1552,79 @@ document.addEventListener('DOMContentLoaded', () => {
   if (callsTimeframeSelect) {
     callsTimeframeSelect.addEventListener('change', (e) => {
       currentCallsTimeframe = e.target.value;
-      loadDashboardData();
+      callsCurrentPage = 1; srCurrentPage = 1;
+      applyCallsFilter(); applyServiceRequestsFilter();
+      loadDashboardData({ force: true, sections: ['stats'] });
+      if (analyticsVisible()) loadAnalyticsView();
     });
   }
 
 
-  async function loadDashboardData() {
-    // 1. Fetch stats
-    try {
-      const statsResponse = await fetch(`/api/v1/portal/stats?calls_timeframe=${currentCallsTimeframe}`);
-      if (statsResponse.ok) {
-        const stats = await statsResponse.json();
-        
-        const totalCallsEl = document.getElementById('stat-total-calls');
-        if (totalCallsEl) totalCallsEl.textContent = stats.total_calls;
-        
-        const callsBadgeEl = document.getElementById('stat-calls-badge');
-        if (callsBadgeEl) {
-          const labels = {
-            '24h': 'Past 24 hours',
-            '7d': 'Past 7 days',
-            '30d': 'Past 30 days',
-            'all': 'All time'
-          };
-          const labelText = labels[currentCallsTimeframe] || 'Past 7 days';
-          callsBadgeEl.innerHTML = `<span class="badge-dot success"></span>${labelText} • 100% answer rate`;
-          callsBadgeEl.className = 'metric-badge';
-        }
-        
-        const callbacksStatEl = document.getElementById('stat-callbacks');
-        if (callbacksStatEl) callbacksStatEl.textContent = stats.total_callbacks;
-        
-        const apptsStatEl = document.getElementById('stat-appointments');
-        if (apptsStatEl) apptsStatEl.textContent = stats.total_appointments;
-        
-        const reqsStatEl = document.getElementById('stat-requests');
-        if (reqsStatEl) reqsStatEl.textContent = stats.total_requests;
-        const reqsBadgeEl = document.getElementById('stat-requests-badge');
-        if (reqsBadgeEl && stats.pending_requests !== undefined) {
-          const dotClass = stats.pending_requests === 0 ? 'success' : 'warning';
-          reqsBadgeEl.innerHTML = `<span class="badge-dot ${dotClass}"></span>${stats.pending_requests} pending triage`;
-          reqsBadgeEl.className = 'metric-badge';
-        }
-        
-        const calFreeEl = document.getElementById('stat-calendar-free');
-        if (calFreeEl) {
-          calFreeEl.innerHTML = `<span class="badge-dot neutral"></span>${stats.open_slots} slots open`;
-          calFreeEl.className = 'metric-badge';
-        }
-      }
-    } catch (statsErr) {
-      console.error('Error fetching stats:', statsErr);
+  const dashboardReads = Object.fromEntries(['stats', 'calls', 'requests'].map(key => [key, { loaded: false, promise: null, generation: 0, lastError: null }]));
+  function dashboardVisible() { return document.getElementById('dashboard-view')?.classList.contains('active'); }
+  function setReadStatus(id, message, retry) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.replaceChildren(); el.hidden = !message;
+    if (!message) return;
+    el.append(document.createTextNode(message + ' '));
+    if (retry) { const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Retry'; button.addEventListener('click', retry); el.append(button); }
+  }
+  function renderStats(stats, timeframe) {
+    const set = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
+    set('stat-total-calls', stats.total_calls); set('stat-callbacks', stats.total_callbacks);
+    set('stat-appointments', stats.total_appointments); set('stat-requests', stats.total_requests);
+    const labels = {'24h':'Past 24 hours','7d':'Past 7 days','30d':'Past 30 days','all':'All time'};
+    const badge = document.getElementById('stat-calls-badge');
+    if (badge) { badge.innerHTML = `<span class="badge-dot success"></span>${labels[timeframe] || labels['7d']} • 100% answer rate`; badge.className = 'metric-badge'; }
+    const reqBadge = document.getElementById('stat-requests-badge');
+    if (reqBadge && stats.pending_requests !== undefined) { reqBadge.innerHTML = `<span class="badge-dot ${stats.pending_requests === 0 ? 'success' : 'warning'}"></span>${stats.pending_requests} pending triage`; reqBadge.className = 'metric-badge'; }
+    const free = document.getElementById('stat-calendar-free');
+    if (free) { free.innerHTML = `<span class="badge-dot neutral"></span>${stats.open_slots} slots open`; free.className = 'metric-badge'; }
+  }
+  function readDashboardResource(key, force = false) {
+    const state = dashboardReads[key];
+    const timeframe = currentCallsTimeframe;
+    const requestKey = key === 'stats' ? timeframe : key;
+    if (state.promise && state.requestKey === requestKey) return state.promise;
+    if (state.promise) state.controller?.abort();
+    if (state.loaded && !force) return Promise.resolve();
+    const generation = ++state.generation;
+    const controller = new AbortController();
+    state.controller = controller; state.requestKey = requestKey;
+    const urls = { stats: `/api/v1/portal/stats?calls_timeframe=${timeframe}`, calls: '/api/v1/portal/calls', requests: '/api/v1/portal/service-requests' };
+    const statusIds = { stats: 'stats-read-status', calls: 'calls-read-status', requests: 'requests-read-status' };
+    const request = fetch(urls[key], {signal: controller.signal}).then(async response => { if (!response.ok) throw new Error(`Failed to load ${key}`); return response.json(); }).then(data => {
+      if (generation !== state.generation || !dashboardVisible() || (key === 'stats' && timeframe !== currentCallsTimeframe)) return;
+      state.loaded = true; state.lastError = null; setReadStatus(statusIds[key], '');
+      if (key === 'stats') renderStats(data, timeframe);
+      else if (key === 'calls') { allCalls = data; callsCurrentPage = 1; applyCallsFilter(); }
+      else { allRequests = data; srCurrentPage = 1; applyServiceRequestsFilter(); }
+    }).catch(error => {
+      if (generation !== state.generation || !dashboardVisible() || error.name === 'AbortError') return;
+      state.lastError = error;
+      console.error(`Error fetching ${key}:`, error);
+      setReadStatus(statusIds[key], `Could not load ${key}. Existing data is retained.`, () => readDashboardResource(key, true));
+    }).finally(() => { if (state.promise === request) { state.promise = null; state.controller = null; } });
+    state.promise = request;
+    return request;
+  }
+  async function loadDashboardData({ force = false, sections = ['stats', 'calls', 'requests'] } = {}) {
+    if (!dashboardVisible()) return;
+    await Promise.all(sections.map(key => readDashboardResource(key, force)));
+  }
+  function invalidateDashboardData(sections = ['stats', 'calls', 'requests']) {
+    for (const key of sections) {
+      const state = dashboardReads[key];
+      state.generation++; state.loaded = false; state.lastError = null;
+      state.controller?.abort(); state.promise = null; state.controller = null;
     }
-
-    // 2. Fetch calls
-    try {
-      const callsResponse = await fetch('/api/v1/portal/calls');
-      if (callsResponse.ok) {
-        allCalls = await callsResponse.json();
-        applyCallsFilter();
-      }
-    } catch (callsErr) {
-      console.error('Error fetching calls:', callsErr);
-    }
-
-    // 3. Fetch service requests
-    try {
-      const reqsResponse = await fetch('/api/v1/portal/service-requests');
-      if (!reqsResponse.ok) throw new Error('Failed to fetch service requests');
-      allRequests = await reqsResponse.json();
-      applyServiceRequestsFilter();
-    } catch (reqsErr) {
-      console.error('Error fetching service requests:', reqsErr);
-      const requestsListBody = document.getElementById('service-requests-list');
-      if (requestsListBody) {
-        requestsListBody.innerHTML = `<tr><td colspan="10" class="text-center py-6 text-muted">Failed to load service requests. Please refresh.</td></tr>`;
-      }
-    }
+    return loadDashboardData({force: true, sections});
+  }
+  async function refreshDashboardData() {
+    if (!dashboardVisible()) return;
+    await loadDashboardData({ force: true });
+    if (dashboardVisible() && Object.values(dashboardReads).every(state => state.loaded && !state.lastError && !state.promise)) showToast('Dashboard refreshed successfully.');
   }
 
   // --- CALL DETAILS DRAWER / TRANSCRIPT MODAL ---
@@ -1680,26 +1676,65 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- VIEW 3: SERVICES RETRIEVAL & ADDITIONS ---
   let cachedStaffAgents = [];
-
-  async function fetchStaffAgentsForCatalog() {
-    try {
-      const res = await fetch('/api/v1/portal/agents');
-      if (res.ok) {
-        cachedStaffAgents = await res.json();
+  let catalogStaffStatus = 'idle';
+  let catalogStaffPromise = null;
+  let catalogStaffGeneration = 0;
+  let catalogServices = null;
+  let catalogServicesPromise = null;
+  let catalogGeneration = 0;
+  function setCatalogStatus(message) {
+    const node = document.getElementById('catalog-read-status');
+    if (!node) return;
+    node.replaceChildren(); node.hidden = !message;
+    if (message) { node.append(document.createTextNode(message + ' ')); const retry = document.createElement('button'); retry.type='button'; retry.textContent='Retry'; retry.onclick=() => loadServicesData(true); node.append(retry); }
+  }
+  async function fetchStaffAgentsForCatalog(force = false) {
+    if (catalogStaffPromise && !force) return catalogStaffPromise;
+    if (catalogStaffStatus === 'loaded' && !force) return cachedStaffAgents;
+    const generation = ++catalogStaffGeneration;
+    catalogStaffStatus = 'loading';
+    const createSubmit = document.querySelector('#add-service-form button[type="submit"]');
+    if (createSubmit) createSubmit.disabled = true;
+    renderStaffAgentCheckboxes('new-service-agents-list', []);
+    if (editDrawer?.classList.contains('active')) renderStaffAgentCheckboxes('edit-service-agents-list', []);
+    catalogStaffPromise = fetch('/api/v1/portal/agents').then(async res => { if (!res.ok) throw new Error('Failed to load staff agents'); return res.json(); }).then(agents => {
+      if (generation !== catalogStaffGeneration) return cachedStaffAgents;
+      cachedStaffAgents = agents; catalogStaffStatus = 'loaded';
+      if (createSubmit) createSubmit.disabled = false;
+      const editSubmit = editServiceForm?.querySelector('button[type="submit"]'); if (editSubmit) editSubmit.disabled = false;
+      renderStaffAgentCheckboxes('new-service-agents-list', []);
+      if (editDrawer?.classList.contains('active')) {
+        const svc = (catalogServices || []).find(item => String(item.id) === String(document.getElementById('edit-service-id')?.value));
+        if (svc) renderStaffAgentCheckboxes('edit-service-agents-list', svc.assigned_agent_ids || []);
       }
-    } catch (e) {
-      console.warn('Failed to prefetch staff agents for catalog:', e);
-    }
-    return cachedStaffAgents;
+      return agents;
+    }).catch(error => { if (generation === catalogStaffGeneration) { catalogStaffStatus = 'error'; if (createSubmit) createSubmit.disabled = true; renderStaffAgentCheckboxes('new-service-agents-list', []); if (editDrawer?.classList.contains('active')) renderStaffAgentCheckboxes('edit-service-agents-list', []); } throw error; }).finally(() => { if (generation === catalogStaffGeneration && catalogStaffPromise === request) catalogStaffPromise = null; });
+    const request = catalogStaffPromise;
+    return request;
+  }
+  function invalidateCatalog() {
+    catalogGeneration++; catalogStaffGeneration++; catalogServices = null; catalogStaffStatus = 'idle'; cachedStaffAgents = [];
+    catalogServicesPromise = null; catalogStaffPromise = null;
+    return loadServicesData(true);
   }
 
   function renderStaffAgentCheckboxes(containerId, selectedIds = []) {
     const container = document.getElementById(containerId);
     if (!container) return;
-    if (!cachedStaffAgents || cachedStaffAgents.length === 0) {
-      container.innerHTML = '<span class="text-muted" style="font-size: 0.8rem;">No staff agents available.</span>';
+    if (catalogStaffStatus !== 'loaded') {
+      container.replaceChildren();
+      const status = document.createElement('span'); status.className = 'text-muted';
+      status.style.fontSize = '0.8rem';
+      status.textContent = catalogStaffStatus === 'error' ? 'Staff unavailable.' : 'Loading staff…';
+      container.appendChild(status);
+      if (catalogStaffStatus === 'error') {
+        const retry = document.createElement('button'); retry.type = 'button'; retry.textContent = 'Retry staff';
+        retry.addEventListener('click', () => fetchStaffAgentsForCatalog(true).catch(() => {}));
+        container.appendChild(retry);
+      }
       return;
     }
+    if (!cachedStaffAgents.length) { container.innerHTML = '<span class="text-muted" style="font-size: 0.8rem;">No staff agents available.</span>'; return; }
     container.innerHTML = '';
     const selectedSet = new Set((selectedIds || []).map(id => Number(id)));
     cachedStaffAgents.forEach(agent => {
@@ -1720,76 +1755,31 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  async function loadServicesData() {
-    try {
-      if (!cachedStaffAgents || cachedStaffAgents.length === 0) {
-        await fetchStaffAgentsForCatalog();
-      }
-      renderStaffAgentCheckboxes('new-service-agents-list', []);
-
-      const response = await fetch('/api/v1/portal/services');
-      if (!response.ok) throw new Error('Failed to fetch services');
-      const services = await response.json();
-      
-      const body = document.getElementById('services-list-body');
-      if (body) {
-        body.innerHTML = '';
-        
-        services.forEach(svc => {
-          let agentBadges = '';
-          if (svc.assigned_agent_names && svc.assigned_agent_names.length > 0) {
-            agentBadges = svc.assigned_agent_names.map(name => 
-              `<span class="badge info" style="font-size: 0.72rem; padding: 2px 6px; margin: 1px 2px; display: inline-block;">${name}</span>`
-            ).join('');
-          } else {
-            agentBadges = '<span class="badge" style="background: rgba(148, 163, 184, 0.15); color: var(--text-muted); font-size: 0.72rem; padding: 2px 6px;">Any Available</span>';
-          }
-
-          const tr = document.createElement('tr');
-          tr.innerHTML = `
-            <td><strong>${svc.name}</strong></td>
-            <td><div class="desc-cell" title="${svc.description || ''}">${svc.description || '--'}</div></td>
-            <td><span class="badge success">${svc.price_range || '--'}</span></td>
-            <td>${svc.duration_minutes ? svc.duration_minutes + ' mins' : '--'}</td>
-            <td><div style="display: flex; flex-wrap: wrap; gap: 4px; max-width: 220px;">${agentBadges}</div></td>
-            <td>
-              <div class="actions-cell" style="display: flex; gap: 8px; align-items: center; white-space: nowrap;">
-                <button class="btn btn-secondary btn-sm edit-service-btn" data-id="${svc.id}">
-                  Edit
-                </button>
-                <button class="btn btn-secondary btn-sm delete-service-btn" data-id="${svc.id}" style="border-color: var(--color-danger); color: var(--color-danger);">
-                  Delete
-                </button>
-              </div>
-            </td>
-          `;
-          
-          tr.querySelector('.edit-service-btn').addEventListener('click', () => {
-            openEditDrawer(svc);
-          });
-
-        tr.querySelector('.delete-service-btn').addEventListener('click', async () => {
-          if (!confirm(`Are you sure you want to delete the service "${svc.name}"?`)) return;
-          try {
-            const res = await fetch(`/api/v1/portal/services/${svc.id}`, {
-              method: 'DELETE'
-            });
-            if (!res.ok) throw new Error('Failed to delete service');
-            showToast('Service deleted successfully!');
-            loadServicesData();
-          } catch (err) {
-            console.error(err);
-            showToast('Error deleting service: ' + err.message, 'error');
-          }
-        });
-        
-        body.appendChild(tr);
-      });
-      }
-    } catch (err) {
-      console.error(err);
-      showToast('Error loading services: ' + err.message, 'error');
-    }
+  function renderServicesCatalog(services) {
+    const body = document.getElementById('services-list-body'); if (!body) return;
+    body.replaceChildren();
+    services.forEach(svc => {
+      const agentBadges = svc.assigned_agent_names?.length ? svc.assigned_agent_names.map(name => `<span class="badge info" style="font-size:0.72rem;padding:2px 6px;margin:1px 2px;display:inline-block">${name}</span>`).join('') : '<span class="badge">Any Available</span>';
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td><strong>${svc.name}</strong></td><td><div class="desc-cell" title="${svc.description || ''}">${svc.description || '--'}</div></td><td><span class="badge success">${svc.price_range || '--'}</span></td><td>${svc.duration_minutes ? svc.duration_minutes + ' mins' : '--'}</td><td><div style="display:flex;flex-wrap:wrap;gap:4px;max-width:220px">${agentBadges}</div></td><td><div class="actions-cell" style="display:flex;gap:8px;align-items:center;white-space:nowrap"><button class="btn btn-secondary btn-sm edit-service-btn" data-id="${svc.id}">Edit</button><button class="btn btn-secondary btn-sm delete-service-btn" data-id="${svc.id}">Delete</button></div></td>`;
+      tr.querySelector('.edit-service-btn').onclick = async () => { try { await fetchStaffAgentsForCatalog(true); } catch (_) { /* retain saved assignment display and keep submit disabled */ } openEditDrawer(svc); };
+      tr.querySelector('.delete-service-btn').onclick = async () => {
+        if (!confirm(`Are you sure you want to delete the service "${svc.name}"?`)) return;
+        try { const res = await fetch(`/api/v1/portal/services/${svc.id}`, {method:'DELETE'}); if (!res.ok) throw new Error('Failed to delete service'); showToast('Service deleted successfully!'); await invalidateCatalog(); }
+        catch (err) { showToast('Error deleting service: ' + err.message, 'error'); }
+      };
+      body.appendChild(tr);
+    });
+  }
+  async function loadServicesData(force = false, revalidateStaff = force, revalidateServices = force) {
+    const generation = ++catalogGeneration;
+    // Start staff and catalog reads together; the table never waits for staff lookup.
+    const cachedServices = catalogServices;
+    if (cachedServices !== null) renderServicesCatalog(cachedServices);
+    const servicesRead = (revalidateServices || catalogServices === null) ? (catalogServicesPromise || (() => { const pending = fetch('/api/v1/portal/services').then(async response => { if (!response.ok) throw new Error('Failed to fetch services'); return response.json(); }).then(data => { if (generation === catalogGeneration) catalogServices = data; return data; }).finally(() => { if (catalogServicesPromise === pending) catalogServicesPromise = null; }); catalogServicesPromise = pending; return pending; })()) : Promise.resolve(catalogServices);
+    const staffRead = fetchStaffAgentsForCatalog(revalidateStaff).catch(() => null);
+    servicesRead.then(services => { if (generation === catalogGeneration) { renderServicesCatalog(services); setCatalogStatus(''); } }).catch(error => { if (generation === catalogGeneration) { setCatalogStatus('Could not load catalog. Existing rows are retained.'); console.error(error); } });
+    await Promise.allSettled([servicesRead, staffRead]);
   }
 
   // Seed Default Services Button
@@ -1809,7 +1799,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         const data = await res.json();
         showToast(`Catalog updated! Added ${data.inserted_count} missing default services. Total catalog: ${data.total_defaults} services.`, 'success');
-        await loadServicesData();
+        await invalidateCatalog();
       } catch (err) {
         console.error(err);
         showToast('Error seeding default catalog: ' + err.message, 'error');
@@ -1837,6 +1827,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('edit-service-req-location').checked = svc.req_location !== undefined ? !!svc.req_location : true;
     
     renderStaffAgentCheckboxes('edit-service-agents-list', svc.assigned_agent_ids || []);
+    const submit = editServiceForm?.querySelector('button[type="submit"]');
+    if (submit) submit.disabled = catalogStaffStatus !== 'loaded';
 
     if (editDrawer) editDrawer.classList.add('active');
     if (editDrawerOverlay) editDrawerOverlay.classList.add('active');
@@ -1856,6 +1848,7 @@ document.addEventListener('DOMContentLoaded', () => {
       e.preventDefault();
       
       const submitBtn = editServiceForm.querySelector('button[type="submit"]');
+      if (catalogStaffStatus !== 'loaded') { setCatalogStatus('Staff is not ready. Retry loading staff before saving assignments.'); return; }
       if (submitBtn && submitBtn.disabled) return;
       if (submitBtn) {
         submitBtn.disabled = true;
@@ -1895,7 +1888,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         showToast('Service updated successfully!');
         closeEditDrawer();
-        loadServicesData();
+        invalidateCatalog();
       } catch (err) {
         console.error(err);
         showToast('Error updating service: ' + err.message, 'error');
@@ -1913,6 +1906,7 @@ document.addEventListener('DOMContentLoaded', () => {
     addServiceForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const submitBtn = addServiceForm.querySelector('button[type="submit"]');
+      if (catalogStaffStatus !== 'loaded') { setCatalogStatus('Staff is not ready. Retry loading staff before creating a service.'); return; }
       if (submitBtn && submitBtn.disabled) return;
       if (submitBtn) {
         submitBtn.disabled = true;
@@ -1948,7 +1942,7 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast('Service created successfully!');
         addServiceForm.reset();
         renderStaffAgentCheckboxes('new-service-agents-list', []);
-        loadServicesData();
+        invalidateCatalog();
       } catch (err) {
         console.error(err);
         showToast('Error creating service: ' + err.message, 'error');
@@ -4657,10 +4651,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Global Refresh Action
   if (refreshBtn) {
-    refreshBtn.addEventListener('click', () => {
-      loadDashboardData();
-      showToast('Refreshed statistics and calls log history.');
-    });
+    refreshBtn.addEventListener('click', () => { refreshDashboardData(); });
   }
 
   // --- TWILIO WHATSAPP TEST ONBOARDING FLOW ---
@@ -5363,7 +5354,7 @@ document.addEventListener('DOMContentLoaded', () => {
                   item.duration_minutes === expectedComponents[index].duration_minutes))) {
               throw new Error('Removal read-back does not match');
             }
-            await loadDashboardData();
+            await invalidateDashboardData();
             serviceRemovalNeedsReload.delete(req.id);
             if (!isCurrentModal()) return;
             window.openSREditModal(fresh);
@@ -5733,7 +5724,7 @@ document.addEventListener('DOMContentLoaded', () => {
           if (res.ok) {
             showToast('Service Request saved successfully!', 'success');
             closeSRModal();
-            loadDashboardData(); // reload dashboard
+            invalidateDashboardData(); // mutation requires a fresh read; pre-mutation responses are discarded
           } else {
             const err = await res.json();
             showToast(err.detail || 'Failed to save request.', 'danger');
@@ -5960,15 +5951,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Hook global timeframe selector to reload analytics if on analytics tab
   const globalTfSelect = document.getElementById('calls-timeframe-select');
-  if (globalTfSelect) {
-    globalTfSelect.addEventListener('change', () => {
-      if (activeConfigSubtab === 'analytics') {
-        loadAnalyticsView();
-      }
-    });
-  }
 
   function destroyAnalyticsChart(id) {
     if (activeAnalyticsCharts[id]) {
@@ -5981,42 +5964,35 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  let analyticsGeneration = 0;
+  let analyticsPromise = null;
+  let analyticsTimeframe = null;
+  let analyticsController = null;
+  function analyticsVisible() {
+    return activeConfigSubtab === 'analytics' && document.getElementById('config-view')?.classList.contains('active') && document.getElementById('analytics-view')?.classList.contains('active');
+  }
   async function loadAnalyticsView() {
+    if (!analyticsVisible()) return;
     const tf = (globalTfSelect ? globalTfSelect.value : '7d') || '7d';
-
-    try {
-      // 1. Fetch Overview KPIs
-      const overviewRes = await fetch(`/api/v1/portal/analytics/overview?timeframe=${tf}`);
-      if (overviewRes.ok) {
-        const overview = await overviewRes.json();
-        renderAnalyticsOverviewKPIs(overview);
-      }
-
-      // 2. Fetch SLA Performance
-      const slaRes = await fetch(`/api/v1/portal/analytics/sla?timeframe=${tf}`);
-      if (slaRes.ok) {
-        const slaData = await slaRes.json();
-        renderSLACharts(slaData);
-      }
-
-      // 3. Fetch Escalation Recovery
-      const escRes = await fetch(`/api/v1/portal/analytics/escalations?timeframe=${tf}`);
-      if (escRes.ok) {
-        const escData = await escRes.json();
-        renderEscalationCharts(escData);
-      }
-
-      // 4. Fetch Agent Scorecard
-      const techRes = await fetch(`/api/v1/portal/analytics/technicians?timeframe=${tf}`);
-      if (techRes.ok) {
-        cachedTechnicianScorecard = await techRes.json();
-        renderTechnicianPerformanceChart(cachedTechnicianScorecard);
-        renderTechnicianScorecardTable(cachedTechnicianScorecard);
-      }
-    } catch (err) {
-      console.error('Error loading analytics:', err);
-      showToast('Error loading analytics data', 'error');
-    }
+    if (analyticsPromise && analyticsTimeframe === tf) return analyticsPromise;
+    analyticsController?.abort();
+    const generation = ++analyticsGeneration;
+    const controller = new AbortController();
+    analyticsController = controller; analyticsTimeframe = tf;
+    const paths = ['overview', 'sla', 'escalations', 'technicians'];
+    const pending = Promise.allSettled(paths.map(path => fetch(`/api/v1/portal/analytics/${path}?timeframe=${tf}`, {signal: controller.signal}).then(response => { if (!response.ok) throw new Error(`Failed analytics ${path}`); return response.json(); }))).then(results => {
+      if (generation !== analyticsGeneration || !analyticsVisible()) return;
+      results.forEach((result, index) => {
+        if (result.status !== 'fulfilled') { console.error('Analytics section failed:', paths[index], result.reason); return; }
+        const data = result.value;
+        if (index === 0) renderAnalyticsOverviewKPIs(data);
+        else if (index === 1) renderSLACharts(data);
+        else if (index === 2) renderEscalationCharts(data);
+        else { cachedTechnicianScorecard = data; renderTechnicianPerformanceChart(data); renderTechnicianScorecardTable(data); }
+      });
+    }).finally(() => { if (analyticsPromise === pending) { analyticsPromise = null; analyticsController = null; } });
+    analyticsPromise = pending;
+    return pending;
   }
 
   function renderAnalyticsOverviewKPIs(data) {

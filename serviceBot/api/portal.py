@@ -1188,7 +1188,7 @@ async def update_config(payload: ConfigUpdatePayload):
     return ret
 
 @router.get("/services")
-async def get_services():
+def get_services():
     """
     Retrieves all catalog services ordered by ID.
     Enriched with assigned staff agent IDs and names (assigned_agent_ids, assigned_agent_names).
@@ -1543,9 +1543,9 @@ def sync_all_agent_calendars(days: int = 30):
 
 
 @router.get("/agents")
-async def get_staff_agents():
+def get_staff_agents():
     from serviceBot.db.connection import get_db_connection, dict_cursor
-    from serviceBot.db.queries import is_agent_whatsapp_connected
+    from serviceBot.db.queries import get_agent_whatsapp_statuses
     try:
         with get_db_connection() as conn:
             with dict_cursor(conn) as cursor:
@@ -1557,6 +1557,9 @@ async def get_staff_agents():
                     ORDER BY sa.id ASC;
                 """)
                 rows = cursor.fetchall()
+                whatsapp_status_by_phone = get_agent_whatsapp_statuses(
+                    cursor, [row.get("phone_number") for row in rows]
+                )
                 config = load_config()
                 system_email = config.get("gmail_sender") or os.getenv("GMAIL_SENDER") or None
                 agents = []
@@ -1569,7 +1572,7 @@ async def get_staff_agents():
                         "email": resolved_email,
                         "phone_number": row["phone_number"],
                         "is_connected": bool(row["google_email"]),
-                        "whatsapp_connected": is_agent_whatsapp_connected(row["phone_number"])
+                        "whatsapp_connected": whatsapp_status_by_phone.get(row.get("phone_number"), False)
                     }
                     agents.append(d)
                 return agents
@@ -2020,7 +2023,7 @@ def extract_vehicle_from_summary(summary: str) -> str:
 
 
 @router.get("/calls")
-async def get_calls(limit: Optional[int] = None, offset: Optional[int] = None):
+def get_calls(limit: Optional[int] = None, offset: Optional[int] = None):
     from serviceBot.db.connection import get_db_connection, dict_cursor
 
     with get_db_connection() as conn:
@@ -2178,8 +2181,12 @@ def _load_service_requests(
                     params.append(offset)
             cursor.execute(query, params)
             rows = cursor.fetchall()
+            from serviceBot.db.queries import get_agent_whatsapp_statuses
+            whatsapp_status_by_phone = get_agent_whatsapp_statuses(
+                cursor,
+                [row.get("staff_agent_phone") for row in rows if row.get("staff_agent_id")],
+            )
             res = []
-            whatsapp_status_by_phone = {}
             for row in rows:
                 r = dict(row)
                 if not isinstance(r["created_at"], str) and r["created_at"]:
@@ -2192,11 +2199,8 @@ def _load_service_requests(
                 if r.get("confirmed_at") and not isinstance(r["confirmed_at"], str):
                     r["confirmed_at"] = r["confirmed_at"].strftime("%Y-%m-%d %H:%M:%S")
 
-                from serviceBot.db.queries import is_agent_whatsapp_connected
                 if r.get("staff_agent_id"):
                     sa_phone = r.get("staff_agent_phone")
-                    if sa_phone and sa_phone not in whatsapp_status_by_phone:
-                        whatsapp_status_by_phone[sa_phone] = is_agent_whatsapp_connected(sa_phone)
                     r["staff_agent_whatsapp_connected"] = whatsapp_status_by_phone.get(sa_phone, False)
                 else:
                     r["staff_agent_whatsapp_connected"] = None
@@ -2518,7 +2522,7 @@ async def get_callbacks():
             return res
 
 @router.get("/stats")
-async def get_stats(timeframe: Optional[str] = "7d", calls_timeframe: Optional[str] = None):
+def get_stats(timeframe: Optional[str] = "7d", calls_timeframe: Optional[str] = None):
     tf = calls_timeframe or timeframe or "7d"
     from serviceBot.db.connection import get_db_connection, dict_cursor
     with get_db_connection() as conn:
@@ -2577,28 +2581,28 @@ async def get_stats(timeframe: Optional[str] = "7d", calls_timeframe: Optional[s
 
 
 @router.get("/analytics/overview")
-async def get_portal_analytics_overview(timeframe: Optional[str] = "7d"):
+def get_portal_analytics_overview(timeframe: Optional[str] = "7d"):
     """Returns top-level SLA, escalation, and agent response KPIs."""
     from serviceBot.services.analytics import get_analytics_overview
     return get_analytics_overview(timeframe=timeframe)
 
 
 @router.get("/analytics/sla")
-async def get_portal_analytics_sla(timeframe: Optional[str] = "7d"):
+def get_portal_analytics_sla(timeframe: Optional[str] = "7d"):
     """Returns SLA compliance timeline and confirmation latency breakdown."""
     from serviceBot.services.analytics import get_sla_analytics
     return get_sla_analytics(timeframe=timeframe)
 
 
 @router.get("/analytics/escalations")
-async def get_portal_analytics_escalations(timeframe: Optional[str] = "7d"):
+def get_portal_analytics_escalations(timeframe: Optional[str] = "7d"):
     """Returns escalation recovery funnels, resolution outcomes, and reason distributions."""
     from serviceBot.services.analytics import get_escalation_analytics
     return get_escalation_analytics(timeframe=timeframe)
 
 
 @router.get("/analytics/technicians")
-async def get_portal_analytics_technicians(timeframe: Optional[str] = "7d"):
+def get_portal_analytics_technicians(timeframe: Optional[str] = "7d"):
     """Returns per-technician SLA compliance and response time scorecard."""
     from serviceBot.services.analytics import get_technician_scorecard
     return get_technician_scorecard(timeframe=timeframe)

@@ -1,9 +1,17 @@
+from datetime import datetime
 import pytest
 from unittest.mock import patch
 from fastapi.testclient import TestClient
 from serviceBot.main import app
+from serviceBot.services import timezone_service
 
 client = TestClient(app)
+
+
+def _fixed_business_now():
+    """Keep appointment classification tests independent of the calendar date."""
+    return datetime(2026, 10, 20, 12, tzinfo=timezone_service.get_business_zoneinfo())
+
 
 def test_inbound_call_injects_customer_name_and_upcoming_appointments():
     """
@@ -143,7 +151,8 @@ def test_get_customer_appointments_option_a_and_confirmed_status():
         }
     ]
 
-    with patch("serviceBot.api.telephony.get_customer_appointments", return_value=mock_appts):
+    with patch("serviceBot.services.timezone_service.now_in_business_tz", return_value=_fixed_business_now()), \
+         patch("serviceBot.api.telephony.get_customer_appointments", return_value=mock_appts):
         payload = {
             "tool_call_id": "call_appt_2",
             "name": "get_customer_appointments",
@@ -189,7 +198,8 @@ def test_inbound_call_prioritizes_upcoming_over_old_past_appointments():
 
     with patch("serviceBot.api.telephony.lookup_customer_by_phone", return_value=mock_customer), \
          patch("serviceBot.api.telephony.get_customer_appointments", return_value=mock_appts), \
-         patch("serviceBot.api.telephony.get_customer_service_history", return_value=[]):
+         patch("serviceBot.api.telephony.get_customer_service_history", return_value=[]), \
+         patch("serviceBot.services.timezone_service.now_in_business_tz", return_value=_fixed_business_now()):
 
         resp = client.post("/api/v1/telephony/inbound", data={"From": "+14242704893", "CallSid": "CA_TEST"})
         assert resp.status_code == 200

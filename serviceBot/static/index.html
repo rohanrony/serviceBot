@@ -135,6 +135,7 @@
               <div class="metric-badge" id="stat-requests-badge"><span class="badge-dot warning"></span>-- pending triage</div>
             </div>
           </div>
+          <div id="stats-read-status" class="text-muted" hidden role="status"></div>
           
           <!-- Service Requests Table -->
           <div class="content-card mt-6">
@@ -174,6 +175,7 @@
                 View Escalated Queue
               </button>
             </div>
+            <div id="requests-read-status" class="text-muted" hidden role="status"></div>
             <div class="table-container">
               <table class="data-table" id="service-requests-table">
                 <thead>
@@ -264,6 +266,7 @@
                 <input type="text" id="filter-calls-search" class="form-input filter-calls-search" placeholder="Search calls...">
               </div>
             </div>
+            <div id="calls-read-status" class="read-status" role="status" aria-live="polite" hidden></div>
             <div class="table-container">
               <table class="data-table" id="call-logs-table">
                 <thead>
@@ -344,6 +347,7 @@
                 </div>
               </div>
               
+              <div id="catalog-read-status" class="text-muted" hidden role="status"></div>
               <div class="table-container">
                 <table class="data-table">
                   <thead>

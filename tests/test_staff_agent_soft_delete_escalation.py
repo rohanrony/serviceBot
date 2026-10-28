@@ -178,8 +178,8 @@ def test_get_staff_agents_filters_out_inactive_agents(client):
         assert agents[0]["name"] == "Active Agent"
 
         # Verify SQL included is_active check
-        query_executed = mock_cursor.execute.call_args[0][0]
-        assert "is_active" in query_executed
+        executed_queries = [args[0] for args, _kwargs in mock_cursor.execute.call_args_list]
+        assert any("is_active" in query for query in executed_queries)
 
 
 def test_reassign_endpoint_updates_reservation_segments(client):

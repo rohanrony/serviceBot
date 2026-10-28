@@ -70,6 +70,8 @@ def test_service_edit_delete_round_trip(page, live_server, api):
     page.goto(f"{live_server}/portal/")
     page.locator('.nav-item[data-tab="services"]').click()
     page.locator('.edit-service-btn[data-id="1"]').click()
+    page.locator("#edit-service-drawer.active").wait_for()
+    page.wait_for_function("!document.querySelector('#edit-service-form button[type=submit]').disabled")
     page.locator("#edit-service-name").fill("Premium Oil Change")
     page.locator("#edit-service-duration").fill("90")
     page.locator("#edit-service-req-location").uncheck()
