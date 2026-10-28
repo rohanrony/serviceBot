@@ -8,6 +8,7 @@ from serviceBot.services.google_calendar import (
     get_user_google_credentials,
     is_agent_free,
     create_agent_calendar_event,
+    delete_agent_calendar_event,
     fetch_agent_events,
     list_upcoming_events,
     parse_google_datetime,
@@ -151,3 +152,34 @@ def test_parse_google_datetime():
     
     # 3. None handling
     assert parse_google_datetime(None, tz) is None
+
+
+@patch("serviceBot.services.google_calendar.get_user_google_credentials")
+@patch("serviceBot.services.google_calendar.fetch_agent_events")
+@patch("httpx.delete")
+def test_delete_agent_calendar_event_only_deletes_known_app_owned_titles(
+    mock_delete, mock_fetch, mock_credentials
+):
+    """Unrelated appointments, callbacks, and bookings must remain untouched."""
+    mock_credentials.return_value = {
+        "access_token": "dummy",
+        "granted_scopes": {"https://www.googleapis.com/auth/calendar.events"},
+    }
+    mock_fetch.return_value = [
+        {"id": "legacy_appointment", "summary": "BayFull Appointment - Customer"},
+        {"id": "legacy_callback", "summary": "BayFull Callback - Customer"},
+        {"id": "legacy_servicebot", "summary": "serviceBot Booking - Customer"},
+        {"id": "unrelated_appointment", "summary": "Dentist Appointment - Customer"},
+        {"id": "unrelated_callback", "summary": "Phone Callback - Customer"},
+        {"id": "unrelated_booking", "summary": "Business Booking Review"},
+    ]
+    mock_delete.return_value = MagicMock(status_code=204, text="")
+
+    assert delete_agent_calendar_event(999, "2026-06-25 10:00:00") is True
+
+    deleted_urls = [call.args[0] for call in mock_delete.call_args_list]
+    assert len(deleted_urls) == 3
+    for event_id in ("legacy_appointment", "legacy_callback", "legacy_servicebot"):
+        assert any(event_id in url for url in deleted_urls)
+    for event_id in ("unrelated_appointment", "unrelated_callback", "unrelated_booking"):
+        assert all(event_id not in url for url in deleted_urls)

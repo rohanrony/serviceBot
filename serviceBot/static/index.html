@@ -1929,7 +1929,13 @@
           <div id="sr-current-schedule-display" style="display: none; margin-bottom: 8px; font-size: 12px; color: var(--text-muted);">
             Current scheduled time: <strong id="sr-current-schedule-time" style="color: var(--text-main);"></strong>
           </div>
-          <p class="text-muted" style="font-size: 11px; margin-bottom: 8px;">Staff agent will be automatically assigned based on calendar availability.</p>
+          <div id="sr-agent-select-container" style="display: none; margin-bottom: 10px;">
+            <label for="sr-agent-select">Staff Agent</label>
+            <select id="sr-agent-select" class="form-input">
+              <option value="">Automatically assign an available agent</option>
+            </select>
+          </div>
+          <p id="sr-auto-assign-text" class="text-muted" style="font-size: 11px; margin-bottom: 8px;">Staff agent will be automatically assigned based on calendar availability.</p>
 
           <div id="sr-consent-wrapper" style="display: none; margin-top: 10px; padding: 10px; background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 6px;">
             <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12px; font-weight: 500; color: var(--text-main); margin: 0;">

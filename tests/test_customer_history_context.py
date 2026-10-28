@@ -1,9 +1,24 @@
-import pytest
+from datetime import datetime
 from unittest.mock import patch
+
+import pytest
 from fastapi.testclient import TestClient
 from serviceBot.main import app
+from serviceBot.services import timezone_service
 
 client = TestClient(app)
+
+
+@pytest.fixture
+def freeze_before_sample_appointments(monkeypatch):
+    """Keep fixed sample appointments future/past relative to a stable business date."""
+    fixed_now = datetime(
+        2026, 10, 24, 12, tzinfo=timezone_service.get_business_zoneinfo()
+    )
+    monkeypatch.setattr(
+        timezone_service, "now_in_business_tz", lambda: fixed_now
+    )
+
 
 def test_inbound_call_injects_customer_name_and_upcoming_appointments():
     """
@@ -114,7 +129,9 @@ def test_get_customer_appointments_tool_returns_issue_and_duration():
         assert appt["make"] == "Honda"
 
 
-def test_get_customer_appointments_option_a_and_confirmed_status():
+def test_get_customer_appointments_option_a_and_confirmed_status(
+    freeze_before_sample_appointments,
+):
     """Verify get_customer_appointments includes Option A boundary and counts confirmed upcoming appointments."""
     mock_appts = [
         {
@@ -160,7 +177,9 @@ def test_get_customer_appointments_option_a_and_confirmed_status():
         assert "completed service records over the phone" in result["summary_for_agent"].lower()
 
 
-def test_inbound_call_prioritizes_upcoming_over_old_past_appointments():
+def test_inbound_call_prioritizes_upcoming_over_old_past_appointments(
+    freeze_before_sample_appointments,
+):
     """Verify inbound call dynamic variables prioritize upcoming appointments over past ones."""
     mock_customer = {
         "customer_id": 17,

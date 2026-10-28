@@ -1,0 +1,31 @@
+schema: 1
+feature: specs/changes/calendar-event-cleanup
+acceptance:
+  - id: CAL-CLEANUP-01
+    behavior: Cancellation removes only calendar events with known application-owned title prefixes.
+    preconditions:
+      - Mocked calendar credentials with event-write scope
+      - Owned and unrelated events in the same queried time window
+    success:
+      - Known legacy application event titles are deleted
+    failure:
+      - Unrelated appointment, callback, and booking titles are preserved
+    invariants:
+      - Cleanup does not delete an event based on generic words alone
+      - No provider call occurs for unrelated event IDs
+    tests:
+      - tests/test_google_calendar_service.py::test_delete_agent_calendar_event_only_deletes_known_app_owned_titles
+    layer:
+      - unit
+    live_acceptance:
+      status: not_required
+      reason: The behavior is fully exercised at the mocked Calendar boundary; no external provider behavior changes.
+      scenarios: []
+omitted_layers:
+  database: Calendar cleanup filters provider events and does not change persisted booking state or schema.
+  http: No HTTP route or API contract is changed by the cleanup filter.
+  browser: No browser behavior changes; cancellation safety is covered at the Calendar boundary.
+  provider_contract: No provider request shape or authentication behavior changes; only eligible event IDs are filtered before deletion calls.
+  composed: The focused regression directly verifies owned and unrelated event handling; no additional composition contract is introduced.
+  migration: No stored format or schema migration is required.
+  targeted: The mapped unit regression observes deletion calls and verifies unrelated event IDs are never sent for deletion.
