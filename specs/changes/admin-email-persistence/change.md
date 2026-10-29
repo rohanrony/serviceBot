@@ -73,5 +73,8 @@ resolved.
 The phone-failure regression writes `sms_config.admin_phone_number` on the
 request connection, asserts exactly one row changed, then raises. A fresh read
 confirms the savepoint restores the original phone while authoritative email and
-local configuration are saved. Exact current-target verification is recorded
-in `test-coverage.yaml` before publication.
+local configuration are saved. Exact verification passed on commit
+`7f2b99a79494951803cdc8b13050410308cfd762` against target
+`53ea4ce734294ec21d5334685d27ec751e3df7d8`: 2,518 unit/integration tests and
+723 E2E tests passed with zero failures, errors, or skips. The result is recorded
+in `test-coverage.yaml`.
