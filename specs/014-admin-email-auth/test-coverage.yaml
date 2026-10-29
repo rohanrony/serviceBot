@@ -244,6 +244,7 @@ acceptance:
       provider_contract: "No provider behavior changes."
 omitted_layers:
   provider_contract: "The feature sends no external provider requests or delivery effects."
+  composed: "Authentication and password lifecycle are local single-admin flows with no multi-provider composition."
 review:
   red: "Root reported the pre-implementation focused Red run as 7 failures, 15 fixture/setup errors, and 3 passes. The ingress assertion was then corrected to `/api/v1/telephony/render-logs`; this agent could not verify that corrected Red baseline because its sandbox denied guarded loopback PostgreSQL access (`Operation not permitted` to 127.0.0.1:5432). The prior Red counts therefore do not include the corrected route assertion."
   green: "`./run_tests.sh --file tests/test_admin_auth.py` passed 21 tests in the independent fresh-context Luna high validation pass after the dashboard-alias regression was added. Earlier focused auth/config/migration coverage passed 29 tests, the feature browser suite passed 4 tests, and `./run_tests.sh --all` passed 2535 tests with 34 warnings."
