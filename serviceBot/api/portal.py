@@ -2748,7 +2748,7 @@ async def get_gmail_config():
     }
 
 @router.post("/gmail-config")
-async def update_gmail_config(payload: GmailConfigPayload):
+def update_gmail_config(payload: GmailConfigPayload):
     from serviceBot.services.encryption import encrypt_key
     config = load_config()
     
@@ -2767,18 +2767,6 @@ async def update_gmail_config(payload: GmailConfigPayload):
     
     if payload.admin_phone_number is not None:
         config["admin_phone_number"] = payload.admin_phone_number
-        try:
-            from serviceBot.db.queries import update_sms_config, add_sms_whitelist
-            update_sms_config({"admin_phone_number": payload.admin_phone_number})
-            if payload.admin_phone_number.strip():
-                add_sms_whitelist(
-                    phone_number=payload.admin_phone_number.strip(),
-                    friendly_name="Admin Notification Contact",
-                    twilio_verified=True,
-                    recipient_role="ADMIN"
-                )
-        except Exception as e:
-            logger.warning(f"Could not persist admin phone to database: {e}")
         
     if payload.gmail_client_id:
         config["gmail_client_id"] = encrypt_key(payload.gmail_client_id)
@@ -2787,8 +2775,16 @@ async def update_gmail_config(payload: GmailConfigPayload):
         config["gmail_client_secret"] = encrypt_key(payload.gmail_client_secret)
         
     try:
-        from serviceBot.db.queries import update_admin_notification_email
-        update_admin_notification_email(payload.gmail_recipient)
+        from serviceBot.db.queries import update_admin_notification_settings
+        persistence_result = update_admin_notification_settings(
+            payload.gmail_recipient,
+            admin_phone_number=payload.admin_phone_number,
+        )
+        if persistence_result["phone_error"] is not None:
+            logger.warning(
+                "Could not persist admin phone to database: "
+                f"{persistence_result['phone_error']}"
+            )
     except Exception as e:
         logger.error(f"Could not persist admin notification email: {e}", exc_info=e)
         raise HTTPException(

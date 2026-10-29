@@ -48,3 +48,30 @@ suite results are recorded in `test-coverage.yaml`.
 The exact candidate must pass `./scripts/verify_change.sh` against the current
 `main` commit before publication. No live database migration or manual
 deployment is part of this change.
+
+
+## Warm admin-save checkout follow-up — 2026-10-29
+
+A normal save with an admin phone previously checked out three connections in
+sequence: SMS settings update, SMS whitelist upsert, and authoritative admin
+email upsert. Each production checkout runs the pool liveness probe before its
+query, adding avoidable sequential waits. The save now runs these writes in one
+database checkout. A savepoint isolates best-effort phone writes; phone failure
+rolls back to the savepoint and the email write is still attempted. Transaction
+commit releases the savepoint without a separate success-path SQL round-trip.
+Email failure still returns HTTP 503 before the JSON config is saved. The route
+is a synchronous FastAPI handler, so database and file operations run in its
+worker pool instead of blocking the event loop.
+
+AC3 defines the warm-save budget: at most one pooled checkout, synchronous
+worker-pool dispatch, and no redundant success-path savepoint release query.
+Render cold starts are excluded. Production p95 latency remains unverified
+because the observed service telemetry did not include request timing metrics.
+This code-only change does not establish that the deployed save delay has been
+resolved.
+
+The phone-failure regression writes `sms_config.admin_phone_number` on the
+request connection, asserts exactly one row changed, then raises. A fresh read
+confirms the savepoint restores the original phone while authoritative email and
+local configuration are saved. Exact current-target verification is recorded
+in `test-coverage.yaml` before publication.

@@ -1,6 +1,8 @@
 """Admin email saves survive an overlapping Google token refresh."""
 
 import json
+import inspect
+from contextlib import contextmanager
 
 import httpx
 import pytest
@@ -16,6 +18,12 @@ _REAL_CREATE_ADMIN_CALENDAR_EVENT = gmail.create_admin_calendar_event
 _REAL_CREATE_AGENT_CALENDAR_EVENT = google_calendar.create_agent_calendar_event
 
 
+@pytest.mark.test_layer("http")
+def test_admin_config_save_uses_sync_fastapi_dispatch():
+    """Synchronous persistence runs in FastAPI's worker pool, not the event loop."""
+    assert not inspect.iscoroutinefunction(portal.update_gmail_config)
+
+
 def _clear_saved_admin_email():
     """Keep this test independent of other settings persistence tests."""
     from serviceBot.db.connection import get_db_connection, dict_cursor
@@ -27,6 +35,101 @@ def _clear_saved_admin_email():
             )
             if cursor.fetchone()["table_name"] is not None:
                 cursor.execute("DELETE FROM admin_notification_settings;")
+
+
+@pytest.mark.test_layer("http")
+def test_admin_config_save_uses_one_database_checkout(monkeypatch, tmp_path):
+    """A warm save should perform its phone and email writes on one checkout."""
+    monkeypatch.setattr(portal, "CONFIG_PATH", str(tmp_path / "config.json"))
+    monkeypatch.setattr(portal, "SYSTEM_PROMPT_PATH", str(tmp_path / "system_prompt.txt"))
+    from serviceBot.db import queries
+
+    real_get_db_connection = queries.get_db_connection
+    checkouts = []
+
+    @contextmanager
+    def counted_get_db_connection():
+        checkouts.append("checkout")
+        with real_get_db_connection() as conn:
+            yield conn
+
+    monkeypatch.setattr(queries, "get_db_connection", counted_get_db_connection)
+    response = TestClient(app).post(
+        "/api/v1/portal/gmail-config",
+        json={
+            "gmail_enabled": False,
+            "gmail_sender": "sender@example.test",
+            "gmail_recipient": "checkout-budget@example.test",
+            "admin_phone_number": "+15550109991",
+        },
+    )
+
+    assert response.status_code == 200
+    assert len(checkouts) <= 1
+
+    # Keep the request budget scoped to the route itself. These reads must use
+    # fresh database checkouts so the test proves all three writes persisted.
+    monkeypatch.setattr(queries, "get_db_connection", real_get_db_connection)
+    sms_config = queries.get_sms_config()
+    whitelist = queries.get_sms_whitelist()
+    persisted_recipient = queries.get_admin_notification_email()
+
+    assert sms_config["admin_phone_number"] == "+15550109991"
+    admin_contact = next(
+        entry
+        for entry in whitelist
+        if entry["phone_number"] == "+15550109991"
+    )
+    assert admin_contact["friendly_name"] == "Admin Notification Contact"
+    assert admin_contact["recipient_role"] == "ADMIN"
+    assert admin_contact["twilio_verified"] is True
+    assert persisted_recipient == "checkout-budget@example.test"
+
+
+@pytest.mark.test_layer("database")
+def test_admin_notification_settings_success_avoids_savepoint_release_roundtrip(monkeypatch):
+    from contextlib import contextmanager
+
+    from serviceBot.db import queries
+
+    executed = []
+
+    class Cursor:
+        def execute(self, sql, params=None):
+            executed.append(sql.strip())
+
+        def fetchone(self):
+            return {"gmail_recipient": "admin@example.test"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+    class Connection:
+        def cursor(self):
+            return Cursor()
+
+    @contextmanager
+    def fake_connection():
+        yield Connection()
+
+    @contextmanager
+    def fake_dict_cursor(_conn):
+        yield Cursor()
+
+    monkeypatch.setattr(queries, "get_db_connection", fake_connection)
+    monkeypatch.setattr(queries, "dict_cursor", fake_dict_cursor)
+    monkeypatch.setattr(queries, "_persist_admin_phone_on_connection", lambda *_: None)
+
+    result = queries.update_admin_notification_settings(
+        "admin@example.test", admin_phone_number="+15550109991"
+    )
+
+    assert result == {"email": "admin@example.test", "phone_error": None}
+    assert "SAVEPOINT admin_phone_persistence;" in executed
+    assert not any(sql.startswith("RELEASE SAVEPOINT") for sql in executed)
 
 
 @pytest.mark.test_layer("http")
@@ -149,10 +252,10 @@ def test_admin_email_save_does_not_report_success_when_database_write_fails(
 
     from serviceBot.db import queries
 
-    def fail_persist(email):
+    def fail_persist(email, admin_phone_number=None):
         raise RuntimeError("synthetic database outage")
 
-    monkeypatch.setattr(queries, "update_admin_notification_email", fail_persist)
+    monkeypatch.setattr(queries, "update_admin_notification_settings", fail_persist)
     response = TestClient(app).post(
         "/api/v1/portal/gmail-config",
         json={
@@ -164,6 +267,47 @@ def test_admin_email_save_does_not_report_success_when_database_write_fails(
 
     assert response.status_code == 503
     assert portal.load_config()["gmail_recipient"] == "old-admin@example.test"
+
+
+@pytest.mark.test_layer("http")
+def test_admin_phone_persistence_failure_does_not_block_email_save(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(portal, "CONFIG_PATH", str(tmp_path / "config.json"))
+    monkeypatch.setattr(portal, "SYSTEM_PROMPT_PATH", str(tmp_path / "system_prompt.txt"))
+    from serviceBot.db import queries
+
+    original_phone_number = queries.get_sms_config()["admin_phone_number"]
+    update_rowcounts = []
+
+    def fail_phone(conn, phone_number):
+        # Make the first phone write on the request's transaction, then fail.
+        # The SAVEPOINT must undo this write while allowing email to commit.
+        with queries.dict_cursor(conn) as cursor:
+            cursor.execute(
+                "UPDATE sms_config SET admin_phone_number = %s "
+                "WHERE id = (SELECT id FROM sms_config ORDER BY id ASC LIMIT 1);",
+                (phone_number,),
+            )
+            update_rowcounts.append(cursor.rowcount)
+        raise RuntimeError("synthetic SMS schema outage")
+
+    monkeypatch.setattr(queries, "_persist_admin_phone_on_connection", fail_phone)
+    response = TestClient(app).post(
+        "/api/v1/portal/gmail-config",
+        json={
+            "gmail_enabled": False,
+            "gmail_sender": "sender@example.test",
+            "gmail_recipient": "phone-failure@example.test",
+            "admin_phone_number": "+15550109992",
+        },
+    )
+
+    assert response.status_code == 200
+    assert update_rowcounts == [1]
+    assert queries.get_admin_notification_email() == "phone-failure@example.test"
+    assert portal.load_config()["gmail_recipient"] == "phone-failure@example.test"
+    assert queries.get_sms_config()["admin_phone_number"] == original_phone_number
 
 
 @pytest.mark.test_layer("http")

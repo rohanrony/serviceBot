@@ -64,6 +64,37 @@ acceptance:
     status: not_required
     reason: Automated tests use an isolated database and mocked provider boundaries; no live database or recipient is changed.
     scenarios: []
+- id: AC3
+  behavior: A successful warm admin configuration save reduces total database transaction overhead while persisting phone and email settings.
+  preconditions:
+  - Warm service process with an isolated synthetic PostgreSQL database
+  - Admin save payload includes a nonblank phone so both SMS and whitelist writes are exercised
+  success:
+  - The save succeeds and performs no more than one pooled database checkout and its associated liveness probe
+  - The synchronous endpoint is dispatched by FastAPI's worker pool and does not block the ASGI event loop
+  - The successful transaction uses no redundant RELEASE SAVEPOINT SQL round-trip
+  - After the measured request, fresh database reads confirm the admin phone setting, ADMIN whitelist record metadata, and admin email recipient
+  failure:
+  - A phone persistence failure after a phone-field write restores the prior phone value from a fresh database read and does not prevent authoritative admin email persistence
+  - An admin email persistence failure returns HTTP 503 and does not report or persist a successful local configuration save
+  invariants:
+  - Phone writes remain best effort while admin email persistence remains authoritative
+  - Database errors preserve the preexisting API status and response behavior
+  - The budget excludes Render cold starts; production p95 latency remains unverified because current telemetry lacks request timing data
+  - No provider requests or notification deliveries are triggered by saving configuration
+  tests:
+  - tests/test_admin_email_persistence.py::test_admin_config_save_uses_one_database_checkout
+  - tests/test_admin_email_persistence.py::test_admin_config_save_uses_sync_fastapi_dispatch
+  - tests/test_admin_email_persistence.py::test_admin_notification_settings_success_avoids_savepoint_release_roundtrip
+  - tests/test_admin_email_persistence.py::test_admin_phone_persistence_failure_does_not_block_email_save
+  - tests/test_admin_email_persistence.py::test_admin_email_save_does_not_report_success_when_database_write_fails
+  layer:
+  - http
+  - database
+  live_acceptance:
+    status: not_required
+    reason: The change combines existing PostgreSQL setting writes and removes redundant success-path transaction SQL without changing external provider or notification behavior. The checkout count is verified against a disposable synthetic database, and the success-path query regression is checked with a deterministic fake connection. Production p95 timing is unverified and Render cold starts are outside this budget.
+    scenarios: []
 omitted_layers:
   database: AC1 covers the token-refresh update; database-backed recipient persistence is covered by AC2.
   migration: AC1 did not change schema; the admin recipient migration is covered by AC2.
@@ -72,17 +103,14 @@ review:
   red: >-
     AC1: Before implementation, the focused admin persistence command reproduced the stale recipient after a successful token refresh.
     AC2: Before durable storage, restoring the pre-save JSON file made a fresh GET return old-admin@example.test after the API returned 200 for new-admin@example.test.
+    AC3: Before implementation, a phone-bearing admin save used three database checkouts; the sync-dispatch regression also failed against the async endpoint.
   green: >-
-    The previous exact candidate passed 2514 unit/integration and 723 E2E tests, with zero failures, errors, or skips.
-    The ownership-marker revision passed the focused 35-test set; the final legacy callback case now requires full exact-candidate verification.
+    The pre-rebase isolated candidate based on HEAD 49412464 passed 2517 unit/integration tests and 723 E2E tests with zero failures, errors, or skips. The remote target has advanced since that run; exact verification against the current integration target is pending.
   test_changes: >-
-    AC1 adds API and browser interleaving coverage and exact token-only update assertions.
-    AC2 adds database reset, failed read/write, provider-boundary, migration, and browser assertions.
-    The existing booking clock fixture is deterministic. No business assertions were weakened, removed, skipped, or marked xfail.
+    AC1 adds API and browser interleaving coverage and exact token-only update assertions. AC2 adds database reset, failed read/write, provider-boundary, migration, and browser assertions. AC3 asserts one checkout with a nonblank phone, sync FastAPI dispatch, absence of redundant success-path savepoint release, persisted phone/whitelist/email read-back, phone savepoint rollback after one row is changed, and HTTP 503 behavior when email persistence fails. No existing assertions were weakened or removed.
   sufficiency: >-
-    AC1 covers successful and rejected refresh responses, persisted read-back, retained credentials and business settings, and browser reload.
-    AC2 covers JSON reset, database failure behavior, and email/calendar recipient paths with provider requests mocked.
+    AC1 covers successful and rejected refresh responses, persisted read-back, retained credentials and business settings, and browser reload. AC2 covers JSON reset, database failure behavior, and email/calendar recipient paths with providers mocked. AC3 measures the checkout budget and uses fresh DB reads for SMS config, ADMIN whitelist metadata, and email; it proves savepoint rollback after a real one-row write and verifies best-effort phone plus authoritative email failure behavior.
   offline:
     status: pending
-    reason: The latest legacy admin callback compatibility fix must pass full exact-candidate verification before publication.
+    reason: The exact candidate must pass the full offline verification gate against the fetched current integration target before publication.
     evidence: []
