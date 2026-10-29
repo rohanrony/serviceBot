@@ -10,6 +10,11 @@ from serviceBot.api.portal import load_config
 from serviceBot.logger import get_logger
 from serviceBot.services import timezone_service
 from serviceBot.services.business_profile import resolve_business_name
+from serviceBot.services.calendar_event_identity import (
+    AGENT_BOOKING_EVENT,
+    is_managed_calendar_event,
+    managed_event_extended_properties,
+)
 
 logger = get_logger("services.google_calendar")
 
@@ -279,6 +284,9 @@ def create_agent_calendar_event(
         payload = {
             "summary": event_summary,
             "description": event_desc,
+            "extendedProperties": managed_event_extended_properties(
+                AGENT_BOOKING_EVENT
+            ),
             "start": {
                 "dateTime": start_iso,
                 "timeZone": timezone_service.get_business_timezone_str()
@@ -375,6 +383,9 @@ def create_multi_service_calendar_events(
             payload = {
                 "summary": f"{b_name} Appointment - {customer_name}",
                 "description": full_desc,
+                "extendedProperties": managed_event_extended_properties(
+                    AGENT_BOOKING_EVENT
+                ),
                 "start": {
                     "dateTime": start_iso,
                     "timeZone": timezone_service.get_business_timezone_str()
@@ -674,8 +685,20 @@ def delete_agent_calendar_event(
             "serviceBot Booking - ",
         )
         for ev in events:
-            summary = ev.get("summary", "")
-            if summary.startswith(managed_summary_prefixes):
+            summary = str(ev.get("summary") or "")
+            description = str(ev.get("description") or "")
+            has_legacy_generated_identity = (
+                "Automatically booked by " in description
+                and (
+                    " Appointment - " in summary
+                    or " Callback - " in summary
+                )
+            )
+            if (
+                is_managed_calendar_event(ev, AGENT_BOOKING_EVENT)
+                or summary.startswith(managed_summary_prefixes)
+                or has_legacy_generated_identity
+            ):
                 event_id = ev.get("id")
                 if event_id:
                     del_url = f"https://www.googleapis.com/calendar/v3/calendars/primary/events/{event_id}"

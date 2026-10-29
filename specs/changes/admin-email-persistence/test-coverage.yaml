@@ -73,8 +73,8 @@ review:
     AC1: Before implementation, the focused admin persistence command reproduced the stale recipient after a successful token refresh.
     AC2: Before durable storage, restoring the pre-save JSON file made a fresh GET return old-admin@example.test after the API returned 200 for new-admin@example.test.
   green: >-
-    The combined candidate based on main bac7c9966813ebdb4be42dfa6090efb2108cc627 passed 2514 unit/integration tests and
-    723 E2E tests, with zero failures, errors, or skips. The publication gate still records immutable exact-commit evidence.
+    The exact pre-review candidate passed 2514 unit/integration and 723 E2E tests, with zero failures, errors, or skips.
+    After fixing the two calendar-ownership review findings, the focused regression set passed all 35 tests; full exact-candidate verification is pending.
   test_changes: >-
     AC1 adds API and browser interleaving coverage and exact token-only update assertions.
     AC2 adds database reset, failed read/write, provider-boundary, migration, and browser assertions.
@@ -83,8 +83,6 @@ review:
     AC1 covers successful and rejected refresh responses, persisted read-back, retained credentials and business settings, and browser reload.
     AC2 covers JSON reset, database failure behavior, and email/calendar recipient paths with provider requests mocked.
   offline:
-    status: verified
-    reason: The full suites passed on the combined tree; scripts/verify_change.sh records the exact committed head and base before publication.
-    evidence:
-    - scratch/unit-results.xml
-    - scratch/e2e-results.xml
+    status: pending
+    reason: The post-review calendar ownership fix must pass full exact-candidate verification before publication.
+    evidence: []

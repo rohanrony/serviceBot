@@ -19,6 +19,11 @@ from serviceBot.services.business_profile import (
     sanitize_header_value,
     sanitize_display_name,
 )
+from serviceBot.services.calendar_event_identity import (
+    ADMIN_BOOKING_EVENT,
+    is_managed_calendar_event,
+    managed_event_extended_properties,
+)
 
 logger = get_logger("services.gmail")
 
@@ -696,6 +701,9 @@ def create_admin_calendar_event(
         payload = {
             "summary": summary_title,
             "description": desc_text,
+            "extendedProperties": managed_event_extended_properties(
+                ADMIN_BOOKING_EVENT
+            ),
             "start": {
                 "dateTime": start_iso,
                 "timeZone": timezone_service.get_business_timezone_str()
@@ -761,14 +769,32 @@ def delete_admin_calendar_event(
         data = response.json()
         events = data.get("items", [])
         cancelled_any = False
+        business_name = resolve_business_name(load_config())
+        managed_summary_prefixes = (
+            f"{business_name} Booking - ",
+            f"{business_name} Callback - ",
+            "BayFull Booking - ",
+            "BayFull Callback - ",
+            "BayFull Appointment - ",
+            "serviceBot Booking - ",
+            "serviceBot Callback - ",
+            "serviceBot Appointment - ",
+        )
 
         for ev in events:
-            summary = ev.get("summary", "")
+            summary = str(ev.get("summary") or "")
+            description = str(ev.get("description") or "")
+            has_legacy_generated_identity = (
+                "Automatically logged for Admin by " in description
+                and (
+                    " Booking - " in summary
+                    or " Callback - " in summary
+                )
+            )
             if (
-                "serviceBot" in summary
-                or "BayFull" in summary
-                or "Callback" in summary
-                or "Booking" in summary
+                is_managed_calendar_event(ev, ADMIN_BOOKING_EVENT)
+                or summary.startswith(managed_summary_prefixes)
+                or has_legacy_generated_identity
             ):
                 event_id = ev.get("id")
                 if event_id:

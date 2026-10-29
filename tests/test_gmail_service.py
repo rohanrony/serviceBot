@@ -13,7 +13,7 @@ from serviceBot.services.gmail import (
     send_gmail_via_api,
     send_booking_notification,
     send_admin_notification,
-    create_admin_calendar_event
+    create_admin_calendar_event,
 )
 
 @patch("httpx.post")
@@ -288,6 +288,9 @@ def test_create_admin_calendar_event(mock_get_token, mock_post, mock_load):
     json_body = kwargs.get("json", {})
     summary = json_body.get("summary", "")
     desc = json_body.get("description", "")
+    assert json_body["extendedProperties"]["private"]["serviceBotManagedEvent"] == (
+        "admin_booking"
+    )
     assert "Alice Smith" in summary
     assert "John Mechanic" in summary
     assert summary.startswith("Davidson CarCare Booking -")

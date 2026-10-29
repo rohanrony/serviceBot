@@ -316,3 +316,6 @@ def test_email_and_calendar_delivery_use_saved_recipient_after_file_reset(
     assert multi_service_call["json"]["attendees"] == [
         {"email": "new-admin@example.test"}
     ]
+    assert multi_service_call["json"]["extendedProperties"]["private"][
+        "serviceBotManagedEvent"
+    ] == "agent_booking"

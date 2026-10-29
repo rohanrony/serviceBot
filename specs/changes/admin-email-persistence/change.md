@@ -32,6 +32,11 @@ revokes direct access from API roles. The migration has a rollback and a
 read-only verification companion. Notification preferences, sender settings,
 OAuth credentials, and provider request behavior remain unchanged.
 
+Calendar events created by the service carry a stable private ownership marker.
+Cleanup also recognizes narrowly shaped legacy generated events after a business
+name change, while preserving unrelated meetings that only contain generic
+words such as “Booking” or “Callback.”
+
 ## Acceptance and verification
 
 AC1 covers a save during a Gmail token refresh, including successful and

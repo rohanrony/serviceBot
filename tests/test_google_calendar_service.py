@@ -132,6 +132,9 @@ def test_create_agent_calendar_event(mock_post, mock_creds, mock_load):
     _, kwargs = mock_post.call_args
     json_data = kwargs.get("json", {})
     assert json_data["summary"] == "Davidson CarCare Appointment - John Doe"
+    assert json_data["extendedProperties"]["private"]["serviceBotManagedEvent"] == (
+        "agent_booking"
+    )
     assert "BayFull" not in json_data["summary"]
     assert "serviceBot" not in json_data["summary"]
     assert "AC Repair" in json_data["description"]
@@ -175,6 +178,9 @@ def test_create_agent_calendar_event_callback(mock_post, mock_creds, mock_load):
     _, kwargs = mock_post.call_args
     json_data = kwargs.get("json", {})
     assert json_data["summary"] == "Davidson CarCare Callback - Jane Doe (Brake Check)"
+    assert json_data["extendedProperties"]["private"]["serviceBotManagedEvent"] == (
+        "agent_booking"
+    )
     assert "BayFull" not in json_data["summary"]
     assert "serviceBot" not in json_data["summary"]
     assert "Davidson CarCare" in json_data["description"]
@@ -246,10 +252,12 @@ def test_parse_google_datetime():
 @patch("serviceBot.services.google_calendar.get_user_google_credentials")
 @patch("serviceBot.services.google_calendar.fetch_agent_events")
 @patch("httpx.delete")
+@patch("serviceBot.services.google_calendar.load_config")
 def test_delete_agent_calendar_event_only_deletes_known_app_owned_titles(
-    mock_delete, mock_fetch, mock_credentials
+    mock_load, mock_delete, mock_fetch, mock_credentials
 ):
-    """Unrelated appointments, callbacks, and bookings must remain untouched."""
+    """Delete marked/legacy app events while preserving lookalike meetings."""
+    mock_load.return_value = {"business_name": "Current Business"}
     mock_credentials.return_value = {
         "access_token": "dummy",
         "granted_scopes": {"https://www.googleapis.com/auth/calendar.events"},
@@ -258,17 +266,47 @@ def test_delete_agent_calendar_event_only_deletes_known_app_owned_titles(
         {"id": "legacy_appointment", "summary": "BayFull Appointment - Customer"},
         {"id": "legacy_callback", "summary": "BayFull Callback - Customer"},
         {"id": "legacy_servicebot", "summary": "serviceBot Booking - Customer"},
+        {
+            "id": "renamed_business_event",
+            "summary": "Former Business Appointment - Customer",
+            "description": "Automatically booked by Former Business.",
+        },
+        {
+            "id": "marked_event",
+            "summary": "A new display title",
+            "extendedProperties": {
+                "private": {"serviceBotManagedEvent": "agent_booking"}
+            },
+        },
         {"id": "unrelated_appointment", "summary": "Dentist Appointment - Customer"},
         {"id": "unrelated_callback", "summary": "Phone Callback - Customer"},
         {"id": "unrelated_booking", "summary": "Business Booking Review"},
+        {"id": "unrelated_brand", "summary": "BayFull quarterly planning meeting"},
+        {
+            "id": "unrelated_title_shape",
+            "summary": "Project Appointment - Customer",
+            "description": "Created by the calendar owner.",
+        },
     ]
     mock_delete.return_value = MagicMock(status_code=204, text="")
 
     assert delete_agent_calendar_event(999, "2026-06-25 10:00:00") is True
 
     deleted_urls = [call.args[0] for call in mock_delete.call_args_list]
-    assert len(deleted_urls) == 3
-    for event_id in ("legacy_appointment", "legacy_callback", "legacy_servicebot"):
+    assert len(deleted_urls) == 5
+    for event_id in (
+        "legacy_appointment",
+        "legacy_callback",
+        "legacy_servicebot",
+        "renamed_business_event",
+        "marked_event",
+    ):
         assert any(event_id in url for url in deleted_urls)
-    for event_id in ("unrelated_appointment", "unrelated_callback", "unrelated_booking"):
+    for event_id in (
+        "unrelated_appointment",
+        "unrelated_callback",
+        "unrelated_booking",
+        "unrelated_brand",
+        "unrelated_title_shape",
+    ):
         assert all(event_id not in url for url in deleted_urls)
