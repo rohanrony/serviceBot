@@ -3,6 +3,8 @@ import sys
 import traceback
 import time
 import base64
+import html
+import email.utils
 import httpx
 from typing import Optional
 from email.mime.text import MIMEText
@@ -12,6 +14,16 @@ from serviceBot.services.encryption import encrypt_key, decrypt_key
 from serviceBot.db.connection import get_db_connection
 from serviceBot.logger import get_logger
 from serviceBot.services import timezone_service
+from serviceBot.services.business_profile import (
+    resolve_business_name,
+    sanitize_header_value,
+    sanitize_display_name,
+)
+from serviceBot.services.calendar_event_identity import (
+    ADMIN_BOOKING_EVENT,
+    is_managed_calendar_event,
+    managed_event_extended_properties,
+)
 
 logger = get_logger("services.gmail")
 
@@ -108,10 +120,17 @@ def send_gmail_api_email(sender: str, recipient: str, subject: str, html_body: s
         recipients_list = [r.strip() for r in recipient.replace(';', ',').split(',') if r.strip()]
         recipient_str = ", ".join(recipients_list)
 
+        # Resolve configured business name branding for MIME From header
+        config = load_config()
+        b_name = resolve_business_name(config)
+        display_name = sanitize_display_name(b_name)
+        _, parsed_sender = email.utils.parseaddr(sender)
+        clean_sender = parsed_sender or sender.strip()
+
         # Construct MIME Message
         msg = MIMEMultipart('alternative')
-        msg['Subject'] = subject
-        msg['From'] = f"serviceBot Notification <{sender}>"
+        msg['Subject'] = sanitize_header_value(subject)
+        msg['From'] = email.utils.formataddr((display_name, clean_sender))
         msg['To'] = recipient_str
 
         if plain_body:
@@ -161,10 +180,17 @@ def send_gmail_via_api(agent_id: int, recipient: str, subject: str, html_body: s
         recipients_list = [r.strip() for r in recipient.replace(';', ',').split(',') if r.strip()]
         recipient_str = ", ".join(recipients_list)
 
+        # Resolve configured business name branding for MIME From header
+        config = load_config()
+        b_name = resolve_business_name(config)
+        display_name = sanitize_display_name(b_name)
+        _, parsed_agent = email.utils.parseaddr(creds['email'])
+        clean_agent_email = parsed_agent or creds['email'].strip()
+
         # Construct MIME Message
         msg = MIMEMultipart('alternative')
-        msg['Subject'] = subject
-        msg['From'] = f"serviceBot Notification <{creds['email']}>"
+        msg['Subject'] = sanitize_header_value(subject)
+        msg['From'] = email.utils.formataddr((display_name, clean_agent_email))
         msg['To'] = recipient_str
 
         if plain_body:
@@ -211,7 +237,15 @@ def send_booking_notification(booking_type: str, details: dict, agent_email: Opt
         return False
 
     sender = config.get("gmail_sender", "")
-    recipient = agent_email or config.get("gmail_recipient", "")
+    try:
+        if agent_email:
+            recipient = agent_email
+        else:
+            from serviceBot.db.queries import get_admin_notification_email
+            recipient = get_admin_notification_email(config.get("gmail_recipient", ""))
+    except Exception as e:
+        logger.error(f"Could not load admin notification recipient: {e}", exc_info=e)
+        return False
 
     is_testing = ("pytest" in sys.modules or any("pytest" in arg for arg in sys.argv))
     if sender.startswith("dummy_") or recipient.startswith("dummy_") or ("example.com" in recipient and not is_testing):
@@ -235,7 +269,9 @@ def send_booking_notification(booking_type: str, details: dict, agent_email: Opt
         type_title = "New Callback Requested"
         time_label = "Preferred Callback Time"
 
-    subject = f"[serviceBot] {type_title} - {details.get('customer_name', 'Unknown')}"
+    b_name = resolve_business_name(config)
+    html_b_name = html.escape(b_name)
+    subject = f"[{b_name}] {type_title} - {details.get('customer_name', 'Unknown')}"
 
     # Build HTML email body
     html_body = f"""
@@ -320,6 +356,7 @@ def send_booking_notification(booking_type: str, details: dict, agent_email: Opt
         <div class="card">
             <div class="header">
                 <h1>{type_title}</h1>
+                <p style="margin: 4px 0 0 0; font-size: 13px; color: #6b7280; font-weight: 600;">{html_b_name}</p>
             </div>
             <div class="content">
                 <table class="table">
@@ -351,7 +388,7 @@ def send_booking_notification(booking_type: str, details: dict, agent_email: Opt
                 </table>
             </div>
             <div class="footer">
-                Sent automatically by Test serviceBot.
+                Sent automatically by {html_b_name}.
             </div>
         </div>
     </body>
@@ -359,7 +396,7 @@ def send_booking_notification(booking_type: str, details: dict, agent_email: Opt
     """
 
     plain_body = f"""
-    === {type_title} ===
+    === {b_name} - {type_title} ===
     Customer: {details.get('customer_name', 'N/A')}
     Phone: {details.get('phone', 'N/A')}
     Details: {details.get('vehicle', 'N/A')}
@@ -367,6 +404,7 @@ def send_booking_notification(booking_type: str, details: dict, agent_email: Opt
     Duration: {details.get('duration_minutes', 60)} mins
     {time_label}: {details.get('time', 'N/A')}
     {"Issue: " + details.get('issue') if details.get('issue') else ""}
+    Sent automatically by {b_name}.
     """
 
     # 1. Attempt to resolve agent_id and send via agent's Gmail OAuth integration
@@ -434,7 +472,12 @@ def send_admin_notification(
         return False
 
     sender = config.get("gmail_sender", "")
-    admin_recipient = config.get("gmail_recipient", "")
+    try:
+        from serviceBot.db.queries import get_admin_notification_email
+        admin_recipient = get_admin_notification_email(config.get("gmail_recipient", ""))
+    except Exception as e:
+        logger.error(f"Could not load admin notification recipient: {e}", exc_info=e)
+        return False
 
     if not sender or not admin_recipient:
         print("Admin Notifications: configured incorrectly; missing sender or admin recipient address.")
@@ -465,13 +508,15 @@ def send_admin_notification(
         type_title = "Admin Alert: New Callback Requested"
         time_label = "Preferred Callback Time"
 
+    b_name = resolve_business_name(config)
+    html_b_name = html.escape(b_name)
     assigned_str = f"{agent_name or 'Staff Member'} ({agent_email})" if agent_email else (agent_name or "Assigned Staff")
     if booking_type in ["escalation", "escalated", "sla_breach"]:
         reason_label = details.get("escalation_reason") or details.get("reason") or "TIMEOUT_NO_RESPONSE"
         appt_id = details.get("appointment_id") or ""
-        subject = f"[URGENT Admin Copy] {type_title} - Appt #{appt_id} ({reason_label}) - {agent_name or 'Staff'}"
+        subject = f"[URGENT Admin Copy] [{b_name}] {type_title} - Appt #{appt_id} ({reason_label}) - {agent_name or 'Staff'}"
     else:
-        subject = f"[Admin Copy] {type_title} - {agent_name or 'Staff'}"
+        subject = f"[Admin Copy] [{b_name}] {type_title} - {agent_name or 'Staff'}"
 
     appt_id = details.get("appointment_id")
     from serviceBot.services.business_profile import notification_portal_url
@@ -500,6 +545,7 @@ def send_admin_notification(
         <div class="card">
             <div class="header">
                 <h1>{type_title}</h1>
+                <p style="margin: 4px 0 0 0; font-size: 13px; color: rgba(255, 255, 255, 0.9); font-weight: 600;">{html_b_name}</p>
             </div>
             <div class="content">
                 <table class="table">
@@ -535,7 +581,7 @@ def send_admin_notification(
                 {"<div style=\"margin-top: 24px; text-align: center;\"><a href=\"" + reassign_url + "\" style=\"background-color: #dc2626; color: #ffffff; padding: 10px 22px; text-decoration: none; border-radius: 6px; font-weight: 600; display: inline-block;\">Review & Reassign in Portal</a></div>" if is_escalation and reassign_url else ""}
             </div>
             <div class="footer">
-                Admin Notification sent automatically by serviceBot.
+                Admin Notification sent automatically by {html_b_name}.
             </div>
         </div>
     </body>
@@ -544,6 +590,7 @@ def send_admin_notification(
 
     plain_body = f"""
     === {type_title} ===
+    Business: {b_name}
     Assigned Staff: {assigned_str}
     {"Escalation Reason: " + str(esc_reason) if esc_reason else ""}
     Customer: {details.get('customer_name', 'N/A')}
@@ -553,6 +600,7 @@ def send_admin_notification(
     {time_label}: {details.get('time', 'N/A')}
     {"Issue: " + details.get('issue') if details.get('issue') else ""}
     {"Portal Action: " + reassign_url if is_escalation and reassign_url else ""}
+    Admin Notification sent automatically by {b_name}.
     """
 
     try:
@@ -624,7 +672,9 @@ def create_admin_calendar_event(
         end_iso = end_dt.isoformat()
 
         config = load_config()
-        admin_recipient = config.get("gmail_recipient", "")
+        from serviceBot.db.queries import get_admin_notification_email
+        admin_recipient = get_admin_notification_email(config.get("gmail_recipient", ""))
+        b_name = resolve_business_name(config)
 
         url = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
         params = {"sendUpdates": "all"}
@@ -637,16 +687,23 @@ def create_admin_calendar_event(
             attendees.append({"email": admin_recipient})
 
         is_cb = booking_type == "callback" or "callback" in str(service_type).lower()
-        summary_title = f"Callback - {customer_name} ({agent_name or 'Assigned Staff'})" if is_cb else f"serviceBot Booking - {customer_name} ({agent_name or 'Assigned Staff'})"
-        desc_text = (
-            f"Booking Type: CALLBACK ({duration_minutes} Mins)\nAssigned Staff: {agent_name or 'Unassigned'}\nService Type: {service_type}\nIssue: {issue_description}\nAutomatically logged for Admin by serviceBot."
+        summary_title = (
+            f"{b_name} Callback - {customer_name} ({agent_name or 'Assigned Staff'})"
             if is_cb
-            else f"Assigned Agent: {agent_name or 'Unassigned'}\nService Type: {service_type}\nIssue: {issue_description}\nAutomatically logged for Admin by serviceBot."
+            else f"{b_name} Booking - {customer_name} ({agent_name or 'Assigned Staff'})"
+        )
+        desc_text = (
+            f"Booking Type: CALLBACK ({duration_minutes} Mins)\nAssigned Staff: {agent_name or 'Unassigned'}\nService Type: {service_type}\nIssue: {issue_description}\nAutomatically logged for Admin by {b_name}."
+            if is_cb
+            else f"Assigned Agent: {agent_name or 'Unassigned'}\nService Type: {service_type}\nIssue: {issue_description}\nAutomatically logged for Admin by {b_name}."
         )
 
         payload = {
             "summary": summary_title,
             "description": desc_text,
+            "extendedProperties": managed_event_extended_properties(
+                ADMIN_BOOKING_EVENT
+            ),
             "start": {
                 "dateTime": start_iso,
                 "timeZone": timezone_service.get_business_timezone_str()
@@ -712,10 +769,34 @@ def delete_admin_calendar_event(
         data = response.json()
         events = data.get("items", [])
         cancelled_any = False
+        business_name = resolve_business_name(load_config())
+        managed_summary_prefixes = (
+            f"{business_name} Booking - ",
+            f"{business_name} Callback - ",
+            "BayFull Booking - ",
+            "BayFull Callback - ",
+            "BayFull Appointment - ",
+            "serviceBot Booking - ",
+            "serviceBot Callback - ",
+            "serviceBot Appointment - ",
+        )
 
         for ev in events:
-            summary = ev.get("summary", "")
-            if "serviceBot" in summary or "Callback" in summary or "Booking" in summary:
+            summary = str(ev.get("summary") or "")
+            description = str(ev.get("description") or "")
+            has_legacy_generated_identity = (
+                "Automatically logged for Admin by " in description
+                and (
+                    summary.startswith(("Booking - ", "Callback - "))
+                    or " Booking - " in summary
+                    or " Callback - " in summary
+                )
+            )
+            if (
+                is_managed_calendar_event(ev, ADMIN_BOOKING_EVENT)
+                or summary.startswith(managed_summary_prefixes)
+                or has_legacy_generated_identity
+            ):
                 event_id = ev.get("id")
                 if event_id:
                     del_url = f"https://www.googleapis.com/calendar/v3/calendars/primary/events/{event_id}"

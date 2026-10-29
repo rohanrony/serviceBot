@@ -2,21 +2,28 @@ schema: 1
 feature: specs/changes/calendar-event-cleanup
 acceptance:
   - id: CAL-CLEANUP-01
-    behavior: Cancellation removes only calendar events with known application-owned title prefixes.
+    behavior: Cancellation removes only app-owned calendar events, including after the configured business name changes.
     preconditions:
       - Mocked calendar credentials with event-write scope
       - Owned and unrelated events in the same queried time window
     success:
+      - New events carry a stable private ownership marker
+      - Existing generated events can be cleaned up after a business-name change
       - Known legacy application event titles are deleted
     failure:
       - Unrelated appointment, callback, and booking titles are preserved
     invariants:
       - Cleanup does not delete an event based on generic words alone
+      - Cleanup recognizes legacy event descriptions only with an application-generated title shape
       - No provider call occurs for unrelated event IDs
     tests:
       - tests/test_google_calendar_service.py::test_delete_agent_calendar_event_only_deletes_known_app_owned_titles
+      - tests/test_calendar_deduplication.py::test_delete_admin_calendar_event
+      - tests/test_google_calendar_service.py::test_create_agent_calendar_event
+      - tests/test_gmail_service.py::test_create_admin_calendar_event
     layer:
       - unit
+      - provider_contract
     live_acceptance:
       status: not_required
       reason: The behavior is fully exercised at the mocked Calendar boundary; no external provider behavior changes.
@@ -29,3 +36,12 @@ omitted_layers:
   composed: The focused regression directly verifies owned and unrelated event handling; no additional composition contract is introduced.
   migration: No stored format or schema migration is required.
   targeted: The mapped unit regression observes deletion calls and verifies unrelated event IDs are never sent for deletion.
+review:
+  red: >-
+    Codex review found that a business-name change could leave older generated events behind, broad brand/word substring matching could delete an unrelated planning meeting, and legacy unprefixed admin callbacks could be missed.
+  green: >-
+    The ownership-marker revision passed the focused 35-test set. The final unprefixed legacy callback assertion must pass full exact-candidate verification before publication.
+  offline:
+    status: pending
+    reason: Full exact-candidate verification is required after the legacy callback compatibility fix.
+    evidence: []

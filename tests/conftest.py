@@ -218,6 +218,17 @@ def setup_and_cleanup_test_db():
 
 
 @pytest.fixture(autouse=True)
+def clear_admin_notification_setting():
+    """Keep the new durable singleton isolated between unit/integration tests."""
+    from serviceBot.db.connection import dict_cursor, get_db_connection
+
+    with get_db_connection() as conn, dict_cursor(conn) as cursor:
+        cursor.execute(
+            "DELETE FROM public.admin_notification_settings WHERE id = 1;"
+        )
+
+
+@pytest.fixture(autouse=True)
 def offline_embedding_transport(monkeypatch):
     """Keep FAQ/chunking/Chroma real; replace only the downloadable model encoder."""
     from serviceBot.services import rag

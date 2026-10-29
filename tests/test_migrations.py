@@ -62,6 +62,7 @@ def test_booking_integrity_migrations_have_explicit_rollbacks():
         "0009_simulation_fault_leases",
         "0010_business_intake",
         "0011_simulation_staff_intents",
+        "0012_admin_notification_settings",
     ]
 
     for forward in migrations:
@@ -76,6 +77,20 @@ def test_booking_integrity_migrations_have_explicit_rollbacks():
     backfill_sql = migrations[1].read_text(encoding="utf-8")
     assert "updated_at" in backfill_sql
     assert "appointment_reservation_segments" in backfill_sql
+
+    admin_email_migration = migrations[-1].read_text(encoding="utf-8")
+    assert "admin_notification_settings" in admin_email_migration
+    assert "gmail_recipient TEXT NOT NULL" in admin_email_migration
+    assert "ENABLE ROW LEVEL SECURITY" in admin_email_migration
+    assert "REVOKE ALL PRIVILEGES" in admin_email_migration
+    verification = migrations[-1].parent.parent / "migration_verification" / migrations[-1].name
+    statements = "\n".join(
+        line for line in verification.read_text(encoding="utf-8").splitlines()
+        if not line.lstrip().startswith("--")
+    )
+    queries = [statement.strip() for statement in statements.split(";") if statement.strip()]
+    assert len(queries) == 3
+    assert all(query.startswith("SELECT ") for query in queries)
 
 
 def test_migration_runner_is_idempotent_and_can_rollback(tmp_path):

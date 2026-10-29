@@ -30,30 +30,59 @@ acceptance:
   - composed
   live_acceptance:
     status: not_required
-    reason: The changed contract is local configuration persistence during a captured token response. Google
-      request semantics and delivery behavior are unchanged; no live-provider effect is required.
+    reason: The change preserves token-refresh settings and request semantics; no live provider behavior changes.
+    scenarios: []
+- id: AC2
+  behavior: A saved admin notification email survives a reset of the service-local configuration file.
+  preconditions:
+  - Isolated PostgreSQL database with the admin notification settings migration applied
+  - Admin email changed through the Gmail settings API
+  success:
+  - A fresh settings API read returns the saved database value after JSON config is restored to its pre-save value
+  - System admin emails and admin calendar attendees use the saved database value
+  - A failed database write returns an error and does not report a successful save
+  failure:
+  - A database read failure does not expose a stale JSON recipient as the current setting
+  invariants:
+  - The checked-in JSON recipient is used only until an admin email has first been durably saved
+  - Automated provider-boundary tests issue no real Gmail or Google Calendar request
+  - Notification flags, sender, OAuth credentials, and token-refresh behavior remain unchanged
+  tests:
+  - tests/test_admin_email_persistence.py::test_admin_email_save_survives_config_file_reset
+  - tests/test_admin_email_persistence.py::test_admin_email_save_does_not_report_success_when_database_write_fails
+  - tests/test_admin_email_persistence.py::test_admin_email_read_does_not_return_stale_file_value_when_database_fails
+  - tests/test_admin_email_persistence.py::test_email_and_calendar_delivery_use_saved_recipient_after_file_reset
+  - tests/test_migrations.py::test_booking_integrity_migrations_have_explicit_rollbacks
+  - e2e/test_admin_mail_oauth.py::test_admin_email_save_survives_background_refresh_and_page_reload
+  layer:
+  - database
+  - http
+  - provider_contract
+  - browser
+  - migration
+  live_acceptance:
+    status: not_required
+    reason: Automated tests use an isolated database and mocked provider boundaries; no live database or recipient is changed.
     scenarios: []
 omitted_layers:
-  database: The email and system Google tokens use the existing JSON configuration file; relational state is
-    unchanged.
-  migration: No schema or stored format changes.
-  targeted: The deterministic API and browser interleaving directly reproduces the lost update; no separate
-    performance or accessibility contract changes.
+  database: AC1 covers the token-refresh update; database-backed recipient persistence is covered by AC2.
+  migration: AC1 did not change schema; the admin recipient migration is covered by AC2.
+  targeted: Deterministic API, provider-boundary, and browser scenarios cover the affected persistence behavior.
 review:
-  red: 'Before implementation, ./run_tests.sh --file tests/test_admin_email_persistence.py --tb=short produced
-    1 failed and 1 passed: the successful-refresh case returned old-admin@example.test in a fresh GET after
-    Save had returned 200 for new-admin@example.test.'
-  green: Focused regressions and complete offline verification are run for this isolated publication candidate;
-    final immutable verification evidence is retained by scripts/verify_change.sh.
-  test_changes: Additive API and browser regressions; the service assertion now checks the exact token-only
-    update and encrypted token content. Per-test scratch configuration prevents state leakage. No tests or
-    business assertions were weakened, removed, skipped, or marked xfail. The standalone branch also carries
-    the existing three-line clock fixture correction for test_booking_does_not_duplicate_messages_to_customer_and_agent;
-    all its assertions remain intact.
-  sufficiency: Covers successful and rejected refresh responses, fresh persisted read-back, retained tokens
-    and business settings, and browser save/reload with an overlapping background refresh.
+  red: >-
+    AC1: Before implementation, the focused admin persistence command reproduced the stale recipient after a successful token refresh.
+    AC2: Before durable storage, restoring the pre-save JSON file made a fresh GET return old-admin@example.test after the API returned 200 for new-admin@example.test.
+  green: >-
+    The previous exact candidate passed 2514 unit/integration and 723 E2E tests, with zero failures, errors, or skips.
+    The ownership-marker revision passed the focused 35-test set; the final legacy callback case now requires full exact-candidate verification.
+  test_changes: >-
+    AC1 adds API and browser interleaving coverage and exact token-only update assertions.
+    AC2 adds database reset, failed read/write, provider-boundary, migration, and browser assertions.
+    The existing booking clock fixture is deterministic. No business assertions were weakened, removed, skipped, or marked xfail.
+  sufficiency: >-
+    AC1 covers successful and rejected refresh responses, persisted read-back, retained credentials and business settings, and browser reload.
+    AC2 covers JSON reset, database failure behavior, and email/calendar recipient paths with provider requests mocked.
   offline:
     status: pending
-    reason: The initial standalone full run exposed a pre-existing booking fixture clock drift. Its deterministic
-      clock correction is included; complete exact-candidate verification must pass before publication.
+    reason: The latest legacy admin callback compatibility fix must pass full exact-candidate verification before publication.
     evidence: []

@@ -9,6 +9,12 @@ from serviceBot.services.encryption import encrypt_key, decrypt_key
 from serviceBot.api.portal import load_config
 from serviceBot.logger import get_logger
 from serviceBot.services import timezone_service
+from serviceBot.services.business_profile import resolve_business_name
+from serviceBot.services.calendar_event_identity import (
+    AGENT_BOOKING_EVENT,
+    is_managed_calendar_event,
+    managed_event_extended_properties,
+)
 
 logger = get_logger("services.google_calendar")
 
@@ -216,11 +222,13 @@ def create_agent_calendar_event(
     agent_id: int, 
     customer_name: str, 
     service_type: str, 
-    issue_description: str, 
-    slot_datetime_str: str, 
+    issue_description: str = "",
+    slot_datetime_str: str = "",
     duration_minutes: int = 60,
     booking_type: str = "appointment",
     external_event_id: str = None,
+    start_iso: Optional[str] = None,
+    end_iso: Optional[str] = None,
 ) -> bool:
     """
     Inserts a booked appointment or callback event into the agent's connected Google Calendar.
@@ -239,16 +247,17 @@ def create_agent_calendar_event(
             print(f"Agent {agent_id} Google Calendar error: Insufficient scope to write calendar events.")
             return False
 
-        tz = timezone_service.get_business_zoneinfo()
-
-        start_dt = datetime.strptime(slot_datetime_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=tz)
-        end_dt = start_dt + timedelta(minutes=duration_minutes)
-        
-        start_iso = start_dt.isoformat()
-        end_iso = end_dt.isoformat()
+        if not start_iso or not end_iso:
+            tz = timezone_service.get_business_zoneinfo()
+            start_dt = datetime.strptime(slot_datetime_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=tz)
+            end_dt = start_dt + timedelta(minutes=duration_minutes)
+            start_iso = start_dt.isoformat()
+            end_iso = end_dt.isoformat()
 
         config = load_config()
-        admin_recipient = config.get("gmail_recipient", "")
+        from serviceBot.db.queries import get_admin_notification_email
+        admin_recipient = get_admin_notification_email(config.get("gmail_recipient", ""))
+        b_name = resolve_business_name(config)
 
         url = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
         params = {"sendUpdates": "all"}
@@ -261,16 +270,23 @@ def create_agent_calendar_event(
             attendees.append({"email": admin_recipient})
 
         is_cb = booking_type == "callback" or "callback" in str(service_type).lower()
-        event_summary = f"Callback - {customer_name} ({service_type})" if is_cb else f"BayFull Appointment - {customer_name}"
-        event_desc = (
-            f"Booking Type: CALLBACK ({duration_minutes} Mins)\nService Type: {service_type}\nIssue: {issue_description}\nAutomatically booked by BayFull."
+        event_summary = (
+            f"{b_name} Callback - {customer_name} ({service_type})"
             if is_cb
-            else f"Service Type: {service_type}\nIssue: {issue_description}\nAutomatically booked by BayFull."
+            else f"{b_name} Appointment - {customer_name}"
+        )
+        event_desc = (
+            f"Booking Type: CALLBACK ({duration_minutes} Mins)\nService Type: {service_type}\nIssue: {issue_description}\nAutomatically booked by {b_name}."
+            if is_cb
+            else f"Service Type: {service_type}\nIssue: {issue_description}\nAutomatically booked by {b_name}."
         )
 
         payload = {
             "summary": event_summary,
             "description": event_desc,
+            "extendedProperties": managed_event_extended_properties(
+                AGENT_BOOKING_EVENT
+            ),
             "start": {
                 "dateTime": start_iso,
                 "timeZone": timezone_service.get_business_timezone_str()
@@ -343,8 +359,11 @@ def create_multi_service_calendar_events(
         dur = s.get("duration_minutes") or 60
         desc_lines.append(f"• {svc} with {tech} ({b_time}, {dur} mins)")
 
+    config = load_config()
+    b_name = resolve_business_name(config)
+
     desc_lines.append(f"Issue: {issue_description}")
-    desc_lines.append("Automatically booked by BayFull.")
+    desc_lines.append(f"Automatically booked by {b_name}.")
     full_desc = "\n".join(desc_lines)
 
     primary_agent_id = first_seg.get("staff_agent_id")
@@ -353,15 +372,20 @@ def create_multi_service_calendar_events(
     unified_success = False
     if creds and "access_token" in creds:
         try:
-            config = load_config()
-            admin_recipient = config.get("gmail_recipient", "")
+            from serviceBot.db.queries import get_admin_notification_email
+            admin_recipient = get_admin_notification_email(
+                config.get("gmail_recipient", "")
+            )
             attendees = []
             if admin_recipient:
                 attendees.append({"email": admin_recipient})
 
             payload = {
-                "summary": f"BayFull Appointment - {customer_name}",
+                "summary": f"{b_name} Appointment - {customer_name}",
                 "description": full_desc,
+                "extendedProperties": managed_event_extended_properties(
+                    AGENT_BOOKING_EVENT
+                ),
                 "start": {
                     "dateTime": start_iso,
                     "timeZone": timezone_service.get_business_timezone_str()
@@ -396,6 +420,7 @@ def create_multi_service_calendar_events(
                         agent_id=s_aid,
                         customer_name=customer_name,
                         service_type=s.get("service_name") or s.get("service_type") or "Service",
+                        slot_datetime_str=s_t_str,
                         start_iso=_normalize_iso_timezone(s_t_dt.isoformat()),
                         end_iso=_normalize_iso_timezone(s_end_dt.isoformat()),
                         issue_description=issue_description,
@@ -408,7 +433,7 @@ def create_multi_service_calendar_events(
         return {
             "success": True,
             "event_mode": "unified",
-            "summary": f"BayFull Appointment - {customer_name}",
+            "summary": f"{b_name} Appointment - {customer_name}",
             "start": start_iso,
             "end": end_iso,
             "segments_count": len(sorted_segs),
@@ -426,6 +451,7 @@ def create_multi_service_calendar_events(
                     agent_id=s_aid,
                     customer_name=customer_name,
                     service_type=s.get("service_name") or s.get("service_type") or "Service",
+                    slot_datetime_str=s_t_str,
                     start_iso=_normalize_iso_timezone(s_t_dt.isoformat()),
                     end_iso=_normalize_iso_timezone(s_end_dt.isoformat()),
                     issue_description=issue_description,
@@ -649,15 +675,30 @@ def delete_agent_calendar_event(
             "Content-Type": "application/json"
         }
 
+        business_name = resolve_business_name(load_config())
         managed_summary_prefixes = (
+            f"{business_name} Appointment - ",
+            f"{business_name} Callback - ",
             "BayFull Appointment - ",
             "BayFull Callback - ",
             "serviceBot Appointment - ",
             "serviceBot Booking - ",
         )
         for ev in events:
-            summary = ev.get("summary", "")
-            if summary.startswith(managed_summary_prefixes):
+            summary = str(ev.get("summary") or "")
+            description = str(ev.get("description") or "")
+            has_legacy_generated_identity = (
+                "Automatically booked by " in description
+                and (
+                    " Appointment - " in summary
+                    or " Callback - " in summary
+                )
+            )
+            if (
+                is_managed_calendar_event(ev, AGENT_BOOKING_EVENT)
+                or summary.startswith(managed_summary_prefixes)
+                or has_legacy_generated_identity
+            ):
                 event_id = ev.get("id")
                 if event_id:
                     del_url = f"https://www.googleapis.com/calendar/v3/calendars/primary/events/{event_id}"

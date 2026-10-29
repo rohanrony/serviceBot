@@ -2705,7 +2705,7 @@ class GmailConfigPayload(BaseModel):
 async def get_gmail_config():
     config = load_config()
     from serviceBot.services.encryption import decrypt_key
-    from serviceBot.db.queries import get_sms_config
+    from serviceBot.db.queries import get_admin_notification_email, get_sms_config
     
     try:
         sms_cfg = get_sms_config()
@@ -2713,6 +2713,17 @@ async def get_gmail_config():
         logger.warning(f"Could not load sms_config for admin phone: {e}")
         sms_cfg = {}
     admin_phone = sms_cfg.get("admin_phone_number") or config.get("admin_phone_number") or ""
+
+    try:
+        gmail_recipient = get_admin_notification_email(
+            config.get("gmail_recipient", "")
+        )
+    except Exception as e:
+        logger.error(f"Could not load durable admin notification email: {e}", exc_info=e)
+        raise HTTPException(
+            status_code=503,
+            detail="Admin notification settings are temporarily unavailable.",
+        )
     
     client_id_decrypted = decrypt_key(config.get("gmail_client_id", ""))
     if not client_id_decrypted:
@@ -2729,7 +2740,7 @@ async def get_gmail_config():
         "enable_agent_selection": config.get("enable_agent_selection", False),
         "gmail_auth_type": "oauth2",
         "gmail_sender": config.get("gmail_sender", ""),
-        "gmail_recipient": config.get("gmail_recipient", ""),
+        "gmail_recipient": gmail_recipient,
         "admin_phone_number": admin_phone,
         "gmail_client_id": client_id_decrypted,
         "has_client_secret": has_client_secret,
@@ -2775,6 +2786,16 @@ async def update_gmail_config(payload: GmailConfigPayload):
     if payload.gmail_client_secret and payload.gmail_client_secret != "••••••••••••••••":
         config["gmail_client_secret"] = encrypt_key(payload.gmail_client_secret)
         
+    try:
+        from serviceBot.db.queries import update_admin_notification_email
+        update_admin_notification_email(payload.gmail_recipient)
+    except Exception as e:
+        logger.error(f"Could not persist admin notification email: {e}", exc_info=e)
+        raise HTTPException(
+            status_code=503,
+            detail="Admin notification email could not be saved. Please try again.",
+        )
+
     save_config(config)
     return {"success": True}
 
@@ -3053,28 +3074,33 @@ async def gmail_oauth_callback(request: Request, code: str = None, error: str = 
 
 @router.post("/gmail-config/test")
 async def test_gmail_config(payload: GmailConfigPayload):
+    import html
     from serviceBot.services.gmail import send_gmail_api_email
+    from serviceBot.services.business_profile import resolve_business_name
     
     config = load_config()
-    subject = "[BayFull] Gmail Integration Test Email"
-    html_body = """
+    b_name = resolve_business_name(config)
+    escaped_b_name = html.escape(b_name)
+    subject = f"[{b_name}] Gmail Integration Test Email"
+    html_body = f"""
     <!DOCTYPE html>
     <html>
     <head>
         <meta charset="utf-8">
         <style>
-            body { font-family: -apple-system, sans-serif; padding: 24px; background-color: #f3f4f6; color: #1f2937; }
-            .card { background: #fff; padding: 24px; border-radius: 8px; border-top: 4px solid #18181b; max-width: 500px; margin: 0 auto; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+            body {{ font-family: -apple-system, sans-serif; padding: 24px; background-color: #f3f4f6; color: #1f2937; }}
+            .card {{ background: #fff; padding: 24px; border-radius: 8px; border-top: 4px solid #18181b; max-width: 500px; margin: 0 auto; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }}
         </style>
     </head>
     <body>
         <div class="card">
-            <h2>Connection Test Successful!</h2>
-            <p>Your Gmail integration settings are configured correctly.</p>
+            <h2>{escaped_b_name} Connection Test Successful!</h2>
+            <p>Your Gmail integration settings for {escaped_b_name} are configured correctly.</p>
         </div>
     </body>
     </html>
     """
+    plain_body = f"[{b_name}] Gmail integration OAuth2 test email. Your settings for {b_name} are configured correctly."
     
     try:
         if not config.get("gmail_refresh_token"):
@@ -3087,7 +3113,7 @@ async def test_gmail_config(payload: GmailConfigPayload):
             recipient=payload.gmail_recipient,
             subject=subject,
             html_body=html_body,
-            plain_body="Gmail integration OAuth2 test email."
+            plain_body=plain_body
         )
             
         if not success:
