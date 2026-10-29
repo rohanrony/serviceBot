@@ -787,7 +787,8 @@ def delete_admin_calendar_event(
             has_legacy_generated_identity = (
                 "Automatically logged for Admin by " in description
                 and (
-                    " Booking - " in summary
+                    summary.startswith(("Booking - ", "Callback - "))
+                    or " Booking - " in summary
                     or " Callback - " in summary
                 )
             )

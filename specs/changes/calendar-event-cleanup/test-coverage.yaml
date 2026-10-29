@@ -38,10 +38,10 @@ omitted_layers:
   targeted: The mapped unit regression observes deletion calls and verifies unrelated event IDs are never sent for deletion.
 review:
   red: >-
-    Codex review found that a business-name change could leave older generated events behind and that broad brand/word substring matching could delete an unrelated planning meeting.
+    Codex review found that a business-name change could leave older generated events behind, broad brand/word substring matching could delete an unrelated planning meeting, and legacy unprefixed admin callbacks could be missed.
   green: >-
-    Focused cleanup and provider-payload regressions passed all 35 tests. The revised commit still requires full exact-candidate verification before publication.
+    The ownership-marker revision passed the focused 35-test set. The final unprefixed legacy callback assertion must pass full exact-candidate verification before publication.
   offline:
     status: pending
-    reason: Full exact-candidate verification is required after the calendar ownership fix.
+    reason: Full exact-candidate verification is required after the legacy callback compatibility fix.
     evidence: []

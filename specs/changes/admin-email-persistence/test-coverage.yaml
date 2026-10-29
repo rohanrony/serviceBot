@@ -73,8 +73,8 @@ review:
     AC1: Before implementation, the focused admin persistence command reproduced the stale recipient after a successful token refresh.
     AC2: Before durable storage, restoring the pre-save JSON file made a fresh GET return old-admin@example.test after the API returned 200 for new-admin@example.test.
   green: >-
-    The exact pre-review candidate passed 2514 unit/integration and 723 E2E tests, with zero failures, errors, or skips.
-    After fixing the two calendar-ownership review findings, the focused regression set passed all 35 tests; full exact-candidate verification is pending.
+    The previous exact candidate passed 2514 unit/integration and 723 E2E tests, with zero failures, errors, or skips.
+    The ownership-marker revision passed the focused 35-test set; the final legacy callback case now requires full exact-candidate verification.
   test_changes: >-
     AC1 adds API and browser interleaving coverage and exact token-only update assertions.
     AC2 adds database reset, failed read/write, provider-boundary, migration, and browser assertions.
@@ -84,5 +84,5 @@ review:
     AC2 covers JSON reset, database failure behavior, and email/calendar recipient paths with provider requests mocked.
   offline:
     status: pending
-    reason: The post-review calendar ownership fix must pass full exact-candidate verification before publication.
+    reason: The latest legacy admin callback compatibility fix must pass full exact-candidate verification before publication.
     evidence: []

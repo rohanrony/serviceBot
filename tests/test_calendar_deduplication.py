@@ -58,6 +58,18 @@ def test_delete_admin_calendar_event(mock_delete, mock_get, mock_token, monkeypa
                 "status": "confirmed",
             },
             {
+                "id": "legacy_unprefixed_callback",
+                "summary": "Callback - Jamie Doe (Assigned Staff)",
+                "description": "Booking Type: CALLBACK\nAutomatically logged for Admin by Former Business.",
+                "status": "confirmed",
+            },
+            {
+                "id": "legacy_unprefixed_booking",
+                "summary": "Booking - Jamie Doe (Assigned Staff)",
+                "description": "Automatically logged for Admin by Former Business.",
+                "status": "confirmed",
+            },
+            {
                 "id": "marked_admin_booking",
                 "summary": "A new display title",
                 "extendedProperties": {
@@ -94,11 +106,13 @@ def test_delete_admin_calendar_event(mock_delete, mock_get, mock_token, monkeypa
     # Only generated/marked events should be deleted.
     assert mock_delete.called
     deleted_urls = [call.args[0] for call in mock_delete.call_args_list]
-    assert len(deleted_urls) == 4
+    assert len(deleted_urls) == 6
     for event_id in (
         "admin_event_123",
         "old_business_booking",
         "current_business_booking",
+        "legacy_unprefixed_callback",
+        "legacy_unprefixed_booking",
         "marked_admin_booking",
     ):
         assert any(event_id in url for url in deleted_urls)
