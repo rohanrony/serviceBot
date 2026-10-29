@@ -1,12 +1,13 @@
 import asyncio
 import os
+import posixpath
 import sys
 import time
 from contextlib import asynccontextmanager
 
 from dotenv import find_dotenv, load_dotenv
 from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 
 if os.getenv("PYTHON_DOTENV_DISABLED") != "1":
@@ -26,6 +27,9 @@ if os.getenv("PYTHON_DOTENV_DISABLED") != "1":
 
 from serviceBot.api.middleware import RequestLoggingMiddleware, global_exception_handler
 from serviceBot.api.portal import router as portal_router
+from serviceBot.api.portal import public_oauth_router, internal_simulation_router
+from serviceBot.api.auth import router as auth_router, COOKIE_NAME
+from serviceBot.services import admin_auth
 from serviceBot.api.simulation_faults import router as simulation_faults_router
 from serviceBot.api.simulation_sessions import router as simulation_sessions_router
 from serviceBot.api.telephony import router as telephony_router
@@ -136,6 +140,22 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+
+@app.middleware("http")
+async def disable_private_response_caching(request: Request, call_next):
+    # StaticFiles normalizes its path before resolving the HTML index. Make
+    # equivalent dashboard paths hit the authenticated routes first as well.
+    normalized_path = posixpath.normpath(request.scope["path"])
+    if normalized_path == "/portal":
+        request.scope["path"] = "/portal/"
+    elif normalized_path == "/portal/index.html":
+        request.scope["path"] = "/portal/index.html"
+    response = await call_next(request)
+    path = request.url.path
+    if path.startswith("/api/v1/auth") or path.startswith("/api/v1/portal") or path.startswith("/portal") or path == "/":
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
 # Register request logging & global exception middleware
 app.add_middleware(RequestLoggingMiddleware)
 app.add_exception_handler(Exception, global_exception_handler)
@@ -144,6 +164,49 @@ app.add_exception_handler(Exception, global_exception_handler)
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+
+
+@app.get("/", include_in_schema=False)
+async def root_login(request: Request):
+    token = request.cookies.get(COOKIE_NAME, "")
+    try:
+        if token and await asyncio.to_thread(admin_auth.get_session, token):
+            response = RedirectResponse(url="/portal/", status_code=303)
+            response.headers["Cache-Control"] = "no-store"
+            return response
+    except Exception:
+        pass
+    return FileResponse(
+        os.path.join(os.path.dirname(__file__), "static", "login.html"),
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+async def _portal_dashboard(request: Request):
+    token = request.cookies.get(COOKIE_NAME, "")
+    try:
+        session = await asyncio.to_thread(admin_auth.get_session, token)
+    except Exception:
+        session = None
+    if not session:
+        response = RedirectResponse(url="/", status_code=303)
+    else:
+        response = FileResponse(
+            os.path.join(os.path.dirname(__file__), "static", "index.html"),
+            headers={"Cache-Control": "no-store"},
+        )
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.get("/portal/", include_in_schema=False)
+async def portal_dashboard(request: Request):
+    return await _portal_dashboard(request)
+
+
+@app.get("/portal/index.html", include_in_schema=False)
+async def portal_dashboard_index(request: Request):
+    return await _portal_dashboard(request)
 
 
 # --- Vercel Serverless Cron Triggers ---
@@ -177,6 +240,9 @@ async def cron_process_reminders(authorization: str = Header(None)):
 app.include_router(telephony_router)
 app.include_router(voice_router)
 app.include_router(portal_router)
+app.include_router(auth_router)
+app.include_router(public_oauth_router)
+app.include_router(internal_simulation_router)
 app.include_router(simulation_sessions_router)
 app.include_router(simulation_faults_router)
 

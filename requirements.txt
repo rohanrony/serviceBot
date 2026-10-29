@@ -1,4 +1,5 @@
 email-validator
+argon2-cffi
 fastapi
 uvicorn[standard]
 pydantic

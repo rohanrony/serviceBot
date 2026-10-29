@@ -12,7 +12,7 @@ import datetime as dt_mod
 from datetime import datetime
 from threading import RLock
 from typing import Optional, List, Literal
-from fastapi import APIRouter, HTTPException, UploadFile, File, Request, BackgroundTasks
+from fastapi import APIRouter, HTTPException, UploadFile, File, Request, BackgroundTasks, Depends
 from pydantic import Field, BaseModel, StrictBool, StrictStr, field_validator
 from dotenv import load_dotenv
 from starlette.concurrency import run_in_threadpool
@@ -23,7 +23,11 @@ from email_validator import validate_email, EmailNotValidError
 
 logger = get_logger("api.portal")
 
-router = APIRouter(prefix="/api/v1/portal", tags=["portal"])
+from serviceBot.api.auth import require_admin
+
+router = APIRouter(prefix="/api/v1/portal", tags=["portal"], dependencies=[Depends(require_admin)])
+public_oauth_router = APIRouter(prefix="/api/v1/portal", tags=["portal-oauth"])
+internal_simulation_router = APIRouter(prefix="/api/v1/portal", tags=["internal-simulation"])
 
 KB_DIR = "kb_documents"
 
@@ -1031,7 +1035,23 @@ async def get_config():
             pass
     if "support_phone_number" not in cfg:
         cfg["support_phone_number"] = ""
-    return cfg
+    safe_fields = {
+        "business_name", "business_address", "google_maps_url", "business_timezone",
+        "business_profile", "required_fields", "prompts", "system_prompt", "first_message",
+        "handoff_phone_number", "support_phone_number", "support_helpline", "admin_phone_number",
+        "business_hours_start", "business_hours_end", "business_hours", "business_days",
+        "min_booking_buffer_hours", "min_callback_buffer_hours", "initial_notification_enabled",
+        "sla_advance_booking_hours", "sla_medium_booking_hours", "sla_short_booking_hours",
+        "final_reminder_hours", "overnight_grace_minutes", "max_dispatch_retries",
+        "auto_reassign_on_escalation", "reassignment_confirmation_window_minutes",
+        "cutoff_window_hours", "extended_cutoff_window_hours", "morning_opening_grace_minutes",
+        "supervisor_escalation_sms", "supervisor_escalation_phone", "carrier_retry_backoff_minutes",
+        "supervisor_alert_phone", "gmail_auth_type", "prompt_authoritative",
+        "enable_agent_selection", "agent_llm_model", "gmail_enabled", "gmail_sender", "gmail_client_id",
+        "gmail_recipient", "gmail_routine_admin_copies_enabled", "quiet_start_time",
+        "quiet_end_time", "auto_responder_template", "portal_base_url", "environment",
+    }
+    return {key: value for key, value in cfg.items() if key in safe_fields}
 
 @router.post("/config")
 async def update_config(payload: ConfigUpdatePayload):
@@ -2833,7 +2853,7 @@ async def get_gmail_oauth_url(request: Request):
     )
     return {"auth_url": auth_url, "redirect_uri": redirect_uri}
 
-@router.get("/gmail/oauth/callback")
+@public_oauth_router.get("/gmail/oauth/callback")
 async def gmail_oauth_callback(request: Request, code: str = None, error: str = None, state: Optional[str] = None):
     from fastapi.responses import HTMLResponse
     import time
@@ -3541,7 +3561,7 @@ def _simulation_staff_operation(request, payload, *, cleanup=False):
         raise HTTPException(status_code=409, detail=str(exc)) from None
 
 
-@router.post('/internal/simulation-staff', status_code=201)
+@internal_simulation_router.post('/internal/simulation-staff', status_code=201)
 def create_owned_simulation_staff(payload: SimulationStaffCreate, request: Request,
                                   background_tasks: BackgroundTasks):
     result = _simulation_staff_operation(request, payload)
@@ -3549,7 +3569,7 @@ def create_owned_simulation_staff(payload: SimulationStaffCreate, request: Reque
     return result
 
 
-@router.get('/internal/simulation-staff')
+@internal_simulation_router.get('/internal/simulation-staff')
 def owned_simulation_staff_capability(request: Request):
     """Read-only admission probe; anonymous or disabled requests fail closed."""
     from serviceBot.services import simulation_staff
@@ -3560,7 +3580,7 @@ def owned_simulation_staff_capability(request: Request):
     return {'success': True, 'enabled': True, 'capability': 'owned-staff-v1'}
 
 
-@router.post('/internal/simulation-staff/cleanup')
+@internal_simulation_router.post('/internal/simulation-staff/cleanup')
 def cleanup_owned_simulation_staff(payload: SimulationStaffCleanup, request: Request,
                                    background_tasks: BackgroundTasks):
     result = _simulation_staff_operation(request, payload, cleanup=True)
@@ -3568,7 +3588,7 @@ def cleanup_owned_simulation_staff(payload: SimulationStaffCleanup, request: Req
     return result
 
 
-@router.get('/internal/simulation-staff/recover/{run_id}')
+@internal_simulation_router.get('/internal/simulation-staff/recover/{run_id}')
 def recover_owned_simulation_staff(run_id: str, intent_id: str, request: Request):
     """Authenticated GET of exact original creation claims; never creates/adopts."""
     from serviceBot.services import simulation_staff

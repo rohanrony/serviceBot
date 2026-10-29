@@ -1,0 +1,260 @@
+schema: 1
+feature: "014-admin-email-auth"
+acceptance:
+  - id: "US1/AC1"
+    behavior: "Valid developer-provisioned credentials create a database session and open the dashboard."
+    preconditions: ["A single normalized admin row exists in disposable PostgreSQL; browser uses synthetic credentials."]
+    success: ["Login returns success, sets the required cookie flags, and dashboard loads with a fresh session lookup."]
+    failure: ["Database errors fail closed and no session is issued."]
+    invariants: ["Only the token digest is persisted; plaintext credentials and raw tokens are not returned or logged."]
+    tests: ["tests/test_admin_auth.py::test_login_normalizes_email_creates_opaque_secure_session_and_no_store", "e2e/test_admin_auth.py::test_root_login_opens_dashboard_and_logout_revokes_session"]
+    layer: [unit, database, http, browser]
+    live_acceptance:
+      status: not_required
+      reason: "Authentication uses local application storage and does not cause provider effects."
+      scenarios: []
+    omitted_layers:
+      provider_contract: "No provider request or delivery behavior changes."
+      composed: "The isolated login and dashboard journey has no multi-provider workflow."
+  - id: "US1/AC2"
+    behavior: "Unauthenticated dashboard HTML redirects to the login page and protected APIs return 401 without data."
+    preconditions: ["No session cookie is present; route table includes admin APIs and the explicit public exceptions."]
+    success: ["Protected HTML redirects to `/`; protected JSON APIs return 401; authenticated HTML/API responses are no-store."]
+    failure: ["Invalid or expired cookies do not reveal protected response data."]
+    invariants: ["OAuth callback and bearer-token internal routes retain their separate authorization contracts."]
+    tests: ["tests/test_admin_auth.py::test_protected_routes_and_distinct_auth_boundaries", "e2e/test_admin_auth.py::test_expired_session_redirects_to_login"]
+    layer: [http, browser, targeted]
+    live_acceptance:
+      status: not_required
+      reason: "Authorization boundaries are fully observable with the local HTTP app."
+      scenarios: []
+    omitted_layers:
+      provider_contract: "No provider behavior changes; OAuth state behavior is tested offline."
+      migration: "Route denial does not require a schema transition beyond the separately covered auth migration."
+  - id: "US1/AC3"
+    behavior: "Invalid, unknown, throttled, or foreign-origin login attempts receive generic denial."
+    preconditions: ["A configured admin exists; test client address and request Origin are controlled."]
+    success: ["Five failures per IP in a rolling 15-minute window are recorded; subsequent attempts are rejected before password hashing."]
+    failure: ["Unknown email, wrong password, missing/foreign Origin, throttle, and verifier errors do not create sessions or disclose account existence."]
+    invariants: ["Only IP and timestamp are stored for failed attempts; simultaneous Argon2 work is bounded."]
+    tests: ["tests/test_admin_auth.py::test_unknown_and_wrong_password_have_same_generic_failure[unknown@example.test-synthetic-admin-password]", "tests/test_admin_auth.py::test_unknown_and_wrong_password_have_same_generic_failure[ Admin.Auth@Example.Test -wrong synthetic password]", "tests/test_admin_auth.py::test_login_rejects_missing_or_foreign_origin[None]", "tests/test_admin_auth.py::test_login_rejects_missing_or_foreign_origin[https://foreign.example]", "tests/test_admin_auth.py::test_fifth_failure_throttles_before_hash_verification", "tests/test_admin_auth.py::test_password_verification_work_is_bounded_per_process", "e2e/test_admin_auth.py::test_rejected_credentials_do_not_open_dashboard"]
+    layer: [unit, database, http, targeted]
+    live_acceptance:
+      status: not_required
+      reason: "Login controls are local and require no external system."
+      scenarios: []
+    omitted_layers:
+      browser: "The HTTP contract directly verifies the generic response, Origin rejection, and throttle ordering; browser behavior is covered in US1/AC1."
+      provider_contract: "No provider behavior changes."
+  - id: "US1/AC4"
+    behavior: "Expired, unknown, logged-out, reset, or password-change-revoked sessions cannot authorize a request."
+    preconditions: ["Session rows can be created and their clock/expiry/revocation state controlled in the disposable database."]
+    success: ["A live session is accepted before its fixed eight-hour expiry and rejected after expiry or revocation."]
+    failure: ["Database lookup failure denies access; cookie deletion alone is not treated as revocation."]
+    invariants: ["Session validity is read from PostgreSQL on protected requests; expiry is not extended by activity."]
+    tests: ["tests/test_admin_auth.py::test_logout_requires_csrf_and_revokes_session", "tests/test_admin_auth.py::test_expired_revoked_and_unknown_sessions_fail_closed"]
+    layer: [unit, database, http]
+    live_acceptance:
+      status: not_required
+      reason: "Session lifecycle is local database state."
+      scenarios: []
+    omitted_layers:
+      provider_contract: "No external behavior changes."
+      browser: "The same server-side rejection is checked at HTTP level; browser logout is covered by US1/AC2 journey tests."
+  - id: "US2/AC1"
+    behavior: "The operator creates one admin with normalized email and an Argon2id password hash."
+    preconditions: ["Disposable database has completed the auth migration and contains no admin account."]
+    success: ["CLI prompts hide the password; a fresh database read finds normalized email and encoded hash only."]
+    failure: ["Invalid input or persistence failure leaves no partial admin account."]
+    invariants: ["No plaintext is stored, echoed, logged, passed in argv, or printed."]
+    tests: ["tests/test_admin_auth.py::test_cli_creates_first_admin_normalized_and_persists_argon2id_only"]
+    layer: [unit, database, http]
+    live_acceptance:
+      status: not_required
+      reason: "Operator provisioning affects only the local application database."
+      scenarios: []
+    omitted_layers:
+      browser: "Provisioning is an operator CLI action, not a browser flow."
+      provider_contract: "No provider behavior changes."
+  - id: "FR-004-password-policy"
+    behavior: "Passwords use Argon2id, require at least 12 characters, and do not force change on first login."
+    preconditions: ["Synthetic passwords include values below and at the minimum length; the developer-provisioned credential is available for login."]
+    success: ["A valid 12-character-or-longer password hashes and verifies; the initially provisioned password can sign in without a forced-change gate."]
+    failure: ["Short passwords are rejected by CLI and password-change API without persistence changes."]
+    invariants: ["Only encoded Argon2id hashes persist; hash verification uses library verification/rehash behavior."]
+    tests: ["tests/test_admin_auth.py::test_password_hashing_uses_argon2id_and_enforces_minimum_length", "tests/test_admin_auth.py::test_login_normalizes_email_creates_opaque_secure_session_and_no_store", "e2e/test_admin_auth.py::test_root_login_opens_dashboard_and_logout_revokes_session"]
+    layer: [unit, database, http, browser]
+    live_acceptance:
+      status: not_required
+      reason: "Password policy is local credential behavior."
+      scenarios: []
+    omitted_layers:
+      provider_contract: "No provider behavior changes."
+      migration: "Password length/hash policy is enforced by application validation and hash storage, not a provider or schema migration assertion."
+  - id: "FR-007/FR-008-trusted-proxy"
+    behavior: "HTTPS scheme and client IP come from Uvicorn-normalized ASGI metadata; application code ignores raw forwarding headers."
+    preconditions: ["The service runs behind its configured trusted proxy boundary; the ASGI request scope contains the normalized scheme and client address."]
+    success: ["HTTPS requests receive Secure session cookies and throttling keys follow request.client.host.", "Render remains on its Python runtime with the platform-managed FORWARDED_ALLOW_IPS setting."]
+    failure: ["Raw X-Forwarded-Proto and X-Forwarded-For request headers cannot alter the application scheme or client identity."]
+    invariants: ["The application does not parse or trust raw forwarded headers; non-Render deployments configure their actual trusted proxy sources."]
+    tests: ["tests/test_admin_auth.py::test_render_runtime_keeps_proxy_allowlist_platform_managed", "tests/test_admin_auth.py::test_https_asgi_scheme_sets_secure_session_cookie", "tests/test_admin_auth.py::test_raw_forwarded_headers_do_not_override_asgi_scheme", "tests/test_admin_auth.py::test_login_throttle_isolated_by_asgi_client_ip", "tests/test_admin_auth.py::test_password_verification_work_is_bounded_per_process"]
+    layer: [unit, http, targeted]
+    live_acceptance:
+      status: not_required
+      reason: "ASGI proxy metadata handling is verified offline; no external provider behavior changes."
+      scenarios: []
+    omitted_layers:
+      browser: "Proxy identity is an ingress/runtime contract, not a browser journey."
+      provider_contract: "No provider behavior changes."
+  - id: "US2/AC2"
+    behavior: "Creating another account is refused without changing the existing admin or sessions."
+    preconditions: ["One admin and a live session exist in the disposable database."]
+    success: ["CLI exits with a redacted error and fresh reads confirm account and session state are unchanged."]
+    failure: ["Database failures do not overwrite the singleton account."]
+    invariants: ["The system never creates a second admin or silently replaces an existing credential."]
+    tests: ["tests/test_admin_auth.py::test_cli_creates_first_admin_normalized_and_persists_argon2id_only"]
+    layer: [unit, database]
+    live_acceptance:
+      status: not_required
+      reason: "Account uniqueness is local database behavior."
+      scenarios: []
+    omitted_layers:
+      browser: "Duplicate prevention is an operator-only action."
+      provider_contract: "No provider behavior changes."
+  - id: "US2/AC3"
+    behavior: "Operator password reset updates the hash and revokes all active sessions."
+    preconditions: ["An admin with one or more sessions exists in disposable PostgreSQL."]
+    success: ["After the CLI reset, fresh reads show a new hash and all old sessions revoked; new password can log in."]
+    failure: ["A failed reset leaves the prior hash and sessions unchanged transactionally."]
+    invariants: ["Reset never prints the password and cannot create another admin."]
+    tests: ["tests/test_admin_auth.py::test_cli_refuses_duplicate_creation_and_reset_revokes_sessions"]
+    layer: [unit, database, http]
+    live_acceptance:
+      status: not_required
+      reason: "Password reset changes only local account/session state."
+      scenarios: []
+    omitted_layers:
+      browser: "Recovery is explicitly operator-managed through the CLI."
+      provider_contract: "No provider behavior changes."
+  - id: "US2/AC4"
+    behavior: "CLI success and failure output never exposes plaintext password material."
+    preconditions: ["Subprocess runs with synthetic credentials and captured argv, stdout, stderr, and application logs."]
+    success: ["Captured output and logs contain only redacted status; prompts do not echo input."]
+    failure: ["Validation, duplicate-account, and database errors remain redacted."]
+    invariants: ["Password values are absent from argv and persisted non-hash fields."]
+    tests: ["tests/test_admin_auth.py::test_cli_creates_first_admin_normalized_and_persists_argon2id_only", "tests/test_admin_auth.py::test_cli_refuses_duplicate_creation_and_reset_revokes_sessions"]
+    layer: [unit, database, targeted]
+    live_acceptance:
+      status: not_required
+      reason: "CLI secret handling is verified offline with synthetic credentials."
+      scenarios: []
+    omitted_layers:
+      browser: "CLI behavior does not cross the browser boundary."
+      provider_contract: "No provider behavior changes."
+  - id: "US3/AC1"
+    behavior: "Admin Config password change validates the current password and matching new password, then revokes every session."
+    preconditions: ["Admin is authenticated; current password and test session exist in disposable PostgreSQL."]
+    success: ["New Argon2id hash persists, every existing session is revoked, response clears the cookie, and re-login with the new password works."]
+    failure: ["Database failure rolls back both the password update and revocation."]
+    invariants: ["Password change requires Origin and CSRF checks and does not force a change at first login."]
+    tests: ["tests/test_admin_auth.py::test_password_change_checks_current_confirmation_and_revokes_sessions", "e2e/test_admin_auth.py::test_password_change_requires_relogin_and_new_password_works"]
+    layer: [unit, database, http, browser]
+    live_acceptance:
+      status: not_required
+      reason: "Password change is local account behavior and sends no provider requests."
+      scenarios: []
+    omitted_layers:
+      provider_contract: "No provider behavior changes."
+      composed: "Password change has no multi-provider workflow."
+  - id: "US3/AC2"
+    behavior: "Incorrect current password, mismatch, short password, invalid Origin, or missing CSRF token rejects change without side effects."
+    preconditions: ["Admin has a valid session and existing hash in disposable PostgreSQL."]
+    success: ["Each invalid request is denied and fresh reads show the same password hash and session state."]
+    failure: ["Verifier/database errors do not partially mutate credentials or sessions."]
+    invariants: ["Password values never appear in responses or logs; rejected updates preserve the old credential."]
+    tests: ["tests/test_admin_auth.py::test_password_change_checks_current_confirmation_and_revokes_sessions", "tests/test_admin_auth.py::test_login_rejects_missing_or_foreign_origin[None]"]
+    layer: [unit, database, http, browser]
+    live_acceptance:
+      status: not_required
+      reason: "Password rejection paths are local and deterministic."
+      scenarios: []
+    omitted_layers:
+      provider_contract: "No provider behavior changes."
+      composed: "There is no external multi-step workflow."
+  - id: "US3/AC3"
+    behavior: "All pre-change sessions are rejected and only the new password authenticates after a successful change."
+    preconditions: ["Admin has multiple active sessions before the password change."]
+    success: ["Fresh session reads reject all prior tokens; one new login with the new password succeeds."]
+    failure: ["Old password cannot create a new session."]
+    invariants: ["Revocation and hash replacement commit atomically."]
+    tests: ["tests/test_admin_auth.py::test_password_change_checks_current_confirmation_and_revokes_sessions", "e2e/test_admin_auth.py::test_password_change_requires_relogin_and_new_password_works"]
+    layer: [database, http, browser]
+    live_acceptance:
+      status: not_required
+      reason: "Credential and session state are entirely local."
+      scenarios: []
+    omitted_layers:
+      provider_contract: "No provider behavior changes."
+      migration: "This scenario exercises current schema behavior; the schema transition is covered in FR-012."
+  - id: "FR-010-safe-config"
+    behavior: "Portal configuration returns only safe fields and omits all credential material."
+    preconditions: ["Config contains distinct synthetic OAuth tokens, client secrets, API keys, and safe UI settings."]
+    success: ["Authenticated response contains UI-required safe settings only; unauthenticated request is denied."]
+    failure: ["Serialization/defaulting errors do not fall back to returning the raw config object."]
+    invariants: ["No token, secret, key, password, or hash appears in response JSON."]
+    tests: ["tests/test_portal_config.py::test_config_is_unauthenticated_denied_and_authenticated_secret_safe"]
+    layer: [http, targeted]
+    live_acceptance:
+      status: not_required
+      reason: "Config serialization is a local API boundary."
+      scenarios: []
+    omitted_layers:
+      browser: "The contract is response serialization; UI rendering is covered by authenticated browser journeys."
+      provider_contract: "No provider behavior changes."
+  - id: "FR-011-preserved-ingress"
+    behavior: "Auth protects only the admin dashboard/API and preserves separate OAuth, internal bearer, voice/telephony, cron, health, and log-ingestion contracts."
+    preconditions: ["The app route table and existing ingress authentication fixtures are available offline."]
+    success: ["Admin endpoints enforce cookie auth; exceptions enforce their existing state/token/ingress checks."]
+    failure: ["Cookie auth alone cannot access bearer-protected internal routes; admin auth does not newly block existing non-admin ingress."]
+    invariants: ["No unrelated route's authentication semantics are weakened or replaced."]
+    tests: ["tests/test_admin_auth.py::test_protected_routes_and_distinct_auth_boundaries", "tests/test_webhook_security_contract.py::test_elevenlabs_signature_requires_valid_fresh_hmac", "tests/test_webhook_security_contract.py::test_twilio_signature_uses_explicit_public_webhook_url", "e2e/test_integrations.py::test_cron_requires_bearer_secret", "e2e/test_authenticated_webhook_ingress.py::test_signed_callback_audit_crm_join_replay_and_rejection", "e2e/test_workflows.py::test_health_and_portal_redirect", "e2e/test_voice_and_reporting.py::test_unknown_voice_tool_reports_failure"]
+    layer: [http, targeted]
+    live_acceptance:
+      status: not_required
+      reason: "Route and ingress contracts are validated locally without provider operations."
+      scenarios: []
+    omitted_layers:
+      browser: "Server route authorization is directly asserted over HTTP; admin browser journey is separately covered."
+      provider_contract: "No provider request semantics change."
+  - id: "FR-012-migration-and-offline-contracts"
+    behavior: "The auth migration applies, verifies singleton/hash/session constraints and privileges, and rolls back cleanly on disposable PostgreSQL."
+    preconditions: ["A dedicated disposable UTF8 test database is available; tests never target configured production data."]
+    success: ["Migration verification passes, schema enforces intended constraints/RLS, rollback removes only its objects, and tests cover service, HTTP, and browser behavior offline."]
+    failure: ["Failed migration rolls back without partial state or destructive changes to pre-existing data."]
+    invariants: ["Synthetic credentials only; no live provider calls; each acceptance row names actual collected tests before application implementation."
+    ]
+    tests: ["tests/test_admin_auth.py::test_password_hashing_uses_argon2id_and_enforces_minimum_length", "tests/test_admin_auth.py::test_login_normalizes_email_creates_opaque_secure_session_and_no_store", "tests/test_admin_auth.py::test_password_change_checks_current_confirmation_and_revokes_sessions", "e2e/test_admin_auth.py::test_root_login_opens_dashboard_and_logout_revokes_session", "tests/test_migrations.py::test_admin_auth_migration_applies_schema_privileges_and_reversible_contract", "tests/test_migrations.py::test_admin_auth_migration_schema_is_present_in_disposable_database", "tests/test_migrations.py::test_admin_auth_migration_rolls_back_and_reapplies_on_disposable_database"]
+    layer: [unit, database, http, browser, migration]
+    live_acceptance:
+      status: not_required
+      reason: "Schema migration and auth contracts have no external provider boundary."
+      scenarios: []
+    omitted_layers:
+      browser: "Migration/schema properties are database-level; browser requirements are covered by story-specific rows."
+      provider_contract: "No provider behavior changes."
+omitted_layers:
+  provider_contract: "The feature sends no external provider requests or delivery effects."
+review:
+  red: "Root reported the pre-implementation focused Red run as 7 failures, 15 fixture/setup errors, and 3 passes. The ingress assertion was then corrected to `/api/v1/telephony/render-logs`; this agent could not verify that corrected Red baseline because its sandbox denied guarded loopback PostgreSQL access (`Operation not permitted` to 127.0.0.1:5432). The prior Red counts therefore do not include the corrected route assertion."
+  green: "`./run_tests.sh --file tests/test_admin_auth.py` passed 21 tests in the independent fresh-context Luna high validation pass after the dashboard-alias regression was added. Earlier focused auth/config/migration coverage passed 29 tests, the feature browser suite passed 4 tests, and `./run_tests.sh --all` passed 2535 tests with 34 warnings."
+  test_changes: "No assertions were weakened and no skips/xfails were added. The bounded-hash concurrency test waits until exactly MAX_PASSWORD_WORKERS verifier calls have entered the real semaphore boundary before release, removing its scheduling race. Unit reset fixture deletes auth-owned rows per test; E2E scenarios truncate public tables before each test. The anonymous dashboard test also checks repeated-slash aliases redirect to `/` while `/portal/login.js` remains public."
+  sufficiency: "Independent Luna high validation and root review found no remaining dashboard path bypass; validator confirmed repeated slash, dot-segment, and encoded-slash aliases redirect and public login assets remain served. Auth acceptance behaviors cover persistence, API, CLI, migration, configuration, and browser journeys."
+  offline:
+    status: partial
+    reason: "The auth-specific service/API and browser suites pass, and the full unit/integration suite passed. The broader E2E suite did not finish: test_journey_2_scheduling stalled while reading the body of its service-request response after receiving HTTP 201 headers. The complete ./run_tests.sh --verify run is therefore not marked complete."
+    evidence:
+      - "./run_tests.sh --file tests/test_admin_auth.py: 21 passed, 1 existing Starlette/httpx deprecation warning (independent Luna high validator)."
+      - "./run_tests.sh --file e2e/test_admin_auth.py: 4 passed (independent Luna high validator, prior loop)."
+      - "./run_tests.sh --all: 2535 passed, 34 warnings (root validation, prior loop)."
+      - "./run_tests.sh --e2e: incomplete; e2e/test_acceptance_walkthrough.py::test_journey_2_scheduling stalled after 201 response headers while Response.json() awaited the body."
+      - "Unauthenticated TestClient path probes: /portal/, /portal//, /portal///index.html, /portal//index.html and /portal/%2F redirected to /; /portal/login.js remained 200."

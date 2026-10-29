@@ -339,3 +339,38 @@ def test_helpline_consistency_across_stores_and_logic(tmp_path, monkeypatch):
         handoff_res = trigger_human_handoff(1, "+15550009999", "Need help")
         assert "+18005550199" not in str(handoff_res)
 
+
+"""Secret-safe serialization and authenticated access for portal configuration."""
+
+from fastapi.testclient import TestClient
+
+
+def test_config_is_unauthenticated_denied_and_authenticated_secret_safe(monkeypatch):
+    from serviceBot.main import app
+    from serviceBot.api import portal
+    from serviceBot.api.auth import require_admin
+
+    app.dependency_overrides.clear()
+    secret_config = {
+        "business_name": "Synthetic Garage",
+        "gmail_access_token": "synthetic-oauth-token",
+        "client_secret": "synthetic-client-secret",
+        "api_key": "synthetic-api-key",
+        "password": "synthetic-password",
+        "password_hash": "synthetic-hash",
+    }
+    secret_values = [value for key, value in secret_config.items() if key != "business_name" and value]
+    monkeypatch.setattr(portal, "load_config", lambda: secret_config)
+    with TestClient(app) as client:
+        denied = client.get("/api/v1/portal/config")
+        assert denied.status_code == 401
+        app.dependency_overrides[require_admin] = lambda: {"email": "admin@example.test"}
+        authenticated = client.get("/api/v1/portal/config")
+        assert authenticated.status_code == 200
+        assert "no-store" in authenticated.headers["cache-control"].lower()
+        assert authenticated.json()["business_name"] == "Synthetic Garage"
+        assert all(value not in authenticated.text for value in secret_values)
+        assert "api_key" not in authenticated.json()
+        assert "password_hash" not in authenticated.json()
+        app.dependency_overrides.clear()
+

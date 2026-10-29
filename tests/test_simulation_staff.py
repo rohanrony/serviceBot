@@ -35,9 +35,10 @@ def test_portal_lifecycle_is_unavailable_without_explicit_auth(monkeypatch):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from serviceBot.api.portal import router
+    from serviceBot.api.portal import internal_simulation_router, router
     app = FastAPI()
     app.include_router(router)
+    app.include_router(internal_simulation_router)
     monkeypatch.setenv('SIMULATION_STAFF_ENABLED', 'true')
     monkeypatch.setenv('CRON_SECRET', 'synthetic-cron')
     with TestClient(app) as client:

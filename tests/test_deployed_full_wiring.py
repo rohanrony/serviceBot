@@ -74,9 +74,10 @@ def test_owned_lifecycle_capability_probe_is_authenticated_and_read_only(monkeyp
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
-    from serviceBot.api.portal import router
+    from serviceBot.api.portal import internal_simulation_router, router
     app = FastAPI()
     app.include_router(router)
+    app.include_router(internal_simulation_router)
     monkeypatch.setenv('SIMULATION_STAFF_ENABLED', 'true')
     monkeypatch.setenv('CRON_SECRET', 'offline-local-probe')
     with TestClient(app) as client:
