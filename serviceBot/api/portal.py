@@ -2705,7 +2705,7 @@ class GmailConfigPayload(BaseModel):
 async def get_gmail_config():
     config = load_config()
     from serviceBot.services.encryption import decrypt_key
-    from serviceBot.db.queries import get_sms_config
+    from serviceBot.db.queries import get_admin_notification_email, get_sms_config
     
     try:
         sms_cfg = get_sms_config()
@@ -2713,6 +2713,17 @@ async def get_gmail_config():
         logger.warning(f"Could not load sms_config for admin phone: {e}")
         sms_cfg = {}
     admin_phone = sms_cfg.get("admin_phone_number") or config.get("admin_phone_number") or ""
+
+    try:
+        gmail_recipient = get_admin_notification_email(
+            config.get("gmail_recipient", "")
+        )
+    except Exception as e:
+        logger.error(f"Could not load durable admin notification email: {e}", exc_info=e)
+        raise HTTPException(
+            status_code=503,
+            detail="Admin notification settings are temporarily unavailable.",
+        )
     
     client_id_decrypted = decrypt_key(config.get("gmail_client_id", ""))
     if not client_id_decrypted:
@@ -2729,7 +2740,7 @@ async def get_gmail_config():
         "enable_agent_selection": config.get("enable_agent_selection", False),
         "gmail_auth_type": "oauth2",
         "gmail_sender": config.get("gmail_sender", ""),
-        "gmail_recipient": config.get("gmail_recipient", ""),
+        "gmail_recipient": gmail_recipient,
         "admin_phone_number": admin_phone,
         "gmail_client_id": client_id_decrypted,
         "has_client_secret": has_client_secret,
@@ -2775,6 +2786,16 @@ async def update_gmail_config(payload: GmailConfigPayload):
     if payload.gmail_client_secret and payload.gmail_client_secret != "••••••••••••••••":
         config["gmail_client_secret"] = encrypt_key(payload.gmail_client_secret)
         
+    try:
+        from serviceBot.db.queries import update_admin_notification_email
+        update_admin_notification_email(payload.gmail_recipient)
+    except Exception as e:
+        logger.error(f"Could not persist admin notification email: {e}", exc_info=e)
+        raise HTTPException(
+            status_code=503,
+            detail="Admin notification email could not be saved. Please try again.",
+        )
+
     save_config(config)
     return {"success": True}
 

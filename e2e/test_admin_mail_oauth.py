@@ -133,6 +133,12 @@ def test_admin_email_save_survives_background_refresh_and_page_reload(
     assert stored["gmail_recipient"] == "new-admin@example.test"
     assert decrypt_key(stored["gmail_access_token"]) == "new-access"
     assert stored["gmail_refresh_token"] == config["gmail_refresh_token"]
+
+    # Model a Free Render restart restoring the filesystem's old config file.
+    reset_config = portal.load_config()
+    reset_config["gmail_recipient"] = "old-admin@example.test"
+    portal.save_config(reset_config)
+
     assert api.get(f"{PORTAL}/gmail-config").json()["gmail_recipient"] == (
         "new-admin@example.test"
     )

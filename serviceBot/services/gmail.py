@@ -232,7 +232,15 @@ def send_booking_notification(booking_type: str, details: dict, agent_email: Opt
         return False
 
     sender = config.get("gmail_sender", "")
-    recipient = agent_email or config.get("gmail_recipient", "")
+    try:
+        if agent_email:
+            recipient = agent_email
+        else:
+            from serviceBot.db.queries import get_admin_notification_email
+            recipient = get_admin_notification_email(config.get("gmail_recipient", ""))
+    except Exception as e:
+        logger.error(f"Could not load admin notification recipient: {e}", exc_info=e)
+        return False
 
     is_testing = ("pytest" in sys.modules or any("pytest" in arg for arg in sys.argv))
     if sender.startswith("dummy_") or recipient.startswith("dummy_") or ("example.com" in recipient and not is_testing):
@@ -459,7 +467,12 @@ def send_admin_notification(
         return False
 
     sender = config.get("gmail_sender", "")
-    admin_recipient = config.get("gmail_recipient", "")
+    try:
+        from serviceBot.db.queries import get_admin_notification_email
+        admin_recipient = get_admin_notification_email(config.get("gmail_recipient", ""))
+    except Exception as e:
+        logger.error(f"Could not load admin notification recipient: {e}", exc_info=e)
+        return False
 
     if not sender or not admin_recipient:
         print("Admin Notifications: configured incorrectly; missing sender or admin recipient address.")
@@ -654,7 +667,8 @@ def create_admin_calendar_event(
         end_iso = end_dt.isoformat()
 
         config = load_config()
-        admin_recipient = config.get("gmail_recipient", "")
+        from serviceBot.db.queries import get_admin_notification_email
+        admin_recipient = get_admin_notification_email(config.get("gmail_recipient", ""))
         b_name = resolve_business_name(config)
 
         url = "https://www.googleapis.com/calendar/v3/calendars/primary/events"

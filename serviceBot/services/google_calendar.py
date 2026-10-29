@@ -250,7 +250,8 @@ def create_agent_calendar_event(
             end_iso = end_dt.isoformat()
 
         config = load_config()
-        admin_recipient = config.get("gmail_recipient", "")
+        from serviceBot.db.queries import get_admin_notification_email
+        admin_recipient = get_admin_notification_email(config.get("gmail_recipient", ""))
         b_name = resolve_business_name(config)
 
         url = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
@@ -363,7 +364,10 @@ def create_multi_service_calendar_events(
     unified_success = False
     if creds and "access_token" in creds:
         try:
-            admin_recipient = config.get("gmail_recipient", "")
+            from serviceBot.db.queries import get_admin_notification_email
+            admin_recipient = get_admin_notification_email(
+                config.get("gmail_recipient", "")
+            )
             attendees = []
             if admin_recipient:
                 attendees.append({"email": admin_recipient})

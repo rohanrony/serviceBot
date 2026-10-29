@@ -155,3 +155,18 @@ the complete candidate and target are selected. This diagnostic turn changed
 only documentation and coverage evidence, which received YAML/reference and
 scoped whitespace validation. No application suite was rerun for those document
 edits.
+
+## Local durable-storage follow-up — 2026-10-28
+
+The repeated-return report is consistent with the confirmed Free-filesystem
+durability gap. The existing database is external PostgreSQL, so this checkout
+now contains a local migration and code path that persist the admin recipient
+there. The API reads the database override first, and email/calendar delivery
+uses the same effective recipient. The checked-in JSON value remains a fallback
+until the first database save.
+
+This follow-up is local only. It does not establish that the migration has been
+applied to the live Supabase database, that a save has been performed after a
+deployment, or that any deployed instance now retains the intended recipient.
+The original incident's submitted recipient and precise triggering lifecycle
+event remain unknown.

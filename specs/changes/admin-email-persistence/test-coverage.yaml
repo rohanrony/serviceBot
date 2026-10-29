@@ -34,28 +34,61 @@ acceptance:
       delivery or provider request behavior changes. Confirmation of the deployed incident remains a separate
       pending diagnostic task.
     scenarios: []
+- id: AC2
+  behavior: A saved admin notification email survives a reset of the service-local configuration file.
+  preconditions:
+  - Isolated PostgreSQL database with the admin notification settings migration applied
+  - Admin email changed through the Gmail settings API
+  success:
+  - A fresh settings API read returns the saved database value after JSON config is restored to its pre-save value
+  - System admin emails and admin calendar attendees use the saved database value
+  - A failed database write returns an error and does not report a successful save
+  failure:
+  - A database read failure does not expose a stale JSON recipient as the current setting
+  invariants:
+  - The checked-in JSON recipient is used only until an admin email has first been durably saved
+  - Automated provider-boundary tests issue no real Gmail or Google Calendar request
+  - Notification flags, sender, OAuth credentials, and token-refresh behavior remain unchanged
+  tests:
+  - tests/test_admin_email_persistence.py::test_admin_email_save_survives_config_file_reset
+  - tests/test_admin_email_persistence.py::test_admin_email_save_does_not_report_success_when_database_write_fails
+  - tests/test_admin_email_persistence.py::test_admin_email_read_does_not_return_stale_file_value_when_database_fails
+  - tests/test_admin_email_persistence.py::test_email_and_calendar_delivery_use_saved_recipient_after_file_reset
+  - tests/test_migrations.py::test_booking_integrity_migrations_have_explicit_rollbacks
+  - e2e/test_admin_mail_oauth.py::test_admin_email_save_survives_background_refresh_and_page_reload
+  layer:
+  - database
+  - http
+  - provider_contract
+  - browser
+  - migration
+  live_acceptance:
+    status: not_required
+    reason: This local change adds database-backed settings reads and writes with mocked provider boundaries. No live database, recipient, or provider call is changed in this work session.
+    scenarios: []
 omitted_layers:
-  database: The email and system Google tokens use the existing JSON configuration file; relational state is
-    unchanged.
-  migration: No schema or stored format changes.
+  database: AC1 isolates the token-refresh lost-update race; durable recipient storage is covered by AC2.
+  migration: AC1 did not change schema; the admin recipient migration is covered by AC2.
   targeted: The deterministic API and browser interleaving directly reproduces the lost update; no separate
     performance or accessibility contract changes.
 review:
-  red: 'Before implementation, ./run_tests.sh --file tests/test_admin_email_persistence.py --tb=short produced
-    1 failed and 1 passed: the successful-refresh case returned old-admin@example.test in a fresh GET after
-    Save had returned 200 for new-admin@example.test.'
-  green: 'The focused browser regression passed (1 passed). After correcting test-file isolation, ./run_tests.sh
-    --verify --tb=short -q passed all 2488 unit/integration cases and all 716 E2E cases, including the new
-    regressions; both suite exits were 0. Publication verification subsequently passed for isolated commit
-    8768e0505b87a99d8570452c61114f3f52caa789 against main c04d72c8b237820ef72e7c5da2c5bf747327b54f: 2481 unit/integration
-    and 714 E2E, including 134 browser journeys, with zero failures/errors/skips/xfails/xpasses.'
-  test_changes: Additive API/browser regressions and stronger token-only update assertions replace an old mock-called
-    assertion. A first combined run found the new API test leaking its preference into a later test; the regression
-    now owns per-test temporary configuration and prompt files. No behavioral assertions were weakened; no
-    tests were removed, skipped, or marked xfail.
-  sufficiency: Covers successful and rejected refresh responses, fresh persisted read-back, retained tokens
-    and business settings, and browser save/reload with an overlapping background refresh.
+  red: >-
+    AC1: Before implementation, ./run_tests.sh --file tests/test_admin_email_persistence.py --tb=short
+    produced 1 failed and 1 passed: the successful-refresh case returned old-admin@example.test in a fresh GET
+    after Save had returned 200 for new-admin@example.test. AC2: Before the durable-storage implementation,
+    the same focused command produced 2 passed and 1 failed: restoring the pre-save JSON file made the fresh
+    GET return old-admin@example.test after the API had returned 200 for new-admin@example.test.
+  green: >-
+    After correcting test-file isolation, ./run_tests.sh --verify --tb=short -q passed all 2513
+    unit/integration tests and all 723 E2E tests, including the new regressions; both suite exits were 0
+    with zero failures, errors, or skips. Exact committed-candidate verification is still pending.
+  test_changes: AC1 adds API/browser interleaving coverage and stronger token-only update assertions. AC2 adds
+    database-backed reset, failed-write/read, provider-boundary, migration, and browser reset assertions. No
+    behavioral assertions were weakened; no tests were removed, skipped, or marked xfail.
+  sufficiency: AC1 covers successful and rejected refresh responses, fresh persisted read-back, retained tokens
+    and business settings, and browser save/reload with an overlapping background refresh. AC2 covers JSON reset,
+    database write/read failure handling, and all email/calendar recipient paths with provider requests mocked.
   offline:
     status: pending
-    reason: The Oct 25 standalone commit has historical verification evidence above. The combined integration candidate includes additional branch changes and requires exact-candidate verification before publication.
+    reason: The full pre-commit unit/integration and E2E suites passed; exact committed-candidate verification is pending before publication.
     evidence: []

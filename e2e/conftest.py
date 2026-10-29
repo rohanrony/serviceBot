@@ -201,6 +201,11 @@ def scenario(isolated_database, tmp_path, monkeypatch):
     from serviceBot.services import booking, encryption, google_calendar
     from serviceBot.services.rag import FAQService
 
+    with connection.get_db_connection() as conn, connection.dict_cursor(conn) as cursor:
+        cursor.execute(
+            "DELETE FROM public.admin_notification_settings WHERE id = 1;"
+        )
+
     monkeypatch.setattr(portal, "CONFIG_PATH", str(tmp_path / "config.json"))
     monkeypatch.setattr(
         portal, "SYSTEM_PROMPT_PATH", str(tmp_path / "system_prompt.txt")

@@ -77,7 +77,7 @@ fix; the latest live deploy was independently rechecked at 17:57 UTC.
 - A shared reentrant lock serializes portal configuration reads/writes and the
   merge across this process's request handlers and background threads.
 - The existing file format, Google request, refresh token, and recipient policy
-  are preserved. No database migration is needed.
+  are preserved. The token-refresh fix alone needs no database migration.
 - This lock is in-process. It does not establish durable or shared configuration
   across Render restarts or separate instances. Current deployed topology is one
   Free instance; the configuration's lifecycle-durability gap is confirmed.
@@ -92,3 +92,24 @@ fix; the latest live deploy was independently rechecked at 17:57 UTC.
 ## Current integration candidate status — 2026-10-27
 
 The token-only Gmail refresh behavior and its API/browser regression coverage are included in the local `integrate/recent-prior-changes-20261027` candidate through the Oct 25 admin-refresh branch snapshot (`b7854c3`, merged at `2abb0ed`). The snapshot tree matches the Oct 25 remote commit tree. The combined candidate has not been pushed, merged, or deployed. Exact-candidate offline verification remains pending; the standalone receipt below does not verify this combined candidate.
+
+## Durable recipient persistence follow-up — 2026-10-28
+
+The repeated reversion is explained by the Free service storing the recipient in
+its local `serviceBot/config.json`. That filesystem is not durable across Render
+spin-downs, restarts, or deploys. The token-refresh merge fix above addresses a
+separate in-process lost-update race and does not cover this lifecycle reset.
+
+The local follow-up adds a singleton PostgreSQL setting for the admin recipient.
+The settings API reads this value in preference to the JSON copy and writes it
+before returning success. The JSON value remains a one-time fallback until the
+first durable save, which preserves the existing initial configuration. Admin
+email and Google Calendar attendee paths read the same database-backed value.
+The migration enables RLS and revokes direct API-role access to the table.
+
+The new API regression reproduced the reset locally before the implementation:
+after Save returned 200, restoring the pre-save JSON file made a fresh GET return
+`old-admin@example.test` instead of `new-admin@example.test`. The new migration,
+API/provider/browser assertions, and focused verification are tracked under AC2
+in `test-coverage.yaml`. No live database migration, production write, commit,
+push, merge, or deployment was performed in this follow-up.

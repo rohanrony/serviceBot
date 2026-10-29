@@ -3050,6 +3050,36 @@ def update_sms_config(data: dict) -> dict:
             return d
 
 
+def get_admin_notification_email(default: Optional[str] = None) -> Optional[str]:
+    """Return the persisted admin recipient, falling back only before first save."""
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                "SELECT gmail_recipient FROM public.admin_notification_settings WHERE id = 1;"
+            )
+            row = cursor.fetchone()
+            return row["gmail_recipient"] if row else default
+
+
+def update_admin_notification_email(email: str) -> str:
+    """Persist the admin notification recipient across process and filesystem resets."""
+    with get_db_connection() as conn:
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                """
+                INSERT INTO public.admin_notification_settings (id, gmail_recipient)
+                VALUES (1, %s)
+                ON CONFLICT (id) DO UPDATE
+                SET gmail_recipient = EXCLUDED.gmail_recipient,
+                    updated_at = CURRENT_TIMESTAMP
+                RETURNING gmail_recipient;
+                """,
+                (email,),
+            )
+            row = cursor.fetchone()
+            return row["gmail_recipient"]
+
+
 def get_sms_matrix_rules(channel: str = None) -> list:
     """Fetches all event matrix notification rules, optionally filtered by channel."""
     with get_db_connection() as conn:
