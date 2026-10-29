@@ -162,7 +162,14 @@ def test_journey_2_scheduling(page, live_server, api, db, scenario):
         page.locator("#sr-save-btn").click()
         page.locator("#confirm-modal-yes").click()
     assert sr_resp.value.status == 201
-    sr1_id = sr_resp.value.json()["request_id"]
+    sr1_rows = db(
+        """SELECT sr.id FROM service_requests sr
+           JOIN customers c ON c.id = sr.customer_id
+           WHERE c.name = %s AND c.phone = %s""",
+        ("Jordan Scheduled", "+15550199001"),
+    )
+    assert len(sr1_rows) == 1, "Browser-created scheduled request must be persisted once"
+    sr1_id = sr1_rows[0]["id"]
 
     # Verify database state
     sr1_row = db("SELECT booking_time, booking_type FROM service_requests WHERE id = %s", (sr1_id,))[0]
@@ -192,7 +199,14 @@ def test_journey_2_scheduling(page, live_server, api, db, scenario):
         page.locator("#sr-save-btn").click()
         page.locator("#confirm-modal-yes").click()
     assert sr_resp2.value.status == 201
-    sr2_id = sr_resp2.value.json()["request_id"]
+    sr2_rows = db(
+        """SELECT sr.id FROM service_requests sr
+           JOIN customers c ON c.id = sr.customer_id
+           WHERE c.name = %s AND c.phone = %s""",
+        ("Morgan Unscheduled", "+15550199002"),
+    )
+    assert len(sr2_rows) == 1, "Browser-created unscheduled request must be persisted once"
+    sr2_id = sr2_rows[0]["id"]
 
     # Verify DB: booking_time IS NULL and 0 reservations
     sr2_row = db("SELECT booking_time FROM service_requests WHERE id = %s", (sr2_id,))[0]
