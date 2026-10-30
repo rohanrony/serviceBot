@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from live_simulations import deployed_medium as medium
+from serviceBot.api.auth import COOKIE_NAME
 
 ISSUE = 'Intermittent whooshing spaceship sound'
 
@@ -73,13 +74,15 @@ def browser_checks(monkeypatch, tmp_path, persisted, *, issue_text='Callback' + 
             return SimpleNamespace(input_value=lambda: status)
     @contextmanager
     def playwright():
-        browser = SimpleNamespace(new_page=Page, close=lambda: None)
+        context = SimpleNamespace(add_cookies=lambda cookies: None, new_page=Page)
+        browser = SimpleNamespace(new_context=lambda: context, close=lambda: None)
         yield SimpleNamespace(chromium=SimpleNamespace(launch=lambda **kwargs: browser))
     monkeypatch.setattr('playwright.sync_api.sync_playwright', playwright)
     campaign = SimpleNamespace(config={'deployed_url': 'https://owned.example'}, folder=tmp_path,
         manifest={'baseline': [], 'deployed_medium': {'services': {}, 'operations': [],
                   'owned_request_ids': [], 'blocks': [], 'blocked': False}})
-    return medium.Adapter(campaign, None)._browser_checks_owned({'id': 'C12' if persisted['booking_type'] == 'callback' else 'C11'}, [persisted])
+    client = SimpleNamespace(cookies={COOKIE_NAME: 'synthetic-session'})
+    return medium.Adapter(campaign, client)._browser_checks_owned({'id': 'C12' if persisted['booking_type'] == 'callback' else 'C11'}, [persisted])
 
 
 def test_real_oracle_accepts_owned_callback_issue_without_internal_repair_label(monkeypatch, tmp_path):

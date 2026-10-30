@@ -21,6 +21,23 @@ from psycopg2 import sql
 from psycopg2.extensions import make_dsn, parse_dsn
 
 
+@pytest.fixture(autouse=True)
+def legacy_admin_auth_override():
+    """Keep unrelated legacy route tests explicit about their auth boundary."""
+    try:
+        from serviceBot.api.auth import require_admin
+        from serviceBot.main import app
+    except ImportError:
+        # The feature modules are intentionally absent during the test-first stage.
+        yield
+        return
+    app.dependency_overrides[require_admin] = lambda: {"email": "legacy@example.test"}
+    try:
+        yield
+    finally:
+        app.dependency_overrides.pop(require_admin, None)
+
+
 @pytest.fixture
 def saved_reschedule_boundary(monkeypatch):
     """Model lookup and native capacity at the persistence boundary for voice tests."""
@@ -226,6 +243,19 @@ def clear_admin_notification_setting():
         cursor.execute(
             "DELETE FROM public.admin_notification_settings WHERE id = 1;"
         )
+
+
+@pytest.fixture(autouse=True)
+def reset_admin_auth_state():
+    """Isolate only auth-owned rows so synthetic credentials never leak across tests."""
+    from serviceBot.db.connection import get_db_connection
+
+    with get_db_connection() as conn, conn.cursor() as cursor:
+        # These are the exact tables owned by migration 0013. Keep cleanup
+        # explicit so schema metadata heuristics cannot silently miss rows.
+        cursor.execute("DELETE FROM public.admin_login_attempts")
+        cursor.execute("DELETE FROM public.admin_sessions")
+        cursor.execute("DELETE FROM public.admin_accounts")
 
 
 @pytest.fixture(autouse=True)

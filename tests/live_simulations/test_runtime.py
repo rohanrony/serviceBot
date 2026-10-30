@@ -79,8 +79,7 @@ def test_isolated_application_and_gateway_start_without_provider_credentials(tmp
         with httpx.Client(trust_env=False) as client:
             assert client.get(runtime.url + '/health').status_code == 200
             response = client.get(runtime.url + '/api/v1/portal/service-requests')
-            assert response.status_code == 200
-            assert response.json() == []
+            assert response.status_code == 401
             assert client.get(runtime.gateway_url + '/api/v1/requests').status_code == 404
             token = json.loads((runtime.folder / 'gateway.json').read_text())['token']
             response = client.get(runtime.gateway_url + '/__simulation__/health',

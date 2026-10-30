@@ -1,0 +1,15 @@
+:root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; background: #0b1016; color: #f4f6f8; }
+* { box-sizing: border-box; }
+body { min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 24px; background: radial-gradient(ellipse at 50% 20%, #172b3c 0, #0b1016 58%); }
+.login-card { width: min(100%, 420px); padding: 42px; border: 1px solid #2c3b49; border-radius: 16px; background: rgba(17, 25, 34, .96); box-shadow: 0 28px 90px #0008; }
+.brand-mark { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; background: #14b8a6; color: #062c2b; font-size: 23px; font-weight: 800; }
+.eyebrow { margin: 24px 0 8px; color: #55d8c9; font-size: 11px; font-weight: 700; letter-spacing: .14em; }
+h1 { margin: 0; font-size: 30px; letter-spacing: -.03em; }
+.intro { margin: 9px 0 28px; color: #a6b1bb; font-size: 14px; }
+label { display: block; margin: 17px 0 7px; font-size: 13px; font-weight: 600; }
+input { width: 100%; padding: 12px 13px; border: 1px solid #3a4b59; border-radius: 8px; outline: none; background: #0b1219; color: #fff; font: inherit; }
+input:focus { border-color: #25c5b3; box-shadow: 0 0 0 3px #25c5b322; }
+button { width: 100%; margin-top: 12px; padding: 12px 16px; border: 0; border-radius: 8px; background: #13b8a6; color: #062c2b; font: inherit; font-weight: 700; cursor: pointer; }
+button:disabled { cursor: wait; opacity: .7; }
+.error { min-height: 18px; margin: 10px 0 0; color: #ff8c87; font-size: 13px; }
+@media (max-width: 480px) { .login-card { padding: 30px 24px; } }

@@ -990,9 +990,9 @@ document.addEventListener('DOMContentLoaded', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus })
       });
+      const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.detail || 'Failed to update request status');
+        throw new Error(data.detail || 'Failed to update request status');
       }
       const targetReq = allRequests.find(r => r.id === requestId);
       if (targetReq) {
@@ -1892,6 +1892,7 @@ document.addEventListener('DOMContentLoaded', () => {
           const errData = await response.json().catch(() => ({}));
           throw new Error(errData.detail || 'Failed to update service');
         }
+        await response.json().catch(() => ({}));
         
         showToast('Service updated successfully!');
         closeEditDrawer();
@@ -1944,6 +1945,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         
         if (!response.ok) throw new Error('Failed to add service');
+        await response.json().catch(() => ({}));
         
         showToast('Service created successfully!');
         addServiceForm.reset();
@@ -4028,11 +4030,12 @@ document.addEventListener('DOMContentLoaded', () => {
       if (resolveBtn) {
         resolveBtn.style.display = 'inline-flex';
         resolveBtn.onclick = async () => {
-          await fetch('/api/v1/portal/sms/resolve', {
+          const response = await fetch('/api/v1/portal/sms/resolve', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ conversation_id: conversationId })
           });
+          await response.json().catch(() => ({}));
           showToast('Thread marked as resolved.');
           loadSMSConversations(document.getElementById('sms-thread-filter').value);
         };
@@ -4238,11 +4241,12 @@ document.addEventListener('DOMContentLoaded', () => {
       const message = input.value.trim();
       if (!message || !activeConversationId) return;
 
-      await fetch('/api/v1/portal/sms/reply', {
+      const response = await fetch('/api/v1/portal/sms/reply', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ conversation_id: activeConversationId, message })
       });
+      await response.json().catch(() => ({}));
       input.value = '';
       showToast('SMS reply sent.');
       loadSMSConversations(document.getElementById('sms-thread-filter').value);
@@ -5755,6 +5759,7 @@ document.addEventListener('DOMContentLoaded', () => {
           });
           
           if (res.ok) {
+            await res.json().catch(() => ({}));
             showToast('Service Request saved successfully!', 'success');
             closeSRModal();
             loadDashboardData(); // reload dashboard

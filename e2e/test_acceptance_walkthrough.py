@@ -162,7 +162,14 @@ def test_journey_2_scheduling(page, live_server, api, db, scenario):
         page.locator("#sr-save-btn").click()
         page.locator("#confirm-modal-yes").click()
     assert sr_resp.value.status == 201
-    sr1_id = sr_resp.value.json()["request_id"]
+    sr1_rows = db(
+        """SELECT sr.id FROM service_requests sr
+           JOIN customers c ON c.id = sr.customer_id
+           WHERE c.name = %s AND c.phone = %s""",
+        ("Jordan Scheduled", "+15550199001"),
+    )
+    assert len(sr1_rows) == 1, "Browser-created scheduled request must be persisted once"
+    sr1_id = sr1_rows[0]["id"]
 
     # Verify database state
     sr1_row = db("SELECT booking_time, booking_type FROM service_requests WHERE id = %s", (sr1_id,))[0]
@@ -192,7 +199,14 @@ def test_journey_2_scheduling(page, live_server, api, db, scenario):
         page.locator("#sr-save-btn").click()
         page.locator("#confirm-modal-yes").click()
     assert sr_resp2.value.status == 201
-    sr2_id = sr_resp2.value.json()["request_id"]
+    sr2_rows = db(
+        """SELECT sr.id FROM service_requests sr
+           JOIN customers c ON c.id = sr.customer_id
+           WHERE c.name = %s AND c.phone = %s""",
+        ("Morgan Unscheduled", "+15550199002"),
+    )
+    assert len(sr2_rows) == 1, "Browser-created unscheduled request must be persisted once"
+    sr2_id = sr2_rows[0]["id"]
 
     # Verify DB: booking_time IS NULL and 0 reservations
     sr2_row = db("SELECT booking_time FROM service_requests WHERE id = %s", (sr2_id,))[0]
@@ -342,7 +356,14 @@ def test_journey_3_intake_configuration(page, live_server, api, db):
         page.locator("#sr-save-btn").click()
         page.locator("#confirm-modal-yes").click()
     assert sr_resp.value.status == 201
-    sr_id = sr_resp.value.json()["request_id"]
+    sr_rows = db(
+        """SELECT sr.id FROM service_requests sr
+           JOIN customers c ON c.id = sr.customer_id
+           WHERE c.name = %s AND c.phone = %s""",
+        ("Industrial Client", "+15550188999"),
+    )
+    assert len(sr_rows) == 1, "Browser-created intake request must be persisted once"
+    sr_id = sr_rows[0]["id"]
 
     # Verify database: intake values in JSONB, vehicle_id is NULL
     record = db("SELECT vehicle_id, intake_data FROM service_requests WHERE id = %s", (sr_id,))[0]
@@ -399,7 +420,13 @@ def test_journey_4_staff(page, live_server, api, db):
     with page.expect_response(lambda r: r.request.method == "POST" and r.url.endswith("/portal/agents")) as add_resp:
         page.locator("#add-agent-form button[type=submit]").click()
     assert add_resp.value.status == 201
-    agent_id = add_resp.value.json()["id"]
+    agent_rows = db(
+        """SELECT id FROM staff_agents
+           WHERE name = %s AND email = %s AND phone_number = %s""",
+        ("Eileen O'Connor", "o'connor@example.com", "+15559876543"),
+    )
+    assert len(agent_rows) == 1, "Browser-created staff profile must be persisted once"
+    agent_id = agent_rows[0]["id"]
 
     # Verify persisted in database
     staff_row = db("SELECT name, email, phone_number FROM staff_agents WHERE id = %s", (agent_id,))[0]

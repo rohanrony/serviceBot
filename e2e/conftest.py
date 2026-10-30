@@ -5,6 +5,7 @@ import json
 import os
 import socket
 import sys
+import subprocess
 import threading
 import time
 import uuid
@@ -355,9 +356,39 @@ def live_server(scenario):
 
 
 @pytest.fixture
-def api(live_server):
+def api(live_server, admin_auth_credentials):
     with httpx.Client(base_url=live_server, timeout=10, trust_env=False) as client:
+        login = client.post(
+            "/api/v1/auth/login",
+            json=admin_auth_credentials,
+            headers={"Origin": live_server},
+        )
+        assert login.status_code == 200, login.text
+        client.headers.update({
+            "Origin": live_server,
+            "X-CSRF-Token": login.json()["csrf_token"],
+        })
         yield client
+
+
+@pytest.fixture
+def admin_auth_credentials(scenario):
+    """Create the E2E admin through the real hidden-prompt operator CLI."""
+    email = "browser.admin@example.test"
+    password = "synthetic-browser-password"
+    from tests.admin_cli import run_admin_cli
+    completed = run_admin_cli(
+        "create-admin",
+        [email, password, password],
+        {
+            **os.environ,
+            "TEST_DATABASE_URL": os.environ["TEST_DATABASE_URL"],
+            "DATABASE_URL": os.environ["DATABASE_URL"],
+        },
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert password not in completed.stdout + completed.stderr
+    return {"email": email, "password": password}
 
 
 @pytest.fixture
@@ -452,8 +483,7 @@ def browser_timezone():
     return "UTC"
 
 
-@pytest.fixture
-def page(browser_instance, live_server, request, browser_artifacts, browser_timezone):
+def _new_browser_page(browser_instance, live_server, request, browser_artifacts, browser_timezone, credentials=None):
     context = browser_instance.new_context(
         viewport={"width": 1280, "height": 800}, base_url=live_server,
         timezone_id=browser_timezone,
@@ -470,6 +500,12 @@ def page(browser_instance, live_server, request, browser_artifacts, browser_time
             errors.append(message.text) if message.type == "error" else None
         ),
     )
+    if credentials:
+        page.goto(live_server + "/")
+        page.locator("input[type=email]").fill(credentials["email"])
+        page.locator("input[type=password]").fill(credentials["password"])
+        page.locator("button[type=submit]").click()
+        page.wait_for_url("**/portal/**")
     yield page
     failed = any(
         getattr(getattr(request.node, "rep_" + phase, None), "failed", False)
@@ -508,4 +544,14 @@ def page(browser_instance, live_server, request, browser_artifacts, browser_time
             context.close()
         except Exception:
             pass
+
+
+@pytest.fixture
+def anonymous_page(browser_instance, live_server, request, browser_artifacts, browser_timezone):
+    yield from _new_browser_page(browser_instance, live_server, request, browser_artifacts, browser_timezone)
+
+
+@pytest.fixture
+def page(browser_instance, live_server, request, browser_artifacts, browser_timezone, admin_auth_credentials):
+    yield from _new_browser_page(browser_instance, live_server, request, browser_artifacts, browser_timezone, admin_auth_credentials)
 
