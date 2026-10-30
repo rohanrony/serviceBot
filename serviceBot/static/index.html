@@ -842,6 +842,32 @@
                 <div id="business-sync-status-notice" style="display: none; margin-top: 16px; padding: 12px; border-radius: 6px; font-size: 13px;"></div>
               </form>
             </div>
+
+            <!-- Account Security Card -->
+            <section class="content-card mt-4" aria-labelledby="account-security-title">
+              <div class="card-header">
+                <h3 id="account-security-title">Account Security</h3>
+                <p class="text-muted">Change the administrator password. You will need to sign in again afterward.</p>
+              </div>
+              <form id="admin-password-form" class="form-grid">
+                <div class="form-group full-width">
+                  <label for="admin-current-password">Current password</label>
+                  <input id="admin-current-password" name="current_password" type="password" class="form-input" autocomplete="current-password" required>
+                </div>
+                <div class="form-group">
+                  <label for="admin-new-password">New password</label>
+                  <input id="admin-new-password" name="new_password" type="password" class="form-input" autocomplete="new-password" minlength="12" required>
+                </div>
+                <div class="form-group">
+                  <label for="admin-confirm-password">Confirm new password</label>
+                  <input id="admin-confirm-password" name="new_password_confirmation" type="password" class="form-input" autocomplete="new-password" minlength="12" required>
+                </div>
+                <div class="form-group full-width">
+                  <p id="admin-password-message" role="status" aria-live="polite" class="text-muted"></p>
+                  <button type="submit" class="btn btn-primary">Change password</button>
+                </div>
+              </form>
+            </section>
           </div>
 
           <!-- Business Save Confirmation Modal -->
@@ -982,31 +1008,6 @@
             
           </div>
           </div>
-
-          <section class="content-card mt-4" aria-labelledby="account-security-title">
-            <div class="card-header">
-              <h3 id="account-security-title">Account Security</h3>
-              <p class="text-muted">Change the administrator password. You will need to sign in again afterward.</p>
-            </div>
-            <form id="admin-password-form" class="form-grid">
-              <div class="form-group full-width">
-                <label for="admin-current-password">Current password</label>
-                <input id="admin-current-password" name="current_password" type="password" class="form-input" autocomplete="current-password" required>
-              </div>
-              <div class="form-group">
-                <label for="admin-new-password">New password</label>
-                <input id="admin-new-password" name="new_password" type="password" class="form-input" autocomplete="new-password" minlength="12" required>
-              </div>
-              <div class="form-group">
-                <label for="admin-confirm-password">Confirm new password</label>
-                <input id="admin-confirm-password" name="new_password_confirmation" type="password" class="form-input" autocomplete="new-password" minlength="12" required>
-              </div>
-              <div class="form-group full-width">
-                <p id="admin-password-message" role="status" aria-live="polite" class="text-muted"></p>
-                <button type="submit" class="btn btn-primary">Change password</button>
-              </div>
-            </form>
-          </section>
 
           <!-- SUBTAB 3: NOTIFICATIONS CONFIG -->
           <div id="sms-config-view" class="config-subtab-pane" data-subtab-pane="sms-config">
