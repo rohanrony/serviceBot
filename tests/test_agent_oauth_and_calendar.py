@@ -1,6 +1,7 @@
 import pytest
 import datetime as dt_mod
 import time
+from zoneinfo import ZoneInfo
 from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock
 
@@ -181,8 +182,11 @@ def test_is_agent_free_busy(mock_get, mock_creds):
 
 @patch("serviceBot.services.google_calendar.fetch_agent_events")
 def test_check_availability_filtering(mock_fetch):
-    slot = f"{_next_business_date().isoformat()} 07:00:00"
-    event_date = f"{_next_business_date().isoformat()}T07:00:00-04:00"
+    local_date = _next_business_date()
+    slot = f"{local_date.isoformat()} 07:00:00"
+    event_date = dt_mod.datetime.combine(
+        local_date, dt_mod.time(7), tzinfo=ZoneInfo("America/New_York")
+    ).isoformat()
     mock_fetch.return_value = [{"id": "event1", "status": "confirmed", "start": {"dateTime": event_date}, "end": {"dateTime": event_date.replace("07:00:00", "08:00:00")}}]
     assert slot not in check_availability(preferred_date=slot)
 

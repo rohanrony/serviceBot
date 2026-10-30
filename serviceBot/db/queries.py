@@ -3080,6 +3080,75 @@ def update_admin_notification_email(email: str) -> str:
             return row["gmail_recipient"]
 
 
+def _persist_admin_phone_on_connection(conn, phone_number: str) -> None:
+    """Persist the admin phone settings using a caller-owned connection."""
+    with dict_cursor(conn) as cursor:
+        cursor.execute(
+            "UPDATE sms_config SET admin_phone_number = %s, updated_at = CURRENT_TIMESTAMP "
+            "WHERE id = (SELECT id FROM sms_config ORDER BY id ASC LIMIT 1);",
+            (phone_number,),
+        )
+        if phone_number.strip():
+            from datetime import datetime
+
+            cursor.execute(
+                """
+                INSERT INTO sms_whitelist
+                    (phone_number, friendly_name, twilio_verified, whatsapp_onboarded,
+                     whatsapp_onboarded_at, recipient_role)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (phone_number) DO UPDATE SET
+                    friendly_name = COALESCE(EXCLUDED.friendly_name, sms_whitelist.friendly_name),
+                    twilio_verified = EXCLUDED.twilio_verified,
+                    whatsapp_onboarded = CASE WHEN EXCLUDED.whatsapp_onboarded THEN TRUE ELSE sms_whitelist.whatsapp_onboarded END,
+                    whatsapp_onboarded_at = CASE WHEN EXCLUDED.whatsapp_onboarded THEN EXCLUDED.whatsapp_onboarded_at ELSE sms_whitelist.whatsapp_onboarded_at END,
+                    recipient_role = EXCLUDED.recipient_role;
+                """,
+                (
+                    phone_number.strip(),
+                    "Admin Notification Contact",
+                    True,
+                    False,
+                    None,
+                    "ADMIN",
+                ),
+            )
+
+
+def update_admin_notification_settings(email: str, admin_phone_number: str = None) -> dict:
+    """Save admin email and best-effort phone settings with one DB checkout.
+
+    A savepoint keeps phone failures isolated so the email remains authoritative,
+    matching the portal's former separate-connection error handling.
+    """
+    phone_error = None
+    with get_db_connection() as conn:
+        if admin_phone_number is not None:
+            with conn.cursor() as cursor:
+                cursor.execute("SAVEPOINT admin_phone_persistence;")
+            try:
+                _persist_admin_phone_on_connection(conn, admin_phone_number)
+            except Exception as exc:
+                phone_error = exc
+                with conn.cursor() as cursor:
+                    cursor.execute("ROLLBACK TO SAVEPOINT admin_phone_persistence;")
+
+        with dict_cursor(conn) as cursor:
+            cursor.execute(
+                """
+                INSERT INTO public.admin_notification_settings (id, gmail_recipient)
+                VALUES (1, %s)
+                ON CONFLICT (id) DO UPDATE
+                SET gmail_recipient = EXCLUDED.gmail_recipient,
+                    updated_at = CURRENT_TIMESTAMP
+                RETURNING gmail_recipient;
+                """,
+                (email,),
+            )
+            row = cursor.fetchone()
+            return {"email": row["gmail_recipient"], "phone_error": phone_error}
+
+
 def get_sms_matrix_rules(channel: str = None) -> list:
     """Fetches all event matrix notification rules, optionally filtered by channel."""
     with get_db_connection() as conn:

@@ -445,10 +445,12 @@ def save_config(config_data):
                 logger.warning(f"Could not export compatibility system_prompt.txt: {e}")
 
 
-def update_config_values(changes):
+def update_config_values(changes, remove_keys=()):
     """Merge a background operation's fields without restoring its old snapshot."""
     with _CONFIG_LOCK:
         config = load_config()
+        for key in remove_keys:
+            config.pop(key, None)
         config.update(changes)
         save_config(config)
 
@@ -1160,7 +1162,51 @@ async def update_config(payload: ConfigUpdatePayload):
     config_data["prompt_generation"] = int(config_data.get("prompt_generation", 0)) + 1
 
     try:
-        save_config(config_data)
+        # Persist only values this request changed.  The request may have
+        # performed synchronous database work since its initial snapshot;
+        # merging its full snapshot here could restore stale Gmail tokens or
+        # other values written by a background worker in the meantime.
+        sentinel = object()
+        changes = {
+            key: value
+            for key, value in config_data.items()
+            if key not in {"prompt_generation", "system_prompt"}
+            and existing.get(key, sentinel) != value
+        }
+        with _CONFIG_LOCK:
+            latest = load_config()
+            latest.update(changes)
+            # Prompt text is derived from current settings. When this request
+            # did not supply new prompt content, start from the latest prompt
+            # so unrelated concurrent edits are retained as well.
+            explicit_prompt = bool(
+                payload.system_prompt or payload.prompts or payload.regenerate_business_prompt
+            )
+            final_prompt = (
+                config_data["system_prompt"]
+                if explicit_prompt
+                else latest.get("system_prompt", prompt_to_sync)
+            )
+            final_prompt = update_prompt_lead_time_buffers(
+                final_prompt,
+                float(latest.get("min_booking_buffer_hours", 4.0)),
+                float(latest.get("min_callback_buffer_hours", 2.0)),
+            )
+            final_prompt = update_prompt_business_hours(
+                final_prompt,
+                start_hour=latest.get("business_hours_start", 7),
+                end_hour=latest.get("business_hours_end", 18),
+                business_days=latest.get("business_days", [0, 1, 2, 3, 4]),
+                timezone_str=latest.get("business_timezone", "America/New_York"),
+                business_hours=latest.get("business_hours", list(range(7, 18))),
+            )
+            latest["system_prompt"] = final_prompt
+            # Generation is a counter, so advance the latest value rather than
+            # writing the value derived from the stale request snapshot.
+            latest["prompt_generation"] = int(latest.get("prompt_generation", 0)) + 1
+            save_config(latest)
+        config_data = latest
+        prompt_to_sync = final_prompt
     except Exception as exc:
         logger.error(f"Authoritative configuration save failed: {exc}")
         raise HTTPException(status_code=500, detail=f"Failed to persist configuration: {str(exc)}")
@@ -2768,47 +2814,41 @@ async def get_gmail_config():
     }
 
 @router.post("/gmail-config")
-async def update_gmail_config(payload: GmailConfigPayload):
+def update_gmail_config(payload: GmailConfigPayload):
     from serviceBot.services.encryption import encrypt_key
-    config = load_config()
-    
-    config["gmail_enabled"] = payload.gmail_enabled
+    changes = {
+        "gmail_enabled": payload.gmail_enabled,
+        "enable_agent_selection": payload.enable_agent_selection,
+        "gmail_auth_type": "oauth2",
+        "gmail_recipient": payload.gmail_recipient,
+    }
     if payload.gmail_routine_admin_copies_enabled is not None:
-        config["gmail_routine_admin_copies_enabled"] = (
+        changes["gmail_routine_admin_copies_enabled"] = (
             payload.gmail_routine_admin_copies_enabled
         )
-    config["enable_agent_selection"] = payload.enable_agent_selection
-    config["gmail_auth_type"] = "oauth2"
     if payload.gmail_sender:
-        config["gmail_sender"] = payload.gmail_sender
-    config["gmail_recipient"] = payload.gmail_recipient
-    for legacy_key in ("gmail_password", "gmail_smtp_server", "gmail_smtp_port"):
-        config.pop(legacy_key, None)
+        changes["gmail_sender"] = payload.gmail_sender
     
     if payload.admin_phone_number is not None:
-        config["admin_phone_number"] = payload.admin_phone_number
-        try:
-            from serviceBot.db.queries import update_sms_config, add_sms_whitelist
-            update_sms_config({"admin_phone_number": payload.admin_phone_number})
-            if payload.admin_phone_number.strip():
-                add_sms_whitelist(
-                    phone_number=payload.admin_phone_number.strip(),
-                    friendly_name="Admin Notification Contact",
-                    twilio_verified=True,
-                    recipient_role="ADMIN"
-                )
-        except Exception as e:
-            logger.warning(f"Could not persist admin phone to database: {e}")
+        changes["admin_phone_number"] = payload.admin_phone_number
         
     if payload.gmail_client_id:
-        config["gmail_client_id"] = encrypt_key(payload.gmail_client_id)
+        changes["gmail_client_id"] = encrypt_key(payload.gmail_client_id)
         
     if payload.gmail_client_secret and payload.gmail_client_secret != "••••••••••••••••":
-        config["gmail_client_secret"] = encrypt_key(payload.gmail_client_secret)
+        changes["gmail_client_secret"] = encrypt_key(payload.gmail_client_secret)
         
     try:
-        from serviceBot.db.queries import update_admin_notification_email
-        update_admin_notification_email(payload.gmail_recipient)
+        from serviceBot.db.queries import update_admin_notification_settings
+        persistence_result = update_admin_notification_settings(
+            payload.gmail_recipient,
+            admin_phone_number=payload.admin_phone_number,
+        )
+        if persistence_result["phone_error"] is not None:
+            logger.warning(
+                "Could not persist admin phone to database: "
+                f"{persistence_result['phone_error']}"
+            )
     except Exception as e:
         logger.error(f"Could not persist admin notification email: {e}", exc_info=e)
         raise HTTPException(
@@ -2816,7 +2856,10 @@ async def update_gmail_config(payload: GmailConfigPayload):
             detail="Admin notification email could not be saved. Please try again.",
         )
 
-    save_config(config)
+    update_config_values(
+        changes,
+        remove_keys=("gmail_password", "gmail_smtp_server", "gmail_smtp_port"),
+    )
     return {"success": True}
 
 @router.get("/gmail/oauth/auth-url")
