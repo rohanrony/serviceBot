@@ -600,7 +600,22 @@ class Adapter:
                 stage = 'browser_launch'
                 browser = playwright.chromium.launch(headless=True)
                 try:
-                    page = browser.new_page()
+                    from serviceBot.api.auth import COOKIE_NAME
+
+                    session_token = self.client.cookies.get(COOKIE_NAME)
+                    if not session_token:
+                        raise SimulationError('Browser readback requires the authenticated portal session')
+                    context = browser.new_context()
+                    context.add_cookies([{
+                        'name': COOKIE_NAME,
+                        'value': session_token,
+                        'url': url,
+                        'path': '/',
+                        'httpOnly': True,
+                        'secure': urlparse(url).scheme == 'https',
+                        'sameSite': 'Lax',
+                    }])
+                    page = context.new_page()
                     allowed = urlparse(url).netloc
                     page.route('**/*', lambda route: route.continue_() if urlparse(route.request.url).netloc == allowed else route.abort())
                     stage = 'portal_navigation'

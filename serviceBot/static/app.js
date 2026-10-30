@@ -1892,6 +1892,7 @@ document.addEventListener('DOMContentLoaded', () => {
           const errData = await response.json().catch(() => ({}));
           throw new Error(errData.detail || 'Failed to update service');
         }
+        await response.json().catch(() => ({}));
         
         showToast('Service updated successfully!');
         closeEditDrawer();
@@ -1944,6 +1945,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         
         if (!response.ok) throw new Error('Failed to add service');
+        await response.json().catch(() => ({}));
         
         showToast('Service created successfully!');
         addServiceForm.reset();
