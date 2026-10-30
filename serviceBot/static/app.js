@@ -5755,6 +5755,7 @@ document.addEventListener('DOMContentLoaded', () => {
           });
           
           if (res.ok) {
+            await res.json().catch(() => ({}));
             showToast('Service Request saved successfully!', 'success');
             closeSRModal();
             loadDashboardData(); // reload dashboard
