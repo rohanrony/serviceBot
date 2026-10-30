@@ -990,9 +990,9 @@ document.addEventListener('DOMContentLoaded', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus })
       });
+      const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.detail || 'Failed to update request status');
+        throw new Error(data.detail || 'Failed to update request status');
       }
       const targetReq = allRequests.find(r => r.id === requestId);
       if (targetReq) {
