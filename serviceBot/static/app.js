@@ -4030,11 +4030,12 @@ document.addEventListener('DOMContentLoaded', () => {
       if (resolveBtn) {
         resolveBtn.style.display = 'inline-flex';
         resolveBtn.onclick = async () => {
-          await fetch('/api/v1/portal/sms/resolve', {
+          const response = await fetch('/api/v1/portal/sms/resolve', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ conversation_id: conversationId })
           });
+          await response.json().catch(() => ({}));
           showToast('Thread marked as resolved.');
           loadSMSConversations(document.getElementById('sms-thread-filter').value);
         };
@@ -4240,11 +4241,12 @@ document.addEventListener('DOMContentLoaded', () => {
       const message = input.value.trim();
       if (!message || !activeConversationId) return;
 
-      await fetch('/api/v1/portal/sms/reply', {
+      const response = await fetch('/api/v1/portal/sms/reply', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ conversation_id: activeConversationId, message })
       });
+      await response.json().catch(() => ({}));
       input.value = '';
       showToast('SMS reply sent.');
       loadSMSConversations(document.getElementById('sms-thread-filter').value);

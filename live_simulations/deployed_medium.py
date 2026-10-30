@@ -602,19 +602,23 @@ class Adapter:
                 try:
                     from serviceBot.api.auth import COOKIE_NAME
 
+                    stage = 'session_cookie_read'
                     session_token = self.client.cookies.get(COOKIE_NAME)
                     if not session_token:
                         raise SimulationError('Browser readback requires the authenticated portal session')
+                    stage = 'browser_context_create'
                     context = browser.new_context()
+                    stage = 'browser_cookie_transfer'
                     context.add_cookies([{
                         'name': COOKIE_NAME,
                         'value': session_token,
-                        'url': url,
+                        'domain': urlparse(url).hostname,
                         'path': '/',
                         'httpOnly': True,
                         'secure': urlparse(url).scheme == 'https',
                         'sameSite': 'Lax',
                     }])
+                    stage = 'browser_page_create'
                     page = context.new_page()
                     allowed = urlparse(url).netloc
                     page.route('**/*', lambda route: route.continue_() if urlparse(route.request.url).netloc == allowed else route.abort())

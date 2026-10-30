@@ -1,5 +1,6 @@
 import datetime as dt_mod
 import os
+import socket
 import threading
 import time
 
@@ -17,16 +18,29 @@ def _future_business_datetime() -> str:
     return f"{candidate.isoformat()}T10:00"
 
 
-def run_server():
-    uvicorn.run(app, host="127.0.0.1", port=8003, log_level="critical")
-
 @pytest.fixture(scope="module", autouse=True)
 def start_server():
-    t = threading.Thread(target=run_server, daemon=True)
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(128)
+    port = listener.getsockname()[1]
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="critical"))
+    t = threading.Thread(target=lambda: server.run(sockets=[listener]), daemon=True)
     t.start()
-    time.sleep(2)  # Wait for server to start
+    try:
+        deadline = time.monotonic() + 10
+        while not server.started and t.is_alive() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert server.started, "DOM test HTTP server did not start"
+        yield f"http://127.0.0.1:{port}"
+    finally:
+        server.should_exit = True
+        t.join(timeout=10)
+        listener.close()
+        assert not t.is_alive(), "DOM test HTTP server did not stop"
 
-def test_save_new_service_request_with_booking_time_dom():
+def test_save_new_service_request_with_booking_time_dom(start_server):
     from tests.admin_cli import run_admin_cli
 
     email = "dom.admin@example.test"
@@ -46,7 +60,7 @@ def test_save_new_service_request_with_booking_time_dom():
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
-        page.goto("http://127.0.0.1:8003/")
+        page.goto(start_server + "/")
         page.fill("input[type=email]", email)
         page.fill("input[type=password]", password)
         page.click("button[type=submit]")
