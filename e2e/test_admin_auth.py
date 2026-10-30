@@ -1,7 +1,9 @@
 """Real browser authentication journey against disposable PostgreSQL."""
 
 
-def test_root_login_opens_dashboard_and_logout_revokes_session(anonymous_page, admin_auth_credentials):
+def test_root_login_opens_dashboard_and_logout_revokes_session(
+    anonymous_page, admin_auth_credentials, live_server
+):
     page = anonymous_page
     page.goto("/")
     assert page.locator("input[type=email]").is_visible()
@@ -15,10 +17,11 @@ def test_root_login_opens_dashboard_and_logout_revokes_session(anonymous_page, a
     page.goto("/portal/")
     logout = page.get_by_role("button", name="Log out")
     logout.click()
-    page.wait_for_url("**/")
+    page.wait_for_url(live_server + "/")
+    page.locator("#email").wait_for(state="visible")
     page.goto("/portal/")
     assert page.url.endswith("/")
-    assert page.locator("input[type=email]").is_visible()
+    assert page.locator("#email").is_visible()
 
 
 def test_rejected_credentials_do_not_open_dashboard(anonymous_page, admin_auth_credentials):

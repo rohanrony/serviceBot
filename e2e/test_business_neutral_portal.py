@@ -335,6 +335,9 @@ def test_staff_business_hours_provider_sync_unavailable_displays_notice(page, li
 
     page.goto(f"{live_server}/portal/#staff")
     expect(page.locator("#staff-bhours-form")).to_be_visible()
+    # A saved business profile may have no operating days yet. Choose a valid
+    # day so this test exercises the provider-sync response path.
+    page.locator(".staff-day-cb").first.check()
 
     page.locator("#staff-bhours-form button[type=submit]").click()
 

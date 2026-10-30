@@ -1,6 +1,5 @@
 import asyncio
 import os
-import posixpath
 import sys
 import time
 from contextlib import asynccontextmanager
@@ -143,13 +142,8 @@ app = FastAPI(
 
 @app.middleware("http")
 async def disable_private_response_caching(request: Request, call_next):
-    # StaticFiles normalizes its path before resolving the HTML index. Make
-    # equivalent dashboard paths hit the authenticated routes first as well.
-    normalized_path = posixpath.normpath(request.scope["path"])
-    if normalized_path == "/portal":
-        request.scope["path"] = "/portal/"
-    elif normalized_path == "/portal/index.html":
-        request.scope["path"] = "/portal/index.html"
+    # Keep the explicit /portal redirect reachable so dashboard URLs use the
+    # canonical trailing slash before the authenticated portal route runs.
     response = await call_next(request)
     path = request.url.path
     if path.startswith("/api/v1/auth") or path.startswith("/api/v1/portal") or path.startswith("/portal") or path == "/":

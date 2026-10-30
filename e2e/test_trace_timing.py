@@ -54,6 +54,21 @@ def test_trace_callback_window_renders_business_time_across_dst(api, db, scenari
     assert response.status_code == 200
     appointment = response.json()["appointment"]
     with browser_instance.new_context(timezone_id=browser_timezone) as context:
+        from urllib.parse import urlparse
+
+        from serviceBot.api.auth import COOKIE_NAME
+
+        session_token = api.cookies.get(COOKIE_NAME)
+        assert session_token
+        context.add_cookies([{
+            "name": COOKIE_NAME,
+            "value": session_token,
+            "domain": urlparse(live_server).hostname,
+            "path": "/",
+            "httpOnly": True,
+            "secure": urlparse(live_server).scheme == "https",
+            "sameSite": "Lax",
+        }])
         context.route("**/*", route_offline_browser_request)
         page = context.new_page()
         page.goto(f"{live_server}/portal/", wait_until="domcontentloaded")
