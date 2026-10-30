@@ -270,6 +270,93 @@ def test_admin_email_save_does_not_report_success_when_database_write_fails(
 
 
 @pytest.mark.test_layer("http")
+def test_admin_email_save_preserves_config_updated_during_database_persistence(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(portal, "CONFIG_PATH", str(tmp_path / "config.json"))
+    monkeypatch.setattr(portal, "SYSTEM_PROMPT_PATH", str(tmp_path / "system_prompt.txt"))
+    config = portal.load_config()
+    config.update(
+        gmail_enabled=False,
+        gmail_sender="sender@example.test",
+        gmail_recipient="old-admin@example.test",
+        business_timezone="America/New_York",
+    )
+    portal.save_config(config)
+
+    from serviceBot.db import queries
+
+    def persist_with_overlapping_update(email, admin_phone_number=None):
+        # Deterministically model a concurrent /config write after Gmail's DB
+        # persistence starts but before its local JSON save.
+        portal.update_config_values({"business_timezone": "Europe/London"})
+        return {"email": email, "phone_error": None}
+
+    monkeypatch.setattr(
+        queries, "update_admin_notification_settings", persist_with_overlapping_update
+    )
+    response = TestClient(app).post(
+        "/api/v1/portal/gmail-config",
+        json={
+            "gmail_enabled": False,
+            "gmail_sender": "sender@example.test",
+            "gmail_recipient": "new-admin@example.test",
+        },
+    )
+
+    assert response.status_code == 200
+    saved = portal.load_config()
+    assert saved["gmail_recipient"] == "new-admin@example.test"
+    assert saved["business_timezone"] == "Europe/London"
+
+
+@pytest.mark.test_layer("http")
+def test_config_save_preserves_gmail_update_during_database_persistence(
+    monkeypatch, tmp_path
+):
+    """The inverse overlap must not restore a stale Gmail snapshot."""
+    monkeypatch.setattr(portal, "CONFIG_PATH", str(tmp_path / "config.json"))
+    monkeypatch.setattr(portal, "SYSTEM_PROMPT_PATH", str(tmp_path / "system_prompt.txt"))
+    config = portal.load_config()
+    config.update(
+        gmail_enabled=True,
+        gmail_recipient="old-admin@example.test",
+        gmail_access_token="old-access-token",
+    )
+    portal.save_config(config)
+
+    from serviceBot.db import queries
+
+    def persist_phone_with_overlapping_gmail_update(_settings):
+        # Model a Gmail worker saving after /config took its initial snapshot
+        # but before its synchronous support-phone database write completes.
+        portal.update_config_values(
+            {
+                "gmail_recipient": "new-admin@example.test",
+                "gmail_access_token": "refreshed-access-token",
+                "system_prompt": "Concurrent prompt update.",
+            }
+        )
+
+    monkeypatch.setattr(queries, "update_sms_config", persist_phone_with_overlapping_gmail_update)
+    async def sync_prompt(*_args, **_kwargs):
+        return {"status": "synced"}
+
+    monkeypatch.setattr(portal, "sync_prompt_to_elevenlabs", sync_prompt)
+    response = TestClient(app).post(
+        "/api/v1/portal/config",
+        json={"support_phone_number": "+15550109993"},
+    )
+
+    assert response.status_code == 200
+    saved = portal.load_config()
+    assert saved["support_phone_number"] == "+15550109993"
+    assert saved["gmail_recipient"] == "new-admin@example.test"
+    assert saved["gmail_access_token"] == "refreshed-access-token"
+    assert "Concurrent prompt update." in saved["system_prompt"]
+
+
+@pytest.mark.test_layer("http")
 def test_admin_phone_persistence_failure_does_not_block_email_save(
     monkeypatch, tmp_path
 ):
