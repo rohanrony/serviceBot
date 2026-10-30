@@ -79,6 +79,8 @@ acceptance:
   - An admin email persistence failure returns HTTP 503 and does not report or persist a successful local configuration save
   invariants:
   - Phone writes remain best effort while admin email persistence remains authoritative
+  - A concurrent non-Gmail config update during database persistence is preserved by the Gmail save
+  - A concurrent Gmail update during /config database work is preserved by the config save
   - Database errors preserve the preexisting API status and response behavior
   - The budget excludes Render cold starts; production p95 latency remains unverified because current telemetry lacks request timing data
   - No provider requests or notification deliveries are triggered by saving configuration
@@ -88,6 +90,8 @@ acceptance:
   - tests/test_admin_email_persistence.py::test_admin_notification_settings_success_avoids_savepoint_release_roundtrip
   - tests/test_admin_email_persistence.py::test_admin_phone_persistence_failure_does_not_block_email_save
   - tests/test_admin_email_persistence.py::test_admin_email_save_does_not_report_success_when_database_write_fails
+  - tests/test_admin_email_persistence.py::test_admin_email_save_preserves_config_updated_during_database_persistence
+  - tests/test_admin_email_persistence.py::test_config_save_preserves_gmail_update_during_database_persistence
   layer:
   - http
   - database
@@ -104,21 +108,28 @@ review:
     AC1: Before implementation, the focused admin persistence command reproduced the stale recipient after a successful token refresh.
     AC2: Before durable storage, restoring the pre-save JSON file made a fresh GET return old-admin@example.test after the API returned 200 for new-admin@example.test.
     AC3: Before implementation, a phone-bearing admin save used three database checkouts; the sync-dispatch regression also failed against the async endpoint.
+    Race regressions: Against the pre-fix source tree at 1df429c4fc61f3e39582b588e7179c4f6a40601e, both new deterministic interleaving tests failed because the Gmail save restored the old timezone and the /config save restored the old Gmail recipient.
   green: >-
     Exact commit 7f2b99a79494951803cdc8b13050410308cfd762 verified against target
     53ea4ce734294ec21d5334685d27ec751e3df7d8: 2518 unit/integration tests and 723 E2E tests passed,
     with zero failures, errors, skips, xfails, or xpasses. The focused AC3 suite passed all ten cases
-    with one existing Starlette/httpx deprecation warning. Production p95 latency and live deployment
-    behavior remain unverified.
+    with one existing Starlette/httpx deprecation warning. After the race fix, both deterministic
+    interleaving regressions and the database-write failure regression passed in an isolated test
+    copy (3 passed), and two prompt/provider-sync behavior tests passed (2 passed). The local
+    database-backed test setup remains blocked by sandbox-denied loopback PostgreSQL. Production p95
+    latency and live deployment behavior remain unverified.
   test_changes: >-
-    AC1 adds API and browser interleaving coverage and exact token-only update assertions. AC2 adds database reset, failed read/write, provider-boundary, migration, and browser assertions. AC3 asserts one checkout with a nonblank phone, sync FastAPI dispatch, absence of redundant success-path savepoint release, persisted phone/whitelist/email read-back, phone savepoint rollback after one row is changed, and HTTP 503 behavior when email persistence fails. No existing assertions were weakened or removed.
+    AC1 adds API and browser interleaving coverage and exact token-only update assertions. AC2 adds database reset, failed read/write, provider-boundary, migration, and browser assertions. AC3 asserts one checkout with a nonblank phone, sync FastAPI dispatch, absence of redundant success-path savepoint release, persisted phone/whitelist/email read-back, phone savepoint rollback after one row is changed, HTTP 503 behavior when email persistence fails, and both directions of concurrent Gmail/config updates. No existing assertions were weakened or removed.
   sufficiency: >-
-    AC1 covers successful and rejected refresh responses, persisted read-back, retained credentials and business settings, and browser reload. AC2 covers JSON reset, database failure behavior, and email/calendar recipient paths with providers mocked. AC3 measures the checkout budget and uses fresh DB reads for SMS config, ADMIN whitelist metadata, and email; it proves savepoint rollback after a real one-row write and verifies best-effort phone plus authoritative email failure behavior.
+    AC1 covers successful and rejected refresh responses, persisted read-back, retained credentials and business settings, and browser reload. AC2 covers JSON reset, database failure behavior, and email/calendar recipient paths with providers mocked. AC3 measures the checkout budget and uses fresh DB reads for SMS config, ADMIN whitelist metadata, and email; it proves savepoint rollback after a real one-row write, verifies best-effort phone plus authoritative email failure behavior, and exercises both deterministic save-order interleavings while preserving the latest prompt and Gmail fields.
   offline:
-    status: passed
+    status: pending
     reason: >-
-      scripts/verify_change.sh passed for commit 7f2b99a79494951803cdc8b13050410308cfd762 against target
-      53ea4ce734294ec21d5334685d27ec751e3df7d8: 2518 unit/integration tests and 723 E2E tests passed with zero
-      failures, errors, skips, xfails, or xpasses. Production p95 latency and live deployment behavior remain
-      outside this offline result.
+      The prior implementation passed scripts/verify_change.sh for commit
+      7f2b99a79494951803cdc8b13050410308cfd762 against target
+      53ea4ce734294ec21d5334685d27ec751e3df7d8: 2518 unit/integration tests and 723 E2E tests passed
+      with zero failures, errors, skips, xfails, or xpasses. The final race-fix head still needs the
+      exact-main PR verifier; the local database-backed setup cannot start because sandbox policy
+      denies loopback PostgreSQL. Production p95 latency and live deployment behavior remain outside
+      this offline result.
     evidence: []
