@@ -123,7 +123,7 @@ review:
   sufficiency: >-
     AC1 covers successful and rejected refresh responses, persisted read-back, retained credentials and business settings, and browser reload. AC2 covers JSON reset, database failure behavior, and email/calendar recipient paths with providers mocked. AC3 measures the checkout budget and uses fresh DB reads for SMS config, ADMIN whitelist metadata, and email; it proves savepoint rollback after a real one-row write, verifies best-effort phone plus authoritative email failure behavior, and exercises both deterministic save-order interleavings while preserving the latest prompt and Gmail fields.
   offline:
-    status: pending
+    status: verified
     reason: >-
       The prior implementation passed scripts/verify_change.sh for commit
       7f2b99a79494951803cdc8b13050410308cfd762 against target
@@ -132,7 +132,9 @@ review:
       race-fix candidate passed static checks and all 723 E2E tests, but one existing calendar test
       failed because it hard-coded a daylight-saving offset for a date after the transition. The
       test fixture now derives the New York offset from the tested date; the updated candidate still
-      needs an exact-main verifier. The local database-backed setup cannot start because sandbox
+      passed exact-main PR verifier run 20 for candidate 98938cd637f508364b15906dd936089563cbce1d against base 9b1c0e88175df3681a7c85e6ef3123020a175775. The local database-backed setup cannot start because sandbox
       policy denies loopback PostgreSQL. Production p95 latency and live deployment behavior remain
       outside this offline result.
-    evidence: []
+    evidence:
+      - 'https://github.com/rohanrony/serviceBot/actions/runs/40980823105'
+      - 'Artifact verification-98938cd637f508364b15906dd936089563cbce1d (ID 12945316016)'
