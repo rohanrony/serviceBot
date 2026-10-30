@@ -128,8 +128,11 @@ review:
       The prior implementation passed scripts/verify_change.sh for commit
       7f2b99a79494951803cdc8b13050410308cfd762 against target
       53ea4ce734294ec21d5334685d27ec751e3df7d8: 2518 unit/integration tests and 723 E2E tests passed
-      with zero failures, errors, skips, xfails, or xpasses. The final race-fix head still needs the
-      exact-main PR verifier; the local database-backed setup cannot start because sandbox policy
-      denies loopback PostgreSQL. Production p95 latency and live deployment behavior remain outside
-      this offline result.
+      with zero failures, errors, skips, xfails, or xpasses. The first exact-main verifier for the
+      race-fix candidate passed static checks and all 723 E2E tests, but one existing calendar test
+      failed because it hard-coded a daylight-saving offset for a date after the transition. The
+      test fixture now derives the New York offset from the tested date; the updated candidate still
+      needs an exact-main verifier. The local database-backed setup cannot start because sandbox
+      policy denies loopback PostgreSQL. Production p95 latency and live deployment behavior remain
+      outside this offline result.
     evidence: []
